@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>훈민정음 문헌 번역 — 문해 Munhae Studio</title>
+<style>
+:root{
+  --bg:oklch(99% 0.002 240);--surface:oklch(100% 0 0);--fg:oklch(18% 0.012 250);--muted:oklch(50% 0.012 250);--border:oklch(92% 0.005 250);--accent:oklch(58% 0.18 255);
+  --accent-ink:color-mix(in oklch,var(--accent) 84%,black);--accent-soft:color-mix(in oklch,var(--accent) 12%,transparent);
+  --fg-soft:color-mix(in oklch,var(--fg) 6%,transparent);--fg-softer:color-mix(in oklch,var(--fg) 3%,transparent);
+  --ok:oklch(47% 0.12 150);--ok-soft:color-mix(in oklch,var(--ok) 14%,transparent);
+  --warn:oklch(48% 0.12 70);--warn-soft:color-mix(in oklch,var(--warn) 16%,transparent);
+  --danger:oklch(48% 0.17 25);--danger-soft:color-mix(in oklch,var(--danger) 12%,transparent);
+  --chrome:oklch(97.2% 0.003 250);--sidebar:oklch(95.8% 0.004 250);--desk-a:oklch(89% 0.012 250);--desk-b:oklch(78% 0.014 250);
+  --ctl-border:color-mix(in oklch,var(--fg) 15%,transparent);--sel:color-mix(in oklch,var(--fg) 9%,transparent);
+  --tl-r:oklch(67% 0.19 25);--tl-y:oklch(83% 0.16 85);--tl-g:oklch(74% 0.19 145);
+  --font-ui:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;--font-mono:ui-monospace,'SF Mono',Menlo,monospace;
+  --font-hanmun:'Noto Serif KR','Noto Serif CJK KR','Apple Myungjo','AppleMyungjo','Nanum Myeongjo','Songti SC','Batang',serif;
+  --r:6px;--sbw:216px;--iw:300px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;overflow:hidden;background:radial-gradient(140% 100% at 50% -10%,var(--desk-a),var(--desk-b)) fixed;color:var(--fg);font:13px/1.45 var(--font-ui);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:default}
+a{color:inherit;text-decoration:none}
+h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-0.01em}
+p{margin:0;text-wrap:pretty}
+[hidden]{display:none!important}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.hanmun{font-family:var(--font-hanmun)}
+.muted{color:var(--muted)}
+.row{display:flex;align-items:center;gap:8px}
+.sp{flex:1}
+kbd{font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:.04em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:color-mix(in oklch,var(--fg) 22%,transparent);border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;flex:0 0 auto}
+.dot.draft{background:var(--accent)}.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
+
+/* menubar */
+.menubar{position:fixed;top:0;left:0;right:0;height:24px;z-index:70;display:flex;align-items:center;padding:0 12px 0 10px;font-size:13px;background:color-mix(in oklch,var(--chrome) 80%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid color-mix(in oklch,var(--fg) 8%,transparent);user-select:none}
+.mb-item{position:relative;padding:2px 9px;border-radius:4px;line-height:16px}
+.mb-item.app{font-weight:700;margin-right:2px}
+.mb-item.open,.menubar.active .mb-item:hover{background:var(--accent-ink);color:white}
+.mb-right{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px}
+.menu{position:absolute;top:calc(100% + 2px);left:0;min-width:236px;padding:5px;background:color-mix(in oklch,var(--surface) 90%,transparent);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid color-mix(in oklch,var(--fg) 12%,transparent);border-radius:8px;box-shadow:0 14px 40px color-mix(in oklch,var(--fg) 24%,transparent);color:var(--fg);display:none;text-align:left;z-index:80}
+.mb-item.open>.menu{display:block}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:4px 10px 4px 22px;border:0;border-radius:5px;background:transparent;text-align:left;font-size:13px;white-space:nowrap;position:relative;color:var(--fg)}
+.menu button:hover:not(:disabled){background:var(--accent-ink);color:white}
+.menu button:hover:not(:disabled) kbd{color:white}
+.menu button:disabled{color:var(--muted);opacity:.7}
+.menu button kbd{margin-left:auto;padding-left:24px}
+.menu button.checked::before{content:'✓';position:absolute;left:8px;font-size:11px}
+.menu hr{border:0;border-top:1px solid color-mix(in oklch,var(--fg) 10%,transparent);margin:5px 10px}
+
+/* window */
+.win{position:fixed;top:34px;left:12px;right:12px;bottom:12px;display:grid;grid-template-columns:var(--sbw) minmax(0,1fr);grid-template-rows:minmax(0,1fr) 24px;background:var(--surface);border-radius:10px;overflow:hidden;box-shadow:0 0 0 .5px color-mix(in oklch,var(--fg) 30%,transparent),0 30px 80px -20px color-mix(in oklch,var(--fg) 50%,transparent),0 4px 14px color-mix(in oklch,var(--fg) 14%,transparent)}
+.win.sb-hidden{grid-template-columns:0 minmax(0,1fr)}
+.win.sb-hidden .sidebar{display:none}
+.tl{display:flex;gap:8px;-webkit-app-region:no-drag}
+.tl i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 .5px color-mix(in oklch,black 22%,transparent)}
+.tl .r{background:var(--tl-r)}.tl .y{background:var(--tl-y)}.tl .g{background:var(--tl-g)}
+.sidebar{grid-row:1;grid-column:1;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;-webkit-app-region:drag}
+.sb-top{height:38px;display:flex;align-items:center;padding:0 14px;flex:0 0 auto}
+.sb-scroll{flex:1;overflow:auto;padding:2px 8px 10px;-webkit-app-region:no-drag}
+.sb-h{font-size:11px;font-weight:600;color:var(--muted);padding:12px 8px 3px}
+.sb-item{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px;border-radius:5px;font-size:13px;white-space:nowrap;min-width:0;width:100%;border:0;background:transparent;text-align:left}
+.sb-item:hover{background:color-mix(in oklch,var(--fg) 5%,transparent)}
+.sb-item.is-current{background:var(--sel);font-weight:500}
+.sb-item .ic{color:var(--accent-ink)}
+.sb-item .lbl{flex:1;overflow:hidden;text-overflow:ellipsis}
+.sb-item .cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.sb-item.d1{padding-left:26px}.sb-item.d2{padding-left:44px}
+.sb-item .chev{width:12px;height:12px;color:var(--muted);transition:transform .12s;margin-left:-2px}
+.sb-item[aria-expanded=true] .chev{transform:rotate(90deg)}
+.sb-foot{flex:0 0 auto;padding:8px 14px 9px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:7px;-webkit-app-region:no-drag}
+.main{grid-row:1;grid-column:2;display:grid;grid-template-rows:38px minmax(0,1fr);min-width:0;min-height:0}
+.titlebar{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--chrome);border-bottom:1px solid var(--border);-webkit-app-region:drag;user-select:none;min-width:0}
+.titlebar .tl{display:none;margin-right:8px}
+.win.sb-hidden .titlebar .tl{display:flex}
+.tb-l,.tb-r{display:flex;align-items:center;gap:6px;flex:0 0 auto;-webkit-app-region:no-drag}
+.tb-c{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;font-size:13px;overflow:hidden;white-space:nowrap}
+.tb-c small{font-weight:400;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.proxy{width:13px;height:16px;border:1.2px solid var(--muted);border-radius:2px;position:relative;flex:0 0 auto}
+.proxy::after{content:'';position:absolute;left:2px;right:2px;top:4px;height:1.2px;background:var(--muted);box-shadow:0 3px 0 var(--muted),0 6px 0 var(--muted)}
+.tb{height:26px;min-width:28px;padding:0 7px;border:1px solid transparent;border-radius:6px;background:transparent;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg)}
+.tb:hover:not(:disabled){background:var(--fg-soft)}
+.tb.is-on{background:var(--fg-soft);border-color:color-mix(in oklch,var(--fg) 10%,transparent)}
+.tb:disabled{opacity:.4}
+.content{min-height:0;min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden;background:var(--surface)}
+.statusbar{grid-row:2;grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 12px;background:var(--chrome);border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.statusbar b{color:var(--fg);font-weight:500}
+.statusbar .dot{margin-right:5px}
+.statusbar button{border:0;background:transparent;color:var(--muted);padding:0 5px;border-radius:4px;height:18px;font-size:11px}
+.statusbar button:hover{background:var(--fg-soft);color:var(--fg)}
+.scope{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--chrome);flex:0 0 auto;font-size:12px}
+.split{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) var(--iw)}
+.split.no-insp{grid-template-columns:minmax(0,1fr) 0}.split.no-insp .insp{display:none}
+.insp{border-left:1px solid var(--border);overflow:auto;min-height:0;background:var(--surface)}
+.grp{border-bottom:1px solid var(--border)}
+.grp>summary{list-style:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;font-size:11.5px;font-weight:600;color:var(--muted);user-select:none}
+.grp>summary::-webkit-details-marker{display:none}
+.grp>summary::before{content:'';width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid var(--muted);transition:transform .12s;flex:0 0 auto}
+.grp[open]>summary::before{transform:rotate(90deg)}
+.grp>summary .tail{font-weight:400;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp-b{padding:0 12px 12px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12px;margin:0}
+.kv dt{color:var(--muted)}.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.list{display:flex;flex-direction:column}
+.li{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid var(--fg-softer);font-size:12px;align-items:flex-start}
+.li:first-child{border-top:0;padding-top:2px}
+.li .sub{color:var(--muted);font-size:11.5px;margin-top:1px}
+
+/* controls */
+.btn{height:24px;padding:0 10px;border:1px solid var(--ctl-border);border-radius:var(--r);background:var(--surface);color:var(--fg);box-shadow:0 1px 1px color-mix(in oklch,var(--fg) 6%,transparent);display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:450;white-space:nowrap}
+.btn:hover:not(:disabled){background:color-mix(in oklch,var(--surface) 94%,var(--fg))}
+.btn:active:not(:disabled){background:color-mix(in oklch,var(--surface) 88%,var(--fg))}
+.btn:disabled{opacity:.45}
+.btn-primary{background:var(--accent-ink);border-color:var(--accent-ink);color:white}
+.btn-primary:hover:not(:disabled){background:color-mix(in oklch,var(--accent-ink) 86%,black);border-color:color-mix(in oklch,var(--accent-ink) 86%,black)}
+.btn-primary:active:not(:disabled){background:color-mix(in oklch,var(--accent-ink) 76%,black)}
+.btn-ghost{border-color:transparent;box-shadow:none;background:transparent}
+.btn-ghost:hover:not(:disabled){background:var(--fg-soft)}
+.btn-sm{height:21px;padding:0 7px;font-size:11.5px;border-radius:5px}
+.btn kbd{margin-left:2px}
+.btn-primary kbd{color:color-mix(in oklch,white 75%,transparent)}
+.input,.textarea,.select{height:24px;padding:0 8px;border:1px solid var(--ctl-border);border-radius:var(--r);background:var(--surface);color:var(--fg);font:inherit;font-size:12.5px;width:100%}
+.input:focus,.textarea:focus,.select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.textarea{height:auto;min-height:72px;padding:6px 8px;resize:vertical;line-height:1.5}
+.select{appearance:none;-webkit-appearance:none;padding-right:24px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'><path d='M2.5 5.5 5 3l2.5 2.5M2.5 8.5 5 11l2.5-2.5' fill='none' stroke='oklch(45%25 0.012 250)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 7px center;box-shadow:0 1px 1px color-mix(in oklch,var(--fg) 6%,transparent)}
+.input[type=search]{padding-left:26px;background:var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16'><circle cx='7' cy='7' r='4.5' fill='none' stroke='oklch(54%25 0.012 250)' stroke-width='1.5'/><path d='m10.5 10.5 3 3' stroke='oklch(54%25 0.012 250)' stroke-width='1.5' stroke-linecap='round'/></svg>") no-repeat 8px center}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg)}
+.check input,.radio-list input{accent-color:var(--accent-ink);margin:0;width:14px;height:14px}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11.5px;color:var(--muted)}
+.radio-list{display:flex;flex-direction:column;gap:6px}
+.radio-list label{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:2px 0}
+.tag{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.tag-draft{background:var(--accent-soft);color:var(--accent-ink)}
+.tag-ok{background:var(--ok-soft);color:var(--ok)}
+.tag-warn{background:var(--warn-soft);color:var(--warn)}
+.tag-danger{background:var(--danger-soft);color:var(--danger)}
+.tag-plain{background:var(--fg-soft);color:var(--muted)}
+.tag-line{border-color:var(--border);color:var(--muted);background:var(--surface)}
+.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.tbl th{position:sticky;top:0;z-index:1;background:var(--chrome);font-weight:500;color:var(--muted);font-size:11.5px;text-align:left;padding:5px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl td{padding:6px 10px;border-bottom:1px solid var(--fg-softer);vertical-align:middle}
+.tbl tbody tr:nth-child(even) td{background:var(--fg-softer)}
+.tbl tbody tr:hover td{background:color-mix(in oklch,var(--fg) 4.5%,transparent)}
+.tbl tbody tr.is-active td{background:var(--accent-soft)}
+dialog{border:0;border-radius:11px;padding:0;background:var(--surface);color:var(--fg);width:min(520px,calc(100vw - 48px));margin:96px auto auto;box-shadow:0 0 0 .5px color-mix(in oklch,var(--fg) 25%,transparent),0 24px 60px color-mix(in oklch,var(--fg) 30%,transparent)}
+dialog::backdrop{background:color-mix(in oklch,var(--fg) 12%,transparent)}
+.dl-h{padding:18px 20px 0;font-weight:600;font-size:13px}
+.dl-b{padding:12px 20px 18px;display:flex;flex-direction:column;gap:12px;font-size:12.5px}
+.dl-f{padding:0 20px 18px;display:flex;justify-content:flex-end;gap:8px}
+.notif{position:fixed;top:46px;right:22px;width:340px;display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:color-mix(in oklch,var(--surface) 88%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid color-mix(in oklch,var(--fg) 10%,transparent);border-radius:12px;box-shadow:0 10px 30px color-mix(in oklch,var(--fg) 20%,transparent);font-size:12.5px;z-index:90;opacity:0;transform:translateY(-8px);transition:.22s;pointer-events:none;line-height:1.4}
+.notif.show{opacity:1;transform:none}
+.notif .ai{width:28px;height:28px;border-radius:7px;background:var(--fg);color:white;display:grid;place-items:center;font-family:var(--font-hanmun);font-size:15px;flex:0 0 auto}
+.notif b{display:block;font-weight:600;font-size:12px}
+.palette{width:560px;margin:110px auto auto;border-radius:12px;overflow:hidden}
+.palette .input{height:42px;font-size:15px;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;padding:0 16px}
+.palette .input:focus{box-shadow:none;border-color:var(--border)}
+.pl-list{max-height:320px;overflow:auto;padding:6px}
+.pl-h{font-size:11px;color:var(--muted);padding:8px 10px 2px;font-weight:600}
+.pl-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13px;width:100%;border:0;background:transparent;text-align:left;color:var(--fg)}
+.pl-item.is-sel{background:var(--accent-ink);color:white}
+.pl-item.is-sel kbd{color:color-mix(in oklch,white 80%,transparent)}
+.pl-item kbd{margin-left:auto}
+@media (max-width:1000px){.win{top:24px;left:0;right:0;bottom:0;border-radius:0}.split{grid-template-columns:1fr}.insp{display:none}}
+
+/* page */
+.tbl-wrap{overflow:auto;min-height:0}
+.tree-cell{display:flex;align-items:center;gap:8px;min-width:0}
+.tree-cell .name{font-family:var(--font-hanmun);font-size:14px}
+.tree-cell .kind{font-size:11px;color:var(--muted);font-family:var(--font-mono);white-space:nowrap}
+tr.d1 .tree-cell{padding-left:18px}tr.d2 .tree-cell{padding-left:36px}
+.tbl tbody tr.is-group td{background:var(--chrome);color:var(--fg)}
+.tbl tbody tr.is-group .name{font-weight:600;font-size:13px}
+.tbl tbody tr[data-id]{cursor:default}
+.bar{height:5px;background:var(--fg-soft);border-radius:3px;overflow:hidden}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.prog{display:flex;flex-direction:column;gap:9px;padding-top:2px}
+.prog-row{display:grid;grid-template-columns:62px 1fr 38px;gap:8px;align-items:center;font-size:12px}
+.prog-row .mono{text-align:right;color:var(--muted);font-size:11.5px}
+.sel-title{font-family:var(--font-hanmun);font-size:18px;margin:2px 0 8px}
+</style>
+</head>
+<body>
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+
+<div class="win" id="win" data-od-id="app-window">
+  <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색">
+    <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
+    <div class="sb-scroll" id="sbTree"></div>
+    <div class="sb-foot"><i class="dot ok"></i>Claude CLI · 로그인됨<span class="sp"></span><span class="mono">0.1.0</span></div>
+  </aside>
+
+  <div class="main">
+    <header class="titlebar" data-od-id="titlebar">
+      <div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" aria-label="사이드바 토글"></button></div>
+      <div class="tb-c"><span class="proxy" aria-hidden="true"></span>훈민정음 문헌 번역<small>— hunmin.munhae · 로컬 프로젝트</small></div>
+      <div class="tb-r">
+        <button class="tb" id="btnBackup" data-od-id="btn-backup">백업</button>
+        <button class="tb" id="btnExport" data-od-id="btn-export">내보내기</button>
+        <button class="btn btn-primary" id="btnContinue" data-od-id="btn-continue">御製序 편집 계속</button>
+        <button class="tb is-on" id="tbInsp" title="검사기 (⌥⌘I)" aria-label="검사기 토글"></button>
+      </div>
+    </header>
+
+    <div class="content">
+      <div class="scope" data-od-id="doc-toolbar">
+        <input class="input" id="q" type="search" placeholder="문서 검색" aria-label="문서 검색" style="width:220px">
+        <select class="select" id="statusSel" aria-label="상태 필터" style="width:auto">
+          <option value="">모든 상태</option>
+          <option value="draft">작업 중 (원문·표점·번역안)</option>
+          <option value="review">재검토 필요</option>
+          <option value="confirmed">번역 확정</option>
+          <option value="none">원문 없음</option>
+        </select>
+        <span class="sp"></span>
+        <span class="muted"><b class="mono" id="rowCount" style="color:var(--fg)">10</b>개 문서 · 확정 1 · 마지막 백업 09-01 18:20</span>
+        <button class="btn" id="btnNewDoc" data-od-id="btn-new-doc">새 문서 <kbd>⌘N</kbd></button>
+      </div>
+
+      <div class="split" id="split">
+        <div class="tbl-wrap" data-od-id="document-list">
+          <table class="tbl">
+            <thead><tr><th style="width:38%">문서</th><th>원문</th><th>표점</th><th>번역</th><th style="width:88px">불확실성</th></tr></thead>
+            <tbody id="docBody"></tbody>
+          </table>
+        </div>
+
+        <aside class="insp" id="insp" data-od-id="inspector" aria-label="검사기">
+          <details class="grp" open data-od-id="selected-doc">
+            <summary>선택한 문서<span class="tail mono" id="selMeta"></span></summary>
+            <div class="grp-b" id="selBody"></div>
+          </details>
+          <details class="grp" open data-od-id="progress-group">
+            <summary>단계별 진행률<span class="tail">번역 대상 10건</span></summary>
+            <div class="grp-b prog">
+              <div class="prog-row"><span>원문 확정</span><div class="bar"><i style="width:60%"></i></div><span class="mono">6/10</span></div>
+              <div class="prog-row"><span>표점 확정</span><div class="bar"><i style="width:30%"></i></div><span class="mono">3/10</span></div>
+              <div class="prog-row"><span>번역안</span><div class="bar"><i style="width:30%"></i></div><span class="mono">3/10</span></div>
+              <div class="prog-row"><span>번역 확정</span><div class="bar"><i style="width:10%;background:var(--ok)"></i></div><span class="mono">1/10</span></div>
+            </div>
+          </details>
+          <details class="grp" open data-od-id="uncertainty-group">
+            <summary>열린 불확실성<span class="tail"><a href="knowledge-v2.html#uncertainty">모두 보기 ›</a></span></summary>
+            <div class="grp-b list">
+              <div class="li"><div><b>U-01</b> 文字의 지시 대상<div class="sub">御製序 · A002</div></div><span class="tag tag-warn">interpretive</span></div>
+              <div class="li"><div><b>U-02</b> 愚民의 愚 해석<div class="sub">御製序 · A003</div></div><span class="tag tag-warn">interpretive</span></div>
+              <div class="li"><div><b>U-03</b> 서문 말미 학사들의 관직 대응어<div class="sub">鄭麟趾 序</div></div><span class="tag tag-warn">identification</span></div>
+            </div>
+          </details>
+          <details class="grp" open data-od-id="recent-group">
+            <summary>최근 작업</summary>
+            <div class="grp-b list">
+              <div class="li"><div><b class="hanmun">御製序</b> 번역 블록 b1 수정 → 번역안 v2<div class="sub">나 · 09-01 15:40</div></div><span class="tag tag-draft">번역안</span></div>
+              <div class="li"><div><b class="hanmun">鄭麟趾 序</b> AI 제안 수신 — 앵커 비연속 2건<div class="sub">Claude · M098 · 08-31</div></div><span class="tag tag-warn">재검토</span></div>
+              <div class="li"><div><b class="hanmun">例義</b> 번역안 v3 확정<div class="sub">나 · 08-30</div></div><span class="tag tag-ok">확정</span></div>
+            </div>
+          </details>
+          <details class="grp" data-od-id="ai-group">
+            <summary>AI 연결<span class="tail">토큰은 CLI가 보관</span></summary>
+            <div class="grp-b">
+              <dl class="kv">
+                <dt><span class="row" style="gap:6px"><i class="dot ok"></i>Claude CLI</span></dt><dd>로그인됨 · probe 09-02 13:10</dd>
+                <dt><span class="row" style="gap:6px"><i class="dot warn"></i>Codex CLI</span></dt><dd>설치됨 · <button class="btn btn-ghost btn-sm" id="btnLogin" style="padding:0 4px;height:18px">로그인 안내</button></dd>
+              </dl>
+            </div>
+          </details>
+          <details class="grp" data-od-id="share-group">
+            <summary>확정·공유</summary>
+            <div class="grp-b" style="font-size:12px">확정 <b class="mono">1</b>건 · 공유 <b class="mono">0</b>건. 로컬 프로젝트는 서버로 전송하지 않으며, 공유는 확정과 별개로 사용자가 선택할 때만 이루어집니다.</div>
+          </details>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <footer class="statusbar" data-od-id="statusbar">
+    <span class="mono">~/Documents/문해/hunmin.munhae</span>
+    <span>SQLite · WAL · 로컬 전용</span>
+    <span class="sp"></span>
+    <span>번역 정책 V4 · two-step + Reflection</span>
+    <span>저장됨 <b>13:10</b></span>
+    <span><i class="dot ok"></i>Claude CLI</span>
+    <button id="sbPalette" title="명령 검색">⌘K</button>
+  </footer>
+</div>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+
+<dialog id="dlgNew" data-od-id="dialog-new-doc">
+  <form method="dialog" id="newForm">
+    <div class="dl-h">새 문서 node</div>
+    <div class="dl-b">
+      <div class="field"><label for="ndTitle">제목</label><input class="input hanmun" id="ndTitle" required placeholder="예: 龍飛御天歌 序" style="font-size:14px"></div>
+      <div class="row" style="gap:10px;align-items:flex-start">
+        <div class="field" style="flex:1"><label for="nParent">상위 node</label><select class="select" id="nParent"><option value="root">(최상위)</option><option value="haerye" selected>『訓民正音』 解例本</option><option value="haerye-ch">解例</option><option value="sillok">『世宗實錄』 卷113</option></select></div>
+        <div class="field" style="flex:1"><label for="nKind">구조</label><select class="select" id="nKind"><option>section</option><option>chapter</option><option>item</option><option>work</option></select></div>
+        <div class="field" style="flex:1"><label for="nGenre">장르</label><select class="select" id="nGenre"><option>preface</option><option>poetry</option><option>letter</option><option>memorial</option><option>official_document</option><option>prose</option></select></div>
+      </div>
+      <div class="field"><label>원문 입력 방식</label>
+        <div class="radio-list">
+          <label><input type="radio" name="origin" value="paste" checked> 붙여넣기 <span class="muted">· origin_kind = paste</span></label>
+          <label><input type="radio" name="origin" value="manual"> 직접 입력 <span class="muted">· origin_kind = manual</span></label>
+          <label><input type="radio" name="origin" value="import"> 텍스트 파일 가져오기 <span class="muted">· origin_kind = import</span></label>
+        </div>
+      </div>
+      <p class="muted" style="font-size:12px">이미지·PDF는 참고 자료로만 첨부되며 OCR은 수행하지 않습니다.</p>
+    </div>
+    <div class="dl-f"><button class="btn" value="cancel" type="button" id="newCancel">취소</button><button class="btn btn-primary" type="submit">문서 만들기</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+
+<script>
+/* ── desktop shell ── */
+const PAGE='home';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SCREENS={home:['프로젝트 홈','project-home-v2.html'],editor:['편집 · 御製序','editor-v2.html'],inspector:['문맥 검사','context-inspector-v2.html'],knowledge:['용어·지식','knowledge-v2.html']};
+const ICONS={home:'<path d="M2.5 8.2 8 3.2l5.5 5"/><path d="M4 7.5V13h8V7.5"/>',folder:'<path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/>',sliders:'<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="6" cy="4.5" r="1.7" fill="var(--sidebar)"/><circle cx="10.5" cy="8" r="1.7" fill="var(--sidebar)"/><circle cx="5" cy="11.5" r="1.7" fill="var(--sidebar)"/>',book:'<path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/>',sidebar:'<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/>',panel:'<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>',chev:'<path d="M6 4l4 4-4 4"/>',doc:'<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3M6.5 8h3M6.5 10.5h3"/>'};
+const ic=n=>`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${ICONS[n]}</svg>`;
+const GLOBAL=['about','prefs','ai','quit','newproj','open','close','undo','redo','x','c','v','find','sidebar','palette','home','editor','inspector','knowledge','min','zoom','self','help','plan','schema'];
+const ENABLED=new Set([...GLOBAL,'newdoc','import','backup','export','ctxpane']);
+const MENUS=[
+ ['문해',[['문해 정보','','about'],null,['설정…','⌘,','prefs'],['AI 연결 상태…','','ai'],null,['문해 종료','⌘Q','quit']],true],
+ ['파일',[['새 프로젝트…','⇧⌘N','newproj'],['프로젝트 열기…','⌘O','open'],null,['새 문서 node…','⌘N','newdoc'],['원문 가져오기…','','import'],null,['백업 만들기…','','backup'],['내보내기…','⌘E','export'],null,['프로젝트 닫기','⌘W','close']]],
+ ['편집',[['실행 취소','⌘Z','undo'],['다시 실행','⇧⌘Z','redo'],null,['잘라내기','⌘X','x'],['복사','⌘C','c'],['붙여넣기','⌘V','v'],null,['찾기…','⌘F','find']]],
+ ['보기',[['사이드바 보기/가리기','⌃⌘S','sidebar'],['참고 자료 패널','⌥⌘R','refpane'],['검사기 패널','⌥⌘I','ctxpane'],null,['표점 전문','⌘1','v-source'],['대조','⌘2','v-parallel'],['번역 전문','⌘3','v-full'],null,['구조 표시','','struct'],['앵커 ID 표시','','keys']]],
+ ['번역',[['문맥 검사…','⌥⌘K','inspector'],['번역 실행…','','run'],['Reflection 다시 요청','','reflect'],null,['다음 블록과 합치기','⌥⌘M','merge'],['블록 나누기…','⌥⌘S','split'],['앵커 연결…','⌥⌘L','link'],null,['변경 비교','⌘D','diff'],['번역안 확정','⇧⌘↩','confirm']]],
+ ['이동',[['프로젝트 홈','⇧⌘1','home'],['편집','⇧⌘2','editor'],['문맥 검사','⇧⌘3','inspector'],['용어·지식','⇧⌘4','knowledge'],null,['명령 검색…','⌘K','palette']]],
+ ['창',[['최소화','⌘M','min'],['확대/축소','','zoom'],null,['훈민정음 문헌 번역 — hunmin.munhae','','self',true]]],
+ ['도움말',[['문해 도움말','','help'],['plan.md 보기','','plan'],['schema.md 보기','','schema']]],
+];
+function notify(msg,title='문해'){const n=$('#notif');$('#nTitle').textContent=title;$('#nMsg').textContent=msg;n.classList.add('show');clearTimeout(n._h);n._h=setTimeout(()=>n.classList.remove('show'),3400);}
+function go(k){ if(k!==PAGE) location.href=SCREENS[k][1]; }
+function renderMenubar(){
+  $('#menubar').innerHTML = MENUS.map(([t,items,app],i)=>`<div class="mb-item${app?' app':''}" data-mi="${i}"><span>${t}</span><div class="menu" role="menu">${items.map(it=>it?`<button role="menuitem" data-cmd="${it[2]}"${ENABLED.has(it[2])?'':' disabled'}${it[3]?' class="checked"':''}>${it[0]}<kbd>${it[1]}</kbd></button>`:'<hr>').join('')}</div></div>`).join('')
+    + `<div class="mb-right"><span class="row" style="gap:5px"><i class="dot ok"></i>Claude CLI</span><span id="clock"></span></div>`;
+}
+let mbOpen=null;
+function openMenu(el){ if(mbOpen) mbOpen.classList.remove('open'); mbOpen=el; $('#menubar').classList.toggle('active',!!el); if(el) el.classList.add('open'); }
+function tick(){ $('#clock').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()); }
+const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+function toggleSidebar(force){ const w=$('#win'); const hide=force!==undefined?force:!w.classList.contains('sb-hidden'); w.classList.toggle('sb-hidden',hide); store.set('munhae.sb',hide?'0':'1'); $('#tbSidebar').classList.toggle('is-on',!hide); }
+const pal=$('#dlgPalette'), palIn=$('#palIn'), palList=$('#palList'); let palSel=0, palItems=[];
+function paletteItems(q){ const out=[]; MENUS.forEach(([t,items])=>items.forEach(it=>{ if(it&&ENABLED.has(it[2])&&!['self','x','c','v','quit','min','zoom','palette'].includes(it[2])) out.push({g:t,l:it[0],k:it[1],id:it[2]}); })); return q?out.filter(o=>(o.l+o.g).toLowerCase().includes(q.toLowerCase())):out; }
+function renderPalette(){ palItems=paletteItems(palIn.value.trim()); palSel=Math.min(palSel,Math.max(0,palItems.length-1)); let g=''; palList.innerHTML=palItems.map((o,i)=>{const h=(o.g!==g?`<div class="pl-h">${o.g}</div>`:'')+`<button class="pl-item${i===palSel?' is-sel':''}" data-i="${i}">${o.l}<kbd>${o.k}</kbd></button>`; g=o.g; return h;}).join('')||'<div class="pl-h">일치하는 명령이 없습니다</div>'; const el=palList.querySelector('.is-sel'); if(el){const t=el.offsetTop-palList.offsetTop,b=t+el.offsetHeight; if(t<palList.scrollTop) palList.scrollTop=t-6; else if(b>palList.scrollTop+palList.clientHeight) palList.scrollTop=b-palList.clientHeight+6;} }
+function openPalette(){ palIn.value=''; palSel=0; renderPalette(); pal.showModal(); palIn.focus(); }
+palIn.addEventListener('input',()=>{palSel=0;renderPalette();});
+palIn.addEventListener('keydown',e=>{ if(e.key==='ArrowDown'){e.preventDefault();palSel=Math.min(palSel+1,palItems.length-1);renderPalette();} else if(e.key==='ArrowUp'){e.preventDefault();palSel=Math.max(palSel-1,0);renderPalette();} else if(e.key==='Enter'){e.preventDefault();const o=palItems[palSel]; if(o){pal.close();cmd(o.id);}} });
+palList.addEventListener('click',e=>{ const b=e.target.closest('.pl-item'); if(b){ pal.close(); cmd(palItems[+b.dataset.i].id); } });
+$('#menubar').addEventListener('click',e=>{ const b=e.target.closest('button[data-cmd]'); if(b){ if(!b.disabled){ openMenu(null); cmd(b.dataset.cmd);} return; } const mi=e.target.closest('.mb-item'); if(mi) openMenu(mbOpen===mi?null:mi); });
+$('#menubar').addEventListener('mouseover',e=>{ const mi=e.target.closest('.mb-item'); if(mbOpen&&mi&&mi!==mbOpen) openMenu(mi); });
+document.addEventListener('click',e=>{ if(mbOpen&&!e.target.closest('#menubar')) openMenu(null); });
+document.addEventListener('keydown',e=>{
+  const m=e.metaKey||e.ctrlKey, k=e.key.toLowerCase();
+  if(e.key==='Escape'&&mbOpen){ openMenu(null); return; }
+  if(m&&!e.altKey&&!e.shiftKey&&k==='k'){ e.preventDefault(); return openPalette(); }
+  if(e.metaKey&&e.ctrlKey&&k==='s'){ e.preventDefault(); return toggleSidebar(); }
+  if(m&&e.shiftKey&&/^Digit[1-4]$/.test(e.code)){ e.preventDefault(); return go(['home','editor','inspector','knowledge'][+e.code.slice(5)-1]); }
+  if(m&&e.altKey&&e.code==='KeyI'){ e.preventDefault(); return cmd('ctxpane'); }
+  pageKeys(e,m);
+});
+function cmd(id){
+  if(pageCmd(id)) return;
+  if(SCREENS[id]) return go(id);
+  switch(id){
+    case 'sidebar': return toggleSidebar();
+    case 'palette': return openPalette();
+    case 'about': return notify('Munhae Studio 0.1.0 · 데모 빌드 · Phase 1 로컬 CAT','문해 정보');
+    case 'prefs': return notify('agent · model · reasoning preference는 프로젝트 밖 app-config.json에 저장됩니다','설정 (데모)');
+    case 'ai': return notify('Claude CLI 로그인됨 · Codex CLI 설치됨, 로그인 필요. 토큰은 CLI가 보관합니다','AI 연결 상태');
+    case 'plan': case 'schema': return notify(`${id}.md는 저장소 루트에 있습니다. 데모에서는 외부 파일을 열지 않습니다`,'도움말');
+    case 'newproj': case 'open': case 'close': return notify('프로젝트 생성·열기·닫기는 데모에서 연결되어 있지 않습니다','파일 (데모)');
+    default: return notify('데모 프로토타입에서는 이 명령이 연결되어 있지 않습니다','문해');
+  }
+}
+/* sidebar tree */
+const EXP={w1:true,c1:false};
+const TREE=[
+ {h:'프로젝트'},{k:'home',ic:'home',lbl:'홈'},
+ {h:'문서'},
+ {id:'w1',ic:'folder',lbl:'『訓民正音』 解例本',han:1,kids:[
+   {k:'editor',lbl:'御製序',han:1,dot:'draft',t:'번역안 v2 · valid'},
+   {lbl:'例義',han:1,dot:'ok',t:'번역 확정 v3'},
+   {id:'c1',lbl:'解例',han:1,cnt:6,kids:['制字解','初聲解','中聲解','終聲解','合字解','用字例'].map(l=>({lbl:l,han:1}))},
+   {lbl:'鄭麟趾 序',han:1,dot:'warn',t:'재검토 필요'}]},
+ {id:'w2',ic:'folder',lbl:'『世宗實錄』 卷113',han:1,dot:'warn',t:'preflight · split 필요'},
+ {h:'도구'},{k:'inspector',ic:'sliders',lbl:'문맥 검사'},{k:'knowledge',ic:'book',lbl:'용어·지식'},
+];
+function sbNode(n,d){
+  if(n.h) return `<div class="sb-h">${n.h}</div>`;
+  const kids=!!n.kids, cur=n.k===PAGE;
+  let h=`<button class="sb-item d${d}${cur?' is-current':''}"${kids?` aria-expanded="${!!EXP[n.id]}" data-exp="${n.id}"`:''}${n.k?` data-go="${n.k}"`:''}${!n.k&&!kids?` data-doc="${esc(n.lbl)}"`:''}${n.t?` title="${esc(n.t)}"`:''}${cur?' aria-current="page"':''}>`;
+  if(kids) h+=`<svg class="ic chev" viewBox="0 0 16 16" aria-hidden="true">${ICONS.chev}</svg>`;
+  if(n.ic) h+=ic(n.ic);
+  h+=`<span class="lbl${n.han?' hanmun':''}">${esc(n.lbl)}</span>`;
+  if(n.cnt) h+=`<span class="cnt">${n.cnt}</span>`;
+  if(n.dot) h+=`<i class="dot ${n.dot}"></i>`;
+  h+='</button>';
+  if(kids&&EXP[n.id]) h+=n.kids.map(k=>sbNode(k,d+1)).join('');
+  return h;
+}
+function renderSidebar(){ $('#sbTree').innerHTML=TREE.map(n=>sbNode(n,0)).join(''); }
+$('#sbTree').addEventListener('click',e=>{
+  const b=e.target.closest('.sb-item'); if(!b) return;
+  if(b.dataset.exp){ EXP[b.dataset.exp]=!EXP[b.dataset.exp]; renderSidebar(); return; }
+  if(b.dataset.go) return go(b.dataset.go);
+  if(b.dataset.doc) notify(`${b.dataset.doc}: 데모에서는 御製序만 편집 화면이 연결되어 있습니다`);
+});
+$('#tbSidebar').innerHTML=ic('sidebar'); $('#tbInsp').innerHTML=ic('panel');
+$('#tbSidebar').onclick=()=>toggleSidebar();
+$('#sbPalette').onclick=openPalette;
+renderMenubar(); renderSidebar(); tick(); setInterval(tick,30000);
+if(store.get('munhae.sb')==='0') toggleSidebar(true);
+
+/* ── page ── */
+function toggleInsp(){ const s=$('#split'); s.classList.toggle('no-insp'); $('#tbInsp').classList.toggle('is-on',!s.classList.contains('no-insp')); }
+function pageCmd(id){
+  switch(id){
+    case 'newdoc': $('#dlgNew').showModal(); return true;
+    case 'backup': notify('checkpoint 후 hunmin.munhaepkg 백업을 만들었습니다','백업 (데모)'); return true;
+    case 'export': notify('확정 번역 1건을 Markdown · JSON · CSV로 내보낼 수 있습니다','내보내기 (데모)'); return true;
+    case 'import': notify('텍스트 파일을 선택하면 origin_kind = import로 새 원문안이 만들어집니다','가져오기 (데모)'); return true;
+    case 'ctxpane': toggleInsp(); return true;
+    case 'find': $('#q').focus(); return true;
+  }
+  return false;
+}
+function pageKeys(e,m){
+  if(m&&!e.shiftKey&&!e.altKey&&e.code==='KeyN'){ e.preventDefault(); cmd('newdoc'); }
+  else if(m&&!e.shiftKey&&e.code==='KeyE'){ e.preventDefault(); cmd('export'); }
+  else if(m&&!e.shiftKey&&e.code==='KeyF'){ e.preventDefault(); cmd('find'); }
+  else if(e.key==='Enter'&&e.target.closest('tr[data-id]')){ openDoc(e.target.closest('tr').dataset.id); }
+}
+const DOCS=[
+  {id:'w1',depth:0,group:true,name:'『訓民正音』 解例本',kind:'work · 1446',status:'group'},
+  {id:'d1',depth:1,name:'御製序',kind:'section · preface',src:['확정','V7'],punc:['확정','P3'],tr:['번역안','v2'],unc:2,status:'draft',open:'editor'},
+  {id:'d2',depth:1,name:'例義',kind:'section',src:['확정','V3'],punc:['확정','P2'],tr:['확정','v3'],unc:0,status:'confirmed'},
+  {id:'c1',depth:1,group:true,name:'解例',kind:'chapter',status:'group'},
+  {id:'d3',depth:2,name:'制字解',kind:'section',src:['확정','V4'],punc:['표점안','P1'],tr:null,unc:0,status:'progress'},
+  {id:'d4',depth:2,name:'初聲解',kind:'section',src:['확정','V2'],punc:null,tr:null,unc:0,status:'progress'},
+  {id:'d5',depth:2,name:'中聲解',kind:'section',src:['원문안','V1'],punc:null,tr:null,unc:0,status:'progress'},
+  {id:'d6',depth:2,name:'終聲解',kind:'section',src:null,punc:null,tr:null,unc:0,status:'none'},
+  {id:'d7',depth:2,name:'合字解',kind:'section',src:null,punc:null,tr:null,unc:0,status:'none'},
+  {id:'d8',depth:2,name:'用字例',kind:'section',src:null,punc:null,tr:null,unc:0,status:'none'},
+  {id:'d9',depth:1,name:'鄭麟趾 序',kind:'section · preface',src:['확정','V5'],punc:['확정','P4'],tr:['재검토 필요','v1'],unc:1,status:'review'},
+  {id:'w2',depth:0,name:'『世宗實錄』 卷113',kind:'volume · official_document',src:['확정','V1 · paste'],punc:['표점안','P1'],tr:['preflight','split 필요'],unc:0,status:'progress'},
+];
+const state={sel:'d1'};
+function tag(v){
+  if(!v) return '<span class="muted">—</span>';
+  const cls={'확정':'tag-ok','원문안':'tag-draft','표점안':'tag-draft','번역안':'tag-draft','재검토 필요':'tag-warn','preflight':'tag-warn'}[v[0]]||'tag-plain';
+  return `<span class="tag ${cls}">${v[0]}</span> <span class="mono muted" style="font-size:11px">${esc(v[1])}</span>`;
+}
+function parentOf(d){ let i=DOCS.indexOf(d); for(i--;i>=0;i--){ if(DOCS[i].depth<d.depth) return DOCS[i].name; } return '(최상위)'; }
+function render(){
+  const q=$('#q').value.trim(), st=$('#statusSel').value;
+  const match=d=>(!q||d.name.includes(q))&&(!st||d.status===st||(st==='draft'&&d.status==='progress'));
+  const visible=DOCS.filter((d,i)=>{ if(!d.group) return match(d); for(let j=i+1;j<DOCS.length&&DOCS[j].depth>d.depth;j++){ if(!DOCS[j].group&&match(DOCS[j])) return true; } return false; });
+  $('#docBody').innerHTML=visible.map(d=>d.group
+    ? `<tr class="is-group d${d.depth}"><td colspan="5"><div class="tree-cell"><span class="name">${esc(d.name)}</span><span class="kind">${esc(d.kind)}</span></div></td></tr>`
+    : `<tr class="d${d.depth}${state.sel===d.id?' is-active':''}" data-id="${d.id}" data-od-id="doc-row-${d.id}" tabindex="0" aria-selected="${state.sel===d.id}">
+        <td><div class="tree-cell"><span class="name">${esc(d.name)}</span><span class="kind">${esc(d.kind)}</span></div></td>
+        <td>${tag(d.src)}</td><td>${tag(d.punc)}</td><td>${tag(d.tr)}</td>
+        <td>${d.unc?`<span class="mono">${d.unc}</span>`:'<span class="muted">—</span>'}</td>
+      </tr>`).join('');
+  $('#rowCount').textContent=visible.filter(d=>!d.group).length;
+  renderSel();
+}
+function renderSel(){
+  const d=DOCS.find(x=>x.id===state.sel);
+  $('#selMeta').textContent=d?d.id:'';
+  $('#selBody').innerHTML=d?`<div class="sel-title">${esc(d.name)}</div>
+    <dl class="kv"><dt>구조</dt><dd class="mono">${esc(d.kind)}</dd><dt>상위</dt><dd class="hanmun">${esc(parentOf(d))}</dd><dt>원문</dt><dd>${tag(d.src)}</dd><dt>표점</dt><dd>${tag(d.punc)}</dd><dt>번역</dt><dd>${tag(d.tr)}</dd><dt>불확실성</dt><dd>${d.unc?d.unc+'건 열림':'—'}</dd></dl>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn btn-sm" id="selOpen">열기 <kbd>↩</kbd></button></div>`
+    :'<p class="muted" style="padding:2px 0 4px">문서를 선택하세요.</p>';
+  const b=$('#selOpen'); if(b) b.onclick=()=>openDoc(d.id);
+}
+function openDoc(id){
+  const d=DOCS.find(x=>x.id===id); if(!d) return;
+  if(d.open) return go(d.open);
+  notify(d.src?`데모에서는 御製序만 편집 화면이 연결되어 있습니다 (${d.name})`:`${d.name}: 원문이 없습니다. 먼저 원문을 붙여넣거나 가져오세요`);
+}
+$('#q').addEventListener('input',render); $('#statusSel').addEventListener('change',render);
+$('#docBody').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(!tr) return; state.sel=tr.dataset.id; render(); });
+$('#docBody').addEventListener('dblclick',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) openDoc(tr.dataset.id); });
+$('#btnNewDoc').onclick=()=>cmd('newdoc');
+$('#newCancel').onclick=()=>$('#dlgNew').close();
+$('#newForm').addEventListener('submit',()=>{
+  const title=$('#ndTitle').value.trim(); if(!title) return;
+  const parent=$('#nParent').value, depth={root:0,haerye:1,'haerye-ch':2,sillok:1}[parent];
+  const origin=document.querySelector('input[name=origin]:checked').value;
+  const item={id:'n'+Date.now(),depth,name:title,kind:`${$('#nKind').value} · ${$('#nGenre').value}`,src:['원문안','V1 · '+origin],punc:null,tr:null,unc:0,status:'progress'};
+  const at=parent==='haerye-ch'?DOCS.findIndex(x=>x.id==='d9'):(parent==='haerye'?DOCS.findIndex(x=>x.id==='w2'):DOCS.length);
+  DOCS.splice(at,0,item); state.sel=item.id; $('#newForm').reset(); render(); notify(`${title} node를 만들었습니다 · 원문안 V1 (${origin})`,'새 문서');
+});
+$('#btnBackup').onclick=()=>cmd('backup'); $('#btnExport').onclick=()=>cmd('export');
+$('#btnContinue').onclick=()=>go('editor');
+$('#btnLogin').onclick=()=>notify('Codex CLI에서 공식 로그인 흐름을 완료하세요. 앱은 토큰을 저장하지 않습니다','AI 연결');
+$('#tbInsp').onclick=toggleInsp;
+render();
+</script>
+</body>
+</html>

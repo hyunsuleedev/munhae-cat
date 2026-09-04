@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+<title>공통 지식 — 문해 Munhae Studio</title>
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/chrome.css">
+<link rel="stylesheet" href="./styles/knowledge.css">
+</head>
+<body>
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+
+<div class="win" id="win" data-od-id="app-window">
+  <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색">
+    <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
+    <div class="sb-scroll" id="sbTree"></div>
+    <div class="sb-foot"><i class="dot"></i>AI<span class="sp"></span><span class="mono">0.1.0</span></div>
+  </aside>
+
+  <div class="main">
+    <header class="titlebar" data-od-id="titlebar">
+      <div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" aria-label="사이드바 토글"></button></div>
+      <div class="tb-c">
+        <span>공통 지식</span>
+        <div class="seg" id="ktabs" role="tablist" data-od-id="knowledge-tabs">
+          <button type="button" role="tab" data-tab="glossary" aria-selected="true">용어집 <span class="cnt" id="cntGlossary">0</span></button>
+          <button type="button" role="tab" data-tab="persons" aria-selected="false">인물 <span class="cnt" id="cntPersons">0</span></button>
+          <button type="button" role="tab" data-tab="places" aria-selected="false">지명 <span class="cnt" id="cntPlaces">0</span></button>
+          <button type="button" role="tab" data-tab="uncertainty" aria-selected="false">불확실성 <span class="cnt" id="cntUnc">0</span></button>
+          <button type="button" role="tab" data-tab="context" aria-selected="false">문맥 <span class="cnt" id="cntContext">0</span></button>
+        </div>
+      </div>
+      <div class="tb-r"><button class="tb is-on" id="tbInsp" title="검사기 (⌥⌘I)" aria-label="검사기 토글"></button></div>
+    </header>
+
+    <div class="content">
+      <div class="scope" id="scopeBar">
+        <input class="input hanmun" id="q" type="search" placeholder="원문 용어 · 번역 용어 검색" aria-label="용어 검색" style="width:240px">
+        <select class="select" id="statusSel" aria-label="사용 상태" style="width:auto"><option value="">모든 상태</option><option value="preferred">preferred</option><option value="allowed">allowed</option><option value="forbidden">forbidden</option></select>
+        <select class="select" id="kindSel" aria-label="용어 종류" style="width:auto"><option value="">모든 종류</option><option>general</option><option>technical</option><option>institution</option><option>office</option><option>book_title</option><option>era</option><option>other</option></select>
+        <span class="sp"></span>
+        <span class="muted" id="scopeNote">원문에 정확히 일치하는 항목만 편집 화면과 AI 문맥에 자동 포함됩니다</span>
+        <button class="btn" id="btnOpenDocument" type="button" hidden>원문 열기</button>
+        <button class="btn" id="btnAdd" type="button" data-od-id="btn-add-entry">용어 추가</button>
+      </div>
+
+      <div class="split" id="split">
+        <div class="tbl-wrap">
+          <section class="panel is-open" id="p-glossary" data-od-id="glossary-table">
+            <table class="tbl"><thead><tr><th>원문 용어</th><th>번역 용어</th><th>종류</th><th>독음</th><th>상태</th></tr></thead><tbody id="gBody"></tbody></table>
+          </section>
+          <section class="panel" id="p-persons" data-od-id="persons-table">
+            <table class="tbl"><thead><tr><th>이름</th><th>독음 · 별칭</th><th>생몰</th><th>설명</th></tr></thead><tbody id="pBody"></tbody></table>
+          </section>
+          <section class="panel" id="p-places" data-od-id="places-table">
+            <table class="tbl"><thead><tr><th>지명</th><th>독음</th><th>종류</th><th>위치·설명</th></tr></thead><tbody id="plBody"></tbody></table>
+            <div class="empty">지명은 현재 원문에 exact match된 경우에만 문맥에 포함됩니다. 출현 좌표는 저장하지 않고 실행 시 계산합니다.</div>
+          </section>
+          <section class="panel" id="p-uncertainty" data-od-id="uncertainty-table">
+            <table class="tbl"><thead><tr><th>ID</th><th>진술</th><th>범주</th><th>위치</th><th>상태</th></tr></thead><tbody id="uBody"></tbody></table>
+          </section>
+          <section class="panel" id="p-context" data-od-id="context-table">
+            <table class="tbl"><thead><tr><th>적용 범위</th><th>문맥</th><th>종류</th><th>우선순위</th><th>상태</th></tr></thead><tbody id="cBody"></tbody></table>
+            <div class="empty" id="contextEmpty" hidden>이 node에 직접 연결되거나 상위에서 상속되는 문맥이 없습니다.</div>
+          </section>
+        </div>
+
+        <aside class="insp" id="insp" data-od-id="inspector" aria-label="검사기">
+          <details class="grp" open data-od-id="detail-panel">
+            <summary>항목 상세<span class="tail mono" id="detailMeta">행을 선택하세요</span></summary>
+            <div class="grp-b" id="detail"><p class="muted" style="font-size:12px;padding:2px 0 4px">선택한 항목의 내용을 여기서 봅니다.</p></div>
+          </details>
+          <details class="grp" open>
+            <summary>규칙</summary>
+            <div class="grp-b"><ul class="rules">
+              <li>같은 원문 용어·target locale에는 <b>preferred</b> 항목이 하나만 있습니다.</li>
+              <li>수정은 새 내용으로 저장되고 content_hash를 갱신합니다.</li>
+              <li>과거 AI 실행이 사용한 항목은 해당 assistant message의 request manifest에 hash로 고정됩니다.</li>
+              <li>문서별 문맥은 현재 node → 가까운 상위 node → 프로젝트 마스터 순으로 조립됩니다.</li>
+              <li>목차 폴더의 문맥은 하위 원문 문서에 상속되며, 다른 문서 가지에는 적용되지 않습니다.</li>
+            </ul></div>
+          </details>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <footer class="statusbar" data-od-id="statusbar">
+    <span class="mono" id="sbPath"></span>
+    <span>용어 <b id="sbG">0</b> · 인물 <b id="sbP">0</b> · 지명 <b id="sbPl">0</b> · 문맥 <b id="sbC">0</b> · 불확실성 열림 <b id="sbU">0</b></span>
+    <span class="sp"></span>
+    <span id="sbSel"></span>
+    <span id="sbAgent"><i class="dot"></i>AI</span>
+    <button id="sbPalette" type="button" title="명령 검색">⌘K</button>
+  </footer>
+</div>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+
+<dialog id="dlgAdd" data-od-id="dialog-add-entry">
+  <form method="dialog" id="addForm">
+    <div class="dl-h" id="addTitle">용어 추가</div>
+    <div class="dl-b" id="addFields"></div>
+    <div class="dl-f"><button class="btn" type="button" id="addCancel">취소</button><button class="btn btn-primary" type="submit">추가</button></div>
+  </form>
+</dialog>
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+<script type="module" src="./scripts/knowledge.ts"></script>
+</body>
+</html>

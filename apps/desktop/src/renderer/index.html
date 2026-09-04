@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+<title>문해 Munhae Studio — 시작</title>
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/chrome.css">
+<link rel="stylesheet" href="./styles/welcome.css">
+</head>
+<body class="welcome-page">
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+<div class="welcome-drag" aria-hidden="true"></div>
+
+<main class="welcome" data-od-id="welcome-window" aria-label="문해 시작">
+  <section class="w-left" data-od-id="welcome-actions">
+    <div class="app-icon" id="appIcon" aria-hidden="true"><img id="appIconImg" src="./assets/minhwa-cat.jpg" alt=""><span id="appIconGlyph" hidden>文</span></div>
+    <h1>문해<small>Munhae Studio</small></h1>
+    <p class="ver" id="verLine">버전 0.1.0 · Phase 1 로컬 CAT</p>
+    <div class="w-actions">
+      <button class="w-act" type="button" data-cmd="newproj" data-od-id="action-new-project"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M8 5.5v5M5.5 8h5"/></svg><div><b>새 프로젝트 만들기</b><span>.munhae 프로젝트 · 로컬 SQLite · 서버 전송 없음</span></div><kbd>⇧⌘N</kbd></button>
+      <button class="w-act" type="button" data-cmd="open" data-od-id="action-open-project"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/></svg><div><b>기존 프로젝트 열기…</b><span>.munhae 또는 .munhaepkg 백업에서 복원</span></div><kbd>⌘O</kbd></button>
+      <button class="w-act" type="button" data-cmd="seeddemo" id="btnSeedDemo" hidden data-od-id="action-seed-demo"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/></svg><div><b>훈민정음 데모 열기</b><span>御製序 원문·표점·번역안이 들어 있는 예시 프로젝트</span></div></button>
+    </div>
+    <label class="check w-foot"><input type="checkbox" id="chkWelcome" checked> 실행할 때 이 창 표시</label>
+  </section>
+
+  <section class="w-right" data-od-id="welcome-recent">
+    <div class="w-h">최근 프로젝트</div>
+    <div id="recentList"></div>
+    <div class="w-note" data-od-id="demo-note"><b>데모 범위</b> — 원문은 『訓民正音』 御製序 실제 본문이며 번역·hash·시각은 화면 동작을 보이기 위한 예시값일 수 있습니다. 실제 LLM 호출은 M3에서 연결됩니다. OCR·협업·공유 서비스는 Phase 1 범위 밖입니다.</div>
+  </section>
+</main>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+<script type="module" src="./scripts/welcome.ts"></script>
+</body>
+</html>

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>문해 Munhae Studio — 시작</title>
+<style>
+:root{
+  --bg:oklch(99% 0.002 240);--surface:oklch(100% 0 0);--fg:oklch(18% 0.012 250);--muted:oklch(50% 0.012 250);--border:oklch(92% 0.005 250);--accent:oklch(58% 0.18 255);
+  --accent-ink:color-mix(in oklch,var(--accent) 84%,black);--accent-soft:color-mix(in oklch,var(--accent) 12%,transparent);
+  --fg-soft:color-mix(in oklch,var(--fg) 6%,transparent);--fg-softer:color-mix(in oklch,var(--fg) 3%,transparent);
+  --ok:oklch(47% 0.12 150);--warn:oklch(48% 0.12 70);
+  --chrome:oklch(97.2% 0.003 250);--sidebar:oklch(95.8% 0.004 250);--desk-a:oklch(89% 0.012 250);--desk-b:oklch(78% 0.014 250);
+  --ctl-border:color-mix(in oklch,var(--fg) 15%,transparent);--sel:color-mix(in oklch,var(--fg) 9%,transparent);
+  --tl-r:oklch(67% 0.19 25);--tl-y:oklch(83% 0.16 85);--tl-g:oklch(74% 0.19 145);
+  --font-ui:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;--font-mono:ui-monospace,'SF Mono',Menlo,monospace;
+  --font-hanmun:'Noto Serif KR','Noto Serif CJK KR','Apple Myungjo','AppleMyungjo','Nanum Myeongjo','Songti SC','Batang',serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;overflow:hidden;background:radial-gradient(140% 100% at 50% -10%,var(--desk-a),var(--desk-b)) fixed;color:var(--fg);font:13px/1.45 var(--font-ui);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:default}
+a{color:inherit;text-decoration:none}
+h1,h2{margin:0;font-weight:600;letter-spacing:-0.01em}
+p{margin:0;text-wrap:pretty}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.hanmun{font-family:var(--font-hanmun)}
+.muted{color:var(--muted)}
+.row{display:flex;align-items:center;gap:8px}
+.sp{flex:1}
+kbd{font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:.04em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+::-webkit-scrollbar{width:10px}::-webkit-scrollbar-thumb{background:color-mix(in oklch,var(--fg) 22%,transparent);border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-track{background:transparent}
+svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;flex:0 0 auto}.dot.ok{background:var(--ok)}
+.menubar{position:fixed;top:0;left:0;right:0;height:24px;z-index:70;display:flex;align-items:center;padding:0 12px 0 10px;font-size:13px;background:color-mix(in oklch,var(--chrome) 80%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid color-mix(in oklch,var(--fg) 8%,transparent);user-select:none}
+.mb-item{position:relative;padding:2px 9px;border-radius:4px;line-height:16px}
+.mb-item.app{font-weight:700;margin-right:2px}
+.mb-item.open,.menubar.active .mb-item:hover{background:var(--accent-ink);color:white}
+.mb-right{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px}
+.menu{position:absolute;top:calc(100% + 2px);left:0;min-width:236px;padding:5px;background:color-mix(in oklch,var(--surface) 90%,transparent);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid color-mix(in oklch,var(--fg) 12%,transparent);border-radius:8px;box-shadow:0 14px 40px color-mix(in oklch,var(--fg) 24%,transparent);color:var(--fg);display:none;text-align:left;z-index:80}
+.mb-item.open>.menu{display:block}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:4px 10px 4px 22px;border:0;border-radius:5px;background:transparent;text-align:left;font-size:13px;white-space:nowrap;position:relative;color:var(--fg)}
+.menu button:hover:not(:disabled){background:var(--accent-ink);color:white}
+.menu button:hover:not(:disabled) kbd{color:white}
+.menu button:disabled{color:var(--muted);opacity:.7}
+.menu button kbd{margin-left:auto;padding-left:24px}
+.menu button.checked::before{content:'✓';position:absolute;left:8px;font-size:11px}
+.menu hr{border:0;border-top:1px solid color-mix(in oklch,var(--fg) 10%,transparent);margin:5px 10px}
+.tl{display:flex;gap:8px}
+.tl i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 .5px color-mix(in oklch,black 22%,transparent)}
+.tl .r{background:var(--tl-r)}.tl .y{background:var(--tl-y)}.tl .g{background:var(--tl-g)}
+.check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.check input{accent-color:var(--accent-ink);margin:0;width:14px;height:14px}
+.notif{position:fixed;top:46px;right:22px;width:340px;display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:color-mix(in oklch,var(--surface) 88%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid color-mix(in oklch,var(--fg) 10%,transparent);border-radius:12px;box-shadow:0 10px 30px color-mix(in oklch,var(--fg) 20%,transparent);font-size:12.5px;z-index:90;opacity:0;transform:translateY(-8px);transition:.22s;pointer-events:none;line-height:1.4}
+.notif.show{opacity:1;transform:none}
+.notif .ai{width:28px;height:28px;border-radius:7px;background:var(--fg);color:white;display:grid;place-items:center;font-family:var(--font-hanmun);font-size:15px;flex:0 0 auto}
+.notif b{display:block;font-weight:600;font-size:12px}
+dialog{border:0;border-radius:12px;padding:0;background:var(--surface);color:var(--fg);margin:110px auto auto;box-shadow:0 0 0 .5px color-mix(in oklch,var(--fg) 25%,transparent),0 24px 60px color-mix(in oklch,var(--fg) 30%,transparent)}
+dialog::backdrop{background:color-mix(in oklch,var(--fg) 12%,transparent)}
+.palette{width:560px;overflow:hidden}
+.palette .input{height:42px;font-size:15px;border:0;border-bottom:1px solid var(--border);width:100%;padding:0 16px;font-family:inherit;color:var(--fg);background:var(--surface)}
+.palette .input:focus{outline:none}
+.pl-list{max-height:320px;overflow:auto;padding:6px}
+.pl-h{font-size:11px;color:var(--muted);padding:8px 10px 2px;font-weight:600}
+.pl-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13px;width:100%;border:0;background:transparent;text-align:left;color:var(--fg)}
+.pl-item.is-sel{background:var(--accent-ink);color:white}
+.pl-item.is-sel kbd{color:color-mix(in oklch,white 80%,transparent)}
+.pl-item kbd{margin-left:auto}
+
+/* welcome window */
+.welcome{position:fixed;top:50%;left:50%;transform:translate(-50%,calc(-50% + 12px));width:min(900px,calc(100vw - 48px));height:min(580px,calc(100vh - 88px));display:grid;grid-template-columns:340px minmax(0,1fr);background:var(--surface);border-radius:12px;overflow:hidden;box-shadow:0 0 0 .5px color-mix(in oklch,var(--fg) 30%,transparent),0 30px 80px -20px color-mix(in oklch,var(--fg) 50%,transparent),0 4px 14px color-mix(in oklch,var(--fg) 14%,transparent)}
+.welcome .tl{position:absolute;top:14px;left:14px}
+.w-left{display:flex;flex-direction:column;align-items:center;text-align:center;padding:64px 32px 20px;min-height:0}
+.app-icon{width:92px;height:92px;border-radius:22px;overflow:hidden;box-shadow:0 10px 24px -8px color-mix(in oklch,var(--fg) 55%,transparent),inset 0 0 0 .5px color-mix(in oklch,var(--fg) 22%,transparent)}
+.app-icon img{width:100%;height:100%;object-fit:cover;display:block}
+.catwalk{position:fixed;left:0;bottom:8px;z-index:1;pointer-events:none;will-change:transform}
+.catwalk img{height:110px;width:auto;display:block;animation:cat-bob .8s ease-in-out infinite;transform-origin:50% 100%}
+@keyframes cat-bob{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-3px) rotate(-1.2deg)}}
+@media (prefers-reduced-motion:reduce){.catwalk{display:none}}
+.w-left h1{font-size:24px;margin-top:20px;letter-spacing:-0.02em}
+.w-left h1 small{display:block;font-size:12.5px;font-weight:500;color:var(--muted);letter-spacing:.02em;margin-top:2px}
+.ver{font-size:11.5px;color:var(--muted);margin-top:6px}
+.w-actions{display:flex;flex-direction:column;gap:2px;width:100%;margin-top:34px;text-align:left}
+.w-act{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;text-align:left}
+.w-act:hover{background:var(--fg-soft)}
+.w-act .ic{width:22px;height:22px;color:var(--accent-ink);stroke-width:1.4}
+.w-act b{display:block;font-weight:500;font-size:13px}
+.w-act span{display:block;font-size:11.5px;color:var(--muted);margin-top:1px}
+.w-act kbd{margin-left:auto}
+.w-foot{margin-top:auto;padding-top:16px}
+.w-right{background:var(--sidebar);border-left:1px solid var(--border);display:flex;flex-direction:column;min-height:0;overflow:auto;padding:14px 12px 12px}
+.w-h{font-size:11px;font-weight:600;color:var(--muted);padding:6px 8px 4px}
+.w-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 10px;border-radius:8px;text-align:left;border:0;background:transparent;width:100%;color:var(--fg)}
+.w-item:hover{background:color-mix(in oklch,var(--fg) 5%,transparent)}
+.w-item.is-sel{background:var(--accent-ink);color:white}
+.w-item.is-sel .muted,.w-item.is-sel kbd,.w-item.is-sel .w-meta{color:color-mix(in oklch,white 78%,transparent)}
+.w-item.is-sel .w-ico{background:white;color:var(--fg)}
+.w-item.is-sel .ic{color:white}
+.w-ico{width:36px;height:36px;border-radius:9px;background:var(--fg);color:white;display:grid;place-items:center;font-family:var(--font-hanmun);font-size:19px}
+.w-item b{display:block;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.w-item .muted{display:block;font-size:11.5px;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.w-meta{font-size:11px;color:var(--muted);text-align:right;line-height:1.4;white-space:nowrap}
+.w-item .ic{width:18px;height:18px;color:var(--accent-ink);margin:0 9px}
+.w-note{margin-top:auto;padding:12px 8px 0;font-size:11.5px;color:var(--muted);line-height:1.5;border-top:1px solid var(--border)}
+.w-note b{color:var(--fg);font-weight:500}
+@media (max-width:820px){.welcome{grid-template-columns:1fr;height:auto;max-height:calc(100vh - 60px);overflow:auto}.w-left{padding-top:52px}}
+</style>
+</head>
+<body>
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+
+<div class="catwalk" id="catwalk" data-od-id="munhae-cat" aria-hidden="true"><img src="assets/minhwa-cat-cutout.png" alt=""></div>
+
+<main class="welcome" data-od-id="welcome-window" aria-label="문해 시작 창">
+  <div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+  <section class="w-left" data-od-id="welcome-actions">
+    <div class="app-icon" aria-hidden="true"><img src="assets/minhwa-cat.jpg" alt=""></div>
+    <h1>문해<small>Munhae Studio</small></h1>
+    <p class="ver">버전 0.1.0 · 데모 빌드 · Phase 1 로컬 CAT</p>
+    <div class="w-actions">
+      <button class="w-act" data-cmd="newproj" data-od-id="action-new-project"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M8 5.5v5M5.5 8h5"/></svg><div><b>새 프로젝트 만들기</b><span>.munhae 프로젝트 · 로컬 SQLite · 서버 전송 없음</span></div><kbd>⇧⌘N</kbd></button>
+      <button class="w-act" data-cmd="open" data-od-id="action-open-project"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/></svg><div><b>기존 프로젝트 열기…</b><span>.munhae 또는 .munhaepkg 백업에서 복원</span></div><kbd>⌘O</kbd></button>
+      <button class="w-act" data-cmd="paste" data-od-id="action-paste-source"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3M6.5 8h3M6.5 10.5h3"/></svg><div><b>원문 붙여넣어 시작</b><span>표점 없이 원문안 V1부터 만듭니다</span></div></button>
+    </div>
+    <label class="check w-foot"><input type="checkbox" checked> 실행할 때 이 창 표시</label>
+  </section>
+
+  <section class="w-right" data-od-id="welcome-recent">
+    <div class="w-h">최근 프로젝트</div>
+    <a class="w-item is-sel" href="project-home-v2.html" data-od-id="recent-project-hunmin">
+      <div class="w-ico" aria-hidden="true">文</div>
+      <div><b>훈민정음 문헌 번역</b><span class="muted mono">~/Documents/문해/hunmin.munhae</span></div>
+      <span class="w-meta">문서 10 · 확정 1<br>09-02 13:10</span>
+    </a>
+    <div class="w-h" style="margin-top:10px">최근 연 화면</div>
+    <a class="w-item" href="project-home-v2.html" data-od-id="recent-screen-home"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8.2 8 3.2l5.5 5"/><path d="M4 7.5V13h8V7.5"/></svg><div><b>프로젝트 홈</b><span class="muted">문서 node 트리 · 단계별 진행률 · 열린 불확실성 · AI 연결</span></div><kbd>⇧⌘1</kbd></a>
+    <a class="w-item" href="editor-v2.html" data-od-id="recent-screen-editor"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10M10 3v10"/></svg><div><b><span class="hanmun">御製序</span> 편집</b><span class="muted">참고 자료 · 표점 원문 / 대조 / 번역 전문 · 문맥·AI 3분할</span></div><kbd>⇧⌘2</kbd></a>
+    <a class="w-item" href="context-inspector-v2.html" data-od-id="recent-screen-inspector"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="6" cy="4.5" r="1.7" fill="var(--sidebar)"/><circle cx="10.5" cy="8" r="1.7" fill="var(--sidebar)"/><circle cx="5" cy="11.5" r="1.7" fill="var(--sidebar)"/></svg><div><b>문맥 검사</b><span class="muted">AI 실행 전 전송 항목 · token 예산 · request manifest</span></div><kbd>⇧⌘3</kbd></a>
+    <a class="w-item" href="knowledge-v2.html" data-od-id="recent-screen-knowledge"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/></svg><div><b>용어·지식</b><span class="muted">용어집 preferred/allowed/forbidden · 인물·지명 · 불확실성</span></div><kbd>⇧⌘4</kbd></a>
+    <div class="w-note" data-od-id="demo-note"><b>데모 범위</b> — 원문은 『訓民正音』 御製序 실제 본문이며 번역·token 수·hash·시각은 화면 동작을 보이기 위한 예시값입니다. 실제 LLM 호출은 없고, OCR·협업·공유 서비스는 Phase 1 범위 밖입니다. 근거: plan.md §5·§8·§17, schema.md §10–13·§16.</div>
+  </section>
+</main>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+
+<script>
+const PAGE='welcome';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const SCREENS={home:['프로젝트 홈','project-home-v2.html'],editor:['편집 · 御製序','editor-v2.html'],inspector:['문맥 검사','context-inspector-v2.html'],knowledge:['용어·지식','knowledge-v2.html']};
+const ENABLED=new Set(['about','prefs','ai','quit','newproj','open','sidebar','palette','home','editor','inspector','knowledge','min','zoom','self','help','plan','schema']);
+const MENUS=[
+ ['문해',[['문해 정보','','about'],null,['설정…','⌘,','prefs'],['AI 연결 상태…','','ai'],null,['문해 종료','⌘Q','quit']],true],
+ ['파일',[['새 프로젝트…','⇧⌘N','newproj'],['프로젝트 열기…','⌘O','open'],null,['새 문서 node…','⌘N','newdoc'],['원문 가져오기…','','import'],null,['백업 만들기…','','backup'],['내보내기…','⌘E','export'],null,['프로젝트 닫기','⌘W','close']]],
+ ['편집',[['실행 취소','⌘Z','undo'],['다시 실행','⇧⌘Z','redo'],null,['잘라내기','⌘X','x'],['복사','⌘C','c'],['붙여넣기','⌘V','v'],null,['찾기…','⌘F','find']]],
+ ['보기',[['사이드바 보기/가리기','⌃⌘S','sidebar'],['참고 자료 패널','⌥⌘R','refpane'],['문맥·AI 패널','⌥⌘I','ctxpane'],null,['표점 전문','⌘1','v-source'],['대조','⌘2','v-parallel'],['번역 전문','⌘3','v-full']]],
+ ['번역',[['문맥 검사…','⌥⌘K','inspector'],['번역 실행…','','run'],['Reflection 다시 요청','','reflect'],null,['변경 비교','⌘D','diff'],['번역안 확정','⇧⌘↩','confirm']]],
+ ['이동',[['프로젝트 홈','⇧⌘1','home'],['편집','⇧⌘2','editor'],['문맥 검사','⇧⌘3','inspector'],['용어·지식','⇧⌘4','knowledge'],null,['명령 검색…','⌘K','palette']]],
+ ['창',[['최소화','⌘M','min'],['확대/축소','','zoom'],null,['시작 화면','','self',true]]],
+ ['도움말',[['문해 도움말','','help'],['plan.md 보기','','plan'],['schema.md 보기','','schema']]],
+];
+function notify(msg,title='문해'){const n=$('#notif');$('#nTitle').textContent=title;$('#nMsg').textContent=msg;n.classList.add('show');clearTimeout(n._h);n._h=setTimeout(()=>n.classList.remove('show'),3400);}
+function go(k){ location.href=SCREENS[k][1]; }
+$('#menubar').innerHTML = MENUS.map(([t,items,app],i)=>`<div class="mb-item${app?' app':''}" data-mi="${i}"><span>${t}</span><div class="menu" role="menu">${items.map(it=>it?`<button role="menuitem" data-cmd="${it[2]}"${ENABLED.has(it[2])?'':' disabled'}${it[3]?' class="checked"':''}>${it[0]}<kbd>${it[1]}</kbd></button>`:'<hr>').join('')}</div></div>`).join('')
+  + `<div class="mb-right"><span class="row" style="gap:5px"><i class="dot ok"></i>Claude CLI</span><span id="clock"></span></div>`;
+let mbOpen=null;
+function openMenu(el){ if(mbOpen) mbOpen.classList.remove('open'); mbOpen=el; $('#menubar').classList.toggle('active',!!el); if(el) el.classList.add('open'); }
+function tick(){ $('#clock').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()); }
+tick(); setInterval(tick,30000);
+$('#menubar').addEventListener('click',e=>{ const b=e.target.closest('button[data-cmd]'); if(b){ if(!b.disabled){ openMenu(null); cmd(b.dataset.cmd);} return; } const mi=e.target.closest('.mb-item'); if(mi) openMenu(mbOpen===mi?null:mi); });
+$('#menubar').addEventListener('mouseover',e=>{ const mi=e.target.closest('.mb-item'); if(mbOpen&&mi&&mi!==mbOpen) openMenu(mi); });
+document.addEventListener('click',e=>{ if(mbOpen&&!e.target.closest('#menubar')) openMenu(null); });
+const pal=$('#dlgPalette'), palIn=$('#palIn'), palList=$('#palList'); let palSel=0, palItems=[];
+function paletteItems(q){ const out=[]; MENUS.forEach(([t,items])=>items.forEach(it=>{ if(it&&ENABLED.has(it[2])&&!['self','quit','min','zoom','palette','sidebar'].includes(it[2])) out.push({g:t,l:it[0],k:it[1],id:it[2]}); })); return q?out.filter(o=>(o.l+o.g).toLowerCase().includes(q.toLowerCase())):out; }
+function renderPalette(){ palItems=paletteItems(palIn.value.trim()); palSel=Math.min(palSel,Math.max(0,palItems.length-1)); let g=''; palList.innerHTML=palItems.map((o,i)=>{const h=(o.g!==g?`<div class="pl-h">${o.g}</div>`:'')+`<button class="pl-item${i===palSel?' is-sel':''}" data-i="${i}">${o.l}<kbd>${o.k}</kbd></button>`; g=o.g; return h;}).join('')||'<div class="pl-h">일치하는 명령이 없습니다</div>'; }
+function openPalette(){ palIn.value=''; palSel=0; renderPalette(); pal.showModal(); palIn.focus(); }
+palIn.addEventListener('input',()=>{palSel=0;renderPalette();});
+palIn.addEventListener('keydown',e=>{ if(e.key==='ArrowDown'){e.preventDefault();palSel=Math.min(palSel+1,palItems.length-1);renderPalette();} else if(e.key==='ArrowUp'){e.preventDefault();palSel=Math.max(palSel-1,0);renderPalette();} else if(e.key==='Enter'){e.preventDefault();const o=palItems[palSel]; if(o){pal.close();cmd(o.id);}} });
+palList.addEventListener('click',e=>{ const b=e.target.closest('.pl-item'); if(b){ pal.close(); cmd(palItems[+b.dataset.i].id); } });
+function cmd(id){
+  if(SCREENS[id]) return go(id);
+  switch(id){
+    case 'palette': return openPalette();
+    case 'about': return notify('Munhae Studio 0.1.0 · 데모 빌드 · Phase 1 로컬 CAT','문해 정보');
+    case 'prefs': return notify('agent · model · reasoning preference는 프로젝트 밖 app-config.json에 저장됩니다','설정 (데모)');
+    case 'ai': return notify('Claude CLI 로그인됨 · Codex CLI 설치됨, 로그인 필요. 토큰은 CLI가 보관합니다','AI 연결 상태');
+    case 'newproj': return notify('새 프로젝트는 .munhae 파일 하나로 만들어지며 SQLite에 로컬 저장됩니다 (데모: 생성 없음)','새 프로젝트');
+    case 'open': return notify('.munhae 프로젝트 또는 .munhaepkg 백업을 선택합니다 (데모: 파일 대화상자 없음)','프로젝트 열기');
+    case 'paste': return notify('원문을 붙여넣으면 origin_kind = paste로 원문안 V1이 만들어집니다. 데모에서는 훈민정음 프로젝트를 여세요','원문 붙여넣기');
+    case 'sidebar': return notify('시작 화면에는 사이드바가 없습니다. 프로젝트를 열면 ⌃⌘S로 접을 수 있습니다','보기');
+    case 'plan': case 'schema': return notify(`${id}.md는 저장소 루트에 있습니다. 데모에서는 외부 파일을 열지 않습니다`,'도움말');
+    default: return notify('데모 프로토타입에서는 이 명령이 연결되어 있지 않습니다','문해');
+  }
+}
+$$('.w-act').forEach(b=>b.onclick=()=>cmd(b.dataset.cmd));
+/* 민화 고양이 — 데스크톱 아래를 왕복으로 어슬렁거립니다 */
+const cat=$('#catwalk');
+if(cat&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+  let x=40,dir=1,last=performance.now();
+  const SPEED=0.05,MARGIN=24,CAT_W=182; /* px/ms · 그림이 왼쪽을 보고 있어 진행 방향과 반대로 뒤집습니다 */
+  (function step(t){
+    const dt=Math.min(t-last,50); last=t;
+    x+=dir*SPEED*dt;
+    const maxX=Math.max(MARGIN,innerWidth-CAT_W-MARGIN);
+    if(x>=maxX){x=maxX;dir=-1}else if(x<=MARGIN){x=MARGIN;dir=1}
+    cat.style.transform=`translateX(${x}px) scaleX(${-dir})`;
+    requestAnimationFrame(step);
+  })(last);
+}
+const items=$$('.w-item'); let sel=0;
+function setSel(i){ sel=(i+items.length)%items.length; items.forEach((it,j)=>it.classList.toggle('is-sel',j===sel)); }
+items.forEach((it,i)=>it.addEventListener('mouseenter',()=>setSel(i)));
+document.addEventListener('keydown',e=>{
+  const m=e.metaKey||e.ctrlKey;
+  if(e.key==='Escape'&&mbOpen) return openMenu(null);
+  if(m&&!e.shiftKey&&e.key.toLowerCase()==='k'){ e.preventDefault(); return openPalette(); }
+  if(m&&e.shiftKey&&/^Digit[1-4]$/.test(e.code)){ e.preventDefault(); return go(['home','editor','inspector','knowledge'][+e.code.slice(5)-1]); }
+  if(m&&e.shiftKey&&e.code==='KeyN'){ e.preventDefault(); return cmd('newproj'); }
+  if(m&&!e.shiftKey&&e.code==='KeyO'){ e.preventDefault(); return cmd('open'); }
+  if(pal.open) return;
+  if(e.key==='ArrowDown'){ e.preventDefault(); setSel(sel+1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); setSel(sel-1); }
+  else if(e.key==='Enter'&&!e.target.closest('button,input')){ e.preventDefault(); items[sel].click(); }
+});
+</script>
+</body>
+</html>

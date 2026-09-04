@@ -1,0 +1,36 @@
+:root {
+  --bg: oklch(99% 0.002 240);
+  --surface: oklch(100% 0 0);
+  --fg: oklch(18% 0.012 250);
+  --muted: oklch(50% 0.012 250);
+  --border: oklch(92% 0.005 250);
+  --accent: oklch(58% 0.18 255);
+  --accent-ink: color-mix(in oklch, var(--accent) 84%, black);
+  --accent-soft: color-mix(in oklch, var(--accent) 12%, transparent);
+  --fg-soft: color-mix(in oklch, var(--fg) 6%, transparent);
+  --fg-softer: color-mix(in oklch, var(--fg) 3%, transparent);
+  --ok: oklch(47% 0.12 150);
+  --ok-soft: color-mix(in oklch, var(--ok) 14%, transparent);
+  --warn: oklch(48% 0.12 70);
+  --warn-soft: color-mix(in oklch, var(--warn) 16%, transparent);
+  --danger: oklch(48% 0.17 25);
+  --danger-soft: color-mix(in oklch, var(--danger) 12%, transparent);
+  --chrome: oklch(97.2% 0.003 250);
+  --sidebar: oklch(95.8% 0.004 250);
+  --desk-a: oklch(89% 0.012 250);
+  --desk-b: oklch(78% 0.014 250);
+  --ctl-border: color-mix(in oklch, var(--fg) 15%, transparent);
+  --sel: color-mix(in oklch, var(--fg) 9%, transparent);
+  --tl-r: oklch(67% 0.19 25);
+  --tl-y: oklch(83% 0.16 85);
+  --tl-g: oklch(74% 0.19 145);
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-hanmun: "Noto Serif KR", "Noto Serif CJK KR", "Apple Myungjo", "AppleMyungjo",
+    "Nanum Myeongjo", "Songti SC", "Batang", serif;
+  --r: 6px;
+  --sbw: 216px;
+  --iw: 300px;
+  --lw: 260px;
+  --rw: 340px;
+}

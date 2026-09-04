@@ -1,0 +1,135 @@
+.tree-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tree-cell .name {
+  font-family: var(--font-hanmun);
+  font-size: 14px;
+}
+.tree-cell .kind {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.work-cell {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.work-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+.work-title .name {
+  overflow: hidden;
+  font-family: var(--font-hanmun);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.work-title .kind {
+  flex: none;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.work-cell .path {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+tr.d1 .tree-cell {
+  padding-left: 18px;
+}
+tr.d2 .tree-cell {
+  padding-left: 36px;
+}
+tr.d3 .tree-cell {
+  padding-left: 54px;
+}
+.tbl tbody tr.is-group td {
+  background: var(--chrome);
+  color: var(--fg);
+}
+.tbl tbody tr.is-group .name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.tbl tbody tr[data-id] {
+  cursor: default;
+}
+.tbl tbody tr.is-empty td,
+.tbl tbody tr.is-empty:hover td {
+  background: var(--surface);
+}
+.home-empty {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--muted);
+  text-align: center;
+}
+.home-empty b {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+.home-empty .btn {
+  margin-top: 5px;
+}
+.structure-note {
+  margin: 12px 0 0;
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: var(--fg-softer);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.bar {
+  height: 5px;
+  background: var(--fg-soft);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+.prog {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 2px;
+}
+.prog-row {
+  display: grid;
+  grid-template-columns: 62px 1fr 38px;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+.prog-row .mono {
+  text-align: right;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.sel-title {
+  font-family: var(--font-hanmun);
+  font-size: 18px;
+  margin: 2px 0 8px;
+}

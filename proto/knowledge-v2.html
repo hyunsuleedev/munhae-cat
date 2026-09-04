@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>용어·지식 — 훈민정음 문헌 번역 — 문해 Munhae Studio</title>
+<style>
+:root{
+  --bg:oklch(99% 0.002 240);--surface:oklch(100% 0 0);--fg:oklch(18% 0.012 250);--muted:oklch(50% 0.012 250);--border:oklch(92% 0.005 250);--accent:oklch(58% 0.18 255);
+  --accent-ink:color-mix(in oklch,var(--accent) 84%,black);--accent-soft:color-mix(in oklch,var(--accent) 12%,transparent);
+  --fg-soft:color-mix(in oklch,var(--fg) 6%,transparent);--fg-softer:color-mix(in oklch,var(--fg) 3%,transparent);
+  --ok:oklch(47% 0.12 150);--ok-soft:color-mix(in oklch,var(--ok) 14%,transparent);
+  --warn:oklch(48% 0.12 70);--warn-soft:color-mix(in oklch,var(--warn) 16%,transparent);
+  --danger:oklch(48% 0.17 25);--danger-soft:color-mix(in oklch,var(--danger) 12%,transparent);
+  --chrome:oklch(97.2% 0.003 250);--sidebar:oklch(95.8% 0.004 250);--desk-a:oklch(89% 0.012 250);--desk-b:oklch(78% 0.014 250);
+  --ctl-border:color-mix(in oklch,var(--fg) 15%,transparent);--sel:color-mix(in oklch,var(--fg) 9%,transparent);
+  --tl-r:oklch(67% 0.19 25);--tl-y:oklch(83% 0.16 85);--tl-g:oklch(74% 0.19 145);
+  --font-ui:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;--font-mono:ui-monospace,'SF Mono',Menlo,monospace;
+  --font-hanmun:'Noto Serif KR','Noto Serif CJK KR','Apple Myungjo','AppleMyungjo','Nanum Myeongjo','Songti SC','Batang',serif;
+  --r:6px;--sbw:216px;--iw:320px;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;overflow:hidden;background:radial-gradient(140% 100% at 50% -10%,var(--desk-a),var(--desk-b)) fixed;color:var(--fg);font:13px/1.45 var(--font-ui);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;cursor:default}
+a{color:inherit;text-decoration:none}
+h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-0.01em}
+p{margin:0;text-wrap:pretty}
+[hidden]{display:none!important}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.hanmun{font-family:var(--font-hanmun)}
+.muted{color:var(--muted)}
+.row{display:flex;align-items:center;gap:8px}
+.sp{flex:1}
+kbd{font-family:var(--font-ui);font-size:11px;color:var(--muted);letter-spacing:.04em}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:color-mix(in oklch,var(--fg) 22%,transparent);border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-track{background:transparent}
+svg.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--muted);display:inline-block;flex:0 0 auto}
+.dot.draft{background:var(--accent)}.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}
+
+/* menubar */
+.menubar{position:fixed;top:0;left:0;right:0;height:24px;z-index:70;display:flex;align-items:center;padding:0 12px 0 10px;font-size:13px;background:color-mix(in oklch,var(--chrome) 80%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border-bottom:1px solid color-mix(in oklch,var(--fg) 8%,transparent);user-select:none}
+.mb-item{position:relative;padding:2px 9px;border-radius:4px;line-height:16px}
+.mb-item.app{font-weight:700;margin-right:2px}
+.mb-item.open,.menubar.active .mb-item:hover{background:var(--accent-ink);color:white}
+.mb-right{margin-left:auto;display:flex;align-items:center;gap:14px;font-size:12px}
+.menu{position:absolute;top:calc(100% + 2px);left:0;min-width:236px;padding:5px;background:color-mix(in oklch,var(--surface) 90%,transparent);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid color-mix(in oklch,var(--fg) 12%,transparent);border-radius:8px;box-shadow:0 14px 40px color-mix(in oklch,var(--fg) 24%,transparent);color:var(--fg);display:none;text-align:left;z-index:80}
+.mb-item.open>.menu{display:block}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:4px 10px 4px 22px;border:0;border-radius:5px;background:transparent;text-align:left;font-size:13px;white-space:nowrap;position:relative;color:var(--fg)}
+.menu button:hover:not(:disabled){background:var(--accent-ink);color:white}
+.menu button:hover:not(:disabled) kbd{color:white}
+.menu button:disabled{color:var(--muted);opacity:.7}
+.menu button kbd{margin-left:auto;padding-left:24px}
+.menu button.checked::before{content:'✓';position:absolute;left:8px;font-size:11px}
+.menu hr{border:0;border-top:1px solid color-mix(in oklch,var(--fg) 10%,transparent);margin:5px 10px}
+
+/* window */
+.win{position:fixed;top:34px;left:12px;right:12px;bottom:12px;display:grid;grid-template-columns:var(--sbw) minmax(0,1fr);grid-template-rows:minmax(0,1fr) 24px;background:var(--surface);border-radius:10px;overflow:hidden;box-shadow:0 0 0 .5px color-mix(in oklch,var(--fg) 30%,transparent),0 30px 80px -20px color-mix(in oklch,var(--fg) 50%,transparent),0 4px 14px color-mix(in oklch,var(--fg) 14%,transparent)}
+.win.sb-hidden{grid-template-columns:0 minmax(0,1fr)}
+.win.sb-hidden .sidebar{display:none}
+.tl{display:flex;gap:8px;-webkit-app-region:no-drag}
+.tl i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 .5px color-mix(in oklch,black 22%,transparent)}
+.tl .r{background:var(--tl-r)}.tl .y{background:var(--tl-y)}.tl .g{background:var(--tl-g)}
+.sidebar{grid-row:1;grid-column:1;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;-webkit-app-region:drag}
+.sb-top{height:38px;display:flex;align-items:center;padding:0 14px;flex:0 0 auto}
+.sb-scroll{flex:1;overflow:auto;padding:2px 8px 10px;-webkit-app-region:no-drag}
+.sb-h{font-size:11px;font-weight:600;color:var(--muted);padding:12px 8px 3px}
+.sb-item{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px;border-radius:5px;font-size:13px;white-space:nowrap;min-width:0;width:100%;border:0;background:transparent;text-align:left}
+.sb-item:hover{background:color-mix(in oklch,var(--fg) 5%,transparent)}
+.sb-item.is-current{background:var(--sel);font-weight:500}
+.sb-item .ic{color:var(--accent-ink)}
+.sb-item .lbl{flex:1;overflow:hidden;text-overflow:ellipsis}
+.sb-item .cnt{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.sb-item.d1{padding-left:26px}.sb-item.d2{padding-left:44px}
+.sb-item .chev{width:12px;height:12px;color:var(--muted);transition:transform .12s;margin-left:-2px}
+.sb-item[aria-expanded=true] .chev{transform:rotate(90deg)}
+.sb-foot{flex:0 0 auto;padding:8px 14px 9px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:7px;-webkit-app-region:no-drag}
+.main{grid-row:1;grid-column:2;display:grid;grid-template-rows:38px minmax(0,1fr);min-width:0;min-height:0}
+.titlebar{display:flex;align-items:center;gap:6px;padding:0 10px;background:var(--chrome);border-bottom:1px solid var(--border);-webkit-app-region:drag;user-select:none;min-width:0}
+.titlebar .tl{display:none;margin-right:8px}
+.win.sb-hidden .titlebar .tl{display:flex}
+.tb-l,.tb-r{display:flex;align-items:center;gap:6px;flex:0 0 auto;-webkit-app-region:no-drag}
+.tb-c{flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:10px;font-weight:600;font-size:13px;overflow:hidden;white-space:nowrap;-webkit-app-region:no-drag}
+.tb-c small{font-weight:400;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.tb{height:26px;min-width:28px;padding:0 7px;border:1px solid transparent;border-radius:6px;background:transparent;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg)}
+.tb:hover:not(:disabled){background:var(--fg-soft)}
+.tb.is-on{background:var(--fg-soft);border-color:color-mix(in oklch,var(--fg) 10%,transparent)}
+.content{min-height:0;min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden;background:var(--surface)}
+.statusbar{grid-row:2;grid-column:1/-1;display:flex;align-items:center;gap:14px;padding:0 12px;background:var(--chrome);border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden}
+.statusbar b{color:var(--fg);font-weight:500}
+.statusbar .dot{margin-right:5px}
+.statusbar button{border:0;background:transparent;color:var(--muted);padding:0 5px;border-radius:4px;height:18px;font-size:11px}
+.statusbar button:hover{background:var(--fg-soft);color:var(--fg)}
+.scope{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px;border-bottom:1px solid var(--border);background:var(--chrome);flex:0 0 auto;font-size:12px}
+.split{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) var(--iw)}
+.split.no-insp{grid-template-columns:minmax(0,1fr) 0}.split.no-insp .insp{display:none}
+.insp{border-left:1px solid var(--border);overflow:auto;min-height:0;background:var(--surface)}
+.grp{border-bottom:1px solid var(--border)}
+.grp>summary{list-style:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;font-size:11.5px;font-weight:600;color:var(--muted);user-select:none}
+.grp>summary::-webkit-details-marker{display:none}
+.grp>summary::before{content:'';width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid var(--muted);transition:transform .12s;flex:0 0 auto}
+.grp[open]>summary::before{transform:rotate(90deg)}
+.grp>summary .tail{font-weight:400;margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grp-b{padding:0 12px 12px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:12px;margin:0}
+.kv dt{color:var(--muted)}.kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+
+/* controls */
+.btn{height:24px;padding:0 10px;border:1px solid var(--ctl-border);border-radius:var(--r);background:var(--surface);color:var(--fg);box-shadow:0 1px 1px color-mix(in oklch,var(--fg) 6%,transparent);display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:450;white-space:nowrap}
+.btn:hover:not(:disabled){background:color-mix(in oklch,var(--surface) 94%,var(--fg))}
+.btn:active:not(:disabled){background:color-mix(in oklch,var(--surface) 88%,var(--fg))}
+.btn:disabled{opacity:.45}
+.btn-primary{background:var(--accent-ink);border-color:var(--accent-ink);color:white}
+.btn-primary:hover:not(:disabled){background:color-mix(in oklch,var(--accent-ink) 86%,black);border-color:color-mix(in oklch,var(--accent-ink) 86%,black)}
+.btn-primary:active:not(:disabled){background:color-mix(in oklch,var(--accent-ink) 76%,black)}
+.btn-sm{height:21px;padding:0 7px;font-size:11.5px;border-radius:5px}
+.btn kbd{margin-left:2px}
+.seg{display:inline-flex;align-items:center;height:24px;padding:2px;border-radius:7px;background:color-mix(in oklch,var(--fg) 7%,transparent)}
+.seg button{height:20px;padding:0 10px;border:0;border-radius:5px;background:transparent;font-size:12px;color:var(--fg);display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-weight:400}
+.seg button:hover:not([aria-selected=true]){background:color-mix(in oklch,var(--fg) 5%,transparent)}
+.seg button[aria-selected=true]{background:var(--surface);font-weight:500;box-shadow:0 1px 2px color-mix(in oklch,var(--fg) 18%,transparent),0 0 0 .5px color-mix(in oklch,var(--fg) 8%,transparent)}
+.seg button .cnt{font-size:10.5px;color:var(--muted);font-family:var(--font-mono)}
+.input,.textarea,.select{height:24px;padding:0 8px;border:1px solid var(--ctl-border);border-radius:var(--r);background:var(--surface);color:var(--fg);font:inherit;font-size:12.5px;width:100%}
+.input:focus,.textarea:focus,.select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.textarea{height:auto;min-height:64px;padding:6px 8px;resize:vertical;line-height:1.5}
+.select{appearance:none;-webkit-appearance:none;padding-right:24px;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'><path d='M2.5 5.5 5 3l2.5 2.5M2.5 8.5 5 11l2.5-2.5' fill='none' stroke='oklch(45%25 0.012 250)' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");background-repeat:no-repeat;background-position:right 7px center;box-shadow:0 1px 1px color-mix(in oklch,var(--fg) 6%,transparent)}
+.input[type=search]{padding-left:26px;background:var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 16 16'><circle cx='7' cy='7' r='4.5' fill='none' stroke='oklch(54%25 0.012 250)' stroke-width='1.5'/><path d='m10.5 10.5 3 3' stroke='oklch(54%25 0.012 250)' stroke-width='1.5' stroke-linecap='round'/></svg>") no-repeat 8px center}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:11.5px;color:var(--muted)}
+.radio-list{display:flex;flex-direction:column;gap:6px}
+.radio-list label{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:2px 0}
+.radio-list input{accent-color:var(--accent-ink);margin:0;width:14px;height:14px}
+.tag{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 6px;border-radius:4px;font-size:11px;font-weight:500;white-space:nowrap;border:1px solid transparent}
+.tag-draft{background:var(--accent-soft);color:var(--accent-ink)}
+.tag-ok{background:var(--ok-soft);color:var(--ok)}
+.tag-warn{background:var(--warn-soft);color:var(--warn)}
+.tag-danger{background:var(--danger-soft);color:var(--danger)}
+.tag-plain{background:var(--fg-soft);color:var(--muted)}
+.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.tbl th{position:sticky;top:0;z-index:1;background:var(--chrome);font-weight:500;color:var(--muted);font-size:11.5px;text-align:left;padding:5px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.tbl td{padding:6px 10px;border-bottom:1px solid var(--fg-softer);vertical-align:top}
+.tbl tbody tr:nth-child(even) td{background:var(--fg-softer)}
+.tbl tbody tr:hover td{background:color-mix(in oklch,var(--fg) 4.5%,transparent)}
+.tbl tbody tr.is-active td{background:var(--accent-soft)}
+dialog{border:0;border-radius:11px;padding:0;background:var(--surface);color:var(--fg);width:min(520px,calc(100vw - 48px));margin:96px auto auto;box-shadow:0 0 0 .5px color-mix(in oklch,var(--fg) 25%,transparent),0 24px 60px color-mix(in oklch,var(--fg) 30%,transparent)}
+dialog::backdrop{background:color-mix(in oklch,var(--fg) 12%,transparent)}
+.dl-h{padding:18px 20px 0;font-weight:600;font-size:13px}
+.dl-b{padding:12px 20px 18px;display:flex;flex-direction:column;gap:12px;font-size:12.5px}
+.dl-f{padding:0 20px 18px;display:flex;justify-content:flex-end;gap:8px}
+.notif{position:fixed;top:46px;right:22px;width:340px;display:flex;gap:10px;align-items:flex-start;padding:10px 12px;background:color-mix(in oklch,var(--surface) 88%,transparent);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid color-mix(in oklch,var(--fg) 10%,transparent);border-radius:12px;box-shadow:0 10px 30px color-mix(in oklch,var(--fg) 20%,transparent);font-size:12.5px;z-index:90;opacity:0;transform:translateY(-8px);transition:.22s;pointer-events:none;line-height:1.4}
+.notif.show{opacity:1;transform:none}
+.notif .ai{width:28px;height:28px;border-radius:7px;background:var(--fg);color:white;display:grid;place-items:center;font-family:var(--font-hanmun);font-size:15px;flex:0 0 auto}
+.notif b{display:block;font-weight:600;font-size:12px}
+.palette{width:560px;margin:110px auto auto;border-radius:12px;overflow:hidden}
+.palette .input{height:42px;font-size:15px;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;padding:0 16px}
+.palette .input:focus{box-shadow:none;border-color:var(--border)}
+.pl-list{max-height:320px;overflow:auto;padding:6px}
+.pl-h{font-size:11px;color:var(--muted);padding:8px 10px 2px;font-weight:600}
+.pl-item{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13px;width:100%;border:0;background:transparent;text-align:left;color:var(--fg)}
+.pl-item.is-sel{background:var(--accent-ink);color:white}
+.pl-item.is-sel kbd{color:color-mix(in oklch,white 80%,transparent)}
+.pl-item kbd{margin-left:auto}
+@media (max-width:1000px){.win{top:24px;left:0;right:0;bottom:0;border-radius:0}.split{grid-template-columns:1fr}.insp{display:none}}
+
+/* page */
+.tbl-wrap{overflow:auto;min-height:0}
+.panel{display:none}.panel.is-open{display:block}
+.term{font-family:var(--font-hanmun);font-size:14.5px}
+.empty{padding:22px 14px;text-align:center;color:var(--muted);font-size:12px}
+.opt{display:flex;gap:8px;align-items:flex-start;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-size:12px}
+.opt .mono{color:var(--muted);flex:0 0 auto}
+.detail{display:flex;flex-direction:column;gap:10px;font-size:12.5px}
+.rules{margin:0;padding-left:14px;font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px}
+.rules b{color:var(--fg)}
+</style>
+</head>
+<body>
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+
+<div class="win" id="win" data-od-id="app-window">
+  <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색">
+    <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
+    <div class="sb-scroll" id="sbTree"></div>
+    <div class="sb-foot"><i class="dot ok"></i>Claude CLI · 로그인됨<span class="sp"></span><span class="mono">0.1.0</span></div>
+  </aside>
+
+  <div class="main">
+    <header class="titlebar" data-od-id="titlebar">
+      <div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" aria-label="사이드바 토글"></button></div>
+      <div class="tb-c">
+        <span>용어·지식</span>
+        <div class="seg" id="ktabs" role="tablist" data-od-id="knowledge-tabs">
+          <button role="tab" data-tab="glossary" aria-selected="true">용어집 <span class="cnt" id="cntGlossary">12</span></button>
+          <button role="tab" data-tab="persons" aria-selected="false">인물 <span class="cnt">5</span></button>
+          <button role="tab" data-tab="places" aria-selected="false">지명 <span class="cnt">1</span></button>
+          <button role="tab" data-tab="uncertainty" aria-selected="false">불확실성 <span class="cnt">4</span></button>
+        </div>
+      </div>
+      <div class="tb-r"><button class="tb is-on" id="tbInsp" title="검사기 (⌥⌘I)" aria-label="검사기 토글"></button></div>
+    </header>
+
+    <div class="content">
+      <div class="scope" id="scopeBar">
+        <input class="input hanmun" id="q" type="search" placeholder="원문 용어 · 번역 용어 검색" aria-label="용어 검색" style="width:240px">
+        <select class="select" id="statusSel" aria-label="사용 상태" style="width:auto"><option value="">모든 상태</option><option value="preferred">preferred</option><option value="allowed">allowed</option><option value="forbidden">forbidden</option></select>
+        <select class="select" id="kindSel" aria-label="용어 종류" style="width:auto"><option value="">모든 종류</option><option>general</option><option>technical</option><option>institution</option><option>office</option><option>book_title</option><option>era</option></select>
+        <span class="sp"></span>
+        <span class="muted" id="scopeNote">원문에 정확히 일치하는 항목만 편집 화면과 AI 문맥에 자동 포함됩니다</span>
+        <button class="btn" id="btnAdd" data-od-id="btn-add-entry">용어 추가</button>
+      </div>
+
+      <div class="split" id="split">
+        <div class="tbl-wrap">
+          <section class="panel is-open" id="p-glossary" data-od-id="glossary-table">
+            <table class="tbl"><thead><tr><th>원문 용어</th><th>번역 용어</th><th>종류</th><th>독음</th><th>상태</th></tr></thead><tbody id="gBody"></tbody></table>
+          </section>
+          <section class="panel" id="p-persons" data-od-id="persons-table">
+            <table class="tbl"><thead><tr><th>이름</th><th>독음 · 별칭</th><th>생몰</th><th>설명</th></tr></thead><tbody id="pBody"></tbody></table>
+          </section>
+          <section class="panel" id="p-places" data-od-id="places-table">
+            <table class="tbl"><thead><tr><th>지명</th><th>독음</th><th>종류</th><th>위치·설명</th></tr></thead><tbody id="plBody"></tbody></table>
+            <div class="empty">지명은 현재 원문에 exact match된 경우에만 문맥에 포함됩니다. 출현 좌표는 저장하지 않고 실행 시 계산합니다.</div>
+          </section>
+          <section class="panel" id="p-uncertainty" data-od-id="uncertainty-table">
+            <table class="tbl"><thead><tr><th>ID</th><th>진술</th><th>범주</th><th>위치</th><th>상태</th></tr></thead><tbody id="uBody"></tbody></table>
+          </section>
+        </div>
+
+        <aside class="insp" id="insp" data-od-id="inspector" aria-label="검사기">
+          <details class="grp" open data-od-id="detail-panel">
+            <summary>항목 상세<span class="tail mono" id="detailMeta">행을 선택하세요</span></summary>
+            <div class="grp-b" id="detail"><p class="muted" style="font-size:12px;padding:2px 0 4px">선택한 항목의 내용과 lock_version을 여기서 편집합니다.</p></div>
+          </details>
+          <details class="grp" open>
+            <summary>규칙</summary>
+            <div class="grp-b"><ul class="rules">
+              <li>같은 원문 용어·target locale에는 <b>preferred</b> 항목이 하나만 있습니다.</li>
+              <li>수정은 lock_version CAS로 저장하고 content_hash를 갱신합니다.</li>
+              <li>과거 AI 실행이 사용한 항목은 해당 assistant message의 request manifest에 hash로 고정됩니다.</li>
+            </ul></div>
+          </details>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <footer class="statusbar" data-od-id="statusbar">
+    <span class="mono">hunmin.munhae</span>
+    <span>용어 <b id="sbG">12</b> · 인물 <b>5</b> · 지명 <b>1</b> · 불확실성 열림 <b id="sbU">3</b>/4</span>
+    <span class="sp"></span>
+    <span id="sbSel"></span>
+    <span><i class="dot ok"></i>Claude CLI</span>
+    <button id="sbPalette" title="명령 검색">⌘K</button>
+  </footer>
+</div>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+
+<dialog id="dlgAdd" data-od-id="dialog-add-entry">
+  <form method="dialog" id="addForm">
+    <div class="dl-h">용어 추가</div>
+    <div class="dl-b">
+      <div class="row" style="gap:10px;align-items:flex-start">
+        <div class="field" style="flex:1"><label for="aSrc">원문 용어</label><input class="input hanmun" id="aSrc" required placeholder="例: 集賢殿" style="font-size:14px"></div>
+        <div class="field" style="flex:1"><label for="aTgt">번역 용어</label><input class="input" id="aTgt" required placeholder="예: 집현전(集賢殿)"></div>
+      </div>
+      <div class="row" style="gap:10px;align-items:flex-start">
+        <div class="field" style="flex:1"><label for="aKind">종류</label><select class="select" id="aKind"><option>general</option><option>technical</option><option>institution</option><option>office</option><option>book_title</option><option>era</option><option>other</option></select></div>
+        <div class="field" style="flex:1"><label for="aRead">독음</label><input class="input" id="aRead" placeholder="예: 집현전"></div>
+      </div>
+      <div class="field"><label>사용 상태</label>
+        <div class="radio-list">
+          <label><input type="radio" name="st" value="preferred" checked> preferred <span class="muted">· 기본 대응어. 용어당 하나</span></label>
+          <label><input type="radio" name="st" value="allowed"> allowed <span class="muted">· 문맥에 따라 허용</span></label>
+          <label><input type="radio" name="st" value="forbidden"> forbidden <span class="muted">· Reflection에서 경고</span></label>
+        </div>
+      </div>
+      <div class="field"><label for="aNote">메모</label><textarea class="textarea" id="aNote" placeholder="근거·출처·주의점"></textarea></div>
+    </div>
+    <div class="dl-f"><button class="btn" type="button" id="addCancel">취소</button><button class="btn btn-primary" type="submit">추가</button></div>
+  </form>
+</dialog>
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+
+<script>
+/* ── desktop shell ── */
+const PAGE='knowledge';
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const SCREENS={home:['프로젝트 홈','project-home-v2.html'],editor:['편집 · 御製序','editor-v2.html'],inspector:['문맥 검사','context-inspector-v2.html'],knowledge:['용어·지식','knowledge-v2.html']};
+const ICONS={home:'<path d="M2.5 8.2 8 3.2l5.5 5"/><path d="M4 7.5V13h8V7.5"/>',folder:'<path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/>',sliders:'<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="6" cy="4.5" r="1.7" fill="var(--sidebar)"/><circle cx="10.5" cy="8" r="1.7" fill="var(--sidebar)"/><circle cx="5" cy="11.5" r="1.7" fill="var(--sidebar)"/>',book:'<path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/>',sidebar:'<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/>',panel:'<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>',chev:'<path d="M6 4l4 4-4 4"/>'};
+const ic=n=>`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true">${ICONS[n]}</svg>`;
+const GLOBAL=['about','prefs','ai','quit','newproj','open','close','undo','redo','x','c','v','find','sidebar','palette','home','editor','inspector','knowledge','min','zoom','self','help','plan','schema'];
+const ENABLED=new Set([...GLOBAL,'ctxpane']);
+const MENUS=[
+ ['문해',[['문해 정보','','about'],null,['설정…','⌘,','prefs'],['AI 연결 상태…','','ai'],null,['문해 종료','⌘Q','quit']],true],
+ ['파일',[['새 프로젝트…','⇧⌘N','newproj'],['프로젝트 열기…','⌘O','open'],null,['새 문서 node…','⌘N','newdoc'],['원문 가져오기…','','import'],null,['백업 만들기…','','backup'],['내보내기…','⌘E','export'],null,['프로젝트 닫기','⌘W','close']]],
+ ['편집',[['실행 취소','⌘Z','undo'],['다시 실행','⇧⌘Z','redo'],null,['잘라내기','⌘X','x'],['복사','⌘C','c'],['붙여넣기','⌘V','v'],null,['찾기…','⌘F','find']]],
+ ['보기',[['사이드바 보기/가리기','⌃⌘S','sidebar'],['참고 자료 패널','⌥⌘R','refpane'],['검사기 패널','⌥⌘I','ctxpane'],null,['표점 전문','⌘1','v-source'],['대조','⌘2','v-parallel'],['번역 전문','⌘3','v-full'],null,['구조 표시','','struct'],['앵커 ID 표시','','keys']]],
+ ['번역',[['문맥 검사…','⌥⌘K','inspector'],['번역 실행…','','run'],['Reflection 다시 요청','','reflect'],null,['다음 블록과 합치기','⌥⌘M','merge'],['블록 나누기…','⌥⌘S','split'],['앵커 연결…','⌥⌘L','link'],null,['변경 비교','⌘D','diff'],['번역안 확정','⇧⌘↩','confirm']]],
+ ['이동',[['프로젝트 홈','⇧⌘1','home'],['편집','⇧⌘2','editor'],['문맥 검사','⇧⌘3','inspector'],['용어·지식','⇧⌘4','knowledge'],null,['명령 검색…','⌘K','palette']]],
+ ['창',[['최소화','⌘M','min'],['확대/축소','','zoom'],null,['용어·지식 — 훈민정음 문헌 번역','','self',true]]],
+ ['도움말',[['문해 도움말','','help'],['plan.md 보기','','plan'],['schema.md 보기','','schema']]],
+];
+function notify(msg,title='문해'){const n=$('#notif');$('#nTitle').textContent=title;$('#nMsg').textContent=msg;n.classList.add('show');clearTimeout(n._h);n._h=setTimeout(()=>n.classList.remove('show'),3400);}
+function go(k){ if(k!==PAGE) location.href=SCREENS[k][1]; }
+function renderMenubar(){
+  $('#menubar').innerHTML = MENUS.map(([t,items,app],i)=>`<div class="mb-item${app?' app':''}" data-mi="${i}"><span>${t}</span><div class="menu" role="menu">${items.map(it=>it?`<button role="menuitem" data-cmd="${it[2]}"${ENABLED.has(it[2])?'':' disabled'}${it[3]?' class="checked"':''}>${it[0]}<kbd>${it[1]}</kbd></button>`:'<hr>').join('')}</div></div>`).join('')
+    + `<div class="mb-right"><span class="row" style="gap:5px"><i class="dot ok"></i>Claude CLI</span><span id="clock"></span></div>`;
+}
+let mbOpen=null;
+function openMenu(el){ if(mbOpen) mbOpen.classList.remove('open'); mbOpen=el; $('#menubar').classList.toggle('active',!!el); if(el) el.classList.add('open'); }
+function tick(){ $('#clock').textContent=new Intl.DateTimeFormat('ko-KR',{month:'long',day:'numeric',weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date()); }
+const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v)}catch{}}};
+function toggleSidebar(force){ const w=$('#win'); const hide=force!==undefined?force:!w.classList.contains('sb-hidden'); w.classList.toggle('sb-hidden',hide); store.set('munhae.sb',hide?'0':'1'); $('#tbSidebar').classList.toggle('is-on',!hide); }
+const pal=$('#dlgPalette'), palIn=$('#palIn'), palList=$('#palList'); let palSel=0, palItems=[];
+function paletteItems(q){ const out=[{g:'용어·지식',l:'용어집 보기',k:'',id:'t-glossary'},{g:'용어·지식',l:'인물 보기',k:'',id:'t-persons'},{g:'용어·지식',l:'지명 보기',k:'',id:'t-places'},{g:'용어·지식',l:'불확실성 보기',k:'',id:'t-uncertainty'},{g:'용어·지식',l:'용어 추가…',k:'',id:'addterm'}]; MENUS.forEach(([t,items])=>items.forEach(it=>{ if(it&&ENABLED.has(it[2])&&!['self','x','c','v','quit','min','zoom','palette'].includes(it[2])) out.push({g:t,l:it[0],k:it[1],id:it[2]}); })); return q?out.filter(o=>(o.l+o.g).toLowerCase().includes(q.toLowerCase())):out; }
+function renderPalette(){ palItems=paletteItems(palIn.value.trim()); palSel=Math.min(palSel,Math.max(0,palItems.length-1)); let g=''; palList.innerHTML=palItems.map((o,i)=>{const h=(o.g!==g?`<div class="pl-h">${o.g}</div>`:'')+`<button class="pl-item${i===palSel?' is-sel':''}" data-i="${i}">${o.l}<kbd>${o.k}</kbd></button>`; g=o.g; return h;}).join('')||'<div class="pl-h">일치하는 명령이 없습니다</div>'; const el=palList.querySelector('.is-sel'); if(el){const t=el.offsetTop-palList.offsetTop,b=t+el.offsetHeight; if(t<palList.scrollTop) palList.scrollTop=t-6; else if(b>palList.scrollTop+palList.clientHeight) palList.scrollTop=b-palList.clientHeight+6;} }
+function openPalette(){ palIn.value=''; palSel=0; renderPalette(); pal.showModal(); palIn.focus(); }
+palIn.addEventListener('input',()=>{palSel=0;renderPalette();});
+palIn.addEventListener('keydown',e=>{ if(e.key==='ArrowDown'){e.preventDefault();palSel=Math.min(palSel+1,palItems.length-1);renderPalette();} else if(e.key==='ArrowUp'){e.preventDefault();palSel=Math.max(palSel-1,0);renderPalette();} else if(e.key==='Enter'){e.preventDefault();const o=palItems[palSel]; if(o){pal.close();cmd(o.id);}} });
+palList.addEventListener('click',e=>{ const b=e.target.closest('.pl-item'); if(b){ pal.close(); cmd(palItems[+b.dataset.i].id); } });
+$('#menubar').addEventListener('click',e=>{ const b=e.target.closest('button[data-cmd]'); if(b){ if(!b.disabled){ openMenu(null); cmd(b.dataset.cmd);} return; } const mi=e.target.closest('.mb-item'); if(mi) openMenu(mbOpen===mi?null:mi); });
+$('#menubar').addEventListener('mouseover',e=>{ const mi=e.target.closest('.mb-item'); if(mbOpen&&mi&&mi!==mbOpen) openMenu(mi); });
+document.addEventListener('click',e=>{ if(mbOpen&&!e.target.closest('#menubar')) openMenu(null); });
+document.addEventListener('keydown',e=>{
+  const m=e.metaKey||e.ctrlKey, k=e.key.toLowerCase();
+  if(e.key==='Escape'&&mbOpen){ openMenu(null); return; }
+  if(m&&!e.altKey&&!e.shiftKey&&k==='k'){ e.preventDefault(); return openPalette(); }
+  if(e.metaKey&&e.ctrlKey&&k==='s'){ e.preventDefault(); return toggleSidebar(); }
+  if(m&&e.shiftKey&&/^Digit[1-4]$/.test(e.code)){ e.preventDefault(); return go(['home','editor','inspector','knowledge'][+e.code.slice(5)-1]); }
+  if(m&&e.altKey&&e.code==='KeyI'){ e.preventDefault(); return cmd('ctxpane'); }
+  pageKeys(e,m);
+});
+function cmd(id){
+  if(pageCmd(id)) return;
+  if(SCREENS[id]) return go(id);
+  switch(id){
+    case 'sidebar': return toggleSidebar();
+    case 'palette': return openPalette();
+    case 'about': return notify('Munhae Studio 0.1.0 · 데모 빌드 · Phase 1 로컬 CAT','문해 정보');
+    case 'prefs': return notify('agent · model · reasoning preference는 프로젝트 밖 app-config.json에 저장됩니다','설정 (데모)');
+    case 'ai': return notify('Claude CLI 로그인됨 · Codex CLI 설치됨, 로그인 필요. 토큰은 CLI가 보관합니다','AI 연결 상태');
+    case 'plan': case 'schema': return notify(`${id}.md는 저장소 루트에 있습니다. 데모에서는 외부 파일을 열지 않습니다`,'도움말');
+    case 'newproj': case 'open': case 'close': return notify('프로젝트 생성·열기·닫기는 데모에서 연결되어 있지 않습니다','파일 (데모)');
+    default: return notify('데모 프로토타입에서는 이 명령이 연결되어 있지 않습니다','문해');
+  }
+}
+const EXP={w1:true,c1:false,kn:true};
+const TREE=[
+ {h:'프로젝트'},{k:'home',ic:'home',lbl:'홈'},
+ {h:'문서'},
+ {id:'w1',ic:'folder',lbl:'『訓民正音』 解例本',han:1,kids:[
+   {k:'editor',lbl:'御製序',han:1,dot:'draft',t:'번역안 v2 · valid'},
+   {lbl:'例義',han:1,dot:'ok',t:'번역 확정 v3'},
+   {id:'c1',lbl:'解例',han:1,cnt:6,kids:['制字解','初聲解','中聲解','終聲解','合字解','用字例'].map(l=>({lbl:l,han:1}))},
+   {lbl:'鄭麟趾 序',han:1,dot:'warn',t:'재검토 필요'}]},
+ {id:'w2',ic:'folder',lbl:'『世宗實錄』 卷113',han:1,dot:'warn',t:'preflight · split 필요'},
+ {h:'도구'},{k:'inspector',ic:'sliders',lbl:'문맥 검사'},
+ {id:'kn',ic:'book',lbl:'용어·지식',kids:[{tab:'glossary',lbl:'용어집',cnt:12},{tab:'persons',lbl:'인물',cnt:5},{tab:'places',lbl:'지명',cnt:1},{tab:'uncertainty',lbl:'불확실성',cnt:4}]},
+];
+function sbNode(n,d){
+  if(n.h) return `<div class="sb-h">${n.h}</div>`;
+  const kids=!!n.kids, cur=n.tab?n.tab===state.tab:(n.k===PAGE);
+  let h=`<button class="sb-item d${d}${cur?' is-current':''}"${kids?` aria-expanded="${!!EXP[n.id]}" data-exp="${n.id}"`:''}${n.k?` data-go="${n.k}"`:''}${n.tab?` data-tab="${n.tab}"`:''}${!n.k&&!kids&&!n.tab?` data-doc="${esc(n.lbl)}"`:''}${n.t?` title="${esc(n.t)}"`:''}${cur?' aria-current="page"':''}>`;
+  if(kids) h+=`<svg class="ic chev" viewBox="0 0 16 16" aria-hidden="true">${ICONS.chev}</svg>`;
+  if(n.ic) h+=ic(n.ic);
+  h+=`<span class="lbl${n.han?' hanmun':''}">${esc(n.lbl)}</span>`;
+  if(n.cnt) h+=`<span class="cnt" data-cnt="${n.tab||''}">${n.cnt}</span>`;
+  if(n.dot) h+=`<i class="dot ${n.dot}"></i>`;
+  h+='</button>';
+  if(kids&&EXP[n.id]) h+=n.kids.map(k=>sbNode(k,d+1)).join('');
+  return h;
+}
+function renderSidebar(){ TREE[TREE.length-1].kids[0].cnt=GLOSSARY.length; $('#sbTree').innerHTML=TREE.map(n=>sbNode(n,0)).join(''); }
+$('#sbTree').addEventListener('click',e=>{
+  const b=e.target.closest('.sb-item'); if(!b) return;
+  if(b.dataset.tab) return setTab(b.dataset.tab);
+  if(b.dataset.exp){ EXP[b.dataset.exp]=!EXP[b.dataset.exp]; renderSidebar(); return; }
+  if(b.dataset.go) return go(b.dataset.go);
+  if(b.dataset.doc) notify(`${b.dataset.doc}: 데모에서는 御製序만 편집 화면이 연결되어 있습니다`);
+});
+$('#tbSidebar').innerHTML=ic('sidebar'); $('#tbInsp').innerHTML=ic('panel');
+$('#tbSidebar').onclick=()=>toggleSidebar(); $('#sbPalette').onclick=openPalette;
+function toggleInsp(){ const s=$('#split'); s.classList.toggle('no-insp'); $('#tbInsp').classList.toggle('is-on',!s.classList.contains('no-insp')); }
+$('#tbInsp').onclick=toggleInsp;
+function pageCmd(id){
+  if(id.startsWith('t-')){ setTab(id.slice(2)); return true; }
+  switch(id){
+    case 'ctxpane': toggleInsp(); return true;
+    case 'addterm': setTab('glossary'); $('#dlgAdd').showModal(); return true;
+    case 'find': setTab('glossary'); $('#q').focus(); return true;
+  }
+  return false;
+}
+function pageKeys(e,m){ if(m&&!e.shiftKey&&!e.altKey&&e.code==='KeyF'){ e.preventDefault(); cmd('find'); } }
+
+/* ── page ── */
+const GLOSSARY=[
+  {id:'g1',src:'中國',tgt:'중국(中國)',kind:'general',read:'중국',st:'preferred',note:'序文의 中國은 명(明)을 가리킴. 지명 표에도 등록.',lock:3,upd:'08-29'},
+  {id:'g2',src:'文字',tgt:'문자(文字)',kind:'general',read:'문자',st:'preferred',note:'문맥상 한자(漢字)를 뜻한다는 해석이 우세. U-01 참조.',lock:2,upd:'08-30'},
+  {id:'g3',src:'文字',tgt:'한자(漢字)',kind:'general',read:'한자',st:'allowed',note:'독자안에서 사용 가능. 원문 밖 해석이므로 병기 필수.',lock:1,upd:'09-01'},
+  {id:'g4',src:'愚民',tgt:'어리석은 백성',kind:'general',read:'우민',st:'allowed',note:'‘글을 모르는 백성’ 해석도 열려 있음. U-02 참조.',lock:1,upd:'08-30'},
+  {id:'g5',src:'愚民',tgt:'우민(愚民)',kind:'general',read:'우민',st:'forbidden',note:'음차만으로는 뜻이 전달되지 않음.',lock:1,upd:'08-30'},
+  {id:'g6',src:'二十八字',tgt:'스물여덟 자',kind:'technical',read:'이십팔자',st:'preferred',note:'초성 17자 + 중성 11자.',lock:1,upd:'08-29'},
+  {id:'g7',src:'正音',tgt:'정음(正音)',kind:'technical',read:'정음',st:'preferred',note:'',lock:1,upd:'08-29'},
+  {id:'g8',src:'初聲',tgt:'초성(初聲)',kind:'technical',read:'초성',st:'preferred',note:'中聲·終聲과 같은 방식으로 병기.',lock:1,upd:'08-29'},
+  {id:'g9',src:'諺文',tgt:'언문(諺文)',kind:'technical',read:'언문',st:'preferred',note:'실록 기사에서 훈민정음을 가리키는 표현. 풀어 쓰지 않음.',lock:2,upd:'08-31'},
+  {id:'g10',src:'集賢殿',tgt:'집현전(集賢殿)',kind:'institution',read:'집현전',st:'preferred',note:'',lock:1,upd:'08-31'},
+  {id:'g11',src:'承政院',tgt:'승정원(承政院)',kind:'institution',read:'승정원',st:'preferred',note:'',lock:1,upd:'08-31'},
+  {id:'g12',src:'殿下',tgt:'전하(殿下)',kind:'general',read:'전하',st:'preferred',note:'鄭麟趾 序에서 世宗을 지칭.',lock:1,upd:'08-31'},
+];
+const PERSONS=[
+  {name:'世宗',read:'세종',alias:'李祹',dates:'1397–1450',desc:'조선 제4대 왕. 1443년 훈민정음 창제, 1446년 반포. 御製序의 저자.'},
+  {name:'鄭麟趾',read:'정인지',alias:'學易齋',dates:'1396–1478',desc:'解例本 서문 집필. 집현전 학사.'},
+  {name:'申叔舟',read:'신숙주',alias:'—',dates:'1417–1475',desc:'解例 편찬 참여.'},
+  {name:'成三問',read:'성삼문',alias:'—',dates:'1418–1456',desc:'解例 편찬 참여.'},
+  {name:'崔萬理',read:'최만리',alias:'—',dates:'?–1445',desc:'1444년 諺文 창제 반대 상소. 『世宗實錄』 기사에 등장.'},
+];
+const PLACES=[{name:'中國',read:'중국',kind:'country',note:'御製序의 中國은 명(明)을 가리킴. 용어집 g1과 함께 문맥에 포함.'}];
+const UNC=[
+  {id:'U-01',cat:'interpretive',sev:'major',state:'open',where:'御製序 · P3 · A002',stmt:'文字가 한자(漢字)를 가리키는가, 문자 일반을 가리키는가',quote:'與文字不相流通',opts:['한자 — 명의 문자와 통하지 않는다는 뜻 (우세)','문자 일반 — 말과 글이 서로 통하지 않는다는 뜻'],rationale:'후행 문장의 ‘新制二十八字’와 대비되는 기존 문자 체계를 가리키므로 한자로 읽는 해석이 자연스럽지만, 직역안에서는 원문 표기 ‘문자(文字)’를 유지한다.'},
+  {id:'U-02',cat:'interpretive',sev:'minor',state:'open',where:'御製序 · P3 · A003',stmt:'愚民의 愚 — 지적 능력인가, 문자 교육의 결여인가',quote:'故愚民有所欲言',opts:['어리석은 백성','글을 모르는 백성'],rationale:'독자안은 ‘글을 모르는’으로 의역했고 Reflection이 이를 원문 밖 해석으로 표시했다.'},
+  {id:'U-03',cat:'identification',sev:'minor',state:'open',where:'鄭麟趾 序 · P4',stmt:'서문 말미에 열거된 학사들의 관직 표기를 어떻게 대응할 것인가',quote:'集賢殿應敎 …',opts:['관직명 음차 + 漢字 병기','직능 설명을 괄호로 보충'],rationale:'용어집 term_kind = office 항목을 먼저 확정해야 한다.'},
+  {id:'U-04',cat:'textual',sev:'major',state:'resolved',where:'御製序 · V7',stmt:'보사(補寫) 면의 글자 판독',quote:'—',opts:['원문 V7 판독 유지'],rationale:'원문 V7 확정 시 해결. 원문 문자가 바뀌지 않았으므로 표점·앵커 재생성 불필요.'},
+];
+const state={tab:'glossary',active:null};
+const stTag=st=>`<span class="tag ${{preferred:'tag-ok',allowed:'tag-plain',forbidden:'tag-danger'}[st]}">${st}</span>`;
+function setTab(t){
+  state.tab=t; $$('#ktabs button').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===t)); $$('.panel').forEach(p=>p.classList.toggle('is-open',p.id==='p-'+t));
+  const g=t==='glossary'; $('#btnAdd').hidden=!g; $('#q').hidden=!g; $('#statusSel').hidden=!g; $('#kindSel').hidden=!g;
+  $('#scopeNote').textContent={glossary:'원문에 정확히 일치하는 항목만 편집 화면과 AI 문맥에 자동 포함됩니다',persons:'인물은 exact match 또는 node 저자 상속으로 문맥에 포함됩니다',places:'지명은 exact match된 경우에만 문맥에 포함됩니다',uncertainty:'앵커가 겹치는 열린 불확실성만 AI 실행 문맥에 포함됩니다'}[t];
+  renderSidebar();
+}
+function renderGlossary(){
+  const q=$('#q').value.trim(), st=$('#statusSel').value, kd=$('#kindSel').value;
+  const rows=GLOSSARY.filter(g=>(!q||g.src.includes(q)||g.tgt.includes(q)||g.read.includes(q))&&(!st||g.st===st)&&(!kd||g.kind===kd));
+  $('#gBody').innerHTML=rows.map(g=>`<tr data-id="${g.id}" class="${state.active===g.id?'is-active':''}" tabindex="0"><td class="term">${esc(g.src)}</td><td>${esc(g.tgt)}</td><td class="mono muted" style="font-size:11.5px">${g.kind}</td><td class="muted">${esc(g.read)}</td><td>${stTag(g.st)}</td></tr>`).join('')||`<tr><td colspan="5" class="empty">일치하는 용어가 없습니다.</td></tr>`;
+  $('#cntGlossary').textContent=GLOSSARY.length; $('#sbG').textContent=GLOSSARY.length;
+}
+function renderOthers(){
+  $('#pBody').innerHTML=PERSONS.map(p=>`<tr><td class="term">${p.name}</td><td>${p.read} <span class="muted">· ${p.alias}</span></td><td class="mono">${p.dates}</td><td class="muted">${esc(p.desc)}</td></tr>`).join('');
+  $('#plBody').innerHTML=PLACES.map(p=>`<tr><td class="term">${p.name}</td><td>${p.read}</td><td class="mono muted" style="font-size:11.5px">${p.kind}</td><td class="muted">${esc(p.note)}</td></tr>`).join('');
+  $('#uBody').innerHTML=UNC.map(u=>`<tr data-u="${u.id}" class="${state.active===u.id?'is-active':''}" tabindex="0"><td class="mono">${u.id}</td><td>${esc(u.stmt)}<div class="muted hanmun" style="font-size:12.5px;margin-top:2px">${esc(u.quote)}</div></td><td><span class="tag tag-warn">${u.cat}</span></td><td class="mono muted" style="font-size:11.5px">${esc(u.where)}</td><td>${u.state==='open'?'<span class="tag tag-draft">열림</span>':'<span class="tag tag-ok">해결</span>'}</td></tr>`).join('');
+  $('#sbU').textContent=UNC.filter(u=>u.state==='open').length;
+}
+function showGlossary(g){
+  state.active=g.id; renderGlossary(); $('#detailMeta').textContent=`lock_version ${g.lock} · ${g.upd}`; $('#sbSel').textContent=`${g.src} → ${g.tgt}`;
+  $('#detail').innerHTML=`<div class="detail">
+      <div class="term" style="font-size:20px">${esc(g.src)} <span class="muted" style="font-family:var(--font-ui);font-size:12px">${esc(g.read)}</span></div>
+      <div class="field"><label for="dTgt">번역 용어</label><input class="input" id="dTgt" value="${esc(g.tgt)}"></div>
+      <div class="field"><label for="dSt">사용 상태</label><select class="select" id="dSt">${['preferred','allowed','forbidden'].map(s=>`<option ${g.st===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="field"><label for="dNote">메모</label><textarea class="textarea" id="dNote">${esc(g.note)}</textarea></div>
+      <dl class="kv"><dt>종류</dt><dd class="mono">${g.kind}</dd><dt>사용된 실행</dt><dd>M103 (御製序) · manifest hash 고정</dd></dl>
+      <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="dArchive">보관</button><button class="btn btn-primary btn-sm" id="dSave">저장 <kbd>⌘S</kbd></button></div>
+    </div>`;
+  $('#dSave').onclick=()=>{
+    const st=$('#dSt').value;
+    if(st==='preferred'&&GLOSSARY.some(x=>x!==g&&x.src===g.src&&x.st==='preferred')){ notify(`${g.src}에는 이미 preferred 항목이 있습니다. 기존 항목을 allowed로 바꾼 뒤 저장하세요`,'저장 실패'); return; }
+    g.tgt=$('#dTgt').value.trim()||g.tgt; g.st=st; g.note=$('#dNote').value.trim(); g.lock++; g.upd='방금';
+    showGlossary(g); notify(`${g.src} 저장 · lock_version ${g.lock} · content_hash 갱신`,'용어집');
+  };
+  $('#dArchive').onclick=()=>{ GLOSSARY.splice(GLOSSARY.indexOf(g),1); state.active=null; renderGlossary(); renderSidebar(); $('#detailMeta').textContent=''; $('#sbSel').textContent=''; $('#detail').innerHTML='<p class="muted" style="font-size:12px;padding:2px 0 4px">항목을 보관했습니다 (archived_at 기록, 이력은 유지).</p>'; notify(`${g.src} → ${g.tgt} 보관`,'용어집'); };
+}
+function showUnc(u){
+  state.active=u.id; renderOthers(); $('#detailMeta').textContent=`${u.id} · ${u.cat} · ${u.sev}`; $('#sbSel').textContent=`${u.id} ${u.state==='open'?'열림':'해결'}`;
+  $('#detail').innerHTML=`<div class="detail">
+      <b style="font-size:13px">${esc(u.stmt)}</b>
+      <div class="hanmun" style="font-size:16px">${esc(u.quote)}</div>
+      <div class="muted mono" style="font-size:11.5px">${esc(u.where)}</div>
+      <div><div class="muted" style="font-size:11.5px;margin-bottom:5px">해석 선택지</div><div style="display:flex;flex-direction:column;gap:5px">${u.opts.map((o,i)=>`<div class="opt"><span class="mono">${i+1}</span><span>${esc(o)}</span></div>`).join('')}</div></div>
+      <p class="muted">${esc(u.rationale)}</p>
+      <div class="row" style="justify-content:flex-end">${u.state==='open'?`<button class="btn btn-sm" id="uResolve">해결로 표시</button>`:'<span class="tag tag-ok">해결</span>'}</div>
+    </div>`;
+  const r=$('#uResolve'); if(r) r.onclick=()=>{ u.state='resolved'; showUnc(u); notify(`${u.id} 해결 · 새 uncertainty version 기록`,'불확실성'); };
+}
+$('#ktabs').addEventListener('click',e=>{ const b=e.target.closest('button'); if(b) setTab(b.dataset.tab); });
+['#q','#statusSel','#kindSel'].forEach(s=>$(s).addEventListener('input',renderGlossary));
+$('#gBody').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-id]'); if(tr) showGlossary(GLOSSARY.find(g=>g.id===tr.dataset.id)); });
+$('#uBody').addEventListener('click',e=>{ const tr=e.target.closest('tr[data-u]'); if(tr) showUnc(UNC.find(u=>u.id===tr.dataset.u)); });
+$('#btnAdd').onclick=()=>cmd('addterm');
+$('#addCancel').onclick=()=>$('#dlgAdd').close();
+$('#addForm').addEventListener('submit',e=>{
+  const src=$('#aSrc').value.trim(), tgt=$('#aTgt').value.trim(), st=document.querySelector('input[name=st]:checked').value;
+  if(!src||!tgt){ e.preventDefault(); return; }
+  if(st==='preferred'&&GLOSSARY.some(x=>x.src===src&&x.st==='preferred')){ e.preventDefault(); notify(`${src}에는 이미 preferred 항목이 있습니다 (unique 제약)`,'추가 실패'); return; }
+  const g={id:'g'+Date.now(),src,tgt,kind:$('#aKind').value,read:$('#aRead').value.trim(),st,note:$('#aNote').value.trim(),lock:1,upd:'방금'};
+  GLOSSARY.unshift(g); $('#addForm').reset(); renderGlossary(); renderSidebar(); showGlossary(g); notify(`${src} → ${tgt} 추가`,'용어집');
+});
+document.addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&!e.ctrlKey&&e.code==='KeyS'&&$('#dSave')){ e.preventDefault(); $('#dSave').click(); } });
+renderMenubar(); tick(); setInterval(tick,30000);
+if(store.get('munhae.sb')==='0') toggleSidebar(true);
+renderGlossary(); renderOthers();
+setTab(location.hash==='#uncertainty'?'uncertainty':'glossary');
+</script>
+</body>
+</html>

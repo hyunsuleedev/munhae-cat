@@ -1,0 +1,51 @@
+:root {
+  --iw: 320px;
+}
+.tb-c {
+  gap: 10px;
+  -webkit-app-region: no-drag;
+}
+.panel {
+  display: none;
+}
+.panel.is-open {
+  display: block;
+}
+.term {
+  font-family: var(--font-hanmun);
+  font-size: 14.5px;
+}
+.tbl td {
+  vertical-align: top;
+}
+.opt {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.opt .mono {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.rules {
+  margin: 0;
+  padding-left: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.rules b {
+  color: var(--fg);
+}

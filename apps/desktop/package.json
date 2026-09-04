@@ -1,0 +1,33 @@
+{
+  "name": "@munhae/desktop",
+  "productName": "Munhae Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Munhae Studio desktop app",
+  "main": "out/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "pack:dir": "electron-vite build && electron-builder --dir",
+    "dist": "electron-vite build && electron-builder",
+    "rebuild:native": "electron-builder install-app-deps",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@munhae/agent-runtime": "workspace:*",
+    "@munhae/db-sqlite": "workspace:*",
+    "@munhae/domain": "workspace:*",
+    "@munhae/project-format": "workspace:*",
+    "better-sqlite3": "^11.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "electron": "^37.2.5",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
