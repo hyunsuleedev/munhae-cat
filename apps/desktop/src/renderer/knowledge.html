@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
 <link rel="stylesheet" href="./styles/knowledge.css">
+<script type="module" blocking="render" src="./scripts/knowledge.ts"></script>
 </head>
 <body>
 <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
@@ -43,6 +44,7 @@
         <select class="select" id="kindSel" aria-label="용어 종류" style="width:auto"><option value="">모든 종류</option><option>general</option><option>technical</option><option>institution</option><option>office</option><option>book_title</option><option>era</option><option>other</option></select>
         <span class="sp"></span>
         <span class="muted" id="scopeNote">원문에 정확히 일치하는 항목만 편집 화면과 AI 문맥에 자동 포함됩니다</span>
+        <button class="btn" id="btnEditMetadata" type="button" hidden>문서 정보</button>
         <button class="btn" id="btnOpenDocument" type="button" hidden>원문 열기</button>
         <button class="btn" id="btnAdd" type="button" data-od-id="btn-add-entry">용어 추가</button>
       </div>
@@ -63,7 +65,7 @@
             <table class="tbl"><thead><tr><th>ID</th><th>진술</th><th>범주</th><th>위치</th><th>상태</th></tr></thead><tbody id="uBody"></tbody></table>
           </section>
           <section class="panel" id="p-context" data-od-id="context-table">
-            <table class="tbl"><thead><tr><th>적용 범위</th><th>문맥</th><th>종류</th><th>우선순위</th><th>상태</th></tr></thead><tbody id="cBody"></tbody></table>
+            <table class="tbl"><thead><tr><th>적용 범위</th><th>문맥</th><th>우선순위</th><th>상태</th></tr></thead><tbody id="cBody"></tbody></table>
             <div class="empty" id="contextEmpty" hidden>이 node에 직접 연결되거나 상위에서 상속되는 문맥이 없습니다.</div>
           </section>
         </div>
@@ -111,6 +113,6 @@
   <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
   <div class="pl-list" id="palList"></div>
 </dialog>
-<script type="module" src="./scripts/knowledge.ts"></script>
+
 </body>
 </html>

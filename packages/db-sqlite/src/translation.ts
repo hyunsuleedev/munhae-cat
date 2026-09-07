@@ -25,6 +25,7 @@ export type AnchorRow = {
   anchor_key: string;
   ordinal: number;
   required: number;
+  boundary_kind: string;
 };
 
 export type TranslationHeadRow = {
@@ -140,53 +141,25 @@ export function validateBlocks(
 ): { findings: string[]; validationState: "valid" | "needs_review" } {
   const findings: string[] = [];
   const byKey = new Map(anchors.map((a) => [a.anchor_key, a]));
-  const seen = new Map<string, number>();
-  let lastOrdinal = -1;
   const keys = new Set<string>();
 
+  if (blocks.length === 0) findings.push("empty_block");
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i];
     if (!b) continue;
     if (keys.has(b.blockKey)) findings.push("duplicate_block_key");
     keys.add(b.blockKey);
-    if (!b.translation.trim()) findings.push("empty_block");
+    if (!b.translation.trim()) findings.push("empty_translation");
     const ids = b.sourceAnchorIds;
-    const ordinals: number[] = [];
+    if (ids.length === 0) findings.push("empty_block");
+    const blockSeen = new Set<string>();
     for (const k of ids) {
-      const a = byKey.get(k);
-      if (!a) {
+      if (!byKey.has(k)) {
         findings.push("unknown_anchor");
-        continue;
       }
-      ordinals.push(a.ordinal);
+      if (blockSeen.has(k)) findings.push("duplicate_anchor");
+      blockSeen.add(k);
     }
-    for (let j = 1; j < ordinals.length; j += 1) {
-      const prev = ordinals[j - 1] ?? 0;
-      const cur = ordinals[j] ?? 0;
-      if (cur < prev) findings.push("anchor_order");
-      if (cur !== prev + 1) findings.push("noncontiguous_anchors");
-    }
-    const first = ordinals[0];
-    if (first !== undefined && first < lastOrdinal) findings.push("anchor_order");
-    if (ordinals.length) lastOrdinal = ordinals[ordinals.length - 1] ?? lastOrdinal;
-
-    for (let j = 0; j < ids.length; j += 1) {
-      const k = ids[j];
-      if (!k) continue;
-      const rel = b.relationKinds?.[j] ?? inferRelation(blocks, k);
-      if (seen.has(k)) {
-        const prevIdx = seen.get(k) ?? -1;
-        const prev = blocks[prevIdx];
-        const prevRel = prev ? relationOf(prev, k) : "full";
-        const adjacentPartial = prevIdx === i - 1 && prevRel === "partial" && rel === "partial";
-        if (!adjacentPartial) findings.push("duplicate_anchor");
-      }
-      seen.set(k, i);
-    }
-  }
-
-  for (const a of anchors) {
-    if (a.required === 1 && !seen.has(a.anchor_key)) findings.push("missing_coverage");
   }
 
   const unique = [...new Set(findings)];
@@ -194,12 +167,6 @@ export function validateBlocks(
     findings: unique,
     validationState: unique.length === 0 ? "valid" : "needs_review",
   };
-}
-
-function relationOf(block: BlockDraft, key: string): string {
-  const idx = block.sourceAnchorIds.indexOf(key);
-  if (idx >= 0 && block.relationKinds?.[idx]) return block.relationKinds[idx] ?? "full";
-  return inferRelation([block], key);
 }
 
 function inferRelation(blocks: BlockDraft[], key: string): string {
@@ -299,7 +266,8 @@ export function recordValidation(
 export function loadAnchors(db: SqliteDb, anchorSetId: string): AnchorRow[] {
   return allRows<AnchorRow>(
     db,
-    `SELECT id, anchor_key, ordinal, required FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`,
+    `SELECT id, anchor_key, ordinal, required, boundary_kind
+     FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`,
     anchorSetId,
   );
 }

@@ -46,6 +46,28 @@ p {
 .hanmun {
   font-family: var(--font-hanmun);
 }
+.munhae-brand {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
+  width: fit-content;
+  color: #292b27;
+  white-space: nowrap;
+  text-align: left;
+}
+.munhae-brand > strong {
+  font: 23px/1.45 "Noto Serif KR", "AppleMyungjo", "Songti SC", Georgia, serif;
+  letter-spacing: 0.08em;
+}
+.munhae-brand > small {
+  color: #777a71;
+  font: 9px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+  letter-spacing: 0.1em;
+}
+.sidebar > .munhae-brand {
+  margin: 24px 22px 10px;
+}
 .muted {
   color: var(--muted);
 }
@@ -248,6 +270,7 @@ svg.ic {
   background: var(--tl-g);
 }
 .sidebar {
+  position: relative;
   grid-row: 1;
   grid-column: 1;
   background: var(--sidebar);
@@ -255,7 +278,37 @@ svg.ic {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
   -webkit-app-region: drag;
+}
+.sb-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 8px;
+  z-index: 10;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+}
+.sb-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+}
+.sb-resizer.is-drag::after,
+.sb-resizer:focus-visible::after {
+  background: var(--accent);
+}
+.sb-resizer:focus-visible { outline: none; }
+@media (hover: hover) and (pointer: fine) {
+  .sb-resizer:hover::after { background: var(--accent); }
+}
+body.is-resizing-sidebar,
+body.is-resizing-sidebar * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 .sb-top {
   height: 38px;
@@ -1029,3 +1082,43 @@ dialog::backdrop {
     display: none;
   }
 }
+
+/* Keep the outgoing document visible until the next page has rendered.
+   Shared chrome switches without a cross-fade or geometry animation. */
+@view-transition { navigation: auto; }
+#sidebar { view-transition-name: munhae-sidebar; }
+#menubar { view-transition-name: munhae-menubar; }
+.statusbar { view-transition-name: munhae-statusbar; }
+::view-transition-group(*) { animation-duration: 0s; }
+::view-transition-old(*),
+::view-transition-new(*) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(*) { opacity: 0; }
+::view-transition-new(*) { opacity: 1; }
+
+/* One quiet toolbar spans both navigation and the document workspace. */
+.win.unified-titlebar { grid-template-rows: 52px minmax(0, 1fr) 24px; }
+.unified-titlebar > .titlebar { grid-row: 1; grid-column: 1 / -1; gap: 0; padding: 0 14px 0 0; background: var(--surface); view-transition-name: munhae-titlebar; }
+.unified-titlebar > .sidebar { grid-row: 2; }
+.unified-titlebar > .sidebar .sb-top { display: none; }
+.unified-titlebar > .sidebar .sb-scroll { padding-top: 12px; }
+html .win.unified-titlebar > .main { grid-row: 2; grid-template-rows: minmax(0, 1fr); }
+.unified-titlebar > .statusbar { grid-row: 3; }
+.titlebar-navigation { flex: 0 0 var(--sbw); width: var(--sbw); min-width: 180px; height: 100%; display: flex; align-items: center; gap: 2px; padding-right: 10px; border-right: 1px solid var(--border); }
+.titlebar-window-space { flex: 0 0 80px; display: flex; align-items: center; gap: 8px; padding-left: 13px; }
+.titlebar-window-space i { display: block; width: 12px; height: 12px; border-radius: 50%; background: color-mix(in oklch, var(--fg) 16%, var(--surface)); }
+.native-titlebar .titlebar-window-space i { visibility: hidden; }
+html[data-platform="other"] .native-titlebar .titlebar-window-space { display: none; }
+.unified-titlebar .titlebar-navigation .tb { padding: 0; justify-content: center; min-width: 28px; width: 28px; height: 30px; color: var(--muted); -webkit-app-region: no-drag; }
+.unified-titlebar .titlebar-navigation .tb.is-on { background: transparent; border-color: transparent; color: var(--fg); }
+.unified-titlebar .titlebar-navigation .tb:disabled { opacity: .28; }
+.unified-titlebar .titlebar .tb-c { justify-content: flex-start; gap: 9px; padding: 0 16px; font-size: 13px; }
+.unified-titlebar .titlebar .tb-c > span:not(.proxy):not(.titlebar-page-icon) { overflow: hidden; text-overflow: ellipsis; }
+.unified-titlebar .titlebar .tb-c small { flex-shrink: 2; font-size: 11px; }
+.titlebar-page-icon { display: inline-flex; color: var(--muted); flex-shrink: 0; }
+.unified-titlebar .titlebar .tb-r { gap: 6px; }
+.unified-titlebar .titlebar .tb-r .tb { height: 30px; color: var(--muted); }
+.unified-titlebar .titlebar .tb-r .tb.is-on { border-color: transparent; background: var(--fg-soft); color: var(--fg); }
+.unified-titlebar .titlebar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+html[data-platform="mac"] .win.unified-titlebar.sb-hidden > .titlebar { padding-left: 0; }
+.unified-titlebar.sb-hidden .titlebar-navigation { flex-basis: 194px; width: 194px; border-right-color: transparent; }
+@media (hover: hover) and (pointer: fine) { .unified-titlebar .titlebar-navigation .tb:hover:not(:disabled) { background: var(--fg-soft); } }

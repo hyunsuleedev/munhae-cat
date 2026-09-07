@@ -1,0 +1,62 @@
+.context-content { overflow-y: auto; container-type: inline-size; background: var(--bg); }
+.context-page { width: min(100%, 1120px); margin: 0 auto; padding: 38px 44px 56px; }
+.context-heading { padding-bottom: 28px; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
+.context-path { margin: 0 0 24px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.context-title-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.context-eyebrow { display: block; color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; }
+.context-heading h1 { margin: 8px 0 10px; font-size: 28px; line-height: 1.3; font-weight: 650; letter-spacing: -.045em; overflow-wrap: anywhere; }
+.context-heading p:last-child { margin: 0; font-size: 12.5px; line-height: 1.7; }
+.context-mark { display: grid; place-items: center; flex: 0 0 52px; height: 52px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--muted); font: 27px var(--font-hanmun); box-shadow: 0 2px 4px var(--fg-softer); }
+.context-layout { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 30px; align-items: start; }
+.context-writing, .context-rail { min-width: 0; }
+.context-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.context-section-head h2 { margin: 0; font-size: 12px; font-weight: 600; }
+.context-section-head > span { color: var(--muted); font-size: 10.5px; }
+.context-editors { display: flex; flex-direction: column; gap: 18px; }
+.context-form { display: flex; flex-direction: column; gap: 0; background: var(--surface); border: 1px solid var(--ctl-border); border-radius: 12px; box-shadow: 0 3px 10px var(--fg-softer); overflow: hidden; }
+.context-note-head { display: flex; gap: 8px; align-items: center; min-height: 44px; padding: 0 20px; color: var(--muted); font-size: 10.5px; border-bottom: 1px solid var(--border); }
+.context-note-icon { font-size: 18px; line-height: 1; }
+.context-state { margin-left: auto; font-size: 10.5px; }
+.context-form .field { margin: 0; padding: 0 22px; }
+.context-form .field > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.context-form .context-title-field { padding-top: 12px; }
+.context-form .input { width: 100%; height: 48px; padding: 8px 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; font-size: 19px; font-weight: 600; letter-spacing: -.025em; }
+.context-form .input::placeholder { color: var(--muted); font-weight: 400; font-size: 17px; }
+.context-form .textarea { display: block; width: 100%; min-height: 255px; padding: 10px 0 20px; border: 0; border-radius: 0; box-shadow: none; background: transparent; font-size: 13px; line-height: 1.95; resize: vertical; }
+.context-form .textarea::placeholder { color: var(--muted); }
+.context-form .input:focus-visible, .context-form .textarea:focus-visible { outline: none; box-shadow: inset 0 -2px var(--accent); }
+.context-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--fg-softer); }
+.context-actions .check { font-size: 11px; color: var(--muted); gap: 7px; }
+.context-actions input[type=checkbox] { accent-color: var(--accent); }
+.context-actions .btn { height: 30px; border-radius: 6px; }
+.context-actions .btn-primary { padding-inline: 13px; }
+.context-add { margin-top: 12px; width: 100%; height: 38px; border: 1px dashed var(--ctl-border); background: transparent; box-shadow: none; color: var(--muted); border-radius: 9px; gap: 7px; }
+.context-add > span { font-size: 17px; }
+.context-rail { padding-top: 28px; }
+.context-scope { padding: 20px; border-radius: 10px; background: var(--chrome); }
+.context-scope h2 { margin: 10px 0 18px; font-size: 16px; font-weight: 600; line-height: 1.6; letter-spacing: -.035em; }
+.context-scope p, .context-help { color: var(--muted); font-size: 11.5px; line-height: 1.8; margin: 14px 0 0; }
+.context-scope-tree { display: grid; gap: 14px; margin: 0 0 18px; font-size: 11px; }
+.context-scope-tree span { display: flex; align-items: center; gap: 8px; }
+.context-scope-tree i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.context-scope-tree span + span { position: relative; margin-left: 22px; color: var(--muted); }
+.context-scope-tree span + span::before { content: ''; position: absolute; left: -20px; top: -12px; width: 12px; height: 19px; border-left: 1px solid var(--ctl-border); border-bottom: 1px solid var(--ctl-border); border-radius: 0 0 0 4px; }
+.context-scope-tree span + span i { background: var(--ctl-border); }
+.context-reference-section { margin-top: 26px; }
+.context-reference-section h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 600; }
+.context-reference-section h2 span { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 5px; background: var(--fg-soft); color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.context-help { margin: 9px 0 14px; }
+.context-reference { border-bottom: 1px solid var(--border); font-size: 12px; }
+.context-reference summary { padding: 12px 0; cursor: pointer; overflow-wrap: anywhere; line-height: 1.6; }
+.context-owner { display: block; color: var(--muted); font-size: 10.5px; margin: 5px 0 0; }
+.context-reference-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 4px 0 16px; }
+.context-reference .btn { margin-bottom: 16px; max-width: 100%; }
+.context-loading { margin: 32px 40px; }
+.context-empty { padding: 18px 14px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); }
+.context-empty > span { display: block; font-size: 22px; margin-bottom: 8px; }
+.context-empty b { font-size: 11.5px; font-weight: 500; color: var(--fg); }
+.context-empty p { margin: 6px 0 0; font-size: 11px; line-height: 1.7; }
+.context-content .btn:focus-visible, .context-reference summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (hover: hover) and (pointer: fine) { .context-add:hover { background: var(--fg-soft); color: var(--fg); border-color: var(--muted); } .context-content .btn:active:not(:disabled) { transform: scale(.98); } }
+@container (max-width: 880px) { .context-page { padding: 28px; } .context-layout { gap: 22px; grid-template-columns: minmax(0, 1fr) 200px; } }
+@container (max-width: 690px) { .context-page { padding: 24px 20px 40px; } .context-layout { grid-template-columns: minmax(0, 1fr); } .context-rail { padding-top: 0; } .context-heading h1 { font-size: 24px; } .context-form .field { padding-inline: 16px; } }

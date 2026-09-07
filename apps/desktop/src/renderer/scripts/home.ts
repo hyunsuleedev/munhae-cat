@@ -1,9 +1,5 @@
 import type {
-  CreateDocumentInput,
-  DocumentGenre,
-  DocumentKind,
   DocumentListItem,
-  DocumentNodeRole,
   HomeView,
 } from "../../shared/munhae-api";
 import {
@@ -14,9 +10,9 @@ import {
   findDefaultDoc,
   go,
   initShell,
-  kindLine,
   must,
   notify,
+  openDocumentDialog,
   persistDoc,
   renderSidebar,
   requireProject,
@@ -25,10 +21,10 @@ import {
   setSidebarDocs,
   shortPath,
   stateLabel,
-  store,
   tagHtml,
   unwrap,
 } from "./shared";
+import { openConfirmedExport } from "./project-tools";
 
 const project = await requireProject();
 if (!project) throw new Error("redirect");
@@ -114,7 +110,7 @@ function renderTable(): void {
           const tr = stateLabel("translation", d.translationState);
           const path = ancestorPath(d);
           return `<tr class="${sel === d.id ? "is-active" : ""}" data-id="${esc(d.id)}" tabindex="0" aria-selected="${sel === d.id}">
-        <td><div class="work-cell"><div class="work-title"><span class="name">${esc(d.originalTitle || d.title)}</span><span class="kind">${esc(kindLine(d))}</span></div>${path ? `<span class="path">${esc(path)}</span>` : ""}</div></td>
+        <td><div class="work-cell"><div class="work-title"><span class="name">${esc(d.originalTitle || d.title)}</span></div>${path ? `<span class="path">${esc(path)}</span>` : ""}</div></td>
         <td>${tagHtml(src)}</td><td>${tagHtml(punc)}</td><td>${tagHtml(tr)}</td>
         <td>${d.uncertaintyCount ? `<span class="mono">${d.uncertaintyCount}</span>` : '<span class="muted">—</span>'}</td>
       </tr>`;
@@ -142,10 +138,11 @@ function renderSel(): void {
   if (!isSourceUnit(d)) {
     const sourceCount = descendantSourceCount(d);
     must("#selBody").innerHTML = `<div class="sel-title">${esc(label)}</div>
-      <dl class="kv"><dt>역할</dt><dd>목차 구조</dd><dt>구조</dt><dd class="mono">${esc(kindLine(d))}</dd><dt>상위</dt><dd class="hanmun">${esc(parentOf(d))}</dd><dt>하위 원문</dt><dd>${sourceCount}건</dd></dl>
+      <dl class="kv"><dt>역할</dt><dd>목차 폴더</dd><dt>상위</dt><dd class="hanmun">${esc(parentOf(d))}</dd><dt>하위 원문</dt><dd>${sourceCount}건</dd></dl>
       <p class="structure-note">권·장 같은 목차 항목은 번역 진행률에 포함되지 않습니다. 실제 원문이 연결된 하위 항목부터 작업 단위로 셉니다.</p>
-      <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn btn-sm" id="selAddSource" type="button">하위 원문 추가</button></div>`;
+      <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn btn-sm" id="selMetadata" type="button">문서 정보</button><button class="btn btn-sm" id="selAddSource" type="button">하위 원문 추가</button></div>`;
     $("#selAddSource")?.addEventListener("click", () => openNewDoc(d.id));
+    $("#selMetadata")?.addEventListener("click", () => openMetadata(d.id));
     btn.textContent = `${label} 아래 원문 추가`;
     return;
   }
@@ -153,9 +150,10 @@ function renderSel(): void {
   const punc = stateLabel("punctuation", d.punctuationState);
   const tr = stateLabel("translation", d.translationState);
   must("#selBody").innerHTML = `<div class="sel-title">${esc(d.originalTitle || d.title)}</div>
-    <dl class="kv"><dt>구조</dt><dd class="mono">${esc(kindLine(d))}</dd><dt>상위</dt><dd class="hanmun">${esc(parentOf(d))}</dd><dt>원문</dt><dd>${tagHtml(src)}</dd><dt>표점</dt><dd>${tagHtml(punc)}</dd><dt>번역</dt><dd>${tagHtml(tr)}</dd><dt>불확실성</dt><dd>${d.uncertaintyCount ? `${d.uncertaintyCount}건 열림` : "—"}</dd></dl>
-    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn btn-sm" id="selOpen" type="button">열기 <kbd>↩</kbd></button></div>`;
+    <dl class="kv"><dt>상위</dt><dd class="hanmun">${esc(parentOf(d))}</dd><dt>원문</dt><dd>${tagHtml(src)}</dd><dt>표점</dt><dd>${tagHtml(punc)}</dd><dt>번역</dt><dd>${tagHtml(tr)}</dd><dt>불확실성</dt><dd>${d.uncertaintyCount ? `${d.uncertaintyCount}건 열림` : "—"}</dd></dl>
+    <div class="row" style="margin-top:12px;justify-content:flex-end"><button class="btn btn-sm" id="selMetadata" type="button">문서 정보</button><button class="btn btn-sm" id="selOpen" type="button">열기 <kbd>↩</kbd></button></div>`;
   $("#selOpen")?.addEventListener("click", () => openDoc(d.id));
+  $("#selMetadata")?.addEventListener("click", () => openMetadata(d.id));
   btn.textContent = `${label} 편집`;
 }
 
@@ -221,7 +219,7 @@ function renderAgents(): void {
   }
   dl.innerHTML = view.agents
     .map((a) => {
-      const name = a.agentId === "claude" ? "Claude CLI" : "Codex CLI";
+      const name = a.agentId === "antigravity" ? "Antigravity CLI" : a.agentId === "claude" ? "Claude CLI" : "Codex CLI";
       const ok = a.installed && a.loggedIn;
       const cls = ok ? "ok" : "warn";
       const detail = !a.installed
@@ -234,63 +232,13 @@ function renderAgents(): void {
     .join("");
 }
 
-function fillParents(preferred: string | null = sel): void {
-  const selEl = must<HTMLSelectElement>("#nParent");
-  const docs = view?.documents ?? [];
-  const master = docs.find((d) => d.isMaster);
-  selEl.innerHTML = docs
-    .filter((d) => d.nodeRole === "container")
-    .map(
-      (d) =>
-        `<option value="${esc(d.id)}">${esc(
-          `${"  ".repeat(d.depth)}${d.originalTitle || d.title}${d.isMaster ? " (프로젝트 마스터)" : ""}`,
-        )}</option>`,
-    )
-    .join("");
-  const selected = preferred && docs.some((d) => d.id === preferred && d.nodeRole === "container")
-    ? preferred
-    : master?.id;
-  if (selected) selEl.value = selected;
-}
-
-function setNewNodeRole(role: DocumentNodeRole): void {
-  const roleInput = document.querySelector(`input[name="nodeRole"][value="${role}"]`) as HTMLInputElement | null;
-  if (roleInput) roleInput.checked = true;
-  must("#ndSourceFields").hidden = role === "container";
-  must<HTMLTextAreaElement>("#ndText").required = role === "source_unit";
-  must("#ndRoleHelp").textContent =
-    role === "container"
-      ? "목차 폴더는 하위 항목과 문맥만 정리하며 원문·표점·번역안을 가질 수 없습니다."
-      : "원문 문서는 하위 항목을 가질 수 없습니다. 저장할 때 표점안과 번역 앵커가 함께 만들어집니다.";
-  must("#newSubmit").textContent = role === "container" ? "목차 폴더 만들기" : "원문 문서 만들기";
-}
-
-function openNewDoc(parentId: string | null = sel, role: DocumentNodeRole = "source_unit"): void {
-  const masterId = view?.documents.find((d) => d.isMaster)?.id ?? null;
-  const requestedParent = view?.documents.find((d) => d.id === parentId);
-  const resolvedParentId = requestedParent?.nodeRole === "source_unit"
-    ? requestedParent.parentId ?? masterId
-    : parentId ?? masterId;
-  fillParents(resolvedParentId);
-  const parent = view?.documents.find((d) => d.id === resolvedParentId);
-  const kind = must<HTMLSelectElement>("#nKind");
-  if (
-    parent &&
-    (parent.structuralKind === "work" ||
-      parent.structuralKind === "volume" ||
-      parent.structuralKind === "chapter" ||
-      parent.structuralKind === "collection")
-  ) {
-    kind.value = "section";
-  }
-  setNewNodeRole(role);
-  (must("#dlgNew") as HTMLDialogElement).showModal();
-  must<HTMLInputElement>("#ndTitle").focus();
+function openNewDoc(parentId: string | null = sel): void {
+  void openDocumentDialog(parentId);
 }
 
 function openNewSource(): void {
   const selected = view?.documents.find((d) => d.id === sel);
-  openNewDoc(selected && isSourceUnit(selected) ? selected.parentId : sel, "source_unit");
+  openNewDoc(selected && isSourceUnit(selected) ? selected.parentId : sel);
 }
 
 function openDoc(id: string): void {
@@ -304,6 +252,14 @@ function openDoc(id: string): void {
   go("editor", id);
 }
 
+function openMetadata(id: string): void {
+  location.href = `knowledge.html?node=${encodeURIComponent(id)}#context`;
+}
+
+function openSourceImport(): void {
+  void openDocumentDialog(sel, true);
+}
+
 function pageCmd(id: string): boolean {
   switch (id) {
     case "newdoc":
@@ -312,16 +268,15 @@ function pageCmd(id: string): boolean {
     case "backup":
       return false;
     case "export":
-      notify("확정 번역 내보내기는 아직 연결되지 않았습니다", "내보내기");
+      openConfirmedExport();
       return true;
     case "import":
-      notify("텍스트 파일 가져오기는 아직 연결되지 않았습니다", "가져오기");
+      openSourceImport();
       return true;
     case "ctxpane":
       return false;
     case "find":
-      must<HTMLInputElement>("#q").focus();
-      return true;
+      return false;
   }
   return false;
 }
@@ -332,7 +287,7 @@ function pageKeys(e: KeyboardEvent, m: boolean): void {
     openNewSource();
   } else if (m && !e.shiftKey && e.code === "KeyE") {
     e.preventDefault();
-    notify("확정 번역 내보내기는 아직 연결되지 않았습니다", "내보내기");
+    openConfirmedExport();
   } else if (m && !e.shiftKey && e.code === "KeyF") {
     e.preventDefault();
     must<HTMLInputElement>("#q").focus();
@@ -360,7 +315,11 @@ async function load(): Promise<void> {
   renderUnc();
   renderRecentWork();
   renderAgents();
-  fillParents();
+  void api.app.probeAgents().then((agents) => {
+    if (view !== data) return;
+    data.agents = agents;
+    renderAgents();
+  }).catch(() => undefined);
 }
 
 must("#q").addEventListener("input", renderTable);
@@ -382,71 +341,6 @@ must("#docBody").addEventListener("dblclick", (e) => {
   if (tr instanceof HTMLElement && tr.dataset.id) openDoc(tr.dataset.id);
 });
 must("#btnNewDoc").addEventListener("click", openNewSource);
-must("#newCancel").addEventListener("click", () => (must("#dlgNew") as HTMLDialogElement).close());
-document.querySelectorAll<HTMLInputElement>('input[name="nodeRole"]').forEach((input) => {
-  input.addEventListener("change", () => {
-    if (input.checked) setNewNodeRole(input.value as DocumentNodeRole);
-  });
-});
-must("#ndPickFile").addEventListener("click", () => {
-  void (async () => {
-    const picked = document.querySelector('input[name="origin"][value="import"]') as HTMLInputElement | null;
-    if (picked) picked.checked = true;
-    const result = await api.home.pickTextFile();
-    if (!result.ok) {
-      notify(result.error.message, "가져오기");
-      return;
-    }
-    if (result.data == null) return;
-    must<HTMLTextAreaElement>("#ndText").value = result.data;
-    notify("파일을 읽었습니다. 문서 만들기를 누르면 저장됩니다", "가져오기");
-  })();
-});
-must<HTMLFormElement>("#newForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  void (async () => {
-    const title = must<HTMLInputElement>("#ndTitle").value.trim();
-    if (!title) return;
-    const originalTitle = must<HTMLInputElement>("#ndOriginal").value.trim();
-    const parentId = must<HTMLSelectElement>("#nParent").value || null;
-    const structuralKind = must<HTMLSelectElement>("#nKind").value as DocumentKind;
-    const genre = must<HTMLSelectElement>("#nGenre").value as DocumentGenre;
-    const nodeRole =
-      (document.querySelector('input[name="nodeRole"]:checked') as HTMLInputElement | null)?.value === "container"
-        ? "container"
-        : "source_unit";
-    const originRaw =
-      (document.querySelector('input[name="origin"]:checked') as HTMLInputElement | null)?.value ?? "paste";
-    const sourceText = must<HTMLTextAreaElement>("#ndText").value;
-    const originKind: "paste" | "manual" | "import" =
-      originRaw === "import" ? "import" : originRaw === "manual" ? "manual" : "paste";
-    if (nodeRole === "source_unit" && !sourceText.trim()) {
-      notify("원문 문서에는 원문 내용이 필요합니다", "새 항목");
-      return;
-    }
-    const base = { title, originalTitle: originalTitle || null, parentId, structuralKind, genre };
-    const input: CreateDocumentInput =
-      nodeRole === "container"
-        ? { ...base, nodeRole }
-        : { ...base, nodeRole, originKind, sourceText };
-    const result = await api.home.createDocument(input);
-    const item = unwrap(result, "새 문서");
-    if (!item) return;
-    (must("#dlgNew") as HTMLDialogElement).close();
-    must<HTMLFormElement>("#newForm").reset();
-    setNewNodeRole("source_unit");
-    notify(
-      nodeRole === "source_unit" ? `${title} 원문 문서를 만들었습니다` : `${title} 목차 폴더를 만들었습니다`,
-      "새 항목",
-    );
-    await load();
-    sel = item.id;
-    persistDoc(item.id);
-    renderSidebar(tree(), { currentDocId: sel });
-    renderTable();
-    if (nodeRole === "source_unit") openDoc(item.id);
-  })();
-});
 must("#btnBackup").addEventListener("click", () => {
   void (async () => {
     const result = await api.project.backup();
@@ -454,7 +348,7 @@ must("#btnBackup").addEventListener("click", () => {
     else if (result.data) notify(`백업을 저장했습니다 · ${result.data}`, "백업");
   })();
 });
-must("#btnExport").addEventListener("click", () => notify("확정 번역 내보내기는 아직 연결되지 않았습니다", "내보내기"));
+must("#btnExport").addEventListener("click", openConfirmedExport);
 must("#btnContinue").addEventListener("click", () => {
   const selected = view?.documents.find((d) => d.id === sel);
   if (selected && isSourceUnit(selected)) openDoc(selected.id);
@@ -478,12 +372,5 @@ bindSidebar(
   (parentId) => openNewDoc(parentId),
 );
 
-void load().then(() => {
-  if (store.get("munhae.openNewDoc") === "1") {
-    store.set("munhae.openNewDoc", "0");
-    const stored = store.get("munhae.newDocParent");
-    store.set("munhae.newDocParent", "");
-    const parent = stored === null || stored === undefined ? sel : stored === "" ? null : stored;
-    openNewDoc(parent);
-  }
-});
+window.addEventListener("munhae:document-created", () => void load());
+await load();

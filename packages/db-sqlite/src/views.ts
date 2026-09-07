@@ -1,8 +1,30 @@
 export type AgentProbe = {
-  agentId: "codex" | "claude";
+  agentId: "codex" | "claude" | "antigravity";
+  displayName: string;
   installed: boolean;
   loggedIn: boolean | null;
   version: string | null;
+  capabilities: {
+    jsonStreaming: boolean;
+    resume: boolean;
+    modelSelection: boolean;
+    reasoningEffort: boolean;
+    serviceTier: boolean;
+    structuredOutput: boolean;
+    nativeTools: boolean;
+    explicitSessionId: boolean;
+  };
+  capabilitySource: "live" | "unavailable";
+  models: Array<{
+    id: string;
+    label: string;
+    defaultReasoningEffort?: "low" | "medium" | "high" | "xhigh" | "max";
+    reasoningOptions?: Array<{ id: string; label: string }>;
+    serviceTierOptions?: Array<{ id: string; label: string }>;
+  }>;
+  modelSource: "live" | "fallback";
+  reasoningOptions: Array<{ id: string; label: string }>;
+  serviceTierOptions: Array<{ id: string; label: string }>;
   lastCheckedAt: string;
   detail: string;
 };
@@ -23,20 +45,36 @@ export type RecentProject = {
   missing: boolean;
 };
 
-export type DocumentKind = "collection" | "work" | "volume" | "chapter" | "section" | "item";
 
 export type DocumentNodeRole = "container" | "source_unit";
 
-export type DocumentGenre =
-  | "poetry"
-  | "letter"
-  | "memorial"
-  | "preface"
-  | "epitaph"
-  | "biography"
-  | "official_document"
-  | "prose"
-  | "other";
+
+export type SourceOriginKind = "manual" | "paste" | "import";
+
+export type PunctuationStructureMode = "prose" | "poetry";
+
+export type PunctuationSpanKind = "paragraph" | "sentence" | "verse_line" | "couplet" | "stanza";
+
+export type PunctuationStructureSpanInput = {
+  spanKey: string;
+  spanKind: PunctuationSpanKind;
+  parentSpanKey?: string | null;
+  ordinal: number;
+  codepointFrom: number;
+  codepointTo: number;
+  label?: string | null;
+};
+
+export type PunctuationStructureSpanView = {
+  id: string;
+  spanKind: PunctuationSpanKind;
+  parentSpanId: string | null;
+  ordinal: number;
+  codepointFrom: number;
+  codepointTo: number;
+  quote: string;
+  label: string | null;
+};
 
 export type VersionUiState = "draft" | "confirmed" | "review" | "none";
 
@@ -46,8 +84,6 @@ export type DocumentListItem = {
   depth: number;
   nodeRole: DocumentNodeRole;
   isMaster: boolean;
-  structuralKind: DocumentKind;
-  genre: DocumentGenre | null;
   title: string;
   originalTitle: string | null;
   ordinal: number;
@@ -77,8 +113,6 @@ type CreateDocumentBaseInput = {
   title: string;
   originalTitle?: string | null;
   parentId: string | null;
-  structuralKind: DocumentKind;
-  genre: DocumentGenre;
 };
 
 export type CreateDocumentInput =
@@ -93,6 +127,37 @@ export type CreateDocumentInput =
       sourceText: string;
     });
 
+export type DocumentMetadataView = {
+  id: string;
+  parentId: string | null;
+  nodeRole: DocumentNodeRole;
+  isMaster: boolean;
+  title: string;
+  originalTitle: string | null;
+  authorPersonId: string | null;
+  authorName: string | null;
+  language: string | null;
+  periodText: string | null;
+  dateText: string | null;
+  descriptionMd: string | null;
+  sourceReference: string | null;
+  lockVersion: number;
+  updatedAt: string;
+};
+
+export type UpdateDocumentMetadataInput = {
+  documentNodeId: string;
+  title: string;
+  originalTitle: string | null;
+  authorPersonId: string | null;
+  language: string | null;
+  periodText: string | null;
+  dateText: string | null;
+  descriptionMd: string | null;
+  sourceReference: string | null;
+  expectedLockVersion: number;
+};
+
 export type TranslationBlockView = {
   blockKey: string;
   ordinal: number;
@@ -102,6 +167,31 @@ export type TranslationBlockView = {
   relationKinds: string[];
 };
 
+export type ReferenceAssetState = "present" | "missing" | "unsafe_path" | "size_mismatch" | "hash_mismatch";
+
+export type ReferenceAssetView = {
+  id: string;
+  assetKind: "image" | "pdf";
+  originalFilename: string;
+  mimeType: string;
+  byteSize: number;
+  sha256: string;
+  pageCount: number | null;
+  role: "reference";
+  pageFrom: number | null;
+  pageTo: number | null;
+  locatorText: string | null;
+  ordinal: number;
+  state: ReferenceAssetState;
+  verifiedAt: string;
+};
+
+export type ReferenceAssetContent = {
+  assetId: string;
+  mimeType: string;
+  base64: string;
+};
+
 export type EditorView = {
   project: ProjectSummary;
   document: {
@@ -109,25 +199,30 @@ export type EditorView = {
     title: string;
     originalTitle: string | null;
     nodeRole: DocumentNodeRole;
-    structuralKind: DocumentKind;
-    genre: DocumentGenre | null;
     authorName: string | null;
     periodText: string | null;
+    dateText: string | null;
     language: string | null;
     sourceReference: string | null;
   };
+  referenceAssets: ReferenceAssetView[];
   source: {
     versionId: string;
     versionNo: number;
+    lockVersion: number;
     state: "draft" | "confirmed" | "rejected" | "superseded";
     contentText: string;
   };
   punctuation: {
     versionId: string;
     versionNo: number;
+    lockVersion: number;
     state: "draft" | "confirmed" | "rejected" | "superseded";
     punctuatedText: string;
-  };
+    structureMode: PunctuationStructureMode;
+    structureSpans: PunctuationStructureSpanView[];
+    anchorSetId: string | null;
+  } | null;
   anchors: Array<{
     anchorKey: string;
     ordinal: number;
@@ -136,30 +231,23 @@ export type EditorView = {
     punctuationTo: number;
     punctuatedQuote: string;
   }>;
-  candidates: Array<{
-    stage: string;
-    candidateKey: string;
+  translation: {
     versionId: string;
     versionNo: number;
     state: "draft" | "confirmed" | "rejected" | "superseded";
     validationState: "valid" | "needs_review";
     textContent: string;
+    textLayout?: {
+      state: "pending" | "running" | "ready" | "needs_review" | "failed";
+      sentences: Array<{ id: string; from: number; to: number; text: string }>;
+      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean }>;
+      error: string | null;
+    };
     originKind: string;
-    isCurrent: boolean;
-    isConfirmed: boolean;
+    /** True only when this immutable version targets the editor's current source, punctuation, and anchor set. */
+    isCurrentDependencies: boolean;
+    lockVersion: number;
     blocks: TranslationBlockView[];
-  }>;
-  activeStage: string;
-  lockVersion: number;
-  reflection: {
-    summary: string;
-    findings: Array<{
-      findingKind: string;
-      severity: string;
-      message: string;
-      sourceAnchorIds: string[];
-      candidateKey: string | null;
-    }>;
   } | null;
   chat: Array<{
     role: "user" | "assistant";
@@ -171,7 +259,6 @@ export type EditorView = {
 
 export type SaveTranslationDraftInput = {
   documentNodeId: string;
-  stage: string;
   textContent: string;
   blocks: Array<{
     blockKey: string;
@@ -180,33 +267,88 @@ export type SaveTranslationDraftInput = {
     sourceAnchorIds: string[];
     relationKinds?: string[];
   }>;
-  expectedLockVersion?: number;
+  expectedLockVersion: number;
+};
+
+export type CreateTranslationDraftInput = {
+  fullText?: boolean;
+  documentNodeId: string;
+  expectedSourceLockVersion: number;
+  expectedPunctuationLockVersion: number;
+};
+
+export type ResetTranslationDraftInput = {
+  fullText?: boolean;
+  documentNodeId: string;
+  expectedSourceLockVersion: number;
+  expectedPunctuationLockVersion: number;
+  expectedTranslationLockVersion: number;
+};
+
+export type ReviseTranslationInput = {
+  documentNodeId: string;
+  expectedLockVersion: number;
+};
+
+export type SaveSourceDraftInput = {
+  documentNodeId: string;
+  contentText: string;
+  originKind: SourceOriginKind;
+  changeSummary?: string | null;
+  expectedLockVersion: number;
+};
+
+export type ConfirmSourceInput = {
+  documentNodeId: string;
+  expectedLockVersion: number;
+};
+
+export type CreatePunctuationDraftInput = {
+  documentNodeId: string;
+  structureMode: PunctuationStructureMode;
+  expectedSourceLockVersion: number;
+};
+
+export type SavePunctuationDraftInput = {
+  documentNodeId: string;
+  punctuatedText: string;
+  structureMode: PunctuationStructureMode;
+  structureSpans?: PunctuationStructureSpanInput[];
+  changeSummary?: string | null;
+  expectedLockVersion: number;
+};
+
+export type ConfirmPunctuationInput = {
+  documentNodeId: string;
+  expectedLockVersion: number;
 };
 
 export type ConfirmTranslationInput = {
   documentNodeId: string;
-  stage: string;
   expectedLockVersion: number;
 };
 
 export type MergeBlocksInput = {
   documentNodeId: string;
-  stage: string;
   leftBlockKey: string;
   rightBlockKey: string;
-  expectedLockVersion?: number;
+  expectedLockVersion: number;
 };
 
 export type SplitBlockInput = {
   documentNodeId: string;
-  stage: string;
   blockKey: string;
+  /** Unicode code-point offset inside the selected translation block. */
   splitAt: number;
-  expectedLockVersion?: number;
+  /** Boundary in sourceAnchorIds (1..length-1) for a multi-anchor block. */
+  anchorSplitAt?: number;
+  expectedLockVersion: number;
 };
 
 export type GlossaryEntryView = {
   id: string;
+  contentHash: string;
+  lockVersion: number;
   sourceTerm: string;
   targetTerm: string;
   targetLocale: string;
@@ -218,6 +360,8 @@ export type GlossaryEntryView = {
 
 export type PersonView = {
   id: string;
+  contentHash: string;
+  lockVersion: number;
   preferredName: string;
   hanjaName: string | null;
   reading: string | null;
@@ -228,6 +372,8 @@ export type PersonView = {
 
 export type PlaceView = {
   id: string;
+  contentHash: string;
+  lockVersion: number;
   preferredName: string;
   hanjaName: string | null;
   reading: string | null;
@@ -237,28 +383,122 @@ export type PlaceView = {
   descriptionMd: string | null;
 };
 
+export type UpsertGlossaryInput = Omit<GlossaryEntryView, "id" | "contentHash" | "lockVersion"> & {
+  id?: string;
+  expectedLockVersion?: number;
+};
+
+export type UpsertPersonInput = Omit<PersonView, "id" | "contentHash" | "lockVersion"> & {
+  id?: string;
+  expectedLockVersion?: number;
+};
+
+export type UpsertPlaceInput = Omit<PlaceView, "id" | "contentHash" | "lockVersion"> & {
+  id?: string;
+  expectedLockVersion?: number;
+};
+
 export type UncertaintyView = {
   id: string;
+  versionId: string;
+  versionNo: number;
   category: "textual" | "interpretive" | "identification";
   severity: string;
   blocking: boolean;
-  state: string;
+  state: "open" | "resolved";
   statementMd: string;
+  rationaleMd: string | null;
+  confidenceLabel: string | null;
+  options: Array<{
+    id: string;
+    label: string;
+    interpretationMd: string | null;
+    ordinal: number;
+  }>;
+  anchors: Array<{
+    id: string;
+    targetKind:
+      | "document_node"
+      | "source_text_version"
+      | "punctuation_version"
+      | "translation_anchor"
+      | "document_translation"
+      | "document_translation_version";
+    targetVersionId: string;
+    codepointFrom: number | null;
+    codepointTo: number | null;
+    quote: string | null;
+  }>;
   locator: string;
+};
+
+export type UncertaintyOptionInput = {
+  label: string;
+  interpretationMd?: string | null;
+};
+
+export type UncertaintyAnchorInput = {
+  targetKind: UncertaintyView["anchors"][number]["targetKind"];
+  targetVersionId: string;
+  codepointFrom?: number | null;
+  codepointTo?: number | null;
+  quote?: string | null;
+};
+
+export type CreateUncertaintyInput = {
+  category: UncertaintyView["category"];
+  severity: string;
+  blocking: boolean;
+  statementMd: string;
+  rationaleMd?: string | null;
+  confidenceLabel?: string | null;
+  options: UncertaintyOptionInput[];
+  anchors: UncertaintyAnchorInput[];
+};
+
+export type CreateUncertaintyVersionInput = CreateUncertaintyInput & {
+  uncertaintyId: string;
+  expectedVersionId: string;
+};
+
+export type ResolveUncertaintyInput = {
+  uncertaintyId: string;
+  expectedVersionId: string;
 };
 
 export type NodeContextView = {
   id: string;
   source: "context_item" | "document_description";
-  itemKind: string;
   scopeKind: "document_node";
   scopeId: string;
   title: string;
   contentMd: string;
   priority: number;
   enabled: boolean;
+  lockVersion: number;
   updatedAt: string;
 };
+
+export type CreateContextItemInput = {
+  scopeId: string;
+  title: string;
+  contentMd: string;
+  priority: number;
+  enabled: boolean;
+};
+
+export type UpdateContextItemInput = CreateContextItemInput & {
+  id: string;
+  expectedLockVersion: number;
+};
+
+export type ContextItemCasInput = {
+  id: string;
+  expectedLockVersion: number;
+};
+
+export type SetContextItemEnabledInput = ContextItemCasInput & { enabled: boolean };
+export type SetContextItemPriorityInput = ContextItemCasInput & { priority: number };
 
 export type KnowledgeView = {
   glossary: GlossaryEntryView[];
@@ -272,7 +512,18 @@ export type ContextPreview = {
   characterCount: number;
   utf8ByteCount: number;
   manifestHash: string;
-  required: Array<{ kind: string; label: string; version?: string; hash?: string; chars: number }>;
+  requestHash: string;
+  requestText: string;
+  promptContractVersion: string;
+  required: Array<{
+    kind: string;
+    label: string;
+    version?: string;
+    hash: string;
+    chars: number;
+    /** Exact user-visible payload represented by hash/chars. */
+    content: string;
+  }>;
   auxiliary: Array<{
     id: string;
     kind: string;
@@ -283,13 +534,155 @@ export type ContextPreview = {
     selection: "auto" | "pin" | "exclude";
     hash: string;
     chars: number;
+    /** Exact candidate payload, including when the item is excluded. */
+    content: string;
   }>;
   status: "ready";
   manifestJson: string;
+  snapshot: TranslationRunSnapshot;
 };
 
 export type ContextPreviewInput = {
   documentNodeId: string;
-  recipe: "two_step" | "three_step";
   selections?: Array<{ id: string; mode: "auto" | "pin" | "exclude" }>;
+  revision?: { baseVersionId: string; commentIds: string[] };
+};
+
+export type ReviewCommentView = {
+  id: string;
+  documentNodeId: string;
+  translationVersionId: string;
+  targetKind: "source" | "translation";
+  targetVersionId: string;
+  codepointFrom: number;
+  codepointTo: number;
+  quote: string;
+  bodyMd: string;
+  lockVersion: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateReviewCommentInput = Omit<ReviewCommentView, "id" | "lockVersion" | "createdAt" | "updatedAt">;
+export type ReviewCommentCasInput = { id: string; expectedLockVersion: number };
+export type UpdateReviewCommentInput = ReviewCommentCasInput & { bodyMd: string };
+
+export type TranslationHeadSnapshot = {
+  translationId: string;
+  currentVersionId: string;
+  lockVersion: number;
+} | null;
+
+export type TranslationRunSnapshot = {
+  documentNodeId: string;
+  sourceTextId: string;
+  sourceTextVersionId: string;
+  punctuationVersionId: string;
+  policyVersionId: string;
+  anchorSetId: string;
+  targetLocale: string;
+  expectedHead: TranslationHeadSnapshot;
+};
+
+export type BeginTranslationRunInput = ContextPreviewInput & {
+  agentId: "codex" | "claude" | "antigravity";
+  requestedModel: string | null;
+  reasoningLevel: string | null;
+  serviceTier: string | null;
+  runtimeVersion: string | null;
+};
+
+export type PreparedTranslationRun = {
+  messageId: string;
+  threadId: string;
+  requestArtifactId: string;
+  requestText: string;
+  requestHash: string;
+  promptContractVersion: string;
+  snapshot: TranslationRunSnapshot;
+};
+
+export type CompleteTranslationRunInput = {
+  messageId: string;
+  rawResponse: string;
+  eventsJsonl: string;
+  usage: unknown;
+  resolvedModel: string | null;
+  runtimeVersion: string | null;
+};
+
+export type CompletedTranslationRun = {
+  messageId: string;
+  validationState: "valid" | "invalid_unapplied";
+  fatalFindings: number;
+  recoverableFindings: number;
+  version: {
+    translationId: string;
+    versionId: string;
+    validationState: "valid";
+  } | null;
+  idempotent: boolean;
+};
+
+export type ChatScopeKind = "document_node" | "project";
+
+export type GetProjectChatInput = {
+  documentNodeId: string;
+  scopeKind: ChatScopeKind;
+};
+
+export type BeginProjectChatRunInput = GetProjectChatInput & {
+  question: string;
+  agentId: "codex" | "claude" | "antigravity";
+  requestedModel: string;
+  reasoningLevel: string | null;
+  serviceTier: string | null;
+  runtimeVersion: string | null;
+};
+
+export type BeginPunctuationSuggestionRunInput = {
+  documentNodeId: string;
+  structureMode: PunctuationStructureMode;
+  agentId: "codex" | "claude" | "antigravity";
+  requestedModel: string;
+  reasoningLevel: string | null;
+  serviceTier: string | null;
+  runtimeVersion: string | null;
+};
+
+export type PreparedProjectTaskRun = {
+  messageId: string;
+  threadId: string;
+  requestArtifactId: string;
+  requestText: string;
+  requestHash: string;
+  promptContractVersion: string;
+  stablePromptHash: string;
+  requestedModel: string;
+  resumeCompatible: boolean;
+};
+
+export type CompleteProjectTaskRunInput = {
+  messageId: string;
+  rawResponse: string;
+  eventsJsonl: string;
+  usage: unknown;
+  resolvedModel: string | null;
+  runtimeVersion: string | null;
+};
+
+export type CompletedPunctuationSuggestionRun = {
+  messageId: string;
+  validationState: "valid" | "invalid_unapplied";
+  applied: boolean;
+  punctuationVersionId: string | null;
+  anchorSetId: string | null;
+};
+
+export type PunctuationSuggestionView = CompletedPunctuationSuggestionRun & {
+  validationError: string | null;
+  documentNodeId: string;
+  agentId: "codex" | "claude" | "antigravity";
+  responseText: string;
+  createdAt: string;
 };

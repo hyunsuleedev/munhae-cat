@@ -1,13 +1,20 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { APP_INIT_SQL, PROJECT_INIT_SQL, PROJECT_MASTER_CONTAINER_SQL, PROJECT_NODE_ROLES_SQL } from "./embedded-sql.ts";
+import {
+  APP_INIT_SQL,
+  CONTEXT_WITHOUT_KIND_SQL,
+  FULL_TEXT_SQL,
+  PROJECT_INIT_SQL,
+  REVIEW_COMMENTS_SQL,
+} from "./embedded-sql.ts";
 
 const EMBEDDED: Record<string, string> = {
   "sqlite/001_init.sql": PROJECT_INIT_SQL,
-  "sqlite/002_document_node_roles.sql": PROJECT_NODE_ROLES_SQL,
-  "sqlite/003_project_master_container.sql": PROJECT_MASTER_CONTAINER_SQL,
   "app/001_init.sql": APP_INIT_SQL,
+  "sqlite/002_full_text_translation.sql": FULL_TEXT_SQL,
+  "sqlite/003_context_without_kind.sql": CONTEXT_WITHOUT_KIND_SQL,
+  "sqlite/004_review_comments.sql": REVIEW_COMMENTS_SQL,
 };
 
 function migrationCandidates(rel: string): string[] {

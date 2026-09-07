@@ -23,18 +23,6 @@ let recent: RecentProject[] = [];
 let items: HTMLElement[] = [];
 let sel = 0;
 
-function bindAssets(): void {
-  const img = $("#appIconImg") as HTMLImageElement | null;
-  if (!img) return;
-  const fail = (): void => {
-    $("#appIcon")?.classList.add("is-fallback");
-    const glyph = $("#appIconGlyph");
-    if (glyph) glyph.hidden = false;
-  };
-  img.addEventListener("error", fail);
-  if (img.complete && img.naturalWidth === 0) fail();
-}
-
 function renderRecent(): void {
   const box = $("#recentList");
   if (!box) return;
@@ -103,7 +91,18 @@ function pageKeys(e: KeyboardEvent, _m: boolean): void {
 }
 
 async function boot(): Promise<void> {
-  bindAssets();
+  const renderAccount = (state: Awaited<ReturnType<typeof api.auth.getState>>) => {
+    if (!state.ok) return;
+    const user = state.data.user;
+    const label = $("#welcomeAccountLabel");
+    const link = $("#welcomeAccountLink");
+    const signup = $("#welcomeSignUpLink");
+    if (label) label.textContent = user ? `${user.displayName || user.email} · 로그인됨` : "문해 계정";
+    if (link) link.textContent = user ? "내 계정" : "로그인";
+    if (signup) signup.hidden = !!user;
+  };
+  void api.auth.getState().then(renderAccount).catch(() => undefined);
+  api.auth.onStateChanged((state) => renderAccount({ ok: true, data: state }));
   const ver = $("#verLine");
   try {
     const v = await api.app.getVersion();

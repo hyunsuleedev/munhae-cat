@@ -1,17 +1,10 @@
 /**
  * Main-process logger. Never pass source text, translations, or prompt bodies.
  */
-
-const SECRET =
-  /Bearer\s+\S+|Authorization:\s*\S+|Cookie:\s*[^\r\n]+|\bsk-[A-Za-z0-9_-]+/gi;
+import { redactSecrets } from "@munhae/agent-runtime";
 
 export function redact(text: string): string {
-  return text.replace(SECRET, (match) => {
-    if (/^Bearer/i.test(match)) return "Bearer [redacted]";
-    if (/^Authorization/i.test(match)) return "Authorization: [redacted]";
-    if (/^Cookie/i.test(match)) return "Cookie: [redacted]";
-    return "[redacted-key]";
-  });
+  return redactSecrets(text);
 }
 
 function serialize(value: unknown): string {

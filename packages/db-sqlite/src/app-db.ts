@@ -3,10 +3,16 @@ import { join } from "node:path";
 import { createId, nowIso } from "@munhae/domain";
 import { migrateAppDb } from "./migrate.ts";
 import { allRows, getRow } from "./rows.ts";
-import { openSqlite, type SqliteDb } from "./sqlite.ts";
+import { assertSqliteIntegrity, openSqlite, type SqliteDb } from "./sqlite.ts";
 import type { RecentProject } from "./views.ts";
 
 export type OpenAppDb = (userDataDir: string) => AppDb;
+
+export type RuntimeSessionKey = {
+  providerKind: "codex" | "claude" | "antigravity";
+  projectId: string;
+  threadId: string;
+};
 
 export class AppDb {
   constructor(private readonly db: SqliteDb) {}
@@ -71,6 +77,42 @@ export class AppDb {
       .run({ id: createId(), key, value: JSON.stringify(value), now });
   }
 
+  getRuntimeSessionRef(key: RuntimeSessionKey): string | null {
+    const row = getRow<{ provider_session_ref: string | null }>(
+      this.db,
+      `SELECT provider_session_ref FROM app_runtime_sessions
+       WHERE provider_kind = ? AND project_id = ? AND thread_id = ?
+       ORDER BY updated_at DESC, rowid DESC LIMIT 1`,
+      key.providerKind,
+      key.projectId,
+      key.threadId,
+    );
+    return row?.provider_session_ref?.trim() || null;
+  }
+
+  setRuntimeSessionRef(key: RuntimeSessionKey, providerSessionRef: string): void {
+    const ref = providerSessionRef.trim();
+    if (!ref) throw new Error("provider session ref is required");
+    this.db.transaction(() => {
+      this.db.prepare(
+        `DELETE FROM app_runtime_sessions
+         WHERE provider_kind = ? AND project_id = ? AND thread_id = ?`,
+      ).run(key.providerKind, key.projectId, key.threadId);
+      this.db.prepare(
+        `INSERT INTO app_runtime_sessions
+           (id, provider_kind, project_id, thread_id, provider_session_ref, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).run(createId(), key.providerKind, key.projectId, key.threadId, ref, nowIso());
+    })();
+  }
+
+  clearRuntimeSession(key: RuntimeSessionKey): void {
+    this.db.prepare(
+      `DELETE FROM app_runtime_sessions
+       WHERE provider_kind = ? AND project_id = ? AND thread_id = ?`,
+    ).run(key.providerKind, key.projectId, key.threadId);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -79,6 +121,13 @@ export class AppDb {
 export const openAppDatabase: OpenAppDb = (userDataDir: string): AppDb => {
   mkdirSync(userDataDir, { recursive: true });
   const db = openSqlite(join(userDataDir, "app.sqlite3"));
-  migrateAppDb(db);
-  return new AppDb(db);
+  try {
+    assertSqliteIntegrity(db);
+    migrateAppDb(db);
+    assertSqliteIntegrity(db);
+    return new AppDb(db);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
 };

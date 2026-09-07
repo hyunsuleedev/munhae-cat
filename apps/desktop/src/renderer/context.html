@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+<title>문맥 편집 — 문해 Munhae Studio</title>
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/chrome.css">
+<link rel="stylesheet" href="./styles/context.css">
+<script type="module" blocking="render" src="./scripts/context.ts"></script>
+</head>
+<body>
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+<div class="win" id="win">
+  <aside class="sidebar" id="sidebar" aria-label="탐색">
+    <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
+    <div class="sb-scroll" id="sbTree"></div>
+    <div class="sb-foot"><i class="dot"></i>AI<span class="sp"></span><span class="mono">0.1.0</span></div>
+  </aside>
+  <div class="main">
+    <header class="titlebar">
+      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" aria-label="사이드바 토글"></button></div>
+      <div class="tb-c"><span>문맥 편집</span><small id="contextNodeName"></small></div>
+      <div class="tb-r"><button class="btn" id="openSource" type="button" hidden>원문 열기</button></div>
+    </header>
+    <main class="content context-content">
+      <div class="context-page" id="contextPage" hidden>
+        <header class="context-heading">
+          <p class="context-path" id="contextPath"></p>
+          <div class="context-title-row"><div><span class="context-eyebrow">번역의 배경을 기록하는 곳</span><h1 id="contextTitle">문맥</h1></div><span class="context-mark" aria-hidden="true">文</span></div>
+          <p class="muted">해제부터 용어의 쓰임까지, 번역에 필요한 배경을 모아 두세요.</p>
+        </header>
+        <div class="context-layout">
+          <section class="context-writing" aria-label="직접 문맥">
+            <div class="context-section-head"><h2>이 문서의 문맥</h2><span>직접 작성</span></div>
+            <div id="contextEditors" class="context-editors"></div>
+            <button class="btn context-add" id="addContext" type="button"><span aria-hidden="true">＋</span> 문맥 추가</button>
+          </section>
+          <aside class="context-rail" aria-label="문맥 적용 안내와 상속">
+            <section class="context-scope">
+              <span class="context-eyebrow">적용 범위</span>
+              <h2>여기서 쓰고,<br>하위 문서까지 함께.</h2>
+              <div class="context-scope-tree" aria-hidden="true"><span><i></i>현재 문서</span><span><i></i>하위 문서</span></div>
+              <p>AI 요청에 포함한 문맥은 이 문서와 하위 문서의 번역에 참고됩니다.</p>
+            </section>
+            <section class="context-reference-section" id="documentDescriptions" hidden aria-label="문서 설명"></section>
+            <section class="context-reference-section" aria-labelledby="inheritedTitle">
+              <h2 id="inheritedTitle">상속된 문맥 <span id="inheritedCount">0</span></h2>
+              <p class="muted context-help">상위 문서의 문맥을 함께 참고합니다. 같은 사안은 현재 문서의 문맥이 우선합니다.</p>
+              <div id="inheritedContexts"></div>
+            </section>
+          </aside>
+        </div>
+      </div>
+      <p class="context-loading muted" id="contextLoading" role="status">문맥을 불러오는 중…</p>
+    </main>
+  </div>
+  <footer class="statusbar">
+    <span class="mono" id="sbPath"></span>
+    <span id="contextSaveStatus" role="status" aria-live="polite"></span>
+    <span class="sp"></span>
+    <span id="sbAgent"><i class="dot"></i>AI</span>
+    <button id="sbPalette" type="button" title="명령 검색">⌘K</button>
+  </footer>
+</div>
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+
+</body>
+</html>

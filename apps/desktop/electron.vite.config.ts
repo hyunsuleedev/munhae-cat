@@ -19,9 +19,16 @@ export default defineConfig({
       }),
     ],
     build: {
-      lib: { entry: resolve(__dirname, "src/main/index.ts") },
+      lib: {
+        entry: {
+          index: resolve(__dirname, "src/main/index.ts"),
+          "agent-runtime-worker": resolve(__dirname, "src/main/agent-runtime-worker.ts"),
+          "agent-tool-cli": resolve(__dirname, "src/main/agent-tool-cli.ts"),
+        },
+      },
       rollupOptions: {
         external: ["better-sqlite3"],
+        output: { entryFileNames: "[name].js" },
       },
     },
   },
@@ -57,6 +64,9 @@ export default defineConfig({
           home: resolve(rendererRoot, "home.html"),
           editor: resolve(rendererRoot, "editor.html"),
           knowledge: resolve(rendererRoot, "knowledge.html"),
+          context: resolve(rendererRoot, "context.html"),
+          settings: resolve(rendererRoot, "settings.html"),
+          account: resolve(rendererRoot, "account.html"),
         },
       },
     },

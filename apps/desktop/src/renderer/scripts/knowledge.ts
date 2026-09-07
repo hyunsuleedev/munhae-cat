@@ -1,6 +1,7 @@
 import type {
   DocumentListItem,
   GlossaryEntryView,
+  HomeView,
   KnowledgeView,
   NodeContextView,
   PersonView,
@@ -63,6 +64,11 @@ function tree() {
   return defaultSidebarTree(docs);
 }
 
+window.addEventListener("munhae:document-created", (event) => {
+  docs = (event as CustomEvent<HomeView>).detail.documents;
+  renderSidebar(tree(), { currentDocId: selectedNodeId });
+});
+
 function stTag(st: GlossaryEntryView["usageStatus"]): string {
   const cls = st === "preferred" ? "tag-ok" : st === "forbidden" ? "tag-danger" : "tag-plain";
   return `<span class="tag ${cls}">${st}</span>`;
@@ -77,9 +83,13 @@ function setTab(t: Tab): void {
   must("#q").hidden = t === "uncertainty" || t === "context";
   must("#statusSel").hidden = !g;
   must("#kindSel").hidden = !g;
-  must("#btnAdd").textContent = t === "glossary" ? "용어 추가" : t === "persons" ? "인물 추가" : t === "places" ? "지명 추가" : "불확실성";
-  if (t === "uncertainty" || t === "context") must("#btnAdd").hidden = true;
+  must("#btnAdd").textContent =
+    t === "glossary" ? "용어 추가" :
+      t === "persons" ? "인물 추가" :
+        t === "places" ? "지명 추가" :
+          t === "uncertainty" ? "불확실성 추가" : "문맥 카드 추가";
   must("#btnOpenDocument").hidden = t !== "context" || selectedNode()?.nodeRole !== "source_unit";
+  must("#btnEditMetadata").hidden = t !== "context" || !selectedNode();
   must("#scopeNote").textContent = t === "context" ? contextScopeNote() : NOTES[t];
   renderSidebar(tree(), { currentDocId: t === "context" ? selectedNodeId : null, currentTab: t });
   if (t === "glossary") renderGlossary();
@@ -187,7 +197,7 @@ function renderContext(): void {
   must("#cBody").innerHTML = rows
     .map(
       (item) =>
-        `<tr data-cid="${esc(item.id)}" class="${active === item.id ? "is-active" : ""}" tabindex="0"><td><span class="tag ${item.distance === 0 ? "tag-ok" : "tag-plain"}">${esc(item.scopeLabel)}</span></td><td class="term">${esc(item.title)}</td><td class="mono muted" style="font-size:11.5px">${esc(item.itemKind)}</td><td class="mono">${item.priority}</td><td>${item.enabled ? '<span class="tag tag-ok">포함</span>' : '<span class="tag tag-plain">제외</span>'}</td></tr>`,
+        `<tr data-cid="${esc(item.id)}" class="${active === item.id ? "is-active" : ""}" tabindex="0"><td><span class="tag ${item.distance === 0 ? "tag-ok" : "tag-plain"}">${esc(item.scopeLabel)}</span></td><td class="term">${esc(item.title)}</td><td class="mono">${item.priority}</td><td>${item.enabled ? '<span class="tag tag-ok">포함</span>' : '<span class="tag tag-plain">제외</span>'}</td></tr>`,
     )
     .join("");
   must("#contextEmpty").hidden = rows.length > 0;
@@ -200,12 +210,103 @@ function showContext(item: EffectiveContext): void {
   renderContext();
   must("#detailMeta").textContent = item.scopeLabel;
   must("#sbSel").textContent = item.title;
+  if (item.source === "document_description") {
+    must("#detail").innerHTML = `<div class="detail">
+        <div class="term" style="font-size:16px">${esc(item.title)}</div>
+        <div class="row" style="gap:6px"><span class="tag ${item.distance === 0 ? "tag-ok" : "tag-plain"}">${esc(item.scopeLabel)}</span><span class="tag tag-plain">문서 설명</span></div>
+        <p style="white-space:pre-wrap;line-height:1.65">${esc(item.contentMd)}</p>
+        <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="dEditMetadata" type="button">문서 정보 편집</button></div>
+      </div>`;
+    must("#dEditMetadata").addEventListener("click", () => void showDocumentMetadata(item.scopeId));
+    return;
+  }
   must("#detail").innerHTML = `<div class="detail">
-      <div class="term" style="font-size:16px">${esc(item.title)}</div>
-      <div class="row" style="gap:6px"><span class="tag ${item.distance === 0 ? "tag-ok" : "tag-plain"}">${esc(item.scopeLabel)}</span><span class="tag tag-plain">${esc(item.itemKind)}</span></div>
-      <p style="white-space:pre-wrap;line-height:1.65">${esc(item.contentMd)}</p>
-      <dl class="kv"><dt>출처</dt><dd>${item.source === "document_description" ? "문서 설명" : "문맥 카드"}</dd><dt>우선순위</dt><dd class="mono">${item.priority}</dd><dt>AI 문맥</dt><dd>${item.enabled ? "자동 포함" : "자동 제외"}</dd></dl>
+      <div class="row" style="gap:6px"><span class="tag ${item.distance === 0 ? "tag-ok" : "tag-plain"}">${esc(item.scopeLabel)}</span></div>
+      <div class="field"><label for="cTitle">제목</label><input class="input" id="cTitle" value="${esc(item.title)}"></div>
+      <div class="field"><label for="cContent">내용</label><textarea class="textarea" id="cContent" style="min-height:150px">${esc(item.contentMd)}</textarea></div>
+      <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="cPriority">우선순위</label><input class="input" type="number" id="cPriority" value="${item.priority}"></div>
+      <label style="align-self:center"><input type="checkbox" id="cEnabled" ${item.enabled ? "checked" : ""}> AI 요청에 자동 포함</label></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="cArchive" type="button">보관</button><button class="btn btn-primary btn-sm" id="cSave" type="button">저장 <kbd>⌘S</kbd></button></div>
     </div>`;
+  must("#cSave").addEventListener("click", () => void saveContext(item));
+  must("#cArchive").addEventListener("click", () => void archiveContext(item));
+}
+
+async function saveContext(item: EffectiveContext): Promise<void> {
+  if (item.source !== "context_item") return;
+  const result = await api.knowledge.updateContext({
+    id: item.id,
+    scopeId: item.scopeId,
+    title: must<HTMLInputElement>("#cTitle").value.trim(),
+    contentMd: must<HTMLTextAreaElement>("#cContent").value.trim(),
+    priority: Number(must<HTMLInputElement>("#cPriority").value),
+    enabled: must<HTMLInputElement>("#cEnabled").checked,
+    expectedLockVersion: item.lockVersion,
+  });
+  const saved = unwrap(result, "문맥 카드");
+  if (!saved) return;
+  const index = data.contextItems.findIndex((candidate) => candidate.id === item.id);
+  if (index >= 0) data.contextItems[index] = saved;
+  renderContext();
+  const effective = contextRows().find((candidate) => candidate.id === saved.id);
+  if (effective) showContext(effective);
+  notify(`${saved.title} 저장`, "문맥 카드");
+}
+
+async function archiveContext(item: EffectiveContext): Promise<void> {
+  if (item.source !== "context_item") return;
+  const result = await api.knowledge.archiveContext({ id: item.id, expectedLockVersion: item.lockVersion });
+  if (!result.ok) {
+    unwrap(result, "문맥 카드");
+    return;
+  }
+  data.contextItems = data.contextItems.filter((candidate) => candidate.id !== item.id);
+  active = null;
+  renderContext();
+  must("#detail").innerHTML = '<p class="muted">문맥 카드를 보관했습니다. 과거 AI 실행의 request manifest는 유지됩니다.</p>';
+  notify(`${item.title} 보관`, "문맥 카드");
+}
+
+async function showDocumentMetadata(nodeId: string): Promise<void> {
+  const result = await api.home.getDocumentMetadata(nodeId);
+  const metadata = unwrap(result, "문서 정보");
+  if (!metadata) return;
+  const authorOptions = [`<option value="">상속 또는 미지정</option>`, ...data.persons.map((person) =>
+    `<option value="${esc(person.id)}" ${person.id === metadata.authorPersonId ? "selected" : ""}>${esc(person.preferredName)}</option>`,
+  )].join("");
+  must("#detailMeta").textContent = `문서 · ${metadata.lockVersion}`;
+  must("#detail").innerHTML = `<div class="detail">
+      <div class="field"><label for="mTitle">제목</label><input class="input" id="mTitle" value="${esc(metadata.title)}" ${metadata.isMaster ? "disabled" : ""}></div>
+      <div class="field"><label for="mOriginal">원제</label><input class="input hanmun" id="mOriginal" value="${esc(metadata.originalTitle ?? "")}"></div>
+      <div class="field"><label for="mAuthor">저자</label><select class="select" id="mAuthor">${authorOptions}</select></div>
+      <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="mLanguage">언어</label><input class="input" id="mLanguage" value="${esc(metadata.language ?? "")}"></div><div class="field" style="flex:1"><label for="mPeriod">시대</label><input class="input" id="mPeriod" value="${esc(metadata.periodText ?? "")}"></div></div>
+      <div class="field"><label for="mDate">개별 날짜</label><input class="input" id="mDate" value="${esc(metadata.dateText ?? "")}"></div>
+      <div class="field"><label for="mReference">출전</label><input class="input" id="mReference" value="${esc(metadata.sourceReference ?? "")}"></div>
+      <div class="field"><label for="mDescription">설명</label><textarea class="textarea" id="mDescription">${esc(metadata.descriptionMd ?? "")}</textarea></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" id="mSave" type="button">문서 정보 저장</button></div>
+    </div>`;
+  must("#mSave").addEventListener("click", () => void (async () => {
+    const save = await api.home.updateDocumentMetadata({
+      documentNodeId: metadata.id,
+      title: metadata.isMaster ? metadata.title : must<HTMLInputElement>("#mTitle").value.trim(),
+      originalTitle: must<HTMLInputElement>("#mOriginal").value.trim() || null,
+      authorPersonId: must<HTMLSelectElement>("#mAuthor").value || null,
+      language: must<HTMLInputElement>("#mLanguage").value.trim() || null,
+      periodText: must<HTMLInputElement>("#mPeriod").value.trim() || null,
+      dateText: must<HTMLInputElement>("#mDate").value.trim() || null,
+      sourceReference: must<HTMLInputElement>("#mReference").value.trim() || null,
+      descriptionMd: must<HTMLTextAreaElement>("#mDescription").value.trim() || null,
+      expectedLockVersion: metadata.lockVersion,
+    });
+    const saved = unwrap(save, "문서 정보");
+    if (!saved) return;
+    const refreshed = await api.knowledge.get();
+    const knowledge = unwrap(refreshed, "공통 지식");
+    if (knowledge) data = knowledge;
+    renderContext();
+    await showDocumentMetadata(saved.id);
+    notify(`${saved.title} 정보 저장`, "문서 정보");
+  })());
 }
 
 function showGlossary(g: GlossaryEntryView): void {
@@ -240,6 +341,7 @@ async function saveGlossary(g: GlossaryEntryView): Promise<void> {
   }
   const result = await api.knowledge.upsertGlossary({
     id: g.id,
+    expectedLockVersion: g.lockVersion,
     sourceTerm: g.sourceTerm,
     targetTerm: must<HTMLInputElement>("#dTgt").value.trim() || g.targetTerm,
     targetLocale: g.targetLocale,
@@ -275,6 +377,7 @@ function showPerson(p: PersonView): void {
     void (async () => {
       const result = await api.knowledge.upsertPerson({
         id: p.id,
+        expectedLockVersion: p.lockVersion,
         preferredName: must<HTMLInputElement>("#dName").value.trim() || p.preferredName,
         hanjaName: must<HTMLInputElement>("#dHanja").value.trim() || null,
         reading: must<HTMLInputElement>("#dRead").value.trim() || null,
@@ -314,6 +417,7 @@ function showPlace(p: PlaceView): void {
     void (async () => {
       const result = await api.knowledge.upsertPlace({
         id: p.id,
+        expectedLockVersion: p.lockVersion,
         preferredName: must<HTMLInputElement>("#dName").value.trim() || p.preferredName,
         hanjaName: must<HTMLInputElement>("#dHanja").value.trim() || null,
         reading: must<HTMLInputElement>("#dRead").value.trim() || null,
@@ -338,17 +442,85 @@ function showUnc(u: UncertaintyView): void {
   must("#detailMeta").textContent = `${u.id.slice(0, 8)} · ${u.category} · ${u.severity}`;
   must("#sbSel").textContent = `${u.id.slice(0, 8)} ${u.state === "open" ? "열림" : "해결"}`;
   must("#detail").innerHTML = `<div class="detail">
-      <b style="font-size:13px">${esc(u.statementMd)}</b>
-      <div class="muted mono" style="font-size:11.5px">${esc(u.locator)}</div>
-      <p class="muted">${u.blocking ? "확정 차단" : "비차단"} · ${esc(u.state)}</p>
-      <div class="row" style="justify-content:flex-end">${u.state === "open" ? `<button class="btn btn-sm" id="uResolve" type="button">해결로 표시</button>` : '<span class="tag tag-ok">해결</span>'}</div>
+      <div class="muted mono" style="font-size:11.5px">v${u.versionNo} · ${esc(u.locator)}</div>
+      <div class="field"><label for="uStatement">진술</label><textarea class="textarea" id="uStatement">${esc(u.statementMd)}</textarea></div>
+      <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="uCategory">범주</label><select class="select" id="uCategory">${["textual", "interpretive", "identification"].map((value) => `<option ${value === u.category ? "selected" : ""}>${value}</option>`).join("")}</select></div><div class="field" style="flex:1"><label for="uSeverity">심각도</label><input class="input" id="uSeverity" value="${esc(u.severity)}"></div></div>
+      <div class="field"><label for="uConfidence">확신도 표기</label><input class="input" id="uConfidence" value="${esc(u.confidenceLabel ?? "")}" placeholder="예: 확정, 유력, 미상"></div>
+      <div class="field"><label for="uRationale">근거</label><textarea class="textarea" id="uRationale">${esc(u.rationaleMd ?? "")}</textarea></div>
+      <div class="field"><label for="uOptions">해석 선택지 (한 줄에 하나)</label><textarea class="textarea" id="uOptions">${esc(u.options.map((option) => option.label).join("\n"))}</textarea></div>
+      <label><input type="checkbox" id="uBlocking" ${u.blocking ? "checked" : ""}> 해결 전 번역 확정 차단</label>
+      <div class="row" style="justify-content:flex-end">${u.state === "open" ? `<button class="btn btn-sm" id="uResolve" type="button">해결로 표시</button><button class="btn btn-primary btn-sm" id="uSave" type="button">새 버전 저장</button>` : '<span class="tag tag-ok">해결</span>'}</div>
     </div>`;
   $("#uResolve")?.addEventListener("click", () => {
-    notify("불확실성 상태 변경 API는 아직 없습니다", "불확실성");
+    void resolveUncertainty(u);
   });
+  $("#uSave")?.addEventListener("click", () => void saveUncertaintyVersion(u));
+}
+
+function replaceUncertainty(saved: UncertaintyView): void {
+  const index = data.uncertainties.findIndex((item) => item.id === saved.id);
+  if (index >= 0) data.uncertainties[index] = saved;
+  else data.uncertainties.unshift(saved);
+  renderOthers();
+  showUnc(saved);
+}
+
+async function saveUncertaintyVersion(u: UncertaintyView): Promise<void> {
+  const optionLabels = must<HTMLTextAreaElement>("#uOptions").value
+    .split("\n")
+    .map((label) => label.trim())
+    .filter(Boolean);
+  const result = await api.knowledge.versionUncertainty({
+    uncertaintyId: u.id,
+    expectedVersionId: u.versionId,
+    category: must<HTMLSelectElement>("#uCategory").value as UncertaintyView["category"],
+    severity: must<HTMLInputElement>("#uSeverity").value.trim(),
+    blocking: must<HTMLInputElement>("#uBlocking").checked,
+    statementMd: must<HTMLTextAreaElement>("#uStatement").value.trim(),
+    rationaleMd: must<HTMLTextAreaElement>("#uRationale").value.trim() || null,
+    confidenceLabel: must<HTMLInputElement>("#uConfidence").value.trim() || null,
+    options: optionLabels.map((label, index) => ({
+      label,
+      interpretationMd: u.options[index]?.label === label ? u.options[index]?.interpretationMd : null,
+    })),
+    anchors: u.anchors.map((anchor) => ({
+      targetKind: anchor.targetKind,
+      targetVersionId: anchor.targetVersionId,
+      codepointFrom: anchor.codepointFrom,
+      codepointTo: anchor.codepointTo,
+      quote: anchor.quote,
+    })),
+  });
+  const saved = unwrap(result, "불확실성");
+  if (!saved) return;
+  replaceUncertainty(saved);
+  notify(`v${saved.versionNo} 저장`, "불확실성");
+}
+
+async function resolveUncertainty(u: UncertaintyView): Promise<void> {
+  const result = await api.knowledge.resolveUncertainty({ uncertaintyId: u.id, expectedVersionId: u.versionId });
+  const saved = unwrap(result, "불확실성");
+  if (!saved) return;
+  replaceUncertainty(saved);
+  notify("해결 상태로 변경했습니다", "불확실성");
 }
 
 function addFieldsHtml(): string {
+  if (tab === "context") {
+    return `<div class="field"><label for="aScope">적용 node</label><select class="select" id="aScope">${documentOptions(selectedNodeId)}</select></div>
+      <div class="field"><label for="aTitle">제목</label><input class="input" id="aTitle" required></div>
+      <div class="field"><label for="aNote">내용</label><textarea class="textarea" id="aNote" required></textarea></div>
+      <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="aPriority">우선순위</label><input class="input" id="aPriority" type="number" value="0"></div><label style="align-self:center"><input type="checkbox" id="aEnabled" checked> 자동 포함</label></div>`;
+  }
+  if (tab === "uncertainty") {
+    return `<div class="field"><label for="aScope">연결 node</label><select class="select" id="aScope">${documentOptions(selectedNodeId)}</select></div>
+      <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="aCategory">범주</label><select class="select" id="aCategory"><option>textual</option><option>interpretive</option><option>identification</option></select></div><div class="field" style="flex:1"><label for="aSeverity">심각도</label><select class="select" id="aSeverity"><option>minor</option><option>major</option><option>critical</option></select></div></div>
+      <div class="field"><label for="aStatement">진술</label><textarea class="textarea" id="aStatement" required></textarea></div>
+      <div class="field"><label for="aConfidence">확신도 표기</label><input class="input" id="aConfidence" placeholder="예: 확정, 유력, 미상"></div>
+      <div class="field"><label for="aNote">근거</label><textarea class="textarea" id="aNote"></textarea></div>
+      <div class="field"><label for="aOptions">해석 선택지 (한 줄에 하나)</label><textarea class="textarea" id="aOptions"></textarea></div>
+      <label><input type="checkbox" id="aBlocking"> 해결 전 번역 확정 차단</label>`;
+  }
   if (tab === "persons") {
     return `<div class="field"><label for="aName">이름</label><input class="input" id="aName" required placeholder="예: 세종"></div>
       <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="aHanja">한자</label><input class="input hanmun" id="aHanja" placeholder="世宗"></div>
@@ -374,15 +546,19 @@ function addFieldsHtml(): string {
         <div class="radio-list">
           <label><input type="radio" name="st" value="preferred" checked> preferred <span class="muted">· 기본 대응어. 용어당 하나</span></label>
           <label><input type="radio" name="st" value="allowed"> allowed <span class="muted">· 문맥에 따라 허용</span></label>
-          <label><input type="radio" name="st" value="forbidden"> forbidden <span class="muted">· Reflection에서 경고</span></label>
+          <label><input type="radio" name="st" value="forbidden"> forbidden <span class="muted">· 번역 검토에서 경고</span></label>
         </div>
       </div>
       <div class="field"><label for="aNote">메모</label><textarea class="textarea" id="aNote" placeholder="근거·출처·주의점"></textarea></div>`;
 }
 
+function documentOptions(selected: string | null): string {
+  return docs.map((doc) => `<option value="${esc(doc.id)}" ${doc.id === selected ? "selected" : ""}>${esc(`${"  ".repeat(doc.depth)}${doc.originalTitle || doc.title}`)}</option>`).join("");
+}
+
 function openAdd(): void {
-  if (tab === "uncertainty" || tab === "context") return;
-  must("#addTitle").textContent = tab === "glossary" ? "용어 추가" : tab === "persons" ? "인물 추가" : "지명 추가";
+  must("#addTitle").textContent =
+    tab === "glossary" ? "용어 추가" : tab === "persons" ? "인물 추가" : tab === "places" ? "지명 추가" : tab === "uncertainty" ? "불확실성 추가" : "문맥 카드 추가";
   must("#addFields").innerHTML = addFieldsHtml();
   (must("#dlgAdd") as HTMLDialogElement).showModal();
 }
@@ -396,12 +572,10 @@ function pageCmd(id: string): boolean {
     case "ctxpane":
       return false;
     case "addterm":
-      if (tab === "uncertainty" || tab === "context") setTab("glossary");
       openAdd();
       return true;
     case "find":
-      must<HTMLInputElement>("#q").focus();
-      return true;
+      return false;
   }
   return false;
 }
@@ -461,11 +635,55 @@ must("#btnOpenDocument").addEventListener("click", () => {
   const node = selectedNode();
   if (node?.nodeRole === "source_unit") go("editor", node.id);
 });
+must("#btnEditMetadata").addEventListener("click", () => {
+  const node = selectedNode();
+  if (node) void showDocumentMetadata(node.id);
+});
 must("#btnAdd").addEventListener("click", openAdd);
 must("#addCancel").addEventListener("click", () => (must("#dlgAdd") as HTMLDialogElement).close());
 must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
   e.preventDefault();
   void (async () => {
+    if (tab === "context") {
+      const result = await api.knowledge.createContext({
+        scopeId: must<HTMLSelectElement>("#aScope").value,
+        title: must<HTMLInputElement>("#aTitle").value.trim(),
+        contentMd: must<HTMLTextAreaElement>("#aNote").value.trim(),
+        priority: Number(must<HTMLInputElement>("#aPriority").value),
+        enabled: must<HTMLInputElement>("#aEnabled").checked,
+      });
+      const saved = unwrap(result, "문맥 카드");
+      if (!saved) return;
+      data.contextItems.push(saved);
+      selectedNodeId = saved.scopeId;
+      (must("#dlgAdd") as HTMLDialogElement).close();
+      renderContext();
+      const effective = contextRows().find((item) => item.id === saved.id);
+      if (effective) showContext(effective);
+      notify(`${saved.title} 추가`, "문맥 카드");
+      return;
+    }
+    if (tab === "uncertainty") {
+      const scopeId = must<HTMLSelectElement>("#aScope").value;
+      const result = await api.knowledge.createUncertainty({
+        category: must<HTMLSelectElement>("#aCategory").value as UncertaintyView["category"],
+        severity: must<HTMLSelectElement>("#aSeverity").value,
+        blocking: must<HTMLInputElement>("#aBlocking").checked,
+        statementMd: must<HTMLTextAreaElement>("#aStatement").value.trim(),
+        rationaleMd: must<HTMLTextAreaElement>("#aNote").value.trim() || null,
+        confidenceLabel: must<HTMLInputElement>("#aConfidence").value.trim() || null,
+        options: must<HTMLTextAreaElement>("#aOptions").value.split("\n").map((label) => label.trim()).filter(Boolean).map((label) => ({ label })),
+        anchors: [{ targetKind: "document_node", targetVersionId: scopeId }],
+      });
+      const saved = unwrap(result, "불확실성");
+      if (!saved) return;
+      data.uncertainties.unshift(saved);
+      (must("#dlgAdd") as HTMLDialogElement).close();
+      renderOthers();
+      showUnc(saved);
+      notify("불확실성 추가", "불확실성");
+      return;
+    }
     if (tab === "glossary") {
       const src = must<HTMLInputElement>("#aSrc").value.trim();
       const tgt = must<HTMLInputElement>("#aTgt").value.trim();
@@ -541,10 +759,11 @@ must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
   })();
 });
 document.addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.code === "KeyS" && $("#dSave")) {
-    e.preventDefault();
-    $("#dSave")?.click();
-  }
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.code !== "KeyS") return;
+  const save = $("#dSave") ?? $("#cSave") ?? $("#uSave") ?? $("#mSave");
+  if (!save) return;
+  e.preventDefault();
+  save.click();
 });
 
 bindSidebar(
@@ -580,4 +799,4 @@ async function boot(): Promise<void> {
   setTab(tab);
 }
 
-void boot();
+await boot();

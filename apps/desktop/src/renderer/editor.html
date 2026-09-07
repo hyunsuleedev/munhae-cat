@@ -3,11 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; frame-src blob:; object-src 'none'; script-src 'self'; font-src 'self'; connect-src 'self'">
 <title>편집 — 문해 Munhae Studio</title>
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
 <link rel="stylesheet" href="./styles/editor.css">
+<script type="module" blocking="render" src="./scripts/editor.ts"></script>
 </head>
 <body class="show-keys show-struct">
 <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
@@ -26,73 +27,195 @@
         <button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" aria-label="사이드바 토글"></button>
         <button class="tb" id="tbRef" title="참고 자료 패널 (⌥⌘R)" aria-label="참고 자료 패널 토글"></button>
       </div>
-      <div class="tb-c"><span class="proxy" aria-hidden="true"></span><span class="hanmun" id="titleDoc" style="font-size:14px">문서</span><small id="titleSub">— 번역안</small></div>
+      <div class="tb-c"><span class="proxy" aria-hidden="true"></span><span class="hanmun" id="titleDoc" style="font-size:14px">문서</span><small id="titleSub">— 원문안</small></div>
       <div class="tb-r">
-        <div class="seg" id="candSeg" role="group" aria-label="번역안 선택" data-od-id="candidate-tabs"></div>
-        <button class="btn" id="btnPrepare" type="button" data-od-id="btn-ai-translate">AI 번역… <kbd>⌥⌘K</kbd></button>
-        <button class="tb" id="btnDiff" type="button" title="변경 비교 (⌘D)" data-od-id="btn-diff">변경 비교</button>
-        <button class="btn btn-primary" id="btnConfirm" type="button" data-od-id="btn-confirm">확정 <kbd>⇧⌘↩</kbd></button>
+        <button class="tb" id="btnDiff" type="button" title="변경 비교 (⌘D)" data-od-id="btn-diff" hidden>변경 비교</button>
+        <button class="btn btn-primary" id="btnConfirm" type="button" data-od-id="btn-confirm" hidden>확정 <kbd>⇧⌘↩</kbd></button>
         <button class="btn" id="btnRevise" type="button" data-od-id="btn-revise" hidden>새 번역안으로 수정</button>
         <button class="tb is-on" id="tbCtx" title="문맥·AI 패널 (⌥⌘I)" aria-label="문맥·AI 패널 토글"></button>
       </div>
     </header>
 
     <div class="content">
-      <div id="noSource" class="empty-source" hidden>
-        <h2>원문이 없습니다</h2>
-        <p class="muted">이 문서에는 아직 원문안이 없습니다. 원문 저장 IPC가 없으면 프로젝트 홈에서 문서를 만들 때 원문을 붙여넣으세요.</p>
-        <textarea class="textarea hanmun" id="sourcePaste" placeholder="원문을 붙여넣을 수 있지만, 지금은 원문 저장 API가 없습니다." style="min-height:160px"></textarea>
+      <div id="editorError" class="empty-source" role="alert" hidden>
+        <h2 id="editorErrorTitle">편집기를 열 수 없습니다</h2>
+        <p class="muted" id="editorErrorMessage"></p>
         <div class="row" style="justify-content:flex-end;gap:8px">
           <button class="btn" id="btnHome" type="button">프로젝트 홈</button>
-          <button class="btn btn-primary" id="btnSaveSource" type="button">원문 저장</button>
+          <button class="btn btn-primary" id="btnRetryEditor" type="button">다시 시도</button>
         </div>
       </div>
       <div class="ws" id="ws">
         <aside class="pane pane-left" data-od-id="pane-reference" aria-label="참고 자료">
-          <div class="scope"><b style="font-weight:600">참고 자료</b><span class="sp"></span>
-            <div class="pager"><button class="btn btn-ghost btn-sm" id="pgPrev" type="button" aria-label="이전 면">‹</button><span class="mono" id="pgLabel">1 / 1</span><button class="btn btn-ghost btn-sm" id="pgNext" type="button" aria-label="다음 면">›</button></div>
-          </div>
+          <div class="scope reference-scope"><b style="font-weight:600">참고 자료</b><span class="sp"></span><button class="btn btn-sm" id="btnAttachReference" type="button">첨부</button></div>
           <div class="pane-scroll">
             <div class="pane-body">
-              <div class="page-frame" role="img" aria-label="참고 이미지 자리. 영인본 이미지는 프로젝트 assets에 있을 때만 표시됩니다.">
-                <div>해례본 영인 PDF · 참고용<br>이미지는 프로젝트 assets에 첨부된 경우만 표시됩니다<span class="mono" id="pageFile">assets/derivatives</span></div>
+              <div class="reference-empty" id="referenceEmpty">
+                <b>연결된 참고 자료가 없습니다</b>
+                <p>이 문서에 이미지나 PDF가 연결되면 여기에서 확인할 수 있습니다.</p>
+                <button class="btn" id="btnAttachReferenceEmpty" type="button">이미지·PDF 첨부</button>
               </div>
+              <section class="reference-browser" id="referenceBrowser" aria-label="참고 자료 보기" hidden>
+                <label class="reference-picker"><span>파일</span><select class="select" id="referenceSelect" aria-label="참고 자료 선택"></select></label>
+                <div class="reference-frame" id="referenceFrame">
+                  <img id="referenceImage" alt="" hidden>
+                  <iframe id="referencePdf" title="PDF 참고 자료" sandbox hidden></iframe>
+                  <div class="reference-unavailable" id="referenceUnavailable" role="status" hidden></div>
+                </div>
+                <div class="reference-caption"><b id="referenceName"></b><span id="referenceMeta"></span></div>
+                <div class="reference-actions"><button class="btn btn-sm" id="btnOpenReference" type="button">시스템에서 열기</button></div>
+              </section>
             </div>
-            <details class="grp" open><summary>첨부 자료</summary><div class="grp-b"><dl class="kv"><dt>연결</dt><dd id="refLink">이 문서</dd><dt>OCR</dt><dd class="muted">사용하지 않음 (참고 전용)</dd></dl></div></details>
             <details class="grp" open><summary>문서 정보</summary><div class="grp-b"><dl class="kv" id="docMeta"></dl></div></details>
           </div>
         </aside>
         <div class="gutter gutter-l" data-side="l" role="separator" aria-orientation="vertical" aria-label="참고 자료 패널 너비"></div>
 
         <section class="pane pane-center" data-od-id="pane-editor" aria-label="편집 영역">
-          <div class="scope" data-od-id="editor-toolbar">
+          <div class="workflow" id="workflow" role="tablist" aria-label="편집 단계">
+            <button class="workflow-step is-on" id="stepSource" type="button" role="tab" data-workspace="source" aria-selected="true" aria-controls="sourceWorkspace">
+              <span class="workflow-no">1</span><span><b>원문</b><small id="sourceStepState">불러오는 중</small></span>
+            </button>
+            <span class="workflow-line" aria-hidden="true"></span>
+            <button class="workflow-step" id="stepPunctuation" type="button" role="tab" data-workspace="punctuation" aria-selected="false" aria-controls="punctuationWorkspace">
+              <span class="workflow-no">2</span><span><b>표점 원문 · 선택</b><small id="punctuationStepState">대기</small></span>
+            </button>
+            <span class="workflow-line" aria-hidden="true"></span>
+            <button hidden class="workflow-step" id="stepSegmentation" type="button" role="tab" data-workspace="segmentation" aria-selected="false" aria-controls="segmentationWorkspace">
+              <span class="workflow-no">3</span><span><b>분절</b><small id="segmentationStepState">대기</small></span>
+            </button>
+
+            <button class="workflow-step" id="stepTranslation" type="button" role="tab" data-workspace="translation" aria-selected="false" aria-controls="translationWorkspace">
+              <span class="workflow-no">3</span><span><b>번역</b><small id="translationStepState">대기</small></span>
+            </button>
+          </div>
+          <div class="scope translation-only" id="translationToolbar" data-od-id="editor-toolbar" hidden>
             <div class="seg" id="viewSeg" role="group" aria-label="보기 방식">
-              <button type="button" data-view="source" aria-pressed="false">표점 전문</button>
-              <button type="button" data-view="parallel" aria-pressed="true">대조</button>
+              <button type="button" data-view="source" aria-pressed="false">원문 전문</button>
+              <button type="button" data-view="parallel" aria-pressed="true">문장별 대조</button>
               <button type="button" data-view="full" aria-pressed="false">번역 전문</button>
             </div>
             <label class="check"><input type="checkbox" id="chkStruct" checked> 구조</label>
             <label class="check"><input type="checkbox" id="chkKeys" checked> 앵커 ID</label>
             <span class="sp"></span>
             <span id="stateBadge" class="tag tag-draft">번역안</span><span id="validBadge" class="tag tag-plain">valid</span>
-            <span class="muted">블록 <b id="blockCount" class="mono" style="color:var(--fg)">0</b> · 앵커 <b id="anchorCount" class="mono" style="color:var(--fg)">0</b></span>
+            <span id="legacyTranslationCounts" class="muted">블록 <b id="blockCount" class="mono" style="color:var(--fg)">0</b> · 앵커 <b id="anchorCount" class="mono" style="color:var(--fg)">0</b></span>
           </div>
           <div class="pane-scroll">
             <div class="center-body">
-              <div class="vstrip" id="vstrip" data-od-id="validation-strip"></div>
-              <div id="candBanner" class="banner" hidden>
-                <span class="tag tag-line">AI 제안</span><span id="candBannerText">읽기 전용입니다. 채택하면 편집 기반이 됩니다.</span>
-                <button class="btn btn-sm" id="btnAdopt" type="button" style="margin-left:auto">이 안을 편집 기반으로 채택</button>
-              </div>
-              <div class="view" id="viewSource" data-od-id="view-source">
-                <p class="muted" style="font-size:12px;margin-bottom:12px">표점안 · 구두점과 논리 구조는 원문 문자를 바꾸지 않습니다. 앵커에 마우스를 올리면 연결된 번역 블록이 표시됩니다.</p>
-                <div class="source-text" id="sourceText"></div>
-              </div>
-              <div class="view is-open" id="viewParallel" data-od-id="view-parallel"><div class="rows" id="rows"></div></div>
-              <div class="view" id="viewFull" data-od-id="view-full">
-                <p class="muted" style="font-size:12px;margin-bottom:12px">번역 전문 · 블록 경계 없이 읽습니다. 문장을 클릭하면 대조 보기에서 해당 블록을 선택합니다.</p>
-                <div class="full-text" id="fullText"></div>
-              </div>
+              <section class="workspace-panel is-open" id="sourceWorkspace" role="tabpanel" aria-labelledby="stepSource">
+                <header class="draft-head">
+                  <div><span class="draft-eyebrow">1 · 원문안</span><h1>원문을 입력하고 확정합니다</h1><p>원문 문자는 이 단계에서만 수정합니다. 확정한 뒤 표점과 구조를 작성할 수 있습니다.</p></div>
+                  <span class="tag tag-plain" id="sourceStateBadge">—</span>
+                </header>
+                <div class="workflow-notice" id="sourceMessage" role="status" aria-live="polite"></div>
+                <div class="field">
+                  <div class="row"><label for="sourceDraftText">원문</label><span class="sp"></span><button class="btn btn-sm" id="btnEditSource" type="button" hidden>수정</button><button class="btn btn-sm" id="btnCancelSourceEdit" type="button" hidden>수정 취소</button></div>
+                  <textarea class="textarea hanmun draft-textarea" id="sourceDraftText" spellcheck="false" placeholder="한문 원문을 입력하세요" readonly></textarea>
+                  <span class="field-help" id="sourceTextCount">0자</span>
+                </div>
+                <div class="draft-meta-grid" id="sourceDraftMeta" hidden>
+                  <div class="field"><label for="sourceOrigin">입력 방식</label><select class="select" id="sourceOrigin"><option value="manual">직접 입력</option><option value="paste">붙여넣기</option><option value="import">가져오기</option></select></div>
+                  <div class="field"><label for="sourceChangeSummary">변경 요약 <span class="muted">선택</span></label><input class="input" id="sourceChangeSummary" maxlength="2000" placeholder="예: 판본 대조 후 탈자 보완"></div>
+                </div>
+                <div class="draft-actions"><span class="muted" id="sourceVersion">—</span><span class="sp"></span><button class="btn" id="btnSaveSourceDraft" type="button">원문안 저장</button><button class="btn btn-primary" id="btnConfirmSource" type="button">원문 확정</button></div>
+              </section>
+
+              <section class="workspace-panel" id="punctuationWorkspace" role="tabpanel" aria-labelledby="stepPunctuation" hidden>
+                <header class="draft-head">
+                  <div><span class="draft-eyebrow">2 · 표점 원문</span><h1>확정 원문에 표점과 논리 구조를 더합니다</h1><p>원문 문자는 바꾸지 않습니다. 표점은 선택 작업입니다. 확정한 표점은 전문 번역과 원문 대조의 참고 자료로 사용합니다.</p></div>
+                  <span class="tag tag-plain" id="punctuationStateBadge">—</span>
+                </header>
+                <div class="workflow-notice" id="punctuationMessage" role="status" aria-live="polite"></div>
+                <div class="punctuation-comparison">
+                  <div class="field"><label id="punctuationSourceLabel">확정 원문</label><pre class="source-reference hanmun" id="punctuationSourceReference" aria-labelledby="punctuationSourceLabel" tabindex="0"></pre></div>
+                  <div class="punctuation-comparison-target">
+                    <div class="field" id="punctuationTextField">
+                      <div class="punctuation-field-heading">
+                        <label for="punctuationDraftText">표점 원문</label>
+                        <div class="punctuation-text-switch" id="punctuationTextSwitch" role="group" aria-label="표점 원문 보기" hidden>
+                          <button type="button" id="btnViewPunctuationDraft" aria-pressed="true">작업안</button>
+                          <button type="button" id="btnViewPunctuationSuggestion" aria-pressed="false">AI 제안</button>
+                        </div>
+                      </div>
+                      <div class="punctuation-editor">
+                        <div class="banner punctuation-create-actions" id="punctuationCreateActions">
+                          <span><b>표점 원문을 아직 만들지 않았습니다.</b> 확정 원문을 복사하거나 AI 표점을 생성해 시작하세요.</span>
+                          <button class="btn" id="btnCreatePunctuationDraft" type="button">확정 원문으로 표점안 만들기</button>
+                        </div>
+                        <textarea class="textarea hanmun draft-textarea" id="punctuationDraftText" spellcheck="false" placeholder="원문에 구두점을 추가하세요" aria-describedby="punctuationTextCount"></textarea>
+                        <div class="punctuation-proposal" id="punctuationProposal" hidden>
+                          <div class="punctuation-proposal-meta"><span class="tag tag-line" id="punctuationProposalState">원문 보존 확인 · 미적용</span><span class="muted" id="punctuationProposalMeta"></span></div>
+                          <p id="punctuationProposalHelp">현재 표점안은 아직 바뀌지 않았습니다.</p>
+                          <button class="btn btn-primary" id="btnApplyPunctuationSuggestion" type="button">제안 적용하고 편집</button>
+                        </div>
+                        <div class="punctuation-ai-tools">
+                          <div class="punctuation-ai-controls">
+                            <select class="select" id="punctuationAgent" aria-label="표점 제안 에이전트"><option value="claude">Claude CLI</option><option value="codex">Codex CLI</option><option value="antigravity">Antigravity CLI</option></select>
+                            <button class="btn" id="btnSuggestPunctuation" type="button">AI 표점 생성</button>
+                            <button class="btn" id="btnCancelPunctuation" type="button" hidden>취소</button>
+                          </div>
+                          <p class="punctuation-ai-help">，。 중심의 보수적 표점입니다. 원문에 있던 부호는 유지하며, 제안을 검토한 뒤 직접 확정하세요.</p>
+                          <span id="punctuationAiStatus" role="status" aria-live="polite"></span>
+                        </div>
+                      </div>
+                      <span class="field-help" id="punctuationTextCount">0자</span>
+                    </div>
+                  </div>
+                </div>
+                <div id="punctuationDraftFields">
+                  <div class="draft-meta-grid">
+                    <div class="field"><label for="punctuationMode">구조 방식</label><select class="select" id="punctuationMode"><option value="prose">산문</option><option value="poetry">운문</option></select></div>
+                    <div class="field" id="punctuationChangeField"><label for="punctuationChangeSummary">변경 요약 <span class="muted">선택</span></label><input class="input" id="punctuationChangeSummary" maxlength="2000" placeholder="예: 2문단 문장 경계 조정"></div>
+                  </div>
+                </div>
+                <div id="punctuationDraftActions">
+                  <div class="draft-actions"><span class="muted" id="punctuationVersion">—</span><span class="sp"></span><button class="btn" id="btnSavePunctuationDraft" type="button">표점 원문 저장</button><button class="btn btn-primary" id="btnConfirmPunctuation" type="button">표점 원문 확정</button></div>
+                </div>
+              </section>
+
+              <section class="workspace-panel" id="segmentationWorkspace" role="tabpanel" aria-labelledby="stepSegmentation" hidden>
+                <header class="draft-head">
+                  <div><span class="draft-eyebrow">3 · 분절</span><h1>번역 앵커를 확인합니다</h1><p>확정된 표점 원문에서 생성한 읽기 전용 기술 참조입니다. 실제 번역 단위는 다음 단계에서 번역 블록으로 합치거나 나눌 수 있습니다.</p></div>
+                  <span class="tag tag-plain" id="segmentationStateBadge">—</span>
+                </header>
+                <div class="workflow-notice is-ok" id="segmentationMessage" role="status" aria-live="polite"></div>
+                <div class="segmentation-list" id="segmentationAnchorList"></div>
+
+              </section>
+
+              <section class="workspace-panel" id="translationWorkspace" role="tabpanel" aria-labelledby="stepTranslation" hidden>
+                <div class="banner segmentation-actions" role="group" aria-label="번역 시작">
+                  <span id="translationEmpty"><b>아직 번역안이 없습니다.</b> 표점 없이도 원문 전체를 번역할 수 있습니다.</span>
+                  <span id="translationCurrent" hidden><b>번역안이 있습니다.</b> 번역 단계에서 편집하거나 새 AI 번역을 실행할 수 있습니다.</span>
+                  <span id="translationStale" hidden><b>이전 원문 기준 번역안이 보존되어 있습니다.</b> 새 번역을 생성하거나 기존 번역을 검토하세요.</span>
+                  <span class="sp"></span>
+                  <span class="row" id="manualDraftControls">
+                    <button class="btn" id="btnCreateTranslationDraft" type="button">사람 번역 초안 만들기</button>
+                  </span>
+                  <button class="btn" id="btnResetTranslationDraft" type="button" hidden>현재 원문으로 빈 번역안 만들기</button>
+                  <button class="btn btn-primary" id="btnPrepare" type="button" data-od-id="btn-ai-translate">전체 번역 생성… <kbd>⌥⌘K</kbd></button>
+                </div>
+                <div id="textTranslationControls" class="row" hidden style="margin:12px 0"><span id="alignmentStatus" class="muted" role="status"></span><span class="sp"></span><span id="translationSaveStatus" class="muted" role="status" aria-live="polite"></span><button class="btn btn-sm" type="button" id="btnRetryAlignment">원문 연결</button><button class="btn btn-sm" type="button" id="btnSaveFullTranslation">번역 저장</button></div>
+                <p id="translationEditHelp" class="translation-edit-help muted" hidden></p>
+                <div id="reviewCommentToolbar" class="review-toolbar" hidden>
+                  <button class="btn btn-sm" id="btnAddReviewComment" type="button" aria-pressed="false" aria-describedby="reviewSelectionHint" disabled>코멘트 달기</button>
+                  <span id="reviewSelectionHint" class="muted" role="status">‘코멘트 달기’를 누른 뒤 원문이나 번역문의 범위를 선택하세요.</span>
+                  <span class="sp"></span>
+                  <button class="btn btn-sm" id="btnShowReviewComments" type="button">검토 코멘트</button>
+                  <button class="btn btn-sm" id="btnCompareTranslation" type="button">이전 번역과 비교…</button>
+                </div>
+                <div class="vstrip" id="vstrip" data-od-id="validation-strip"></div>
+                <div class="view" id="viewSource" data-od-id="view-source">
+                  <p class="muted" style="font-size:12px;margin-bottom:12px">표점안 · 표시되는 문단·문장·운문 구조는 확정된 구조 범위입니다. 앵커에 마우스를 올리면 연결된 번역 블록이 표시됩니다.</p>
+                  <div class="source-text" id="sourceText"></div>
+                </div>
+                <div class="view is-open" id="viewParallel" data-od-id="view-parallel"><div class="rows" id="rows"></div></div>
+                <div class="view" id="viewFull" data-od-id="view-full">
+                  <p class="muted" style="font-size:12px;margin-bottom:12px">번역 전문 · 블록 경계 없이 읽습니다. 문장을 클릭하면 대조 보기에서 해당 블록을 선택합니다.</p>
+                  <textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" spellcheck="false" hidden style="width:100%;min-height:55vh;font-size:17px;line-height:1.9;white-space:pre-wrap"></textarea><div class="full-text" id="fullText"></div>
+                </div>
+              </section>
             </div>
           </div>
         </section>
@@ -102,32 +225,38 @@
           <div class="scope" style="padding:0 8px">
             <div class="seg wide" id="rtabs" role="tablist">
               <button type="button" role="tab" data-tab="chat" aria-selected="true">AI 채팅</button>
-              <button type="button" role="tab" data-tab="reflection" aria-selected="false">Reflection <span class="cnt" id="cntFind">0</span></button>
               <button type="button" role="tab" data-tab="context" aria-selected="false">문맥</button>
+              <button type="button" role="tab" data-tab="comments" aria-selected="false">코멘트 <span id="reviewCommentCount">0</span></button>
               <button type="button" role="tab" data-tab="history" aria-selected="false">이력</button>
             </div>
           </div>
           <div class="rpanel is-open" id="rp-chat" role="tabpanel">
             <div class="chat-list" id="chatList"></div>
             <form class="chat-compose" id="chatForm">
-              <div class="row"><select class="select" id="agentSel" aria-label="에이전트" style="width:auto"><option>Claude CLI</option><option>Codex CLI</option></select><span class="muted" style="font-size:11.5px">일반 채팅 · 번역 데이터를 변경하지 않습니다</span></div>
+              <div class="chat-agent-row">
+                <select class="select" id="chatScope" aria-label="채팅 범위"><option value="document_node">현재 문서</option><option value="project">프로젝트 전체</option></select>
+                <span class="chat-model-info muted" id="chatModelInfo" role="status" aria-label="채팅 모델과 effort">설정 확인 중…</span>
+                <span class="muted chat-scope-note" id="chatScopeNote">현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.</span>
+              </div>
               <textarea class="textarea" id="chatInput" style="min-height:56px" placeholder="이 문서에 대해 질문하거나 검토를 요청하세요"></textarea>
-              <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" type="submit">보내기 <kbd>⌘↩</kbd></button></div>
+              <div class="chat-run-status" id="chatRunStatus" role="status" aria-live="polite"></div>
+              <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="chatCancel" type="button" hidden>취소</button><button class="btn btn-sm" id="chatSend" type="submit">보내기 <kbd>⌘↩</kbd></button></div>
             </form>
           </div>
-          <div class="rpanel" id="rp-reflection" role="tabpanel"><div class="pane-scroll"><div class="pane-body">
-            <p class="muted" style="font-size:12px">가시적 검토 결과입니다. 항목을 클릭하면 관련 앵커와 블록을 표시합니다.</p>
-            <div class="list" id="findingList" style="gap:8px"></div>
-            <button class="btn btn-sm" id="btnReflect" type="button" style="align-self:flex-start">Reflection 다시 요청…</button>
-          </div></div></div>
           <div class="rpanel" id="rp-context" role="tabpanel"><div class="pane-scroll">
             <details class="grp" open><summary>일치한 용어<span class="tail"><a href="knowledge.html">용어집 ›</a></span></summary><div class="grp-b list" id="ctxTerms"></div></details>
             <details class="grp" open><summary>인물·지명</summary><div class="grp-b list" id="ctxPeople"></div></details>
             <details class="grp" open><summary>열린 불확실성</summary><div class="grp-b list" id="ctxUnc"></div></details>
             <div class="pane-body"><button class="btn btn-sm" id="btnCtxAll" type="button" style="align-self:flex-start">AI에 보낼 자료 설정…</button></div>
           </div></div>
+          <div class="rpanel" id="rp-comments" role="tabpanel" aria-label="검토 코멘트"><div class="pane-scroll"><div class="pane-body review-panel">
+            <p class="muted">원문에 대한 해석이나 번역 수정 방향을 남기세요. 포함한 코멘트를 현재 번역과 함께 읽어 새 번역안을 만듭니다.</p>
+            <p class="muted">코멘트는 작성 당시의 번역에 연결됩니다. 번역문을 직접 수정해 저장하면 기존 코멘트는 이전 버전 기록으로 남습니다.</p>
+            <button class="btn btn-primary" id="btnRetranslateComments" type="button" disabled>코멘트로 재번역…</button>
+            <div id="reviewCommentsList" aria-live="polite"></div>
+          </div></div></div>
           <div class="rpanel" id="rp-history" role="tabpanel"><div class="pane-scroll"><div class="pane-body">
-            <p class="muted" style="font-size:12px">모든 AI 제안과 사용자 수정은 이전 내용을 덮어쓰지 않고 새 번역안으로 보존됩니다.</p>
+            <p class="muted" style="font-size:12px">AI로 가져온 번역과 사용자 수정은 이전 내용을 덮어쓰지 않고 새 version으로 보존됩니다.</p>
             <div id="histList"></div>
           </div></div></div>
         </aside>
@@ -148,6 +277,17 @@
 
 <div class="menu ctxmenu" id="ctxmenu" role="menu"></div>
 <div class="term-card" id="termCard" role="tooltip"></div>
+<dialog id="dlgReviewComment" class="dlg review-comment-dialog" aria-labelledby="reviewCommentHeading">
+  <form id="reviewCommentForm">
+    <h2 id="reviewCommentHeading">코멘트 달기</h2>
+    <blockquote id="reviewCommentQuote"></blockquote>
+    <label for="reviewCommentBody">해석·수정 의견</label>
+    <textarea id="reviewCommentBody" class="textarea" required maxlength="20000" rows="6" placeholder="예: 여기의 巖棲客은 화자를 가리킨다. 뒤 문장의 질문 주체도 이에 맞춰 수정할 것."></textarea>
+    <p class="muted">질문이나 아직 확정하지 않은 해석은 그 상태를 함께 적어주세요.</p>
+    <p id="reviewCommentError" class="review-error" role="alert"></p>
+    <div class="review-dialog-actions"><button id="reviewCommentCancel" class="btn" type="button">취소</button><button id="reviewCommentSave" class="btn btn-primary" type="submit">코멘트 저장</button></div>
+  </form>
+</dialog>
 <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
 
 <dialog id="dlgPrepare" class="ai-run-dialog" data-od-id="dialog-ai-translate" aria-labelledby="prepHeading">
@@ -160,11 +300,7 @@
     <button class="ai-run-close" id="prepCloseTop" type="button" aria-label="닫기">×</button>
   </div>
   <div class="ai-run-toolbar">
-    <label for="prepRecipe">번역 방식</label>
-    <select class="select" id="prepRecipe">
-      <option value="2">직역안 · 독자안 + Reflection</option>
-      <option value="3">信 · 達 · 雅 + Reflection</option>
-    </select>
+    <span class="ai-run-contract"><b>단일 완성 번역</b> · 번역을 먼저 저장한 뒤 별도 요청으로 원문을 연결합니다.</span>
     <label for="prepAgent">에이전트</label>
     <select class="select" id="prepAgent">
       <option value="claude">Claude CLI · model default</option>
@@ -181,8 +317,15 @@
       </section>
       <section class="prep-sec" data-od-id="aux-context">
         <div class="prep-sec-h"><span>보조 자료</span><span class="tail">자동 · 고정 · 제외</span></div>
-        <p class="prep-help">이 실행에만 적용됩니다. 선택을 바꾸면 실제 요청과 해시를 다시 계산합니다.</p>
+        <p class="prep-help">내용을 펼쳐 확인한 뒤 전송 방식을 정할 수 있습니다. 선택을 바꾸면 실제 요청과 해시를 다시 계산합니다.</p>
         <div id="prepAux"></div>
+      </section>
+      <section class="prep-sec" data-od-id="request-preview">
+        <details>
+          <summary class="prep-sec-h"><span>실제 전송 본문</span><span class="tail mono" id="prepRequestHash"></span></summary>
+          <p class="prep-help">현재 선택으로 로컬 CLI에 전달할 최종 요청입니다.</p>
+          <pre class="prep-manifest prep-request-text" id="prepRequestText"></pre>
+        </details>
       </section>
       <section class="prep-sec" data-od-id="manifest-preview">
         <details>
@@ -197,11 +340,24 @@
         <dl class="prep-budget" id="prepBudget"></dl>
         <p class="prep-note" id="prepNote">현재 문서의 exact request를 조립하고 있습니다.</p>
       </section>
+      <section class="prep-run-progress" id="prepRunPanel" aria-live="polite" aria-atomic="false" hidden>
+        <div class="prep-summary-head">
+          <span>실행 상태</span>
+          <span class="tag tag-line" id="prepRunState">대기</span>
+        </div>
+        <div class="prep-run-meter" id="prepRunMeter" role="progressbar" aria-label="AI 번역 진행" aria-valuetext="대기">
+          <span aria-hidden="true"></span>
+        </div>
+        <p class="prep-run-phase" id="prepRunPhase"></p>
+        <p class="prep-run-detail" id="prepRunDetail"></p>
+        <pre class="prep-run-partial" id="prepRunPartial" tabindex="0" hidden></pre>
+        <p class="prep-run-error" id="prepRunError" role="alert" hidden></p>
+      </section>
       <section class="prep-scope">
         <b>보냅니다</b>
-        <ul><li>현재 표점 원문 전체</li><li>앵커 명세와 번역 원칙</li><li>선택한 보조 자료</li><li>구조화 응답 계약</li></ul>
+        <ul><li>현재 원문 전체와 선택한 문맥·번역 원칙</li><li>기본 포함된 전문 번역 지침</li><li>번역 저장 후 별도 요청으로 문장별 원문 연결</li></ul>
         <b>보내지 않습니다</b>
-        <ul><li>참고 이미지·PDF</li><li>채팅 기록과 거절된 제안</li><li>OAuth token·API key</li></ul>
+        <ul><li>참고 이미지·PDF</li><li>채팅 기록과 거절된 제안</li><li>문해 요청 본문의 OAuth token·API key</li></ul>
       </section>
     </aside>
   </div>
@@ -209,6 +365,7 @@
     <span class="muted">문자·byte 수는 참고값이며 모델 한도는 CLI 응답으로 확인합니다.</span>
     <span class="sp"></span>
     <button class="btn" id="prepClose" type="button">닫기</button>
+    <button class="btn" id="prepCancel" type="button" hidden>실행 취소</button>
     <button class="btn btn-primary" id="prepRun" type="button" disabled>번역 실행 — Claude CLI</button>
   </div>
 </dialog>
@@ -224,7 +381,7 @@
 </dialog>
 <dialog id="dlgLink" data-od-id="dialog-link">
   <div class="dl-h">앵커 연결 조정</div>
-  <div class="dl-b"><p>이 블록이 대응하는 원문 앵커를 선택합니다. 연속하지 않거나 다른 블록과 겹치면 번역안은 <b>재검토 필요</b> 상태가 되며 확정할 수 없습니다.</p><div class="radio-list" id="linkAnchors"></div></div>
+  <div class="dl-b"><p>이 블록이 대응하는 원문 앵커를 선택합니다. 앵커 묶음과 순서는 자유롭게 조정할 수 있으며, 전체 번역과 원문의 대응이 적절한지는 사용자가 검토합니다.</p><div class="radio-list" id="linkAnchors"></div></div>
   <div class="dl-f"><button class="btn" id="linkCancel" type="button">취소</button><button class="btn btn-primary" id="linkOk" type="button">연결 저장</button></div>
 </dialog>
 <dialog id="dlgConfirm" data-od-id="dialog-confirm">
@@ -245,6 +402,6 @@
   <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
   <div class="pl-list" id="palList"></div>
 </dialog>
-<script type="module" src="./scripts/editor.ts"></script>
+
 </body>
 </html>

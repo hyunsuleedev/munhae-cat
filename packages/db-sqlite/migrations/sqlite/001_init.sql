@@ -1,12 +1,10 @@
--- Munhae Studio Phase 1 / M0 project schema (SQLite STRICT).
--- Intentionally omitted for M0 (document in agent brief):
---   search_documents, search_terms
+-- Munhae Studio Phase 1 fresh-only baseline (SQLite STRICT).
+-- Historical project schemas are rejected rather than upgraded in place.
+-- Intentionally omitted for Phase 1:
 --   import_jobs, import_items, external_mappings
 --   export_jobs, export_items, background_jobs, derived_artifacts
 --   translation_split_plans, translation_split_plan_parts, translation_split_plan_results
 --   ai_token_preflights, translation_quality_checks
---   workflow_recipes, workflow_recipe_versions, workflow_recipe_steps,
---   workflow_executions, workflow_step_runs
 -- glossary_entries.term_kind is included (plan.md); schema.md 13.1 omits it.
 
 CREATE TABLE IF NOT EXISTS meta_schema_migrations (
@@ -74,8 +72,6 @@ CREATE TABLE core_translation_policy_versions (
   source_language TEXT NOT NULL,
   target_locale TEXT NOT NULL,
   audience TEXT,
-  workflow_mode TEXT NOT NULL CHECK (workflow_mode IN ('two_step', 'three_step')),
-  reflection_required INTEGER NOT NULL CHECK (reflection_required IN (0, 1)),
   hanja_policy TEXT,
   supplement_policy TEXT,
   uncertainty_policy TEXT,
@@ -124,17 +120,18 @@ CREATE TABLE document_nodes (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES core_projects (id),
   parent_node_id TEXT REFERENCES document_nodes (id),
-  structural_kind TEXT NOT NULL CHECK (structural_kind IN ('collection', 'work', 'volume', 'chapter', 'section', 'item')),
+  node_role TEXT NOT NULL DEFAULT 'container' CHECK (node_role IN ('container', 'source_unit')),
+  is_master INTEGER NOT NULL DEFAULT 0 CHECK (is_master IN (0, 1)),
   title TEXT NOT NULL,
   original_title TEXT,
   ordinal INTEGER NOT NULL,
-  genre TEXT CHECK (genre IS NULL OR genre IN ('poetry', 'letter', 'memorial', 'preface', 'epitaph', 'biography', 'official_document', 'prose', 'other')),
   author_person_id TEXT REFERENCES persons (id),
   language TEXT,
   period_text TEXT,
   date_text TEXT,
   description_md TEXT,
   source_reference TEXT,
+  lock_version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   archived_at TEXT
@@ -145,6 +142,7 @@ CREATE INDEX idx_document_nodes_parent ON document_nodes (parent_node_id);
 CREATE UNIQUE INDEX uq_document_nodes_parent_ordinal ON document_nodes (project_id, parent_node_id, ordinal) WHERE parent_node_id IS NOT NULL;
 CREATE UNIQUE INDEX uq_document_nodes_root_ordinal ON document_nodes (project_id, ordinal) WHERE parent_node_id IS NULL;
 CREATE INDEX idx_document_nodes_author ON document_nodes (project_id, author_person_id) WHERE author_person_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_document_nodes_project_master ON document_nodes (project_id) WHERE is_master = 1 AND archived_at IS NULL;
 
 CREATE TABLE src_assets (
   id TEXT PRIMARY KEY,
@@ -401,14 +399,13 @@ CREATE TABLE document_translations (
   document_node_id TEXT NOT NULL REFERENCES document_nodes (id),
   source_text_id TEXT NOT NULL REFERENCES src_texts (id),
   target_locale TEXT NOT NULL,
-  stage TEXT NOT NULL,
   created_at TEXT NOT NULL,
   tombstoned_at TEXT
 ) STRICT;
 
 CREATE INDEX idx_document_translations_project ON document_translations (project_id);
 CREATE INDEX idx_document_translations_node ON document_translations (document_node_id);
-CREATE UNIQUE INDEX uq_document_translations_stage ON document_translations (source_text_id, target_locale, stage);
+CREATE UNIQUE INDEX uq_document_translations_locale ON document_translations (source_text_id, target_locale);
 
 CREATE TABLE provenance_artifacts (
   id TEXT PRIMARY KEY,
@@ -503,7 +500,6 @@ CREATE TABLE chat_agent_sessions (
   project_id TEXT NOT NULL REFERENCES core_projects (id),
   thread_id TEXT NOT NULL REFERENCES chat_threads (id),
   agent_id TEXT NOT NULL,
-  native_session_id TEXT,
   model TEXT,
   cwd_hash TEXT,
   last_message_id TEXT REFERENCES chat_messages (id),
@@ -529,19 +525,13 @@ CREATE TABLE document_translation_versions (
   translation_policy_version_id TEXT NOT NULL REFERENCES core_translation_policy_versions (id),
   text_content TEXT NOT NULL,
   origin_kind TEXT NOT NULL,
-  workflow_execution_id TEXT,
   generated_by_message_id TEXT REFERENCES chat_messages (id),
-  generation_candidate_key TEXT,
   validation_state TEXT NOT NULL CHECK (validation_state IN ('valid', 'needs_review')),
   needs_review INTEGER NOT NULL DEFAULT 0 CHECK (needs_review IN (0, 1)),
   state TEXT NOT NULL CHECK (state IN ('draft', 'confirmed', 'rejected', 'superseded')),
   content_hash TEXT NOT NULL,
   created_by_actor_id TEXT NOT NULL REFERENCES core_actors (id),
-  created_at TEXT NOT NULL,
-  CHECK (
-    (generated_by_message_id IS NULL AND generation_candidate_key IS NULL)
-    OR (generated_by_message_id IS NOT NULL AND generation_candidate_key IS NOT NULL)
-  )
+  created_at TEXT NOT NULL
 ) STRICT;
 
 CREATE INDEX idx_dt_versions_project ON document_translation_versions (project_id);
@@ -553,7 +543,7 @@ CREATE INDEX idx_dt_versions_anchor_set ON document_translation_versions (transl
 CREATE INDEX idx_dt_versions_policy ON document_translation_versions (translation_policy_version_id);
 CREATE INDEX idx_dt_versions_actor ON document_translation_versions (created_by_actor_id);
 CREATE INDEX idx_dt_versions_message ON document_translation_versions (generated_by_message_id);
-CREATE UNIQUE INDEX uq_dt_versions_generation ON document_translation_versions (generated_by_message_id, generation_candidate_key) WHERE generated_by_message_id IS NOT NULL;
+CREATE UNIQUE INDEX uq_dt_versions_generation ON document_translation_versions (generated_by_message_id) WHERE generated_by_message_id IS NOT NULL;
 
 CREATE TABLE document_translation_heads (
   project_id TEXT NOT NULL REFERENCES core_projects (id),
@@ -631,68 +621,6 @@ CREATE TABLE document_translation_validation_findings (
 CREATE INDEX idx_dt_val_findings_project ON document_translation_validation_findings (project_id);
 CREATE INDEX idx_dt_val_findings_validation ON document_translation_validation_findings (validation_id);
 CREATE INDEX idx_dt_val_findings_anchor ON document_translation_validation_findings (anchor_id);
-
-CREATE TABLE reflection_reports (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES core_projects (id),
-  source_message_id TEXT REFERENCES chat_messages (id),
-  reflection_kind TEXT NOT NULL,
-  verdict TEXT,
-  summary_md TEXT NOT NULL,
-  content_hash TEXT NOT NULL,
-  created_at TEXT NOT NULL
-) STRICT;
-
-CREATE INDEX idx_reflection_reports_project ON reflection_reports (project_id);
-CREATE UNIQUE INDEX uq_reflection_reports_message ON reflection_reports (source_message_id) WHERE source_message_id IS NOT NULL;
-
-CREATE TABLE reflection_report_translation_versions (
-  project_id TEXT NOT NULL REFERENCES core_projects (id),
-  report_id TEXT NOT NULL REFERENCES reflection_reports (id),
-  document_translation_version_id TEXT NOT NULL REFERENCES document_translation_versions (id),
-  ordinal INTEGER NOT NULL,
-  PRIMARY KEY (report_id, document_translation_version_id)
-) STRICT;
-
-CREATE INDEX idx_rrtv_project ON reflection_report_translation_versions (project_id);
-CREATE INDEX idx_rrtv_version ON reflection_report_translation_versions (document_translation_version_id);
-CREATE UNIQUE INDEX uq_rrtv_ordinal ON reflection_report_translation_versions (report_id, ordinal);
-CREATE UNIQUE INDEX uq_rrtv_version ON reflection_report_translation_versions (report_id, document_translation_version_id);
-
-CREATE TABLE reflection_findings (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL REFERENCES core_projects (id),
-  report_id TEXT NOT NULL REFERENCES reflection_reports (id),
-  document_translation_version_id TEXT REFERENCES document_translation_versions (id),
-  finding_kind TEXT NOT NULL,
-  severity TEXT NOT NULL,
-  source_codepoint_from INTEGER,
-  source_codepoint_to INTEGER,
-  source_quote TEXT,
-  target_codepoint_from INTEGER,
-  target_codepoint_to INTEGER,
-  explanation_md TEXT NOT NULL,
-  resolution_state TEXT,
-  resolved_by_document_translation_version_id TEXT REFERENCES document_translation_versions (id)
-) STRICT;
-
-CREATE INDEX idx_reflection_findings_project ON reflection_findings (project_id);
-CREATE INDEX idx_reflection_findings_report ON reflection_findings (report_id);
-CREATE INDEX idx_reflection_findings_version ON reflection_findings (document_translation_version_id);
-CREATE INDEX idx_reflection_findings_resolved ON reflection_findings (resolved_by_document_translation_version_id);
-
-CREATE TABLE reflection_finding_anchors (
-  project_id TEXT NOT NULL REFERENCES core_projects (id),
-  finding_id TEXT NOT NULL REFERENCES reflection_findings (id),
-  translation_anchor_id TEXT NOT NULL REFERENCES translation_anchors (id),
-  ordinal INTEGER NOT NULL,
-  PRIMARY KEY (finding_id, translation_anchor_id)
-) STRICT;
-
-CREATE INDEX idx_rfa_project ON reflection_finding_anchors (project_id);
-CREATE INDEX idx_rfa_anchor ON reflection_finding_anchors (translation_anchor_id);
-CREATE UNIQUE INDEX uq_rfa_ordinal ON reflection_finding_anchors (finding_id, ordinal);
-CREATE UNIQUE INDEX uq_rfa_anchor ON reflection_finding_anchors (finding_id, translation_anchor_id);
 
 CREATE TABLE translation_staleness (
   id TEXT PRIMARY KEY,
@@ -789,6 +717,7 @@ CREATE INDEX idx_uncertainty_versions_project ON uncertainty_versions (project_i
 CREATE INDEX idx_uncertainty_versions_unc ON uncertainty_versions (uncertainty_id);
 CREATE INDEX idx_uncertainty_versions_parent ON uncertainty_versions (parent_version_id);
 CREATE INDEX idx_uncertainty_versions_actor ON uncertainty_versions (created_by_actor_id);
+CREATE UNIQUE INDEX uq_uncertainty_versions_number ON uncertainty_versions (uncertainty_id, version_no);
 
 CREATE TABLE uncertainty_options (
   id TEXT PRIMARY KEY,
@@ -801,6 +730,7 @@ CREATE TABLE uncertainty_options (
 
 CREATE INDEX idx_uncertainty_options_project ON uncertainty_options (project_id);
 CREATE INDEX idx_uncertainty_options_version ON uncertainty_options (uncertainty_version_id);
+CREATE UNIQUE INDEX uq_uncertainty_options_ordinal ON uncertainty_options (uncertainty_version_id, ordinal);
 
 CREATE TABLE uncertainty_anchors (
   id TEXT PRIMARY KEY,
@@ -828,6 +758,7 @@ CREATE TABLE context_items (
   priority INTEGER NOT NULL DEFAULT 0,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   content_hash TEXT NOT NULL,
+  lock_version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   archived_at TEXT
@@ -855,7 +786,6 @@ CREATE INDEX idx_lineage_message ON provenance_lineage_edges (message_id);
 CREATE TABLE user_edits (
   id TEXT PRIMARY KEY,
   project_id TEXT NOT NULL REFERENCES core_projects (id),
-  workflow_execution_id TEXT,
   document_translation_id TEXT REFERENCES document_translations (id),
   base_document_translation_version_id TEXT REFERENCES document_translation_versions (id),
   result_document_translation_version_id TEXT REFERENCES document_translation_versions (id),
@@ -882,3 +812,220 @@ CREATE INDEX idx_user_edits_actor ON user_edits (actor_id);
 CREATE INDEX idx_user_edits_base_art ON user_edits (base_artifact_id);
 CREATE INDEX idx_user_edits_result_art ON user_edits (result_artifact_id);
 CREATE INDEX idx_user_edits_patch_art ON user_edits (patch_artifact_id);
+
+-- Rebuildable local full-text search index. Ledger/version tables remain the
+-- source of truth; this table can be deleted and repopulated at any time.
+CREATE VIRTUAL TABLE search_documents_fts USING fts5(
+  project_id UNINDEXED,
+  document_node_id UNINDEXED,
+  result_kind UNINDEXED,
+  aggregate_id UNINDEXED,
+  version_id UNINDEXED,
+  content_hash UNINDEXED,
+  stage UNINDEXED,
+  state UNINDEXED,
+  is_current UNINDEXED,
+  is_confirmed UNINDEXED,
+  title,
+  content,
+  tokenize = 'unicode61 remove_diacritics 2',
+  prefix = '1 2'
+);
+
+CREATE TRIGGER trg_document_nodes_parent_container_insert
+BEFORE INSERT ON document_nodes
+WHEN NEW.parent_node_id IS NOT NULL
+  AND (SELECT node_role FROM document_nodes WHERE id = NEW.parent_node_id) <> 'container'
+BEGIN
+  SELECT RAISE(ABORT, 'source_unit nodes cannot contain child nodes');
+END;
+
+CREATE TRIGGER trg_document_nodes_parent_container_update
+BEFORE UPDATE OF parent_node_id ON document_nodes
+WHEN NEW.parent_node_id IS NOT NULL
+  AND (SELECT node_role FROM document_nodes WHERE id = NEW.parent_node_id) <> 'container'
+BEGIN
+  SELECT RAISE(ABORT, 'source_unit nodes cannot contain child nodes');
+END;
+
+CREATE TRIGGER trg_document_nodes_role_container
+BEFORE UPDATE OF node_role ON document_nodes
+WHEN NEW.node_role = 'container'
+  AND EXISTS (SELECT 1 FROM src_texts source WHERE source.document_node_id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'container nodes cannot contain source text');
+END;
+
+CREATE TRIGGER trg_document_nodes_role_source_unit
+BEFORE UPDATE OF node_role ON document_nodes
+WHEN NEW.node_role = 'source_unit'
+  AND EXISTS (SELECT 1 FROM document_nodes child WHERE child.parent_node_id = NEW.id)
+BEGIN
+  SELECT RAISE(ABORT, 'source_unit nodes cannot contain child nodes');
+END;
+
+CREATE TRIGGER trg_src_texts_source_unit_insert
+BEFORE INSERT ON src_texts
+WHEN (SELECT node_role FROM document_nodes WHERE id = NEW.document_node_id) <> 'source_unit'
+BEGIN
+  SELECT RAISE(ABORT, 'container nodes cannot contain source text');
+END;
+
+CREATE TRIGGER trg_src_texts_source_unit_update
+BEFORE UPDATE OF document_node_id ON src_texts
+WHEN (SELECT node_role FROM document_nodes WHERE id = NEW.document_node_id) <> 'source_unit'
+BEGIN
+  SELECT RAISE(ABORT, 'container nodes cannot contain source text');
+END;
+
+CREATE TRIGGER trg_src_texts_one_active_insert
+BEFORE INSERT ON src_texts
+WHEN NEW.tombstoned_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM src_texts source
+    WHERE source.document_node_id = NEW.document_node_id
+      AND source.tombstoned_at IS NULL
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'source_unit nodes can contain only one active source text');
+END;
+
+CREATE TRIGGER trg_src_texts_one_active_update
+BEFORE UPDATE OF document_node_id, tombstoned_at ON src_texts
+WHEN NEW.tombstoned_at IS NULL
+  AND EXISTS (
+    SELECT 1 FROM src_texts source
+    WHERE source.document_node_id = NEW.document_node_id
+      AND source.tombstoned_at IS NULL
+      AND source.id <> NEW.id
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'source_unit nodes can contain only one active source text');
+END;
+
+CREATE TRIGGER trg_anchor_sets_source_unit_insert
+BEFORE INSERT ON translation_anchor_sets
+WHEN (SELECT node_role FROM document_nodes WHERE id = NEW.document_node_id) <> 'source_unit'
+BEGIN
+  SELECT RAISE(ABORT, 'container nodes cannot contain translation anchors');
+END;
+
+CREATE TRIGGER trg_document_translations_source_unit_insert
+BEFORE INSERT ON document_translations
+WHEN (SELECT node_role FROM document_nodes WHERE id = NEW.document_node_id) <> 'source_unit'
+BEGIN
+  SELECT RAISE(ABORT, 'container nodes cannot contain translations');
+END;
+
+CREATE TRIGGER trg_document_nodes_master_shape_insert
+BEFORE INSERT ON document_nodes
+WHEN NEW.is_master = 1
+  AND (NEW.parent_node_id IS NOT NULL OR NEW.node_role <> 'container' OR NEW.archived_at IS NOT NULL)
+BEGIN
+  SELECT RAISE(ABORT, 'project master must be an active root container');
+END;
+
+CREATE TRIGGER trg_document_nodes_only_master_root_insert
+BEFORE INSERT ON document_nodes
+WHEN NEW.parent_node_id IS NULL AND NEW.is_master <> 1
+BEGIN
+  SELECT RAISE(ABORT, 'all document nodes must be inside the project master');
+END;
+
+CREATE TRIGGER trg_document_nodes_only_master_root_update
+BEFORE UPDATE OF parent_node_id, is_master ON document_nodes
+WHEN NEW.parent_node_id IS NULL AND NEW.is_master <> 1
+BEGIN
+  SELECT RAISE(ABORT, 'all document nodes must be inside the project master');
+END;
+
+CREATE TRIGGER trg_document_nodes_master_immutable
+BEFORE UPDATE OF parent_node_id, node_role, is_master, archived_at ON document_nodes
+WHEN OLD.is_master = 1
+  AND (
+    NEW.parent_node_id IS NOT NULL OR
+    NEW.node_role <> 'container' OR
+    NEW.is_master <> 1 OR
+    NEW.archived_at IS NOT NULL
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'project master cannot be moved, archived, or changed from a container');
+END;
+
+CREATE TRIGGER trg_document_nodes_master_delete
+BEFORE DELETE ON document_nodes
+WHEN OLD.is_master = 1
+BEGIN
+  SELECT RAISE(ABORT, 'project master cannot be deleted');
+END;
+
+CREATE TRIGGER trg_context_items_document_scope_insert
+BEFORE INSERT ON context_items
+WHEN COALESCE(NEW.scope_kind, '') <> 'document_node'
+  OR NEW.scope_id IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM document_nodes node
+    WHERE node.id = NEW.scope_id AND node.project_id = NEW.project_id AND node.archived_at IS NULL
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'context items must belong to a document container or source unit');
+END;
+
+CREATE TRIGGER trg_context_items_document_scope_update
+BEFORE UPDATE OF project_id, scope_kind, scope_id ON context_items
+WHEN COALESCE(NEW.scope_kind, '') <> 'document_node'
+  OR NEW.scope_id IS NULL
+  OR NOT EXISTS (
+    SELECT 1 FROM document_nodes node
+    WHERE node.id = NEW.scope_id AND node.project_id = NEW.project_id AND node.archived_at IS NULL
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'context items must belong to a document container or source unit');
+END;
+
+CREATE TRIGGER trg_uncertainty_versions_owner_insert
+BEFORE INSERT ON uncertainty_versions
+WHEN NOT EXISTS (
+  SELECT 1 FROM uncertainties uncertainty
+  WHERE uncertainty.id = NEW.uncertainty_id
+    AND uncertainty.project_id = NEW.project_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'uncertainty version must belong to its project uncertainty');
+END;
+
+CREATE TRIGGER trg_uncertainty_versions_parent_insert
+BEFORE INSERT ON uncertainty_versions
+WHEN NEW.parent_version_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM uncertainty_versions parent
+    WHERE parent.id = NEW.parent_version_id
+      AND parent.project_id = NEW.project_id
+      AND parent.uncertainty_id = NEW.uncertainty_id
+      AND parent.version_no < NEW.version_no
+  )
+BEGIN
+  SELECT RAISE(ABORT, 'uncertainty version parent must be an earlier version of the same uncertainty');
+END;
+
+CREATE TRIGGER trg_uncertainty_options_owner_insert
+BEFORE INSERT ON uncertainty_options
+WHEN NOT EXISTS (
+  SELECT 1 FROM uncertainty_versions version
+  WHERE version.id = NEW.uncertainty_version_id
+    AND version.project_id = NEW.project_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'uncertainty option must belong to its project version');
+END;
+
+CREATE TRIGGER trg_uncertainty_anchors_owner_insert
+BEFORE INSERT ON uncertainty_anchors
+WHEN NOT EXISTS (
+  SELECT 1 FROM uncertainty_versions version
+  WHERE version.id = NEW.uncertainty_version_id
+    AND version.project_id = NEW.project_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'uncertainty anchor must belong to its project version');
+END;

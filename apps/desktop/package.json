@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "test": "electron-vite build && vitest run",
     "preview": "electron-vite preview",
     "pack:dir": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder",
@@ -20,6 +21,7 @@
     "@munhae/db-sqlite": "workspace:*",
     "@munhae/domain": "workspace:*",
     "@munhae/project-format": "workspace:*",
+    "@supabase/supabase-js": "^2.115.0",
     "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
@@ -28,6 +30,7 @@
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
     "typescript": "^5.9.2",
-    "vite": "^7.1.3"
+    "vite": "^7.1.3",
+    "vitest": "^3.2.4"
   }
 }

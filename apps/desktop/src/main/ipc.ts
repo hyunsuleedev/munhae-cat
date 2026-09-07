@@ -4,21 +4,51 @@ import { probeAgentsCached } from "./agents";
 import { AppError, errorCode } from "./errors";
 import { redact, log } from "./log";
 import {
+  parseArchiveReviewCommentInput,
+  parseAssetId,
+  parseAgentId,
+  parseContextItemCasInput,
+  parseConfirmPunctuationInput,
+  parseConfirmSourceInput,
   parseConfirmInput,
+  parseConfirmedExportInput,
   parseContextPreviewInput,
+  parseCreateContextItemInput,
   parseCreateDocumentInput,
   parseCreateFromPasteInput,
+  parseCreatePunctuationDraftInput,
   parseCreateProjectInput,
+  parseCreateTranslationDraftInput,
+  parseCreateReviewCommentInput,
+  parseCreateUncertaintyInput,
+  parseCreateUncertaintyVersionInput,
   parseDocumentNodeId,
   parseGlossaryInput,
+  parseGetProjectChatInput,
   parseMergeBlocksInput,
+  parseMessageId,
   parseOptionalPath,
   parsePersonInput,
   parsePlaceInput,
+  parseResolveUncertaintyInput,
+  parseResetTranslationDraftInput,
+  parseReviseTranslationInput,
+  parseSavePunctuationDraftInput,
+  parseSaveSourceDraftInput,
   parseSaveDraftInput,
+  parseSearchQueryInput,
   parseSplitBlockInput,
-  parseStage,
+  parseStartTranslationInput,
+  parseStartProjectChatInput,
+  parseStartPunctuationSuggestionInput,
+  parseSetContextItemEnabledInput,
+  parseSetContextItemPriorityInput,
+  parseUpdateContextItemInput,
+  parseUpdateReviewCommentInput,
+  parseUpdateDocumentMetadataInput,
+  parseVersionDiffInput,
 } from "./ipc-validate";
+import { attachReferenceInteractive, openReference, readReference } from "./reference-assets";
 import { openHttpsExternal } from "./security";
 import {
   backupProject,
@@ -26,17 +56,36 @@ import {
   createFromPaste,
   createProjectInteractive,
   getAppConfig,
+  getRuntimeSessionRef,
   getCurrentSummary,
   getHome,
+  exportConfirmedTranslations,
   listRecent,
   pickTextFile,
   openProjectInteractive,
   openProjectPathInOs,
   requireRepo,
+  setRuntimeSessionRef,
+  clearRuntimeSession,
   seedDemo,
   setAppConfig,
 } from "./session";
 import { getMainWindow } from "./window";
+import {
+  cancelTranslationRun,
+  getTranslationRun,
+  startProjectChatRun,
+  startPunctuationSuggestionRun,
+  startTranslationRun,
+} from "./ai-runs";
+import { getAgentLoginInstruction } from "./agent-runtime-client";
+import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
+
+const runtimeSessionStore = {
+  get: getRuntimeSessionRef,
+  set: setRuntimeSessionRef,
+  clear: clearRuntimeSession,
+};
 
 const ALLOWED_CHANNELS = new Set<string>(Object.values(IPC_CHANNELS));
 
@@ -88,10 +137,16 @@ function handleResult(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...ar
 }
 
 export function registerIpcHandlers(): void {
+  for (const channel of ACCOUNT_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchAccount(channel, input));
+  }
   handleRaw(IPC_CHANNELS.appGetVersion, () => app.getVersion());
   handleRaw(IPC_CHANNELS.appGetConfig, () => getAppConfig());
   handleRaw(IPC_CHANNELS.appSetConfig, (_event, patch) => setAppConfig(patch));
   handleRaw(IPC_CHANNELS.appProbeAgents, () => probeAgentsCached());
+  handleRaw(IPC_CHANNELS.appGetLoginInstruction, (_event, agentId) => {
+    return getAgentLoginInstruction(parseAgentId(agentId));
+  });
   handleRaw(IPC_CHANNELS.appQuit, () => {
     setImmediate(() => app.quit());
   });
@@ -135,6 +190,12 @@ export function registerIpcHandlers(): void {
   handleRaw(IPC_CHANNELS.projectGetCurrent, () => getCurrentSummary());
   handleRaw(IPC_CHANNELS.projectListRecent, () => listRecent());
   handleResult(IPC_CHANNELS.projectBackup, () => backupProject());
+  handleResult(IPC_CHANNELS.projectExportConfirmed, (_event, input) => {
+    return exportConfirmedTranslations(parseConfirmedExportInput(input));
+  });
+  handleResult(IPC_CHANNELS.projectSearch, (_event, input) => {
+    return requireRepo().search(parseSearchQueryInput(input));
+  });
   handleResult(IPC_CHANNELS.projectCreateFromPaste, async (_event, input) => {
     return createFromPaste(parseCreateFromPasteInput(input));
   });
@@ -145,9 +206,36 @@ export function registerIpcHandlers(): void {
     return requireRepo().createDocument(parseCreateDocumentInput(input));
   });
   handleResult(IPC_CHANNELS.documentPickText, () => pickTextFile());
+  handleResult(IPC_CHANNELS.documentGetMetadata, (_event, documentNodeId) => {
+    return requireRepo().getDocumentMetadata(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.documentUpdateMetadata, (_event, input) => {
+    return requireRepo().updateDocumentMetadata(parseUpdateDocumentMetadataInput(input));
+  });
 
   handleResult(IPC_CHANNELS.editorGet, (_event, documentNodeId) => {
     return requireRepo().getEditor(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.editorSaveSourceDraft, (_event, input) => {
+    return requireRepo().saveSourceDraft(parseSaveSourceDraftInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorConfirmSource, (_event, input) => {
+    return requireRepo().confirmSource(parseConfirmSourceInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorCreatePunctuationDraft, (_event, input) => {
+    return requireRepo().createPunctuationDraftFromConfirmedSource(parseCreatePunctuationDraftInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorSavePunctuationDraft, (_event, input) => {
+    return requireRepo().savePunctuationDraft(parseSavePunctuationDraftInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorConfirmPunctuation, (_event, input) => {
+    return requireRepo().confirmPunctuation(parseConfirmPunctuationInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorCreateTranslationDraft, (_event, input) => {
+    return requireRepo().createTranslationDraft(parseCreateTranslationDraftInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorResetTranslationDraft, (_event, input) => {
+    return requireRepo().resetTranslationDraft(parseResetTranslationDraftInput(input));
   });
   handleResult(IPC_CHANNELS.editorSaveDraft, (_event, input) => {
     return requireRepo().saveTranslationDraft(parseSaveDraftInput(input));
@@ -155,14 +243,41 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.editorConfirm, (_event, input) => {
     return requireRepo().confirmTranslation(parseConfirmInput(input));
   });
-  handleResult(IPC_CHANNELS.editorRevise, (_event, documentNodeId, stage) => {
-    return requireRepo().reviseTranslation(parseDocumentNodeId(documentNodeId), parseStage(stage));
+  handleResult(IPC_CHANNELS.editorRevise, (_event, input) => {
+    return requireRepo().reviseTranslation(parseReviseTranslationInput(input));
   });
   handleResult(IPC_CHANNELS.editorMergeBlocks, (_event, input) => {
     return requireRepo().mergeBlocks(parseMergeBlocksInput(input));
   });
   handleResult(IPC_CHANNELS.editorSplitBlock, (_event, input) => {
     return requireRepo().splitBlock(parseSplitBlockInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorGetHistory, (_event, documentNodeId) => {
+    return requireRepo().getDocumentHistory(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.editorCompareVersions, (_event, input) => {
+    return requireRepo().compareVersions(parseVersionDiffInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorListReviewComments, (_event, documentNodeId) => {
+    return requireRepo().listReviewComments(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.editorCreateReviewComment, (_event, input) => {
+    return requireRepo().createReviewComment(parseCreateReviewCommentInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorUpdateReviewComment, (_event, input) => {
+    return requireRepo().updateReviewComment(parseUpdateReviewCommentInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorArchiveReviewComment, (_event, input) => {
+    return requireRepo().archiveReviewComment(parseArchiveReviewCommentInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorAttachReference, (_event, documentNodeId) => {
+    return attachReferenceInteractive(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.editorReadReference, (_event, documentNodeId, assetId) => {
+    return readReference(parseDocumentNodeId(documentNodeId), parseAssetId(assetId));
+  });
+  handleResult(IPC_CHANNELS.editorOpenReference, (_event, documentNodeId, assetId) => {
+    return openReference(parseDocumentNodeId(documentNodeId), parseAssetId(assetId));
   });
 
   handleResult(IPC_CHANNELS.knowledgeGet, () => requireRepo().getKnowledge());
@@ -175,8 +290,61 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.knowledgeUpsertPlace, (_event, place) => {
     return requireRepo().upsertPlace(parsePlaceInput(place));
   });
+  handleResult(IPC_CHANNELS.knowledgeCreateContext, (_event, input) => {
+    return requireRepo().createContextItem(parseCreateContextItemInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeUpdateContext, (_event, input) => {
+    return requireRepo().updateContextItem(parseUpdateContextItemInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeSetContextEnabled, (_event, input) => {
+    return requireRepo().setContextItemEnabled(parseSetContextItemEnabledInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeSetContextPriority, (_event, input) => {
+    return requireRepo().setContextItemPriority(parseSetContextItemPriorityInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeArchiveContext, (_event, input) => {
+    return requireRepo().archiveContextItem(parseContextItemCasInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeCreateUncertainty, (_event, input) => {
+    return requireRepo().createUncertainty(parseCreateUncertaintyInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeVersionUncertainty, (_event, input) => {
+    return requireRepo().createUncertaintyVersion(parseCreateUncertaintyVersionInput(input));
+  });
+  handleResult(IPC_CHANNELS.knowledgeResolveUncertainty, (_event, input) => {
+    return requireRepo().resolveUncertainty(parseResolveUncertaintyInput(input));
+  });
 
   handleResult(IPC_CHANNELS.contextPreview, (_event, input) => {
     return requireRepo().previewContext(parseContextPreviewInput(input));
+  });
+  handleResult(IPC_CHANNELS.aiStartTranslation, (_event, input) => {
+    return startTranslationRun(requireRepo(), getAppConfig(), parseStartTranslationInput(input), runtimeSessionStore);
+  });
+  handleResult(IPC_CHANNELS.aiStartChat, (_event, input) => {
+    return startProjectChatRun(requireRepo(), getAppConfig(), parseStartProjectChatInput(input), runtimeSessionStore);
+  });
+  handleResult(IPC_CHANNELS.aiStartPunctuation, (_event, input) => {
+    return startPunctuationSuggestionRun(
+      requireRepo(),
+      getAppConfig(),
+      parseStartPunctuationSuggestionInput(input),
+      runtimeSessionStore,
+    );
+  });
+  handleResult(IPC_CHANNELS.aiGetChat, (_event, input) => {
+    return requireRepo().getChat(parseGetProjectChatInput(input));
+  });
+  handleResult(IPC_CHANNELS.aiGetPunctuationSuggestion, (_event, documentNodeId) => {
+    return requireRepo().getLatestPunctuationSuggestion(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.aiApplyPunctuationSuggestion, (_event, messageId) => {
+    return requireRepo().applyPunctuationSuggestionRun(parseMessageId(messageId));
+  });
+  handleResult(IPC_CHANNELS.aiCancelRun, (_event, messageId) => {
+    return cancelTranslationRun(parseMessageId(messageId));
+  });
+  handleResult(IPC_CHANNELS.aiGetRun, (_event, messageId) => {
+    return getTranslationRun(parseMessageId(messageId));
   });
 }

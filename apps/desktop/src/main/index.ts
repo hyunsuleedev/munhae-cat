@@ -1,5 +1,6 @@
 /// <reference types="electron-vite/node" />
 
+import { resolve } from "node:path";
 import { app } from "electron";
 import { startBrowserBridge, stopBrowserBridge } from "./browser-bridge";
 import { log } from "./log";
@@ -7,12 +8,25 @@ import { installApplicationMenu } from "./menu";
 import { registerIpcHandlers } from "./ipc";
 import { registerAppSecurity } from "./security";
 import {
+  getAppConfig,
+  getCurrentSummary,
   initSession,
+  listRecent,
   openProjectFromPath,
   projectPathFromArgv,
   shutdownSession,
 } from "./session";
-import { createMainWindow, focusMainWindow, getMainWindow } from "./window";
+import {
+  createMainWindow,
+  focusMainWindow,
+  getMainWindow,
+  prepareMainWindowForProjectSwitch,
+  showProjectHome,
+} from "./window";
+import { cancelAllAiRuns } from "./ai-runs";
+import { shutdownAgentRuntime } from "./agent-runtime-client";
+import { stopAgentToolBridge } from "./agent-tool-bridge";
+import { initAccount, shutdownAccount } from "./auth";
 
 app.setName("Munhae Studio");
 
@@ -25,42 +39,72 @@ if (!gotLock) {
 
 function boot(): void {
   let queuedOpen: string | null = projectPathFromArgv(process.argv);
+  let readyForExternalOpen = false;
+  let openQueue = Promise.resolve();
   let shuttingDown = false;
+
+  const enqueueExternalOpen = (filePath: string): void => {
+    openQueue = openQueue.then(() => openFromOs(filePath));
+  };
 
   registerAppSecurity();
 
   app.on("open-file", (event, filePath) => {
     event.preventDefault();
-    if (app.isReady()) {
-      void openFromOs(filePath);
+    if (readyForExternalOpen) {
+      enqueueExternalOpen(filePath);
     } else {
       queuedOpen = filePath;
     }
   });
 
   app.on("second-instance", (_event, argv) => {
-    focusMainWindow();
     const path = projectPathFromArgv(argv);
-    if (path) void openFromOs(path);
+    if (!readyForExternalOpen) {
+      if (path) queuedOpen = path;
+      return;
+    }
+    if (path) enqueueExternalOpen(path);
+    else focusMainWindow();
   });
 
   app.whenReady().then(async () => {
     installApplicationMenu();
     initSession(app.getPath("userData"));
+    await initAccount();
     startBrowserBridge();
     registerIpcHandlers();
-    createMainWindow();
+
+    let initialPage: "index.html" | "home.html" = "index.html";
+    const launchPath = queuedOpen
+      ?? (!getAppConfig().showWelcomeOnLaunch
+        ? listRecent().find((project) => !project.missing)?.packagePath ?? null
+        : null);
+    queuedOpen = null;
+    if (launchPath) {
+      try {
+        await openProjectFromPath(launchPath);
+        initialPage = "home.html";
+      } catch (error) {
+        log.warn("launch project open failed", {
+          code: error instanceof Error ? error.name : "unknown",
+        });
+      }
+    }
+    createMainWindow(initialPage);
+    readyForExternalOpen = true;
+
     if (queuedOpen) {
       const path = queuedOpen;
       queuedOpen = null;
-      await openFromOs(path);
+      enqueueExternalOpen(path);
     }
   }).catch((error: unknown) => {
     log.error("app ready failed", { name: error instanceof Error ? error.name : "unknown" });
   });
 
   app.on("activate", () => {
-    if (!getMainWindow()) createMainWindow();
+    if (!getMainWindow()) createMainWindow(getCurrentSummary() ? "home.html" : "index.html");
     else focusMainWindow();
   });
 
@@ -68,11 +112,19 @@ function boot(): void {
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
     if (shuttingDown) return;
+    event.preventDefault();
     shuttingDown = true;
     stopBrowserBridge();
-    shutdownSession();
+    void (async () => {
+      await cancelAllAiRuns();
+      await shutdownAgentRuntime();
+      await stopAgentToolBridge();
+      shutdownSession();
+      shutdownAccount();
+      app.quit();
+    })();
   });
 
   process.on("uncaughtException", (error) => {
@@ -87,7 +139,19 @@ function boot(): void {
 
 async function openFromOs(filePath: string): Promise<void> {
   try {
-    await openProjectFromPath(filePath);
+    const previous = getCurrentSummary();
+    const opened = await openProjectFromPath(
+      filePath,
+      previous ? prepareMainWindowForProjectSwitch : async () => true,
+    );
+    if (!opened) {
+      focusMainWindow();
+      return;
+    }
+    const sameOpenProject = previous
+      ? resolve(previous.packagePath) === resolve(opened.packagePath)
+      : false;
+    if (!sameOpenProject || !getMainWindow()) await showProjectHome();
     focusMainWindow();
   } catch (error) {
     log.warn("open-file failed", { code: error instanceof Error ? error.name : "unknown" });

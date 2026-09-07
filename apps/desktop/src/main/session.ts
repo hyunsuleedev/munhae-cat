@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
   app,
@@ -22,20 +22,23 @@ import { readManifest, validateManifest } from "@munhae/project-format";
 import {
   DEFAULT_APP_CONFIG,
   type AppConfig,
+  type ConfirmedExportInput,
   type CreateDocumentInput,
   type CreateFromPasteInput,
   type CreateProjectInput,
   type HomeView,
+  type ExportSaveResult,
   type ProjectSummary,
   type RecentProject,
 } from "../shared/munhae-api";
-import { probeAgentsCached } from "./agents";
+import { getCachedAgentProbes } from "./agents";
 import { loadAppConfig, mergeAppConfig, parseConfigPatch, saveAppConfig } from "./app-config";
 import { AppError } from "./errors";
 import { log } from "./log";
 import { isInsidePackageRoot } from "./paths";
 import { getMainWindow } from "./window";
 import { extractMunhaePkg } from "./zip";
+import { hasActiveAiRuns } from "./ai-runs";
 
 type SessionState = {
   userDataDir: string;
@@ -43,6 +46,9 @@ type SessionState = {
   config: AppConfig;
   current: ProjectRepo | null;
 };
+
+export type SessionTransitionPreflight = () => boolean | Promise<boolean>;
+export type SyncSessionTransitionPreflight = () => boolean;
 
 const state: SessionState = {
   userDataDir: "",
@@ -104,6 +110,30 @@ export function requireRepo(): ProjectRepo {
   return state.current;
 }
 
+export function getRuntimeSessionRef(input: {
+  providerKind: "codex" | "claude" | "antigravity";
+  projectId: string;
+  threadId: string;
+}): string | null {
+  return state.appDb?.getRuntimeSessionRef(input) ?? null;
+}
+
+export function setRuntimeSessionRef(
+  input: { providerKind: "codex" | "claude" | "antigravity"; projectId: string; threadId: string },
+  providerSessionRef: string,
+): void {
+  if (!state.appDb) throw new AppError("app_db_unavailable", "앱 runtime session 저장소를 사용할 수 없습니다.");
+  state.appDb.setRuntimeSessionRef(input, providerSessionRef);
+}
+
+export function clearRuntimeSession(input: {
+  providerKind: "codex" | "claude" | "antigravity";
+  projectId: string;
+  threadId: string;
+}): void {
+  state.appDb?.clearRuntimeSession(input);
+}
+
 export function listRecent(): RecentProject[] {
   const rows: RecentProject[] = state.appDb?.listRecent() ?? [];
   return rows.map((row) => {
@@ -121,6 +151,10 @@ export function listRecent(): RecentProject[] {
 
 function adoptRepo(repo: ProjectRepo, summary?: ProjectSummary): ProjectSummary {
   const prev = state.current;
+  if (prev && prev !== repo && hasActiveAiRuns(prev.projectId)) {
+    repo.close();
+    throw new AppError("ai_run_active", "AI 번역이 끝나거나 취소된 뒤 프로젝트를 바꿀 수 있습니다.");
+  }
   state.current = repo;
   if (prev && prev !== repo) {
     try {
@@ -219,28 +253,63 @@ function assertManifest(packagePath: string): void {
   validateManifest(manifest);
 }
 
-export async function openProjectFromPath(rawPath: string): Promise<ProjectSummary> {
+export function openProjectFromPath(rawPath: string): Promise<ProjectSummary>;
+export function openProjectFromPath(
+  rawPath: string,
+  beforeAdopt: SessionTransitionPreflight,
+): Promise<ProjectSummary | null>;
+export async function openProjectFromPath(
+  rawPath: string,
+  beforeAdopt?: SessionTransitionPreflight,
+): Promise<ProjectSummary | null> {
+  if (state.current && resolve(state.current.packagePath) === resolve(rawPath)) {
+    return toSummary(state.current);
+  }
+  if (state.current && hasActiveAiRuns(state.current.projectId)) {
+    throw new AppError("ai_run_active", "AI 번역이 끝나거나 취소된 뒤 프로젝트를 바꿀 수 있습니다.");
+  }
   const packagePath = await materializePackage(rawPath);
   if (state.current && resolve(state.current.packagePath) === resolve(packagePath)) {
     return toSummary(state.current);
   }
   const repo = openProject(packagePath);
-  return adoptRepo(repo);
+  let adopted = false;
+  try {
+    if (beforeAdopt && !(await beforeAdopt())) return null;
+    adopted = true;
+    return adoptRepo(repo);
+  } finally {
+    if (!adopted) repo.close();
+  }
 }
 
-export async function openProjectInteractive(packagePath?: string): Promise<ProjectSummary | null> {
+export async function openProjectInteractive(
+  packagePath?: string,
+  beforeAdopt?: SessionTransitionPreflight,
+): Promise<ProjectSummary | null> {
   const chosen = packagePath ?? (await chooseProjectPath());
   if (!chosen) return null;
-  return openProjectFromPath(chosen);
+  return beforeAdopt
+    ? openProjectFromPath(chosen, beforeAdopt)
+    : openProjectFromPath(chosen);
 }
 
-export async function createProjectInteractive(input: CreateProjectInput): Promise<ProjectSummary> {
+export function createProjectInteractive(input: CreateProjectInput): Promise<ProjectSummary>;
+export function createProjectInteractive(
+  input: CreateProjectInput,
+  beforeAdopt: SessionTransitionPreflight,
+): Promise<ProjectSummary | null>;
+export async function createProjectInteractive(
+  input: CreateProjectInput,
+  beforeAdopt?: SessionTransitionPreflight,
+): Promise<ProjectSummary | null> {
   const parentDir = input.parentDir
     ? assertExistingDir(input.parentDir)
     : await chooseDirectory("새 프로젝트를 만들 폴더");
   if (!parentDir) {
     throw new AppError("cancelled", "폴더 선택이 취소되었습니다.");
   }
+  if (beforeAdopt && !(await beforeAdopt())) return null;
   const created = createProject({ title: input.title, parentDir });
   return adoptRepo(created.handle, created.summary);
 }
@@ -256,8 +325,6 @@ export async function createFromPaste(input: CreateFromPasteInput): Promise<Proj
     title: input.title,
     parentId: root?.id ?? null,
     nodeRole: "source_unit",
-    structuralKind: "item",
-    genre: "other",
     originKind: "paste",
     sourceText: input.sourceText,
   };
@@ -277,14 +344,24 @@ function demoParentDir(): string {
   }
 }
 
-export function seedDemo(): ProjectSummary {
+export function seedDemo(): ProjectSummary;
+export function seedDemo(beforeAdopt: SyncSessionTransitionPreflight): ProjectSummary | null;
+export function seedDemo(beforeAdopt?: SyncSessionTransitionPreflight): ProjectSummary | null {
+  if (beforeAdopt && !beforeAdopt()) return null;
   const repo = seedDemoProject(demoParentDir());
   return adoptRepo(repo);
 }
 
-export function closeProject(): void {
+export function closeProject(
+  force = false,
+  beforeClose?: SyncSessionTransitionPreflight,
+): void {
   const current = state.current;
   if (!current) return;
+  if (!force && hasActiveAiRuns(current.projectId)) {
+    throw new AppError("ai_run_active", "AI 번역이 끝나거나 취소된 뒤 프로젝트를 닫을 수 있습니다.");
+  }
+  if (!force && beforeClose && !beforeClose()) return;
   state.current = null;
   try {
     current.close();
@@ -319,6 +396,40 @@ export async function backupProject(): Promise<string | null> {
   return dest;
 }
 
+export async function exportConfirmedTranslations(
+  input: ConfirmedExportInput,
+): Promise<ExportSaveResult | null> {
+  const repo = requireRepo();
+  const payload = repo.createConfirmedExport(input);
+  const labels = {
+    markdown: "Markdown",
+    json: "JSON",
+    csv: "CSV",
+  } as const;
+  const result = await saveDialog({
+    title: `확정 번역 ${labels[payload.format]} 내보내기`,
+    defaultPath: join(dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`),
+    filters: [{ name: labels[payload.format], extensions: [payload.extension] }],
+  });
+  if (result.canceled || !result.filePath) return null;
+  const suffix = `.${payload.extension}`;
+  const filePath = result.filePath.toLocaleLowerCase().endsWith(suffix)
+    ? result.filePath
+    : `${result.filePath}${suffix}`;
+  writeFileSync(filePath, payload.content, { encoding: "utf8" });
+  log.info("confirmed translations exported", {
+    projectId: repo.projectId,
+    format: payload.format,
+    count: payload.confirmedTranslationCount,
+  });
+  return {
+    filePath,
+    format: payload.format,
+    confirmedTranslationCount: payload.confirmedTranslationCount,
+    manifestHash: payload.manifestHash,
+  };
+}
+
 export async function pickTextFile(): Promise<string | null> {
   const result = await openDialog({
     title: "원문 텍스트 가져오기",
@@ -341,12 +452,7 @@ export async function pickTextFile(): Promise<string | null> {
 export async function getHome(): Promise<HomeView> {
   // The repository counts source-bearing work units; structure-only nodes remain navigation.
   const view = requireRepo().getHome();
-  try {
-    view.agents = await probeAgentsCached();
-  } catch (error) {
-    log.warn("overlay agent probe failed");
-    void error;
-  }
+  view.agents = getCachedAgentProbes();
   return view;
 }
 
@@ -368,7 +474,7 @@ export async function openProjectPathInOs(target: string): Promise<void> {
 }
 
 export function shutdownSession(): void {
-  closeProject();
+  closeProject(true);
   if (state.appDb) {
     try {
       state.appDb.close();

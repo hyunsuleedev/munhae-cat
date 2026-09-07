@@ -125,7 +125,6 @@ export function installApplicationMenu(): void {
       label: "번역",
       submenu: [
         item("AI 번역…", "⌥⌘K", "prepare"),
-        item("Reflection 다시 요청", "", "reflect"),
         { type: "separator" },
         item("다음 블록과 합치기", "⌥⌘M", "merge"),
         item("블록 나누기…", "⌥⌘S", "split"),

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+  <title>문해 계정 — Munhae Studio</title>
+  <link rel="stylesheet" href="./styles/tokens.css">
+  <link rel="stylesheet" href="./styles/chrome.css">
+  <link rel="stylesheet" href="./styles/account.css">
+</head>
+<body class="account-page">
+  <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+  <div class="account-drag" aria-hidden="true"></div>
+  <main class="account-layout">
+    <button class="btn account-back" type="button" id="accountBack">← 프로젝트로 돌아가기</button>
+    <section class="account-card" aria-labelledby="accountTitle">
+      <a class="account-brand munhae-brand" href="index.html" aria-label="문해 Munhae Studio 시작 화면"><strong aria-hidden="true">文解</strong><small aria-hidden="true">MUNHAE<br>STUDIO</small></a>
+      <header><p class="account-eyebrow">문해 계정</p><h1 id="accountTitle">계정을 확인하고 있습니다</h1><p id="accountDescription">잠시만 기다려 주세요.</p></header>
+      <div id="accountStatus" class="account-status" role="status" aria-live="polite" hidden></div>
+      <p id="accountPersistence" class="account-notice" hidden>이 기기에서는 로그인 정보를 안전하게 저장할 수 없어 앱을 종료하면 다시 로그인해야 합니다.</p>
+      <div id="accountGoogle" class="account-google" hidden>
+        <button class="btn account-google-button" id="accountGoogleSignIn" type="button"><img src="./assets/google-g.png" alt="">Google로 계속하기</button>
+        <button class="account-link" id="accountGoogleCancel" type="button" hidden>구글 로그인 취소</button>
+        <div class="account-divider"><span>또는 이메일로 계속</span></div>
+      </div>
+      <form id="accountForm" hidden>
+        <div class="field" id="accountNameField"><label for="accountName">이름</label><input class="input" id="accountName" name="name" autocomplete="name" maxlength="80" required></div>
+        <div class="field" id="accountEmailField"><label for="accountEmail">이메일</label><input class="input" id="accountEmail" name="email" type="email" autocomplete="username" maxlength="254" required></div>
+        <div class="field" id="accountCurrentPasswordField"><label for="accountCurrentPassword">현재 비밀번호</label><input class="input" id="accountCurrentPassword" name="current-password" type="password" autocomplete="current-password" maxlength="256" required></div>
+        <div class="field" id="accountPasswordField"><div class="account-password-label"><label for="accountPassword" id="accountPasswordLabel">비밀번호</label><button class="account-link" type="button" id="accountTogglePassword" aria-controls="accountPassword" aria-pressed="false">표시</button></div><input class="input" id="accountPassword" name="password" type="password" autocomplete="current-password" maxlength="256" required><span class="field-help" id="accountPasswordHelp" hidden>8자 이상으로 입력하세요.</span></div>
+        <div class="field" id="accountPasswordConfirmField"><label for="accountPasswordConfirm">비밀번호 확인</label><input class="input" id="accountPasswordConfirm" name="password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="256" required></div>
+        <div class="field" id="accountCodeField"><label for="accountCode">이메일 인증번호</label><input class="input account-code" id="accountCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="10" pattern="[0-9]{6,10}" required><span class="field-help">받은 메일의 인증번호를 그대로 입력하세요.</span></div>
+        <button class="btn btn-primary account-submit" type="submit" id="accountSubmit">로그인</button>
+      </form>
+      <div class="account-links" id="accountModeLinks" hidden>
+        <button class="account-link" type="button" data-account-mode="signup" id="accountSignUpLink">회원가입</button>
+        <button class="account-link" type="button" data-account-mode="signin" id="accountSignInLink">로그인으로 돌아가기</button>
+        <button class="account-link" type="button" data-account-mode="reset" id="accountResetLink">비밀번호를 잊으셨나요?</button>
+        <button class="account-link" type="button" id="accountResend" hidden>인증번호 다시 받기</button>
+      </div>
+      <section id="accountProfile" class="account-profile" aria-label="내 계정" hidden>
+        <div class="account-avatar" id="accountAvatar" aria-hidden="true">文</div>
+        <b id="accountDisplayName"></b><span id="accountUserEmail"></span><span class="tag tag-ok">로그인됨</span>
+        <button class="btn btn-primary" type="button" id="accountContinue">프로젝트로 돌아가기</button>
+        <button class="btn" type="button" id="accountChangePassword">비밀번호 변경</button>
+        <p class="field-help" id="accountGooglePasswordHelp" hidden>비밀번호는 Google 계정에서 관리합니다.</p>
+        <button class="account-link" type="button" id="accountSignOut">로그아웃</button>
+      </section>
+      <button class="btn" type="button" id="accountRetry" hidden>다시 연결</button>
+      <p class="account-footnote">문해 공식 서비스 계정입니다.<br>AI 실행에 사용하는 Codex·Claude 계정과 별도로 관리됩니다.</p>
+    </section>
+  </main>
+  <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+  <dialog id="dlgPalette" class="palette"><input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색"><div class="pl-list" id="palList"></div></dialog>
+  <script type="module" src="./scripts/account.ts"></script>
+</body>
+</html>

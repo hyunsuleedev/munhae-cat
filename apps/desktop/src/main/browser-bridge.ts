@@ -4,21 +4,51 @@ import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-
 import { probeAgentsCached } from "./agents";
 import { errorCode } from "./errors";
 import {
+  parseArchiveReviewCommentInput,
+  parseAssetId,
+  parseAgentId,
+  parseContextItemCasInput,
+  parseConfirmPunctuationInput,
+  parseConfirmSourceInput,
   parseConfirmInput,
+  parseConfirmedExportInput,
   parseContextPreviewInput,
+  parseCreateContextItemInput,
   parseCreateDocumentInput,
   parseCreateFromPasteInput,
+  parseCreatePunctuationDraftInput,
   parseCreateProjectInput,
+  parseCreateTranslationDraftInput,
+  parseCreateReviewCommentInput,
+  parseCreateUncertaintyInput,
+  parseCreateUncertaintyVersionInput,
   parseDocumentNodeId,
   parseGlossaryInput,
+  parseGetProjectChatInput,
   parseMergeBlocksInput,
+  parseMessageId,
   parseOptionalPath,
   parsePersonInput,
   parsePlaceInput,
+  parseResolveUncertaintyInput,
+  parseResetTranslationDraftInput,
+  parseReviseTranslationInput,
+  parseSavePunctuationDraftInput,
+  parseSaveSourceDraftInput,
   parseSaveDraftInput,
+  parseSearchQueryInput,
   parseSplitBlockInput,
-  parseStage,
+  parseStartTranslationInput,
+  parseStartProjectChatInput,
+  parseStartPunctuationSuggestionInput,
+  parseSetContextItemEnabledInput,
+  parseSetContextItemPriorityInput,
+  parseUpdateContextItemInput,
+  parseUpdateReviewCommentInput,
+  parseUpdateDocumentMetadataInput,
+  parseVersionDiffInput,
 } from "./ipc-validate";
+import { attachReferenceInteractive, openReference, readReference } from "./reference-assets";
 import { log, redact } from "./log";
 import { openHttpsExternal } from "./security";
 import {
@@ -27,23 +57,44 @@ import {
   createFromPaste,
   createProjectInteractive,
   getAppConfig,
+  getRuntimeSessionRef,
   getCurrentSummary,
   getHome,
+  exportConfirmedTranslations,
   listRecent,
   openProjectInteractive,
   pickTextFile,
   requireRepo,
+  setRuntimeSessionRef,
+  clearRuntimeSession,
   seedDemo,
   setAppConfig,
 } from "./session";
+import {
+  cancelTranslationRun,
+  getTranslationRun,
+  startProjectChatRun,
+  startPunctuationSuggestionRun,
+  startTranslationRun,
+} from "./ai-runs";
+import { getAgentLoginInstruction } from "./agent-runtime-client";
+import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
+
+const runtimeSessionStore = {
+  get: getRuntimeSessionRef,
+  set: setRuntimeSessionRef,
+  clear: clearRuntimeSession,
+};
 
 export const BROWSER_BRIDGE_PORT = 17321;
 const BODY_LIMIT = 22_000_000;
 const ALLOWED_CHANNELS = new Set<IpcChannel>([
+  ...ACCOUNT_CHANNELS,
   IPC_CHANNELS.appGetVersion,
   IPC_CHANNELS.appGetConfig,
   IPC_CHANNELS.appSetConfig,
   IPC_CHANNELS.appProbeAgents,
+  IPC_CHANNELS.appGetLoginInstruction,
   IPC_CHANNELS.appQuit,
   IPC_CHANNELS.appOpenExternal,
   IPC_CHANNELS.projectCreate,
@@ -52,22 +103,58 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.projectGetCurrent,
   IPC_CHANNELS.projectListRecent,
   IPC_CHANNELS.projectBackup,
+  IPC_CHANNELS.projectExportConfirmed,
+  IPC_CHANNELS.projectSearch,
   IPC_CHANNELS.projectCreateFromPaste,
   IPC_CHANNELS.projectSeedDemo,
   IPC_CHANNELS.homeGet,
   IPC_CHANNELS.documentCreate,
   IPC_CHANNELS.documentPickText,
+  IPC_CHANNELS.documentGetMetadata,
+  IPC_CHANNELS.documentUpdateMetadata,
   IPC_CHANNELS.editorGet,
+  IPC_CHANNELS.editorSaveSourceDraft,
+  IPC_CHANNELS.editorConfirmSource,
+  IPC_CHANNELS.editorCreatePunctuationDraft,
+  IPC_CHANNELS.editorSavePunctuationDraft,
+  IPC_CHANNELS.editorConfirmPunctuation,
+  IPC_CHANNELS.editorCreateTranslationDraft,
+  IPC_CHANNELS.editorResetTranslationDraft,
   IPC_CHANNELS.editorSaveDraft,
   IPC_CHANNELS.editorConfirm,
   IPC_CHANNELS.editorRevise,
   IPC_CHANNELS.editorMergeBlocks,
   IPC_CHANNELS.editorSplitBlock,
+  IPC_CHANNELS.editorGetHistory,
+  IPC_CHANNELS.editorCompareVersions,
+  IPC_CHANNELS.editorListReviewComments,
+  IPC_CHANNELS.editorCreateReviewComment,
+  IPC_CHANNELS.editorUpdateReviewComment,
+  IPC_CHANNELS.editorArchiveReviewComment,
+  IPC_CHANNELS.editorAttachReference,
+  IPC_CHANNELS.editorReadReference,
+  IPC_CHANNELS.editorOpenReference,
   IPC_CHANNELS.knowledgeGet,
   IPC_CHANNELS.knowledgeUpsertGlossary,
   IPC_CHANNELS.knowledgeUpsertPerson,
   IPC_CHANNELS.knowledgeUpsertPlace,
+  IPC_CHANNELS.knowledgeCreateContext,
+  IPC_CHANNELS.knowledgeUpdateContext,
+  IPC_CHANNELS.knowledgeSetContextEnabled,
+  IPC_CHANNELS.knowledgeSetContextPriority,
+  IPC_CHANNELS.knowledgeArchiveContext,
+  IPC_CHANNELS.knowledgeCreateUncertainty,
+  IPC_CHANNELS.knowledgeVersionUncertainty,
+  IPC_CHANNELS.knowledgeResolveUncertainty,
   IPC_CHANNELS.contextPreview,
+  IPC_CHANNELS.aiStartTranslation,
+  IPC_CHANNELS.aiStartChat,
+  IPC_CHANNELS.aiStartPunctuation,
+  IPC_CHANNELS.aiGetChat,
+  IPC_CHANNELS.aiGetPunctuationSuggestion,
+  IPC_CHANNELS.aiApplyPunctuationSuggestion,
+  IPC_CHANNELS.aiCancelRun,
+  IPC_CHANNELS.aiGetRun,
 ]);
 
 let server: Server | null = null;
@@ -115,11 +202,13 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> {
+  if (ACCOUNT_CHANNELS.includes(channel)) return wrap(() => dispatchAccount(channel, args[0]));
   switch (channel) {
     case IPC_CHANNELS.appGetVersion: return app.getVersion();
     case IPC_CHANNELS.appGetConfig: return getAppConfig();
     case IPC_CHANNELS.appSetConfig: return setAppConfig(args[0]);
     case IPC_CHANNELS.appProbeAgents: return probeAgentsCached();
+    case IPC_CHANNELS.appGetLoginInstruction: return getAgentLoginInstruction(parseAgentId(args[0]));
     case IPC_CHANNELS.appQuit:
       setImmediate(() => app.quit());
       return undefined;
@@ -132,18 +221,58 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
     case IPC_CHANNELS.projectOpen: return wrap(() => openProjectInteractive(parseOptionalPath(args[0])));
     case IPC_CHANNELS.projectClose: return wrap(() => closeProject());
     case IPC_CHANNELS.projectBackup: return wrap(() => backupProject());
+    case IPC_CHANNELS.projectExportConfirmed:
+      return wrap(() => exportConfirmedTranslations(parseConfirmedExportInput(args[0])));
+    case IPC_CHANNELS.projectSearch:
+      return wrap(() => requireRepo().search(parseSearchQueryInput(args[0])));
     case IPC_CHANNELS.projectCreateFromPaste: return wrap(() => createFromPaste(parseCreateFromPasteInput(args[0])));
     case IPC_CHANNELS.projectSeedDemo: return wrap(() => seedDemo());
     case IPC_CHANNELS.homeGet: return wrap(() => getHome());
     case IPC_CHANNELS.documentCreate: return wrap(() => requireRepo().createDocument(parseCreateDocumentInput(args[0])));
     case IPC_CHANNELS.documentPickText: return wrap(() => pickTextFile());
+    case IPC_CHANNELS.documentGetMetadata:
+      return wrap(() => requireRepo().getDocumentMetadata(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.documentUpdateMetadata:
+      return wrap(() => requireRepo().updateDocumentMetadata(parseUpdateDocumentMetadataInput(args[0])));
     case IPC_CHANNELS.editorGet: return wrap(() => requireRepo().getEditor(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.editorSaveSourceDraft:
+      return wrap(() => requireRepo().saveSourceDraft(parseSaveSourceDraftInput(args[0])));
+    case IPC_CHANNELS.editorConfirmSource:
+      return wrap(() => requireRepo().confirmSource(parseConfirmSourceInput(args[0])));
+    case IPC_CHANNELS.editorCreatePunctuationDraft:
+      return wrap(() => requireRepo().createPunctuationDraftFromConfirmedSource(parseCreatePunctuationDraftInput(args[0])));
+    case IPC_CHANNELS.editorSavePunctuationDraft:
+      return wrap(() => requireRepo().savePunctuationDraft(parseSavePunctuationDraftInput(args[0])));
+    case IPC_CHANNELS.editorConfirmPunctuation:
+      return wrap(() => requireRepo().confirmPunctuation(parseConfirmPunctuationInput(args[0])));
+    case IPC_CHANNELS.editorCreateTranslationDraft:
+      return wrap(() => requireRepo().createTranslationDraft(parseCreateTranslationDraftInput(args[0])));
+    case IPC_CHANNELS.editorResetTranslationDraft:
+      return wrap(() => requireRepo().resetTranslationDraft(parseResetTranslationDraftInput(args[0])));
     case IPC_CHANNELS.editorSaveDraft: return wrap(() => requireRepo().saveTranslationDraft(parseSaveDraftInput(args[0])));
     case IPC_CHANNELS.editorConfirm: return wrap(() => requireRepo().confirmTranslation(parseConfirmInput(args[0])));
     case IPC_CHANNELS.editorRevise:
-      return wrap(() => requireRepo().reviseTranslation(parseDocumentNodeId(args[0]), parseStage(args[1])));
+      return wrap(() => requireRepo().reviseTranslation(parseReviseTranslationInput(args[0])));
     case IPC_CHANNELS.editorMergeBlocks: return wrap(() => requireRepo().mergeBlocks(parseMergeBlocksInput(args[0])));
     case IPC_CHANNELS.editorSplitBlock: return wrap(() => requireRepo().splitBlock(parseSplitBlockInput(args[0])));
+    case IPC_CHANNELS.editorGetHistory:
+      return wrap(() => requireRepo().getDocumentHistory(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.editorCompareVersions:
+      return wrap(() => requireRepo().compareVersions(parseVersionDiffInput(args[0])));
+    case IPC_CHANNELS.editorListReviewComments:
+      return wrap(() => requireRepo().listReviewComments(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.editorCreateReviewComment:
+      return wrap(() => requireRepo().createReviewComment(parseCreateReviewCommentInput(args[0])));
+    case IPC_CHANNELS.editorUpdateReviewComment:
+      return wrap(() => requireRepo().updateReviewComment(parseUpdateReviewCommentInput(args[0])));
+    case IPC_CHANNELS.editorArchiveReviewComment:
+      return wrap(() => requireRepo().archiveReviewComment(parseArchiveReviewCommentInput(args[0])));
+    case IPC_CHANNELS.editorAttachReference:
+      return wrap(() => attachReferenceInteractive(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.editorReadReference:
+      return wrap(() => readReference(parseDocumentNodeId(args[0]), parseAssetId(args[1])));
+    case IPC_CHANNELS.editorOpenReference:
+      return wrap(() => openReference(parseDocumentNodeId(args[0]), parseAssetId(args[1])));
     case IPC_CHANNELS.knowledgeGet: return wrap(() => requireRepo().getKnowledge());
     case IPC_CHANNELS.knowledgeUpsertGlossary:
       return wrap(() => requireRepo().upsertGlossary(parseGlossaryInput(args[0])));
@@ -151,8 +280,55 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => requireRepo().upsertPerson(parsePersonInput(args[0])));
     case IPC_CHANNELS.knowledgeUpsertPlace:
       return wrap(() => requireRepo().upsertPlace(parsePlaceInput(args[0])));
+    case IPC_CHANNELS.knowledgeCreateContext:
+      return wrap(() => requireRepo().createContextItem(parseCreateContextItemInput(args[0])));
+    case IPC_CHANNELS.knowledgeUpdateContext:
+      return wrap(() => requireRepo().updateContextItem(parseUpdateContextItemInput(args[0])));
+    case IPC_CHANNELS.knowledgeSetContextEnabled:
+      return wrap(() => requireRepo().setContextItemEnabled(parseSetContextItemEnabledInput(args[0])));
+    case IPC_CHANNELS.knowledgeSetContextPriority:
+      return wrap(() => requireRepo().setContextItemPriority(parseSetContextItemPriorityInput(args[0])));
+    case IPC_CHANNELS.knowledgeArchiveContext:
+      return wrap(() => requireRepo().archiveContextItem(parseContextItemCasInput(args[0])));
+    case IPC_CHANNELS.knowledgeCreateUncertainty:
+      return wrap(() => requireRepo().createUncertainty(parseCreateUncertaintyInput(args[0])));
+    case IPC_CHANNELS.knowledgeVersionUncertainty:
+      return wrap(() => requireRepo().createUncertaintyVersion(parseCreateUncertaintyVersionInput(args[0])));
+    case IPC_CHANNELS.knowledgeResolveUncertainty:
+      return wrap(() => requireRepo().resolveUncertainty(parseResolveUncertaintyInput(args[0])));
     case IPC_CHANNELS.contextPreview:
       return wrap(() => requireRepo().previewContext(parseContextPreviewInput(args[0])));
+    case IPC_CHANNELS.aiStartTranslation:
+      return wrap(() => startTranslationRun(
+        requireRepo(),
+        getAppConfig(),
+        parseStartTranslationInput(args[0]),
+        runtimeSessionStore,
+      ));
+    case IPC_CHANNELS.aiStartChat:
+      return wrap(() => startProjectChatRun(
+        requireRepo(),
+        getAppConfig(),
+        parseStartProjectChatInput(args[0]),
+        runtimeSessionStore,
+      ));
+    case IPC_CHANNELS.aiStartPunctuation:
+      return wrap(() => startPunctuationSuggestionRun(
+        requireRepo(),
+        getAppConfig(),
+        parseStartPunctuationSuggestionInput(args[0]),
+        runtimeSessionStore,
+      ));
+    case IPC_CHANNELS.aiGetChat:
+      return wrap(() => requireRepo().getChat(parseGetProjectChatInput(args[0])));
+    case IPC_CHANNELS.aiGetPunctuationSuggestion:
+      return wrap(() => requireRepo().getLatestPunctuationSuggestion(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.aiApplyPunctuationSuggestion:
+      return wrap(() => requireRepo().applyPunctuationSuggestionRun(parseMessageId(args[0])));
+    case IPC_CHANNELS.aiCancelRun:
+      return wrap(() => cancelTranslationRun(parseMessageId(args[0])));
+    case IPC_CHANNELS.aiGetRun:
+      return wrap(() => getTranslationRun(parseMessageId(args[0])));
     default: throw new Error("허용되지 않은 호출입니다.");
   }
 }

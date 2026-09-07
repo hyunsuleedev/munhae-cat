@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주해 서재 — 문해 편집기 시안 C</title>
+<style>
+:root{color-scheme:light;--ink:#272a25;--muted:#7f8379;--faint:#a5a89f;--line:#e7e8e1;--paper:#fffefa;--wash:#f6f7f2;--olive:#616c4c;--olive-wash:#ebeee3;--sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;--serif:"Iowan Old Style","Noto Serif CJK KR","Noto Serif KR","AppleMyungjo","Batang",serif}
+*{box-sizing:border-box}body{margin:0;font:13px/1.5 var(--sans);color:var(--ink);background:var(--paper)}button,input{font:inherit}button,a{-webkit-tap-highlight-color:transparent}button{color:inherit;cursor:pointer}a{color:inherit;text-decoration:none}button:disabled{cursor:default;opacity:.42}button:focus-visible,a:focus-visible,[contenteditable=true]:focus-visible{outline:2px solid var(--olive);outline-offset:4px}button:active:not(:disabled),a:active{transform:scale(.98)}svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}[hidden]{display:none!important}.app{height:100dvh;min-height:530px;display:grid;grid-template-rows:52px 1fr 28px;grid-template-columns:188px minmax(0,1fr)}
+.titlebar{grid-column:1/-1;display:flex;align-items:center;gap:16px;background:#fff;border-bottom:1px solid var(--line);padding:0 18px}.traffic{display:flex;gap:8px;flex-shrink:0}.traffic i{height:11px;width:11px;border-radius:50%;background:#ed6a5e;border:1px solid #0000000c}.traffic i:nth-child(2){background:#f4bf4f}.traffic i:nth-child(3){background:#61c554}.title-controls{display:flex;align-items:center;gap:4px;padding-left:6px}.icon-button{height:28px;width:28px;border:0;border-radius:5px;background:transparent;display:inline-flex;align-items:center;justify-content:center;color:#757a70}.title-divider{height:16px;width:1px;background:var(--line);margin:0 5px}.title-name{font-size:12px;font-weight:550;display:flex;align-items:center;gap:10px;min-width:0}.title-name span{color:var(--muted);font-weight:400}.spacer{flex:1}.top-actions{display:flex;gap:8px;align-items:center}.text-button,.save-button{height:29px;display:inline-flex;gap:6px;align-items:center;justify-content:center;border-radius:5px;padding:0 10px;font-size:11px;background:transparent;border:1px solid transparent;white-space:nowrap}.save-button{background:#313b2a;color:#fff;border-color:#313b2a}.text-button[aria-pressed=true]{background:var(--olive-wash);color:var(--olive)}.save-button:disabled{background:#f0f2eb;color:#68755d;border-color:transparent;opacity:1}
+.sidebar{background:#f8f9f5;border-right:1px solid var(--line);padding:27px 13px 14px;display:flex;flex-direction:column;min-height:0}.brand{display:flex;align-items:center;gap:9px;padding:0 10px 29px}.brand-mark{font:20px/1 var(--serif);color:#566149}.brand-name{font-size:14px;font-weight:600;letter-spacing:.04em}.brand-sub{color:var(--muted);font-size:10px;letter-spacing:.06em;margin-top:3px}.side-label{font-size:10px;letter-spacing:.1em;color:var(--muted);display:flex;justify-content:space-between;padding:0 10px;margin:0 0 11px}.tree-toggle{display:flex;align-items:center;gap:6px;background:transparent;border:0;width:100%;padding:7px 9px;font-weight:550;text-align:left;font-size:12px}.tree-toggle svg{width:12px;height:12px}.tree-toggle[aria-expanded=false] svg{transform:rotate(-90deg)}.tree-branch{padding-left:12px;margin-bottom:24px}.tree-item{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;padding:6px 9px;border:0;border-radius:5px;background:transparent;color:#74796e;font-size:11px;text-align:left}.tree-item svg{width:13px;height:13px}.tree-item.selected{background:#e9ecdf;color:#4c5a3d;font-weight:600}.tree-item.selected:after{content:"";width:4px;height:4px;border-radius:50%;background:#809461;margin-left:auto}.tree-item:disabled{opacity:.66}.outline{border-top:1px solid var(--line);padding-top:21px}.outline a{display:flex;align-items:center;gap:10px;color:#787f70;font-size:11px;padding:7px 10px}.outline a span{font:10px var(--sans);color:#a5aa9b}.outline a.is-current{color:#46583b}.sidebar-bottom{margin-top:auto;border-top:1px solid var(--line);padding:15px 8px 0}.edition{font-size:11px;font-weight:550;display:flex;gap:7px;align-items:center}.edition:before{content:"";width:5px;height:5px;background:#899b6f;border-radius:50%}.sidebar-bottom p{font-size:10px;color:var(--muted);margin:5px 0 0 12px}
+.main{min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden}.workspace-bar{min-height:55px;border-bottom:1px solid var(--line);padding:0 32px;display:flex;align-items:center;gap:15px;background:#fffefa}.breadcrumb{display:flex;align-items:center;gap:10px;color:#818779;font-size:11px}.breadcrumb svg{height:10px;width:10px;color:#aeb4a5}.breadcrumb strong{color:#4f5946;font-weight:500}.mode-group{display:flex;background:#f0f2eb;border-radius:6px;padding:3px;gap:2px}.mode-group button{border:0;background:transparent;color:#7e8575;padding:4px 13px;border-radius:4px;font-size:11px}.mode-group button[aria-pressed=true]{background:#fffefa;color:#4c5a3f;box-shadow:0 1px 3px #24311112}.workspace-links{display:flex;gap:6px;padding-left:10px;border-left:1px solid var(--line);font-size:10px;color:#8b9181}.workspace-links a{width:21px;height:21px;text-align:center;line-height:21px;border-radius:4px}.workspace-links a[aria-current=page]{background:#e8ecde;color:#4c593d;font-weight:650}
+.canvas{overflow:auto;flex:1;scrollbar-width:thin;scrollbar-color:#dbded2 transparent;scroll-behavior:auto}.reading-layout{max-width:1076px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:58px;padding:42px 42px 80px 62px}.manuscript{min-width:0}.overline{color:#8b9181;letter-spacing:.13em;font-size:10px;display:flex;align-items:center;gap:10px}.overline .line{width:27px;height:1px;background:#9da889}.manuscript h1{font:38px/1.35 var(--serif);letter-spacing:-.035em;font-weight:400;margin:17px 0 4px;color:#343c2d}.subtitle{font:16px/1.5 var(--serif);letter-spacing:.14em;color:#717b65;margin:0}.document-meta{display:flex;gap:10px;font-size:10px;color:#979d8e;align-items:center;margin-top:21px}.document-meta .separator{width:2px;height:2px;background:#aeb4a5;border-radius:50%}.document-head{border-bottom:1px solid #dfe3d6;padding-bottom:27px;margin-bottom:25px}.source-control{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:28px}.source-toggle{display:flex;align-items:center;gap:6px;background:transparent;border:0;padding:0;color:#75815f;font-size:11px}.source-toggle svg{width:13px;height:13px}.source-toggle[aria-expanded=true] svg{transform:rotate(90deg)}.source-preview{font:11px var(--serif);color:#a4ac98;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.source-text{font:15px/2 var(--serif);color:#616d54;background:#f4f5ee;border-left:2px solid #b6c0a5;margin:-13px 0 27px;padding:15px 18px;overflow-wrap:anywhere}.source-label{font:9px/1 var(--sans);letter-spacing:.12em;color:#909b83;display:block;margin-bottom:7px}.paragraph{position:relative;margin:0 0 24px}.paragraph-index{position:absolute;left:-30px;top:8px;font-size:9px;color:#a5ac9a;font-variant-numeric:tabular-nums}.prose{font:17px/2.04 var(--serif);letter-spacing:-.015em;word-break:keep-all;margin:0;color:#3c4237}.prose strong{font-weight:600}.editable{border-radius:2px}.is-editing .editable{background:#f1f3e8;box-shadow:0 0 0 4px #f1f3e8}.is-editing .editable:focus{outline:none;box-shadow:0 0 0 4px #e9eedc}.annotation-ref{font:10px/1 var(--sans);vertical-align:super;color:#7a8b5d;font-weight:600;border:0;background:transparent;padding:2px 3px;margin:0 1px;position:relative;top:-2px;border-radius:3px}.annotation-ref[aria-pressed=true]{background:#e4eacf;color:#485d2c}.section-divider{display:flex;align-items:center;gap:13px;margin:31px 0 23px;color:#929a85;font:10px var(--sans)}.section-divider:before,.section-divider:after{content:"";height:1px;background:#e5e8dd;flex:1}.sample-label{font:9px var(--sans);letter-spacing:.05em;color:#8f977f;display:block;margin:0 0 9px}.editorial-memo{margin:25px 0 0;padding:15px 17px;border:1px solid #e8ebe0;border-radius:5px;color:#7c846f;font:11px/1.85 var(--sans)}.editorial-memo strong{display:block;font-size:10px;color:#68745a;margin-bottom:5px;font-weight:550}.document-end{display:flex;align-items:center;gap:12px;margin-top:35px;color:#a7ae9e;font:10px var(--sans)}.document-end:before{content:"";height:1px;width:28px;background:#dce1d1}.document-end svg{width:12px;height:12px;margin-left:auto;color:#9ba78a}
+.margin-rail{min-width:0;padding-top:8px}.rail-heading{display:flex;align-items:center;gap:8px;margin-bottom:15px;font-size:11px;color:#6e785f;font-weight:550}.rail-heading svg{width:14px;height:14px}.rail-count{margin-left:auto;font-size:10px;color:#a6ad9b;font-weight:400}.rail-intro{font-size:10px;color:#9aa28e;line-height:1.7;margin:0;max-width:182px}.notes{margin-top:94px}.note{position:relative;padding:15px 0 21px 19px;border-left:1px solid #e1e6d8;outline:none;scroll-margin:20px}.note+.note{margin-top:15px}.note.selected{border-left:2px solid #8b9a71;padding-left:18px}.note-number{font:10px/1.4 var(--sans);letter-spacing:.05em;color:#8a9976;display:block;margin-bottom:6px}.note h2{font-size:12px;font-weight:550;margin:0 0 8px;color:#546444}.note h2 span{font:12px var(--serif);color:#8a947e;margin-left:5px}.note p{font-size:11px;line-height:1.9;margin:0;color:#8a927e;word-break:keep-all}.note-tags{display:flex;align-items:center;gap:7px;margin-top:12px;color:#a0a98f;font-size:9px}.note-tags span:first-child{padding:1px 5px;background:#f0f3e8;border-radius:3px;color:#829067}.note-back{display:flex;gap:4px;align-items:center;font-size:9px;color:#879575;padding:0;background:transparent;border:0;margin-top:12px}.note-back svg{width:11px;height:11px}.reference{border-top:1px solid #e4e8db;margin-top:33px;padding-top:17px}.reference h2{font-size:10px;color:#8a957b;font-weight:500;letter-spacing:.03em;margin:0 0 9px}.reference p{font:11px/1.8 var(--serif);color:#8a957d;margin:0}.reference small{font-size:9px;color:#a3aa96;display:block;margin-top:8px;line-height:1.8}
+.statusbar{grid-column:1/-1;border-top:1px solid var(--line);display:flex;gap:16px;align-items:center;padding:0 17px;background:#fafbf7;color:#929b85;font-size:9px}.statusbar a{color:#6a7859}.status-message{display:flex;align-items:center;gap:5px}.status-dot{height:4px;width:4px;background:#8c9c73;border-radius:50%}.statusbar .right{margin-left:auto;display:flex;gap:18px}.focus-mode .app,.sidebar-hidden .app{grid-template-columns:0 minmax(0,1fr)}.focus-mode .sidebar,.sidebar-hidden .sidebar{display:none}.focus-mode .margin-rail{display:none}.focus-mode .reading-layout{display:block;max-width:770px;padding-left:55px;padding-right:55px}.focus-mode .workspace-links,.focus-mode .breadcrumb{display:none}.focus-mode .workspace-bar{justify-content:center}.focus-mode .workspace-bar>.spacer{display:none}.focus-mode .manuscript h1{font-size:40px}.focus-mode .prose{font-size:19px}.focus-mode .document-head{padding-bottom:30px}.focus-mode .paragraph{margin-bottom:30px}.focus-mode .workspace-bar{padding:0 26px}.focus-mode .notes-toggle{display:none}.toast{position:fixed;bottom:47px;left:50%;transform:translateX(-50%);padding:9px 15px;border:1px solid #d8dfcb;background:#fffefa;color:#5d6c4b;font-size:11px;box-shadow:0 4px 20px #3c492719;border-radius:6px;z-index:3;max-width:calc(100vw - 40px);text-align:center}
+@media(hover:hover) and (pointer:fine){.icon-button:hover,.text-button:hover{background:#eef1e7;color:#4f613b}.mode-group button:hover{color:#4f613b}.outline a:hover,.workspace-links a:hover,.tree-item:not(:disabled):hover{background:#edf0e5;color:#4e6239}.source-toggle:hover,.annotation-ref:hover,.note-back:hover{color:#43552f}.save-button:not(:disabled):hover{background:#465239}}
+@media(min-width:1450px){.reading-layout{padding-top:56px;gap:78px;grid-template-columns:minmax(0,1fr) 230px}.prose{font-size:18px}}
+@media(max-width:1100px){.app{grid-template-columns:170px minmax(0,1fr)}.reading-layout{padding:34px 27px 60px 40px;gap:30px;grid-template-columns:minmax(0,1fr) 196px}.prose{font-size:16px}.workspace-bar{padding:0 25px}.titlebar{gap:10px}.notes{margin-top:87px}.paragraph-index{left:-24px}.source-preview{max-width:145px}.title-name span{display:none}}
+@media(max-width:860px){.app{grid-template-columns:156px minmax(0,1fr)}.reading-layout{grid-template-columns:minmax(0,1fr);max-width:670px;padding:30px 28px 50px 40px}.margin-rail{border-top:1px solid var(--line);padding-top:25px}.notes{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:20px}.note+.note{margin-top:0}.rail-intro,.reference{display:none}.breadcrumb{display:none}.workspace-bar{padding:0 22px}.title-controls{gap:0}.titlebar{gap:7px;padding:0 12px}.title-divider{display:none}.top-actions .text-button{font-size:0;padding:0 7px}.top-actions .text-button svg{width:15px}.source-preview{max-width:220px}}
+@media(max-width:600px){.app{grid-template-columns:0 minmax(0,1fr)}.sidebar{display:none}.title-controls a{display:none}.titlebar{padding:0 10px;gap:6px}.traffic{gap:5px}.traffic i{width:9px;height:9px}.title-name{font-size:10px}.top-actions{gap:2px}.top-actions .save-button{padding:0 8px;font-size:10px}.reading-layout,.focus-mode .reading-layout{padding:28px 25px 45px 36px}.manuscript h1,.focus-mode .manuscript h1{font-size:32px}.prose,.focus-mode .prose{font-size:16px}.notes{grid-template-columns:1fr}.statusbar{gap:10px;padding:0 10px}.statusbar .right{gap:7px}.statusbar .right span:first-child{display:none}.workspace-bar{padding:0 14px;gap:5px}.workspace-links{padding-left:6px}.workspace-bar .text-button{padding:0 6px}.source-preview{max-width:155px}.sidebar-hidden .sidebar{display:flex;position:fixed;z-index:5;top:52px;bottom:28px;left:0;width:180px;box-shadow:8px 0 30px #222a2310}.focus-mode .sidebar{display:none}}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}button:active,a:active{transform:none}}
+</style>
+</head>
+<body>
+<div class="app">
+<header class="titlebar">
+  <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+  <div class="title-controls">
+    <button class="icon-button" id="sidebarToggle" aria-label="문서 탐색기 접기" aria-pressed="false"><svg viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/></svg></button>
+    <a class="icon-button" href="./02-synoptic.html" aria-label="이전 시안: 대조 편집"><svg viewBox="0 0 16 16"><path d="m10 4-4 4 4 4"/></svg></a>
+    <a class="icon-button" href="./01-folio.html" aria-label="다음 시안: 서지 편집"><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"/></svg></a>
+  </div>
+  <span class="title-divider"></span>
+  <div class="title-name">태상시 <span>경세유표</span></div>
+  <div class="spacer"></div>
+  <div class="top-actions">
+    <button class="text-button" id="focusToggle" aria-pressed="false"><svg viewBox="0 0 16 16"><path d="M6 2H2v4M10 2h4v4M2 10v4h4M14 10v4h-4"/></svg><span>집중 모드</span></button>
+    <button class="save-button" id="saveDraft" disabled><svg viewBox="0 0 16 16"><path d="m4 8 3 3 5-6"/></svg><span>저장됨</span></button>
+  </div>
+</header>
+<aside class="sidebar" aria-label="문서 탐색기">
+  <a class="brand" href="./index.html"><span class="brand-mark">文</span><div><div class="brand-name">문해</div><div class="brand-sub">THE READING ROOM</div></div></a>
+  <p class="side-label"><span>내 서재</span><span>01</span></p>
+  <button class="tree-toggle" id="treeToggle" aria-expanded="true" aria-controls="treeBranch"><svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></svg>경세유표</button>
+  <div class="tree-branch" id="treeBranch">
+    <button class="tree-item" disabled title="이 시안에는 태상시 예시만 있습니다"><svg viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4zM9 2v3h3"/></svg>천관 이조</button>
+    <button class="tree-item" disabled title="이 시안에는 태상시 예시만 있습니다"><svg viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4zM9 2v3h3"/></svg>지관 호조</button>
+    <button class="tree-item" disabled title="이 시안에는 태상시 예시만 있습니다"><svg viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4zM9 2v3h3"/></svg>관제</button>
+    <a class="tree-item selected" href="#documentTitle" aria-current="page"><svg viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4zM9 2v3h3M6 8h4M6 11h3"/></svg>太常寺 卽奉常寺</a>
+  </div>
+  <div class="outline"><p class="side-label">문서 개요</p><a href="#paragraph1" class="is-current"><span>01</span>관원의 구성</a><a href="#paragraph2"><span>02</span>서리와 역속</a><a href="#paragraph3"><span>03</span>제례에 관한 논의</a></div>
+  <div class="sidebar-bottom"><div class="edition">주해 서재</div><p>시안 C · 읽기와 사유의 공간</p></div>
+</aside>
+<main class="main">
+  <div class="workspace-bar">
+    <div class="breadcrumb"><span>경세유표</span><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"/></svg><strong>관제</strong></div>
+    <div class="spacer"></div>
+    <div class="mode-group" aria-label="본문 모드"><button id="readingMode" aria-pressed="true">읽기</button><button id="editingMode" aria-pressed="false">편집</button></div>
+    <button class="text-button notes-toggle" id="notesToggle" aria-pressed="true"><svg viewBox="0 0 16 16"><path d="M2 3h12v9H9l-3 2v-2H2zM5 6h6M5 9h4"/></svg>주석</button>
+    <nav class="workspace-links" aria-label="디자인 시안 비교"><a href="./index.html" title="시안 모아보기" aria-label="시안 모아보기">↗</a><a href="./01-folio.html" aria-label="시안 A">A</a><a href="./02-synoptic.html" aria-label="시안 B">B</a><a href="./03-reading.html" aria-label="시안 C" aria-current="page">C</a></nav>
+  </div>
+  <div class="canvas" id="canvas">
+    <div class="reading-layout">
+      <article class="manuscript" aria-labelledby="documentTitle">
+        <header class="document-head">
+          <div class="overline"><span class="line"></span>經世遺表 · 官制</div>
+          <h1 id="documentTitle" tabindex="-1">태상시</h1>
+          <p class="subtitle">太常寺 <span style="font-size:12px;letter-spacing:.06em;margin-left:5px">卽奉常寺</span></p>
+          <div class="document-meta"><span>정약용 丁若鏞</span><span class="separator"></span><span>번역 초고</span><span class="separator"></span><span>예시 문서</span></div>
+        </header>
+        <div class="source-control"><button class="source-toggle" id="sourceToggle" aria-expanded="false" aria-controls="originalText"><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"/></svg><span>원문 펼치기</span></button><span class="source-preview" aria-hidden="true">提調公一人，卿一人，都正…</span></div>
+        <div class="source-text" id="originalText" hidden><span class="source-label">原文 · 화면에 사용한 발췌 구절</span>提調公一人，卿一人，都正下大夫一人，僉正上士二人，主簿中士二人，供奉下士四人。<br>〇書吏十六人，皁隷三十人，飪夫六十人。<br><br>臣謹案 國朝祭禮，專任太常，況議謚ㆍ進宴，所掌皆係尊重，而政格太常之官，必以有庶名者差除，抑何故也。政格之區別嫡庶，本是謬典。非謂有庶名者不合此官，不知無庶名者何以不屑此官。今擬太常之官，皆以玉堂爲之。<br><br>臣謹案《周禮》小史，卿大夫之喪，賜諡讀誄。不知何時，小史之職移于太常也。</div>
+        <section class="paragraph" id="paragraph1" aria-label="관원의 구성"><span class="paragraph-index" aria-hidden="true">01</span><p class="prose"><span class="editable" data-draft="p1" role="textbox" aria-readonly="true" aria-label="관원의 구성 번역문" aria-multiline="true">제조는 공 1인, 경 1인이고, 도정은 하대부 1인, 첨정은 상사 2인, 주부는 중사 2인, 공봉은 하사 4인이다.</span><button class="annotation-ref" id="ref1" data-note="note1" aria-label="주석 1: 관원의 명칭" aria-pressed="true">1</button></p></section>
+        <section class="paragraph" id="paragraph2" aria-label="서리와 역속"><span class="paragraph-index" aria-hidden="true">02</span><p class="prose"><span class="editable" data-draft="p2" role="textbox" aria-readonly="true" aria-label="서리와 역속 번역문" aria-multiline="true">서리는 16인, 조례는 30인, 임부는 60인이다.</span><button class="annotation-ref" id="ref2" data-note="note2" aria-label="주석 2: 조례와 임부" aria-pressed="false">2</button></p></section>
+        <div class="section-divider">按</div>
+        <section class="paragraph" id="paragraph3" aria-label="제례에 관한 논의"><span class="paragraph-index" aria-hidden="true">03</span><span class="sample-label">레이아웃을 위한 예시 번역 · 발췌</span><p class="prose"><span class="editable" data-draft="p3" role="textbox" aria-readonly="true" aria-label="제례에 관한 논의 예시 번역문" aria-multiline="true">신이 삼가 살펴보건대, 우리 왕조의 제례는 오로지 태상에 맡겼습니다.</span></p></section>
+        <section class="paragraph" id="paragraph4" aria-label="주례와의 비교"><span class="paragraph-index" aria-hidden="true">04</span><p class="prose"><span class="editable" data-draft="p4" role="textbox" aria-readonly="true" aria-label="주례와의 비교 예시 번역문" aria-multiline="true">신이 삼가 살펴보건대, 《주례》에서 소사는 경대부의 상에 시호를 내리고 뇌문을 읽는 일을 맡았습니다. 언제부터 소사의 직무가 태상으로 옮겨 갔는지 모르겠습니다.</span></p></section>
+        <aside class="editorial-memo" aria-label="편집 메모"><strong>남겨 둔 생각</strong>관직명은 원어를 유지하되, 품계와 정원의 관계가 자연스럽게 읽히도록 문장 호흡을 다시 살핀다. <span style="color:#a2aa95">— 예시 편집 메모</span></aside>
+        <footer class="document-end"><span>太常寺 · 번역 초고의 끝</span><svg viewBox="0 0 16 16"><path d="M8 2v12M2 8h12M4 4l8 8M12 4l-8 8"/></svg></footer>
+      </article>
+      <aside class="margin-rail" id="marginRail" aria-label="여백 주석">
+        <div class="rail-heading"><svg viewBox="0 0 16 16"><path d="M3 2h10v12H3zM6 5h4M6 8h4M6 11h2"/></svg>여백의 주석<span class="rail-count">02</span></div>
+        <p class="rail-intro">본문의 작은 숫자에서<br>설명과 생각을 이어 갑니다.</p>
+        <div class="notes">
+          <section class="note selected" id="note1" tabindex="-1" aria-labelledby="noteTitle1"><span class="note-number">01</span><h2 id="noteTitle1">관원의 명칭 <span>官名</span></h2><p>공·경과 하대부·상사 등의 명칭을 번역문에 그대로 남겼다. 품계와 관직의 관계는 별도 주석에서 보완한다.</p><div class="note-tags"><span>용어</span><span>예시 주석</span></div><button class="note-back" data-back="ref1">본문으로<svg viewBox="0 0 16 16"><path d="M12 8H4m4-4L4 8l4 4"/></svg></button></section>
+          <section class="note" id="note2" tabindex="-1" aria-labelledby="noteTitle2"><span class="note-number">02</span><h2 id="noteTitle2">조례와 임부 <span>皁隷 · 飪夫</span></h2><p>역속의 명칭을 먼저 제시하고, 구체적인 직무 설명은 관련 문헌을 확인한 뒤 덧붙인다.</p><div class="note-tags"><span>확인할 사항</span><span>예시 주석</span></div><button class="note-back" data-back="ref2">본문으로<svg viewBox="0 0 16 16"><path d="M12 8H4m4-4L4 8l4 4"/></svg></button></section>
+        </div>
+        <div class="reference"><h2>이 문서의 바탕</h2><p>丁若鏞, 《經世遺表》<br>官制 · 太常寺</p><small>주석과 편집 메모는 디자인 예시이며,<br>학술 검증을 마친 해설이 아닙니다.</small></div>
+      </aside>
+    </div>
+  </div>
+</main>
+<footer class="statusbar"><a href="./index.html">← 시안 모아보기</a><span>디자인 시안 · 예시 문서</span><div class="right"><span id="wordCount">번역 4문단</span><span class="status-message" role="status" id="saveStatus"><i class="status-dot"></i>읽기 모드</span></div></footer>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const body = document.body;
+  const editable = Array.from(document.querySelectorAll('.editable'));
+  const storageKey = 'munhae-prototype-reading-v1';
+  let dirty = false;
+  let editing = false;
+  let toastTimer;
+  function notify(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2600); }
+  function setStatus(message) { $('saveStatus').replaceChildren(); const dot = document.createElement('i'); dot.className = 'status-dot'; $('saveStatus').append(dot, document.createTextNode(message)); }
+  function markDirty() { dirty = true; $('saveDraft').disabled = false; $('saveDraft').querySelector('span').textContent = '초고 저장'; setStatus('저장하지 않은 변경'); }
+  function setEditing(enabled) {
+    editing = enabled;
+    body.classList.toggle('is-editing', enabled);
+    $('readingMode').setAttribute('aria-pressed', String(!enabled));
+    $('editingMode').setAttribute('aria-pressed', String(enabled));
+    editable.forEach(el => { el.contentEditable = String(enabled); el.setAttribute('aria-readonly', String(!enabled)); });
+    if (enabled) { editable[0].focus(); if (!dirty) setStatus('편집 모드 · ⌘S로 저장'); }
+    else if (!dirty) setStatus('읽기 모드');
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    if (saved && typeof saved === 'object') editable.forEach(el => { const value = saved[el.dataset.draft]; if (typeof value === 'string') el.textContent = value; });
+  } catch (_) { /* Browsers may disallow storage for local files. Editing remains available. */ }
+  $('readingMode').addEventListener('click', () => setEditing(false));
+  $('editingMode').addEventListener('click', () => setEditing(true));
+  editable.forEach(el => {
+    el.addEventListener('input', markDirty);
+    el.addEventListener('paste', event => {
+      event.preventDefault();
+      const text = event.clipboardData.getData('text/plain');
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+      const range = selection.getRangeAt(0);
+      if (!el.contains(range.commonAncestorContainer)) return;
+      range.deleteContents();
+      const node = document.createTextNode(text);
+      range.insertNode(node); range.setStartAfter(node); range.collapse(true); selection.removeAllRanges(); selection.addRange(range); markDirty();
+    });
+  });
+  function saveDraft() {
+    if (!dirty) return;
+    const draft = Object.fromEntries(editable.map(el => [el.dataset.draft, el.textContent]));
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(draft));
+      dirty = false;
+      $('saveDraft').disabled = true;
+      $('saveDraft').querySelector('span').textContent = '저장됨';
+      setStatus('이 브라우저에 저장됨');
+      notify('예시 초고를 이 브라우저에 저장했습니다.');
+    } catch (_) { setStatus('브라우저 저장 공간을 사용할 수 없습니다'); notify('저장 공간을 사용할 수 없습니다. 편집 내용은 현재 화면에 유지됩니다.'); }
+  }
+  $('saveDraft').addEventListener('click', saveDraft);
+  document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveDraft(); } if (event.key === 'Escape' && body.classList.contains('focus-mode')) toggleFocus(); });
+  $('sourceToggle').addEventListener('click', () => { const open = $('originalText').hidden; $('originalText').hidden = !open; $('sourceToggle').setAttribute('aria-expanded', String(open)); $('sourceToggle').querySelector('span').textContent = open ? '원문 접기' : '원문 펼치기'; });
+  function toggleFocus() { const focus = body.classList.toggle('focus-mode'); $('focusToggle').setAttribute('aria-pressed', String(focus)); $('focusToggle').querySelector('span').textContent = focus ? '집중 모드 끝내기' : '집중 모드'; if (focus) $('canvas').scrollTop = 0; }
+  $('focusToggle').addEventListener('click', toggleFocus);
+  $('sidebarToggle').addEventListener('click', () => { const hidden = body.classList.toggle('sidebar-hidden'); $('sidebarToggle').setAttribute('aria-pressed', String(hidden)); $('sidebarToggle').setAttribute('aria-label', hidden ? '문서 탐색기 펼치기' : '문서 탐색기 접기'); });
+  $('treeToggle').addEventListener('click', () => { const open = $('treeBranch').hidden; $('treeBranch').hidden = !open; $('treeToggle').setAttribute('aria-expanded', String(open)); });
+  function setNotesVisible(visible) { $('marginRail').hidden = !visible; $('notesToggle').setAttribute('aria-pressed', String(visible)); document.querySelector('.reading-layout').style.gridTemplateColumns = visible ? '' : 'minmax(0, 1fr)'; if (!visible) document.querySelector('.reading-layout').style.maxWidth = '790px'; else document.querySelector('.reading-layout').style.maxWidth = ''; }
+  $('notesToggle').addEventListener('click', () => setNotesVisible($('marginRail').hidden));
+  document.querySelectorAll('[data-note]').forEach(button => button.addEventListener('click', () => {
+    if (body.classList.contains('focus-mode')) toggleFocus();
+    setNotesVisible(true);
+    document.querySelectorAll('.note').forEach(note => note.classList.toggle('selected', note.id === button.dataset.note));
+    document.querySelectorAll('[data-note]').forEach(ref => ref.setAttribute('aria-pressed', String(ref === button)));
+    const note = $(button.dataset.note); note.focus({ preventScroll: true }); note.scrollIntoView({ block: 'nearest' });
+  }));
+  document.querySelectorAll('[data-back]').forEach(button => button.addEventListener('click', () => { const target = $(button.dataset.back); target.scrollIntoView({ block: 'center' }); target.focus({ preventScroll: true }); }));
+  document.querySelectorAll('.outline a').forEach(link => link.addEventListener('click', () => { document.querySelectorAll('.outline a').forEach(item => item.classList.toggle('is-current', item === link)); }));
+  window.addEventListener('beforeunload', event => { if (dirty) { event.preventDefault(); event.returnValue = ''; } });
+})();
+</script>
+</body>
+</html>

@@ -26,16 +26,30 @@ function stripSecrets(value: unknown): unknown {
 }
 
 function parseAgentId(value: unknown): AppConfig["agentId"] | undefined {
-  return value === "codex" || value === "claude" ? value : undefined;
+  return value === "codex" || value === "claude" || value === "antigravity" ? value : undefined;
 }
 
 function parseModelPrefs(value: unknown): AppConfig["agentModels"][keyof AppConfig["agentModels"]] | undefined {
   if (!isRecord(value)) return undefined;
-  if (typeof value.model !== "string" || value.model.length === 0) return undefined;
-  const reasoning = value.reasoning === null || typeof value.reasoning === "string" ? value.reasoning : null;
-  const serviceTier =
-    value.serviceTier === null || typeof value.serviceTier === "string" ? value.serviceTier : null;
-  return { model: value.model, reasoning, serviceTier };
+  if (typeof value.model !== "string") return undefined;
+  const model = value.model.trim();
+  if (!model || model.length > 200 || /[\r\n\0]/.test(model)) return undefined;
+  const reasoning = value.reasoning === null
+    || value.reasoning === "low"
+    || value.reasoning === "medium"
+    || value.reasoning === "high"
+    || value.reasoning === "xhigh"
+    || value.reasoning === "max"
+    ? value.reasoning
+    : null;
+  const serviceTier = value.serviceTier === null
+    || value.serviceTier === "auto"
+    || value.serviceTier === "default"
+    || value.serviceTier === "flex"
+    || value.serviceTier === "priority"
+    ? value.serviceTier
+    : null;
+  return { model, reasoning, serviceTier };
 }
 
 export function parseAppConfig(value: unknown): AppConfig {
@@ -44,14 +58,20 @@ export function parseAppConfig(value: unknown): AppConfig {
   const agentId = parseAgentId(rec.agentId) ?? DEFAULT_APP_CONFIG.agentId;
   const models = isRecord(rec.agentModels) ? rec.agentModels : {};
   const codex = parseModelPrefs(models.codex) ?? DEFAULT_APP_CONFIG.agentModels.codex;
-  const claude = parseModelPrefs(models.claude) ?? DEFAULT_APP_CONFIG.agentModels.claude;
+  const parsedClaude = parseModelPrefs(models.claude) ?? DEFAULT_APP_CONFIG.agentModels.claude;
+  // The current Claude CLI adapter has no service-tier flag. Keep the stored
+  // request preference honest rather than recording an option never sent.
+  const claude = { ...parsedClaude, serviceTier: null };
+  const parsedAntigravity = parseModelPrefs(models.antigravity) ?? DEFAULT_APP_CONFIG.agentModels.antigravity;
+  const antigravity = { ...parsedAntigravity, serviceTier: null,
+    reasoning: ["low", "medium", "high"].includes(parsedAntigravity.reasoning ?? "") ? parsedAntigravity.reasoning : null };
   const showWelcomeOnLaunch =
     typeof rec.showWelcomeOnLaunch === "boolean"
       ? rec.showWelcomeOnLaunch
       : DEFAULT_APP_CONFIG.showWelcomeOnLaunch;
   return {
     agentId,
-    agentModels: { codex, claude },
+    agentModels: { codex, claude, antigravity },
     showWelcomeOnLaunch,
   };
 }

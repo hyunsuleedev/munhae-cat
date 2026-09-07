@@ -8,6 +8,12 @@ import {
   sliceCodepoints,
 } from "@munhae/domain";
 import type { BootstrappedProject } from "./bootstrap.ts";
+import {
+  contextItemContentHash,
+  glossaryContentHash,
+  personContentHash,
+  placeContentHash,
+} from "./knowledge-content.ts";
 import { insertRow } from "./rows.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type { BlockDraft } from "./translation.ts";
@@ -27,7 +33,7 @@ export const EOJESEO_ANCHORS = [
   { key: "A006", text: "欲使人人易習，便於日用耳。", kind: "sentence", sent: 2 },
 ] as const;
 
-export const LITERAL_V2_BLOCKS: BlockDraft[] = [
+export const TRANSLATION_V2_BLOCKS: BlockDraft[] = [
   {
     blockKey: "b1",
     blockKind: "paragraph",
@@ -54,36 +60,17 @@ export const LITERAL_V2_BLOCKS: BlockDraft[] = [
   },
 ];
 
-export const LITERAL_V1_TEXT =
+export const TRANSLATION_V1_TEXT =
   "나라의 말소리가 중국(中國)과 달라서 문자(文字)와는 서로 통하지 않는다. 그러므로 어리석은 백성이 말하고자 하는 바가 있어도 끝내 그 뜻을 펴지 못하는 이가 많다. 내가 이를 가엾게 여겨 새로 스물여덟 글자를 만들었으니, 사람마다 쉽게 익혀 날마다 쓰기에 편하게 하고자 할 뿐이다.";
-
-export const READER_BLOCKS: BlockDraft[] = [
-  {
-    blockKey: "b1",
-    blockKind: "paragraph",
-    translation:
-      "우리나라 말은 중국(中國)과 달라 한자(文字)로는 서로 통하지 않는다. 그래서 글을 모르는 백성은 하고 싶은 말이 있어도 끝내 제 뜻을 펴지 못하는 이가 많다.",
-    sourceAnchorIds: ["A001", "A002", "A003"],
-  },
-  {
-    blockKey: "b2",
-    blockKind: "paragraph",
-    translation:
-      "내가 이를 가엾게 여겨 새로 스물여덟 자를 만들었으니, 누구나 쉽게 익혀 날마다 쓰기에 편하도록 하려는 것뿐이다.",
-    sourceAnchorIds: ["A004", "A005", "A006"],
-  },
-];
 
 type NodeSpec = {
   id: string;
   parentId: string | null;
   role?: "container" | "source_unit";
   isMaster?: boolean;
-  kind: string;
   title: string;
   originalTitle: string | null;
   ordinal: number;
-  genre: string | null;
   authorId: string | null;
   language: string | null;
   periodText: string | null;
@@ -162,7 +149,15 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     place_kind: "country",
     location_note_md: "御製序의 中國은 명(明)을 가리킴.",
     description_md: "용어집 항목과 함께 문맥에 포함.",
-    content_hash: sha256Hex("中國"),
+    content_hash: placeContentHash({
+      preferredName: "中國",
+      hanjaName: "中國",
+      reading: "중국",
+      aliases: ["명"],
+      placeKind: "country",
+      locationNoteMd: "御製序의 中國은 명(明)을 가리킴.",
+      descriptionMd: "용어집 항목과 함께 문맥에 포함.",
+    }),
     lock_version: 1,
     created_by_actor_id: actors.humanId,
     updated_by_actor_id: actors.humanId,
@@ -191,11 +186,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       parentId: null,
       role: "container",
       isMaster: true,
-      kind: "collection",
       title: boot.title,
       originalTitle: null,
       ordinal: 0,
-      genre: null,
       authorId: null,
       language: "lzh",
       periodText: null,
@@ -204,11 +197,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     {
       id: w1,
       parentId: masterId,
-      kind: "work",
       title: "『訓民正音』 解例本",
       originalTitle: "訓民正音 解例本",
       ordinal: 0,
-      genre: null,
       authorId: sejongId,
       language: "lzh",
       periodText: "1446",
@@ -219,11 +210,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: d1,
       parentId: w1,
       role: "source_unit",
-      kind: "section",
       title: "御製序",
       originalTitle: "御製序",
       ordinal: 0,
-      genre: "preface",
       authorId: null,
       language: null,
       periodText: null,
@@ -234,11 +223,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: d2,
       parentId: w1,
       role: "source_unit",
-      kind: "section",
       title: "例義",
       originalTitle: "例義",
       ordinal: 1,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -247,11 +234,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     {
       id: c1,
       parentId: w1,
-      kind: "chapter",
       title: "解例",
       originalTitle: "解例",
       ordinal: 2,
-      genre: null,
       authorId: null,
       language: null,
       periodText: null,
@@ -261,11 +246,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: d3,
       parentId: c1,
       role: "source_unit",
-      kind: "section",
       title: "制字解",
       originalTitle: "制字解",
       ordinal: 0,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -275,11 +258,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: d4,
       parentId: c1,
       role: "source_unit",
-      kind: "section",
       title: "初聲解",
       originalTitle: "初聲解",
       ordinal: 1,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -289,11 +270,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: d5,
       parentId: c1,
       role: "source_unit",
-      kind: "section",
       title: "中聲解",
       originalTitle: "中聲解",
       ordinal: 2,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -302,11 +281,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     {
       id: d6,
       parentId: c1,
-      kind: "section",
       title: "終聲解",
       originalTitle: "終聲解",
       ordinal: 3,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -315,11 +292,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     {
       id: d7,
       parentId: c1,
-      kind: "section",
       title: "合字解",
       originalTitle: "合字解",
       ordinal: 4,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -328,11 +303,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     {
       id: d8,
       parentId: c1,
-      kind: "section",
       title: "用字例",
       originalTitle: "用字例",
       ordinal: 5,
-      genre: "prose",
       authorId: null,
       language: null,
       periodText: null,
@@ -342,11 +315,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: d9,
       parentId: w1,
       role: "source_unit",
-      kind: "section",
       title: "鄭麟趾 序",
       originalTitle: "鄭麟趾 序",
       ordinal: 3,
-      genre: "preface",
       authorId: jeongId,
       language: null,
       periodText: null,
@@ -357,11 +328,9 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       id: w2,
       parentId: masterId,
       role: "source_unit",
-      kind: "volume",
       title: "『世宗實錄』 卷113",
       originalTitle: "世宗實錄 卷113",
       ordinal: 1,
-      genre: "official_document",
       authorId: null,
       language: "lzh",
       periodText: "1446",
@@ -407,7 +376,6 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     confirmedPunc: true,
     createdAt: t.ye,
     translation: {
-      stage: "literal",
       text: "정음(正音)을 지은 까닭이다.",
       blocks: [
         {
@@ -452,7 +420,6 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     confirmedPunc: true,
     createdAt: t.jeong,
     translation: {
-      stage: "literal",
       text: "정음이 만들어지고 집현전 학사들이…",
       blocks: [
         {
@@ -514,7 +481,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     message_id: userMsgId,
     ordinal: 1,
     part_kind: "text",
-    text_content: "御製序를 직역안과 독자안으로 번역해 주세요.",
+    text_content: "御製序의 완성 번역을 만들어 주세요.",
     structured_json: null,
     artifact_id: null,
   });
@@ -530,7 +497,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     requested_model: "default",
     resolved_model: "default",
     task_kind: "translation",
-    output_contract: "translation-envelope.v1",
+    output_contract: "translation-envelope.v2",
     output_validation_state: "valid",
     created_at: t.v1,
   });
@@ -540,19 +507,18 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     message_id: asstMsgId,
     ordinal: 1,
     part_kind: "text",
-    text_content: "직역안과 독자안을 제출했습니다. 일반 채팅은 번역 데이터를 변경하지 않습니다.",
+    text_content: "완성 번역을 제출했습니다. 일반 채팅은 번역 데이터를 변경하지 않습니다.",
     structured_json: null,
     artifact_id: null,
   });
 
-  const literalId = createId();
+  const translationId = createId();
   insertRow(db, "document_translations", {
-    id: literalId,
+    id: translationId,
     project_id: projectId,
     document_node_id: d1,
     source_text_id: eojeseo.sourceTextId,
     target_locale: "ko",
-    stage: "literal",
     created_at: t.v1,
     tombstoned_at: null,
   });
@@ -560,17 +526,16 @@ export function seedDemoContents(boot: BootstrappedProject): void {
   insertTranslationVersion(db, {
     id: v1Id,
     projectId,
-    translationId: literalId,
+    translationId: translationId,
     parentId: null,
     versionNo: 1,
     sourceVersionId: eojeseo.sourceVersionId,
     puncVersionId: eojeseo.puncVersionId,
     anchorSetId: eojeseo.anchorSetId,
     policyVersionId,
-    text: LITERAL_V1_TEXT,
+    text: TRANSLATION_V1_TEXT,
     origin: "ai",
     messageId: asstMsgId,
-    candidateKey: "literal",
     validationState: "valid",
     state: "superseded",
     actorId: actors.llmId,
@@ -579,7 +544,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       {
         blockKey: "b1",
         blockKind: "paragraph",
-        translation: LITERAL_V1_TEXT,
+        translation: TRANSLATION_V1_TEXT,
         sourceAnchorIds: ["A001", "A002", "A003", "A004", "A005", "A006"],
       },
     ],
@@ -589,27 +554,26 @@ export function seedDemoContents(boot: BootstrappedProject): void {
   insertTranslationVersion(db, {
     id: v2Id,
     projectId,
-    translationId: literalId,
+    translationId: translationId,
     parentId: v1Id,
     versionNo: 2,
     sourceVersionId: eojeseo.sourceVersionId,
     puncVersionId: eojeseo.puncVersionId,
     anchorSetId: eojeseo.anchorSetId,
     policyVersionId,
-    text: joinBlockTranslations(LITERAL_V2_BLOCKS.map((b) => b.translation)),
+    text: joinBlockTranslations(TRANSLATION_V2_BLOCKS.map((b) => b.translation)),
     origin: "human",
     messageId: null,
-    candidateKey: null,
     validationState: "valid",
     state: "draft",
     actorId: actors.humanId,
     createdAt: t.v2,
-    blocks: LITERAL_V2_BLOCKS,
+    blocks: TRANSLATION_V2_BLOCKS,
     anchors: eojeseo.anchors,
   });
   insertRow(db, "document_translation_heads", {
     project_id: projectId,
-    document_translation_id: literalId,
+    document_translation_id: translationId,
     current_version_id: v2Id,
     confirmed_version_id: null,
     lock_version: 2,
@@ -618,7 +582,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
   insertRow(db, "user_edits", {
     id: createId(),
     project_id: projectId,
-    document_translation_id: literalId,
+    document_translation_id: translationId,
     base_document_translation_version_id: v1Id,
     result_document_translation_version_id: v2Id,
     edit_kind: "user_edit",
@@ -627,138 +591,18 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     created_at: t.v2,
   });
 
-  const readerId = createId();
-  insertRow(db, "document_translations", {
-    id: readerId,
-    project_id: projectId,
-    document_node_id: d1,
-    source_text_id: eojeseo.sourceTextId,
-    target_locale: "ko",
-    stage: "reader",
-    created_at: t.v1,
-    tombstoned_at: null,
-  });
-  const readerVid = createId();
-  insertTranslationVersion(db, {
-    id: readerVid,
-    projectId,
-    translationId: readerId,
-    parentId: null,
-    versionNo: 1,
-    sourceVersionId: eojeseo.sourceVersionId,
-    puncVersionId: eojeseo.puncVersionId,
-    anchorSetId: eojeseo.anchorSetId,
-    policyVersionId,
-    text: joinBlockTranslations(READER_BLOCKS.map((b) => b.translation)),
-    origin: "ai",
-    messageId: asstMsgId,
-    candidateKey: "reader",
-    validationState: "valid",
-    state: "draft",
-    actorId: actors.llmId,
-    createdAt: t.v1,
-    blocks: READER_BLOCKS,
-    anchors: eojeseo.anchors,
-  });
-  insertRow(db, "document_translation_heads", {
-    project_id: projectId,
-    document_translation_id: readerId,
-    current_version_id: readerVid,
-    confirmed_version_id: null,
-    lock_version: 1,
-    updated_at: t.v1,
-  });
-
-  const reportId = createId();
-  insertRow(db, "reflection_reports", {
-    id: reportId,
-    project_id: projectId,
-    source_message_id: asstMsgId,
-    reflection_kind: "translation-envelope",
-    verdict: "pass_with_warnings",
-    summary_md: "원문 누락 없음. 독자안의 文字 대응어와 愚民 해석을 검토하세요.",
-    content_hash: sha256Hex("reflection-eojeseo"),
-    created_at: t.v1,
-  });
-  insertRow(db, "reflection_report_translation_versions", {
-    project_id: projectId,
-    report_id: reportId,
-    document_translation_version_id: v1Id,
-    ordinal: 1,
-  });
-  insertRow(db, "reflection_report_translation_versions", {
-    project_id: projectId,
-    report_id: reportId,
-    document_translation_version_id: readerVid,
-    ordinal: 2,
-  });
-  const f1 = createId();
-  const f2 = createId();
-  const f3 = createId();
-  insertRow(db, "reflection_findings", {
-    id: f1,
-    project_id: projectId,
-    report_id: reportId,
-    document_translation_version_id: readerVid,
-    finding_kind: "term_consistency",
-    severity: "warning",
-    explanation_md:
-      "文字를 ‘한자(文字)’로 옮겼습니다. 용어집의 preferred 대응어는 ‘문자(文字)’입니다. 의도한 선택이면 allowed 항목을 추가하세요.",
-    resolution_state: "open",
-  });
-  insertRow(db, "reflection_findings", {
-    id: f2,
-    project_id: projectId,
-    report_id: reportId,
-    document_translation_version_id: null,
-    finding_kind: "interpretive_uncertainty",
-    severity: "info",
-    explanation_md:
-      "愚民의 愚는 ‘어리석은’과 ‘글을 모르는’ 두 해석이 있습니다. 열린 불확실성 U-02와 연결되어 있으며 원문 밖 정보는 삽입하지 않았습니다.",
-    resolution_state: "open",
-  });
-  insertRow(db, "reflection_findings", {
-    id: f3,
-    project_id: projectId,
-    report_id: reportId,
-    document_translation_version_id: null,
-    finding_kind: "coverage",
-    severity: "pass",
-    explanation_md: "원문 누락 없음 — 두 번역안 모두 required 앵커 6개를 순서대로 한 번씩 연결했습니다.",
-    resolution_state: "open",
-  });
-  const a002 = eojeseo.anchors.find((a) => a.key === "A002");
-  const a003 = eojeseo.anchors.find((a) => a.key === "A003");
-  if (a002) {
-    insertRow(db, "reflection_finding_anchors", {
-      project_id: projectId,
-      finding_id: f1,
-      translation_anchor_id: a002.id,
-      ordinal: 1,
-    });
-  }
-  if (a003) {
-    insertRow(db, "reflection_finding_anchors", {
-      project_id: projectId,
-      finding_id: f2,
-      translation_anchor_id: a003.id,
-      ordinal: 1,
-    });
-  }
-
   seedGlossary(db, projectId, actors.humanId, t.person);
   seedUncertainties(db, projectId, actors.humanId, eojeseo.anchors, d1, d9, t.v1);
   insertRow(db, "context_items", {
     id: createId(),
     project_id: projectId,
-    item_kind: "period_background",
     scope_kind: "document_node",
     scope_id: masterId,
     title: "창제·반포 배경",
     content_md: "1443년 창제, 1446년 반포. 御製序는 世宗이 지은 서문이다.",
     priority: 10,
     enabled: 1,
-    content_hash: sha256Hex("period_background"),
+    content_hash: contextItemContentHash({ scopeId: masterId, title: "창제·반포 배경", contentMd: "1443년 창제, 1446년 반포. 御製序는 世宗이 지은 서문이다.", priority: 10, enabled: true }),
     created_at: t.nodes,
     updated_at: t.nodes,
     archived_at: null,
@@ -789,14 +633,13 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     insertRow(db, "context_items", {
       id: item.id,
       project_id: projectId,
-      item_kind: "style_instruction",
       scope_kind: "document_node",
       scope_id: item.scopeId,
       title: item.title,
       content_md: item.content,
       priority: item.priority,
       enabled: 1,
-      content_hash: sha256Hex(item.content),
+      content_hash: contextItemContentHash({ scopeId: item.scopeId, title: item.title, contentMd: item.content, priority: item.priority, enabled: true }),
       created_at: t.nodes,
       updated_at: t.nodes,
       archived_at: null,
@@ -831,7 +674,14 @@ function insertPerson(
     aliases_json: JSON.stringify(p.aliases),
     description_md: p.desc,
     date_text: p.dates,
-    content_hash: sha256Hex(p.preferred),
+    content_hash: personContentHash({
+      preferredName: p.preferred,
+      hanjaName: p.hanja,
+      reading: p.reading,
+      aliases: p.aliases,
+      descriptionMd: p.desc,
+      dateText: p.dates,
+    }),
     lock_version: 1,
     created_by_actor_id: actorId,
     updated_by_actor_id: actorId,
@@ -848,11 +698,9 @@ function insertNode(db: SqliteDb, projectId: string, createdAt: string, n: NodeS
     parent_node_id: n.parentId,
     node_role: n.role ?? "container",
     is_master: n.isMaster ? 1 : 0,
-    structural_kind: n.kind,
     title: n.title,
     original_title: n.originalTitle,
     ordinal: n.ordinal,
-    genre: n.genre,
     author_person_id: n.authorId,
     language: n.language,
     period_text: n.periodText,
@@ -1108,20 +956,46 @@ function seedSourcePunctuationAnchors(opts: {
     });
     recs.push({ id, key: a.key, ordinal: a.ordinal, required: 1 });
     const sentId = sentIds[a.sent];
-    if (sentId) {
-      insertRow(db, "translation_anchor_structure_spans", {
-        project_id: projectId,
-        anchor_id: id,
-        punctuation_structure_span_id: sentId,
-        ordinal: 1,
+    let exactSpanId = db.prepare(
+      `SELECT id FROM punctuation_structure_spans
+       WHERE punctuation_version_id = ? AND span_kind = ?
+         AND codepoint_from = ? AND codepoint_to = ?
+       ORDER BY ordinal LIMIT 1`,
+    ).get(puncVersionId, a.kind, a.pFrom, a.pTo) as { id: string } | undefined;
+    if (!exactSpanId) {
+      exactSpanId = { id: createId() };
+      insertSpan(db, projectId, puncVersionId, actors.humanId, opts.createdAt, {
+        id: exactSpanId.id,
+        kind: a.kind,
+        parent: paraId,
+        ordinal: 1000 + a.ordinal,
+        from: a.pFrom,
+        to: a.pTo,
+        quote: a.text,
       });
     }
     insertRow(db, "translation_anchor_structure_spans", {
       project_id: projectId,
       anchor_id: id,
-      punctuation_structure_span_id: paraId,
-      ordinal: 2,
+      punctuation_structure_span_id: exactSpanId.id,
+      ordinal: 1,
     });
+    if (sentId && sentId !== exactSpanId.id) {
+      insertRow(db, "translation_anchor_structure_spans", {
+        project_id: projectId,
+        anchor_id: id,
+        punctuation_structure_span_id: sentId,
+        ordinal: 2,
+      });
+    }
+    if (paraId !== exactSpanId.id) {
+      insertRow(db, "translation_anchor_structure_spans", {
+        project_id: projectId,
+        anchor_id: id,
+        punctuation_structure_span_id: paraId,
+        ordinal: sentId && sentId !== exactSpanId.id ? 3 : 2,
+      });
+    }
   }
 
   return { sourceTextId, sourceVersionId, puncVersionId, anchorSetId, anchors: recs };
@@ -1140,7 +1014,6 @@ function seedSimpleDocument(opts: {
   confirmedPunc: boolean;
   createdAt: string;
   translation?: {
-    stage: string;
     text: string;
     blocks: BlockDraft[];
     confirmed: boolean;
@@ -1180,7 +1053,6 @@ function seedSimpleDocument(opts: {
       document_node_id: opts.nodeId,
       source_text_id: chain.sourceTextId,
       target_locale: "ko",
-      stage: opts.translation.stage,
       created_at: opts.createdAt,
       tombstoned_at: null,
     });
@@ -1197,7 +1069,6 @@ function seedSimpleDocument(opts: {
       text: opts.translation.text,
       origin: opts.translation.origin,
       messageId: null,
-      candidateKey: null,
       validationState: opts.translation.needsReview ? "needs_review" : "valid",
       state: opts.translation.confirmed ? "confirmed" : "draft",
       actorId: opts.translation.origin === "ai" ? opts.actors.llmId : opts.actors.humanId,
@@ -1323,7 +1194,6 @@ function insertTranslationVersion(
     text: string;
     origin: string;
     messageId: string | null;
-    candidateKey: string | null;
     validationState: "valid" | "needs_review";
     state: string;
     actorId: string;
@@ -1346,9 +1216,7 @@ function insertTranslationVersion(
     translation_policy_version_id: opts.policyVersionId,
     text_content: text,
     origin_kind: opts.origin,
-    workflow_execution_id: null,
     generated_by_message_id: opts.messageId,
-    generation_candidate_key: opts.candidateKey,
     validation_state: opts.validationState,
     needs_review: opts.validationState === "needs_review" ? 1 : 0,
     state: opts.state,
@@ -1422,7 +1290,7 @@ function seedGlossary(db: SqliteDb, projectId: string, actorId: string, createdA
       kind: "general",
       read: "한자",
       st: "allowed",
-      note: "독자안에서 사용 가능. 원문 밖 해석이므로 병기 필수.",
+      note: "번역에서 사용 가능. 원문 밖 해석이므로 병기 필수.",
     },
     {
       src: "愚民",
@@ -1487,7 +1355,15 @@ function seedGlossary(db: SqliteDb, projectId: string, actorId: string, createdA
       reading: r.read,
       note_md: r.note || null,
       usage_status: r.st,
-      content_hash: sha256Hex(`${r.src}|${r.tgt}|${r.st}`),
+      content_hash: glossaryContentHash({
+        sourceTerm: r.src,
+        targetTerm: r.tgt,
+        targetLocale: "ko",
+        termKind: r.kind,
+        reading: r.read,
+        noteMd: r.note || null,
+        usageStatus: r.st as "preferred" | "allowed" | "forbidden",
+      }),
       lock_version: 1,
       created_by_actor_id: actorId,
       updated_by_actor_id: actorId,
@@ -1544,7 +1420,7 @@ function seedUncertainties(
       locator: "御製序 · A003",
       quote: "故愚民有所欲言",
       opts: ["어리석은 백성", "글을 모르는 백성"],
-      rationale: "독자안은 ‘글을 모르는’으로 의역했고 Reflection이 이를 원문 밖 해석으로 표시했다.",
+      rationale: "번역에서 ‘글을 모르는’으로 의역했으며, 원문 밖 해석임을 명시했다.",
       anchorId: a003?.id,
       nodeId: eojeseoNodeId,
     },

@@ -8,30 +8,52 @@ export function isDev(): boolean {
   return Boolean(import.meta.env.DEV) || !app.isPackaged;
 }
 
-export function isHttpsUrl(urlString: string): boolean {
+const EXTERNAL_HOST_ALLOWLIST = new Set([
+  "openai.com",
+  "www.openai.com",
+  "help.openai.com",
+  "platform.openai.com",
+  "developers.openai.com",
+  "anthropic.com",
+  "www.anthropic.com",
+  "docs.anthropic.com",
+  "support.anthropic.com",
+  "console.anthropic.com",
+  "claude.ai",
+]);
+
+export function isAllowedExternalUrl(urlString: string): boolean {
   try {
     const url = new URL(urlString);
-    return url.protocol === "https:" && !url.username && !url.password;
+    return url.protocol === "https:"
+      && !url.username
+      && !url.password
+      && EXTERNAL_HOST_ALLOWLIST.has(url.hostname.toLowerCase());
   } catch {
     return false;
   }
 }
 
-export function assertHttpsUrl(urlString: string): URL {
+export function assertAllowedExternalUrl(urlString: string): URL {
   let url: URL;
   try {
     url = new URL(urlString);
   } catch {
     throw new AppError("invalid_url", "올바르지 않은 주소입니다.");
   }
-  if (url.protocol !== "https:" || url.username || url.password) {
-    throw new AppError("invalid_url", "https 주소만 열 수 있습니다.");
+  if (
+    url.protocol !== "https:"
+    || url.username
+    || url.password
+    || !EXTERNAL_HOST_ALLOWLIST.has(url.hostname.toLowerCase())
+  ) {
+    throw new AppError("invalid_url", "허용된 Codex·Claude 공식 문서 주소만 열 수 있습니다.");
   }
   return url;
 }
 
 export async function openHttpsExternal(urlString: string): Promise<void> {
-  const url = assertHttpsUrl(urlString);
+  const url = assertAllowedExternalUrl(urlString);
   await shell.openExternal(url.toString());
 }
 
@@ -60,7 +82,7 @@ export function isAllowedNavigation(urlString: string): boolean {
 
 function denyNavigation(event: { preventDefault: () => void }, url: string): void {
   event.preventDefault();
-  if (isHttpsUrl(url)) {
+  if (isAllowedExternalUrl(url)) {
     void openHttpsExternal(url).catch((error: unknown) => {
       log.warn("external navigation denied", { code: errorCode(error) });
     });
@@ -69,7 +91,7 @@ function denyNavigation(event: { preventDefault: () => void }, url: string): voi
 
 export function attachWebContentsSecurity(contents: WebContents): void {
   contents.setWindowOpenHandler(({ url }) => {
-    if (isHttpsUrl(url)) {
+    if (isAllowedExternalUrl(url)) {
       void openHttpsExternal(url).catch((error: unknown) => {
         log.warn("window.open external denied", { code: errorCode(error) });
       });
@@ -84,6 +106,10 @@ export function attachWebContentsSecurity(contents: WebContents): void {
 
   contents.on("will-frame-navigate", (event) => {
     if (event.isMainFrame) return;
+    // Reference PDFs are loaded from an in-memory Blob URL in a sandboxed iframe.
+    // No package path is exposed to the renderer and every byte was hash-verified
+    // by the main-process repository before the Blob was created.
+    if (event.url.startsWith("blob:")) return;
     event.preventDefault();
   });
 

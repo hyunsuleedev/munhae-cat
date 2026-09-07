@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   canonicalJsonHash,
   createId,
@@ -7,10 +6,20 @@ import {
   nowIso,
   sha256Hex,
 } from "@munhae/domain";
-import { acquireLock, createPackageDir, readManifest, releaseLock } from "@munhae/project-format";
-import { migrateProjectDb } from "./migrate.ts";
+import {
+  acquireLock,
+  createPackageDir,
+  readManifest,
+  releaseLock,
+  resolvePackagePath,
+} from "@munhae/project-format";
+import {
+  assertProjectDbBaseline,
+  migrateProjectDb,
+  PROJECT_SCHEMA_VERSION,
+} from "./migrate.ts";
 import { getRow, insertRow } from "./rows.ts";
-import { openSqlite, type SqliteDb } from "./sqlite.ts";
+import { assertSqliteIntegrity, openSqlite, type SqliteDb } from "./sqlite.ts";
 
 export type ProjectActors = {
   humanId: string;
@@ -43,19 +52,22 @@ export function bootstrapEmptyProject(opts: {
     createdAt,
   });
   acquireLock(packagePath);
-  const dbPath = join(packagePath, "project.sqlite3");
-  const db = openSqlite(dbPath);
+  const dbPath = resolvePackagePath(packagePath, "project.sqlite3");
+  let db: SqliteDb | null = null;
   try {
+    db = openSqlite(dbPath);
     migrateProjectDb(db);
+    assertSqliteIntegrity(db);
     const seeded = seedCore(db, {
       projectId,
       title: opts.title,
       createdAt,
       actorDisplayName: opts.actorDisplayName ?? "로컬 사용자",
     });
+    assertSqliteIntegrity(db);
     return { db, packagePath, projectId, title: opts.title, createdAt, ...seeded };
   } catch (err) {
-    db.close();
+    db?.close();
     releaseLock(packagePath);
     throw err;
   }
@@ -63,14 +75,24 @@ export function bootstrapEmptyProject(opts: {
 
 export function openProjectDb(packagePath: string): BootstrappedProject {
   const manifest = readManifest(packagePath);
-  const dbPath = join(packagePath, manifest.database);
+  const dbPath = resolvePackagePath(packagePath, manifest.database);
   if (!existsSync(dbPath)) {
     throw new MunhaeError("missing_database", "project.sqlite3 is missing");
   }
   acquireLock(packagePath);
-  const db = openSqlite(dbPath);
+  let db: SqliteDb | null = null;
   try {
+    assertProjectDbBaseline(dbPath);
+    db = openSqlite(dbPath);
+    const schema = db.prepare("SELECT max(version) AS version FROM meta_schema_migrations").get() as {version:number};
+    if (schema.version < PROJECT_SCHEMA_VERSION) {
+      const upgrade = schema.version === 1 ? "full-text" : schema.version === 2 ? "context-without-kind" : "review-comments";
+      const backupPath = `${dbPath}.before-${upgrade}-${Date.now()}.bak`;
+      db.exec(`VACUUM INTO '${backupPath.replaceAll("'", "''")}'`);
+    }
     migrateProjectDb(db);
+
+    assertSqliteIntegrity(db);
     const project = getRow<{ id: string; title: string; created_at: string }>(
       db,
       `SELECT id, title, created_at FROM core_projects WHERE id = ?`,
@@ -99,8 +121,18 @@ export function openProjectDb(packagePath: string): BootstrappedProject {
       policyVersionId: policy.current_version_id,
     };
   } catch (err) {
-    db.close();
+    db?.close();
     releaseLock(packagePath);
+    const code = typeof err === "object" && err !== null && "code" in err
+      ? String((err as { code: unknown }).code)
+      : "";
+    const message = err instanceof Error ? err.message : "";
+    if (
+      !(err instanceof MunhaeError) &&
+      (code === "SQLITE_CORRUPT" || code === "SQLITE_NOTADB" || /malformed database|disk image is malformed/i.test(message))
+    ) {
+      throw new MunhaeError("sqlite_integrity_failed", `SQLite integrity check failed: ${message || code}`);
+    }
     throw err;
   }
 }
@@ -164,7 +196,7 @@ function seedCore(
 
   insertRow(db, "meta_project_state", {
     project_id: opts.projectId,
-    schema_version: 3,
+    schema_version: PROJECT_SCHEMA_VERSION,
     format_version: 1,
     last_compacted_at: null,
     integrity_hash: sha256Hex(opts.projectId),
@@ -176,8 +208,6 @@ function seedCore(
     sourceLanguage: "lzh",
     targetLocale: "ko",
     audience: "연구자·일반 독자",
-    workflowMode: "two_step",
-    reflectionRequired: true,
     hanjaPolicy: "중요 용어는 한국어(漢字)로 병기한다.",
     supplementPolicy: "원문 밖 보충은 별도 표시한다.",
     uncertaintyPolicy: "textual uncertainty와 interpretive uncertainty를 분리한다.",
@@ -185,7 +215,7 @@ function seedCore(
   insertRow(db, "core_translation_policies", {
     id: policyId,
     project_id: opts.projectId,
-    name: "two_step + Reflection",
+    name: "기본 번역 원칙",
     created_at: opts.createdAt,
   });
   insertRow(db, "core_translation_policy_versions", {
@@ -196,12 +226,10 @@ function seedCore(
     source_language: policyBody.sourceLanguage,
     target_locale: policyBody.targetLocale,
     audience: policyBody.audience,
-    workflow_mode: policyBody.workflowMode,
-    reflection_required: 1,
     hanja_policy: policyBody.hanjaPolicy,
     supplement_policy: policyBody.supplementPolicy,
     uncertainty_policy: policyBody.uncertaintyPolicy,
-    style_guide_md: "직역안과 독자안을 함께 작성하고 Reflection을 남긴다.",
+    style_guide_md: "현재 문서 전체를 빠짐없이 자연스러운 한국어로 번역한다.",
     rules_json: JSON.stringify(policyBody),
     state: "confirmed",
     content_hash: canonicalJsonHash(policyBody),
