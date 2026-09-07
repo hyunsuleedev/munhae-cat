@@ -49,8 +49,12 @@ export function rendererIndexHtml(): string {
 
 export function uniquePath(base: string): string {
   if (!existsSync(base)) return base;
+  // Finder recognizes projects/backups by their final package extension.
+  // Keep temporary and other non-package path naming unchanged.
+  const extension = base.match(/\.munhae(?:pkg)?$/i)?.[0] ?? "";
+  const stem = extension ? base.slice(0, -extension.length) : base;
   for (let n = 2; n < 10_000; n += 1) {
-    const candidate = `${base}-${n}`;
+    const candidate = `${stem}-${n}${extension}`;
     if (!existsSync(candidate)) return candidate;
   }
   throw new AppError("exists", "대상 경로를 만들 수 없습니다.");

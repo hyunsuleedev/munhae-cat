@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MunhaeError } from "@munhae/domain";
+import { unzipSync } from "fflate";
 import {
   acquireLock,
   checkpointAndZip,
@@ -156,6 +157,30 @@ describe("lock", () => {
 });
 
 describe("checkpointAndZip", () => {
+  it("uses supplied database snapshot bytes and rejects a destination inside the live package", () => {
+    const parent = tempDir();
+    const { packagePath } = createPackageDir({ parentDir: parent, title: "snapshot", projectId: "01900000-0000-7000-8000-000000000016", createdAt: "2026-09-01T12:00:00.000Z" });
+    writeFileSync(join(packagePath, "project.sqlite3"), "stale checkpoint");
+    const destination = join(parent, "backup.munhaepkg");
+    checkpointAndZip(packagePath, destination, { databaseSnapshot: Buffer.from("current snapshot") });
+    expect(Buffer.from(unzipSync(readFileSync(destination))["project.sqlite3"]!).toString()).toBe("current snapshot");
+    expect(readFileSync(join(packagePath, "project.sqlite3"), "utf8")).toBe("stale checkpoint");
+    expect(() => checkpointAndZip(packagePath, join(packagePath, "nested.munhaepkg"))).toThrow(/프로젝트 폴더 밖/);
+    expect(existsSync(join(packagePath, "nested.munhaepkg"))).toBe(false);
+  });
+
+  it("cleans its staged output when the destination cannot be replaced", () => {
+    const parent = tempDir();
+    const { packagePath } = createPackageDir({ parentDir: parent, title: "atomic", projectId: "01900000-0000-7000-8000-000000000017", createdAt: "2026-09-01T12:00:00.000Z" });
+    writeFileSync(join(packagePath, "project.sqlite3"), "sqlite-bytes");
+    const destination = join(parent, "backup.munhaepkg");
+    mkdirSync(destination);
+    writeFileSync(join(destination, "keep.txt"), "untouched");
+    expect(() => checkpointAndZip(packagePath, destination)).toThrow();
+    expect(readFileSync(join(destination, "keep.txt"), "utf8")).toBe("untouched");
+    expect(readdirSync(parent).filter(name => name.startsWith(".munhae-backup-"))).toEqual([]);
+  });
+
   it("writes a zip of the package directory", () => {
     const parent = tempDir();
     const { packagePath } = createPackageDir({

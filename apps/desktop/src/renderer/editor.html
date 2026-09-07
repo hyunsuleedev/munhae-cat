@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="./styles/editor.css">
 <script type="module" blocking="render" src="./scripts/editor.ts"></script>
 </head>
-<body class="show-keys show-struct">
+<body class="folio-editor">
 <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
 
 <div class="win" id="win" data-od-id="app-window">
@@ -72,53 +72,64 @@
         <div class="gutter gutter-l" data-side="l" role="separator" aria-orientation="vertical" aria-label="참고 자료 패널 너비"></div>
 
         <section class="pane pane-center" data-od-id="pane-editor" aria-label="편집 영역">
-          <div class="workflow" id="workflow" role="tablist" aria-label="편집 단계">
+          <div class="workflow-region">
+          <div class="workflow" id="workflow" role="tablist" aria-label="작업 순서: 원문 정리, 표점(선택), 번역·검토">
             <button class="workflow-step is-on" id="stepSource" type="button" role="tab" data-workspace="source" aria-selected="true" aria-controls="sourceWorkspace">
-              <span class="workflow-no">1</span><span><b>원문</b><small id="sourceStepState">불러오는 중</small></span>
+              <span class="workflow-no" aria-hidden="true">01</span><span class="workflow-copy"><span class="workflow-title"><b>원문 정리</b><span class="workflow-current">현재</span></span><span class="workflow-description">입력 · 판본 대조</span></span>
             </button>
-            <span class="workflow-line" aria-hidden="true"></span>
+            <span class="workflow-line" aria-hidden="true">→</span>
             <button class="workflow-step" id="stepPunctuation" type="button" role="tab" data-workspace="punctuation" aria-selected="false" aria-controls="punctuationWorkspace">
-              <span class="workflow-no">2</span><span><b>표점 원문 · 선택</b><small id="punctuationStepState">대기</small></span>
+              <span class="workflow-no" aria-hidden="true">02</span><span class="workflow-copy"><span class="workflow-title"><b>표점</b><span class="workflow-optional">선택</span><span class="workflow-current" hidden>현재</span></span><span class="workflow-description">구두점 · 문단 정리</span></span>
             </button>
-            <span class="workflow-line" aria-hidden="true"></span>
+            <span class="workflow-line" aria-hidden="true">→</span>
             <button hidden class="workflow-step" id="stepSegmentation" type="button" role="tab" data-workspace="segmentation" aria-selected="false" aria-controls="segmentationWorkspace">
               <span class="workflow-no">3</span><span><b>분절</b><small id="segmentationStepState">대기</small></span>
             </button>
 
             <button class="workflow-step" id="stepTranslation" type="button" role="tab" data-workspace="translation" aria-selected="false" aria-controls="translationWorkspace">
-              <span class="workflow-no">3</span><span><b>번역</b><small id="translationStepState">대기</small></span>
+              <span class="workflow-no" aria-hidden="true">03</span><span class="workflow-copy"><span class="workflow-title"><b>번역·검토</b><span class="workflow-current" hidden>현재</span></span><span class="workflow-description">작성 · 문장별 대조 · 확정</span></span>
             </button>
+          </div>
+          <div class="workflow-tools">
+            <button class="btn btn-ghost btn-sm" id="btnWorkflowTranslation" type="button" hidden>번역으로 <span aria-hidden="true">→</span></button>
+            <button class="btn btn-ghost btn-sm workflow-help-trigger" type="button" popovertarget="workflowHelp" aria-label="현재 단계의 작업 안내"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"></circle><path d="M8 7v4M8 4.5v.5"></path></svg><span>작업 안내</span></button>
+          </div>
+          <div class="workflow-guide" id="workflowHelp" popover>
+            <span class="workflow-guide-label" id="workflowGuideLabel">다음 할 일</span>
+            <p id="workflowHint"></p>
+          </div>
           </div>
           <div class="scope translation-only" id="translationToolbar" data-od-id="editor-toolbar" hidden>
             <div class="seg" id="viewSeg" role="group" aria-label="보기 방식">
               <button type="button" data-view="source" aria-pressed="false">원문 전문</button>
               <button type="button" data-view="parallel" aria-pressed="true">문장별 대조</button>
-              <button type="button" data-view="full" aria-pressed="false">번역 전문</button>
+              <button type="button" data-view="full" aria-pressed="false">서책 보기</button>
             </div>
-            <label class="check"><input type="checkbox" id="chkStruct" checked> 구조</label>
-            <label class="check"><input type="checkbox" id="chkKeys" checked> 앵커 ID</label>
+            <label class="check"><input type="checkbox" id="chkStruct"> 구조</label>
+            <label class="check"><input type="checkbox" id="chkKeys"> 앵커 ID</label>
             <span class="sp"></span>
+            <button class="btn btn-ghost btn-sm" id="btnReadingSize" type="button" aria-pressed="false" aria-label="본문 크게 보기">가 +</button>
             <span id="stateBadge" class="tag tag-draft">번역안</span><span id="validBadge" class="tag tag-plain">valid</span>
             <span id="legacyTranslationCounts" class="muted">블록 <b id="blockCount" class="mono" style="color:var(--fg)">0</b> · 앵커 <b id="anchorCount" class="mono" style="color:var(--fg)">0</b></span>
           </div>
           <div class="pane-scroll">
             <div class="center-body">
               <section class="workspace-panel is-open" id="sourceWorkspace" role="tabpanel" aria-labelledby="stepSource">
-                <header class="draft-head">
-                  <div><span class="draft-eyebrow">1 · 원문안</span><h1>원문을 입력하고 확정합니다</h1><p>원문 문자는 이 단계에서만 수정합니다. 확정한 뒤 표점과 구조를 작성할 수 있습니다.</p></div>
-                  <span class="tag tag-plain" id="sourceStateBadge">—</span>
-                </header>
-                <div class="workflow-notice" id="sourceMessage" role="status" aria-live="polite"></div>
-                <div class="field">
-                  <div class="row"><label for="sourceDraftText">원문</label><span class="sp"></span><button class="btn btn-sm" id="btnEditSource" type="button" hidden>수정</button><button class="btn btn-sm" id="btnCancelSourceEdit" type="button" hidden>수정 취소</button></div>
-                  <textarea class="textarea hanmun draft-textarea" id="sourceDraftText" spellcheck="false" placeholder="한문 원문을 입력하세요" readonly></textarea>
-                  <span class="field-help" id="sourceTextCount">0자</span>
+                <div class="source-sheet">
+                  <header class="source-toolbar">
+                    <label for="sourceDraftText">원문</label>
+                    <span class="tag tag-plain" id="sourceStateBadge">—</span>
+                    <span class="sp"></span>
+                    <button class="btn btn-sm" id="btnEditSource" type="button" hidden><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m10.5 2.5 3 3M3 10l7.5-7.5a2.12 2.12 0 0 1 3 3L6 13l-4 1z"></path></svg>수정</button>
+                    <button class="btn btn-ghost btn-sm" id="btnCancelSourceEdit" type="button" hidden>수정 취소</button>
+                  </header>
+                  <textarea class="textarea hanmun draft-textarea" id="sourceDraftText" spellcheck="false" placeholder="한문 원문을 입력하거나 붙여 넣으세요" aria-describedby="sourceTextCount sourceMessage" readonly></textarea>
+                  <div class="workflow-notice" id="sourceMessage" role="status" aria-live="polite" hidden></div>
+                  <footer class="source-footer">
+                    <div class="source-info"><span id="sourceTextCount">0자</span><span id="sourceVersion">—</span></div>
+                    <div class="source-actions"><button class="btn btn-sm" id="btnSaveSourceDraft" type="button">원문안 저장</button><button class="btn btn-primary btn-sm" id="btnConfirmSource" type="button">원문 확정</button></div>
+                  </footer>
                 </div>
-                <div class="draft-meta-grid" id="sourceDraftMeta" hidden>
-                  <div class="field"><label for="sourceOrigin">입력 방식</label><select class="select" id="sourceOrigin"><option value="manual">직접 입력</option><option value="paste">붙여넣기</option><option value="import">가져오기</option></select></div>
-                  <div class="field"><label for="sourceChangeSummary">변경 요약 <span class="muted">선택</span></label><input class="input" id="sourceChangeSummary" maxlength="2000" placeholder="예: 판본 대조 후 탈자 보완"></div>
-                </div>
-                <div class="draft-actions"><span class="muted" id="sourceVersion">—</span><span class="sp"></span><button class="btn" id="btnSaveSourceDraft" type="button">원문안 저장</button><button class="btn btn-primary" id="btnConfirmSource" type="button">원문 확정</button></div>
               </section>
 
               <section class="workspace-panel" id="punctuationWorkspace" role="tabpanel" aria-labelledby="stepPunctuation" hidden>
@@ -194,15 +205,16 @@
                     <button class="btn" id="btnCreateTranslationDraft" type="button">사람 번역 초안 만들기</button>
                   </span>
                   <button class="btn" id="btnResetTranslationDraft" type="button" hidden>현재 원문으로 빈 번역안 만들기</button>
-                  <button class="btn btn-primary" id="btnPrepare" type="button" data-od-id="btn-ai-translate">전체 번역 생성… <kbd>⌥⌘K</kbd></button>
+                  <button class="btn btn-primary" id="btnPrepare" type="button" data-od-id="btn-ai-translate">AI 번역… <kbd>⌥⌘K</kbd></button>
                 </div>
-                <div id="textTranslationControls" class="row" hidden style="margin:12px 0"><span id="alignmentStatus" class="muted" role="status"></span><span class="sp"></span><span id="translationSaveStatus" class="muted" role="status" aria-live="polite"></span><button class="btn btn-sm" type="button" id="btnRetryAlignment">원문 연결</button><button class="btn btn-sm" type="button" id="btnSaveFullTranslation">번역 저장</button></div>
+                <div id="textTranslationControls" class="translation-controls" hidden><span id="alignmentStatus" class="muted" role="status"></span><span class="sp"></span><span id="translationSaveStatus" class="muted" role="status" aria-live="polite"></span><button class="btn btn-sm" type="button" id="btnRetryAlignment">원문 연결</button><button class="btn btn-sm" type="button" id="btnSaveFullTranslation">번역 저장</button></div>
                 <p id="translationEditHelp" class="translation-edit-help muted" hidden></p>
                 <div id="reviewCommentToolbar" class="review-toolbar" hidden>
                   <button class="btn btn-sm" id="btnAddReviewComment" type="button" aria-pressed="false" aria-describedby="reviewSelectionHint" disabled>코멘트 달기</button>
                   <span id="reviewSelectionHint" class="muted" role="status">‘코멘트 달기’를 누른 뒤 원문이나 번역문의 범위를 선택하세요.</span>
                   <span class="sp"></span>
                   <button class="btn btn-sm" id="btnShowReviewComments" type="button">검토 코멘트</button>
+                  <button class="btn btn-sm" id="btnSearchFootnotes" type="button">각주 용례 찾기</button>
                   <button class="btn btn-sm" id="btnCompareTranslation" type="button">이전 번역과 비교…</button>
                 </div>
                 <div class="vstrip" id="vstrip" data-od-id="validation-strip"></div>
@@ -210,10 +222,15 @@
                   <p class="muted" style="font-size:12px;margin-bottom:12px">표점안 · 표시되는 문단·문장·운문 구조는 확정된 구조 범위입니다. 앵커에 마우스를 올리면 연결된 번역 블록이 표시됩니다.</p>
                   <div class="source-text" id="sourceText"></div>
                 </div>
-                <div class="view is-open" id="viewParallel" data-od-id="view-parallel"><div class="rows" id="rows"></div></div>
-                <div class="view" id="viewFull" data-od-id="view-full">
-                  <p class="muted" style="font-size:12px;margin-bottom:12px">번역 전문 · 블록 경계 없이 읽습니다. 문장을 클릭하면 대조 보기에서 해당 블록을 선택합니다.</p>
-                  <textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" spellcheck="false" hidden style="width:100%;min-height:55vh;font-size:17px;line-height:1.9;white-space:pre-wrap"></textarea><div class="full-text" id="fullText"></div>
+                <div class="view is-open folio-sheet" id="viewParallel" data-od-id="view-parallel">
+                  <div class="folio-columns"><span>原文 <small>원문 대응 구절</small></span><span>譯文 <small>문장별 번역</small></span></div>
+                  <div class="comparison-tools"><span id="comparisonSummary" role="status"></span><label class="check"><input id="alignmentReviewOnly" type="checkbox">대응 확인 필요만</label><span class="sp"></span><button class="btn btn-ghost btn-sm" id="btnPreviousSentence" type="button" aria-label="이전 번역 문장">↑</button><button class="btn btn-ghost btn-sm" id="btnNextSentence" type="button" aria-label="다음 번역 문장">↓</button></div>
+                  <div class="rows" id="rows"></div><p class="comparison-empty" id="comparisonEmpty" hidden>대응을 확인할 문장이 없습니다.</p>
+                </div>
+                <div class="view folio-sheet" id="viewFull" data-od-id="view-full">
+                  <div class="folio-columns"><span>原文 <small id="folioSourceLabel">원문</small></span><span>譯文 <small>번역 전문</small></span></div>
+                  <div class="folio-spread"><div class="folio-source hanmun" id="folioSourceText" lang="zh-Hant"></div><div class="folio-translation"><textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" spellcheck="false" hidden></textarea><div class="full-text" id="fullText"></div></div></div>
+                  <p class="folio-caption">문단과 줄바꿈을 그대로 보존합니다. 문장별 대조에서도 같은 번역문을 편집합니다.</p>
                 </div>
               </section>
             </div>
@@ -244,6 +261,7 @@
             </form>
           </div>
           <div class="rpanel" id="rp-context" role="tabpanel"><div class="pane-scroll">
+            <div class="pane-body"><button class="btn btn-sm" id="btnSearchFootnotesContext" type="button">각주 용례 찾기 · 한국고전종합DB</button></div>
             <details class="grp" open><summary>일치한 용어<span class="tail"><a href="knowledge.html">용어집 ›</a></span></summary><div class="grp-b list" id="ctxTerms"></div></details>
             <details class="grp" open><summary>인물·지명</summary><div class="grp-b list" id="ctxPeople"></div></details>
             <details class="grp" open><summary>열린 불확실성</summary><div class="grp-b list" id="ctxUnc"></div></details>
@@ -269,7 +287,7 @@
     <span id="sbVersions"></span>
     <span class="sp"></span>
     <span id="sbValid"></span>
-    <span>자동 저장됨 <b id="sbSaved">—</b></span>
+    <span id="editorSaveState" role="status">저장됨</span><b id="sbSaved"></b>
     <span id="sbAgent"><i class="dot"></i>AI</span>
     <button id="sbPalette" type="button" title="명령 검색">⌘K</button>
   </footer>
@@ -281,12 +299,37 @@
   <form id="reviewCommentForm">
     <h2 id="reviewCommentHeading">코멘트 달기</h2>
     <blockquote id="reviewCommentQuote"></blockquote>
+    <div class="review-reference-tools"><button class="btn btn-sm" id="btnReviewFootnotes" type="button">이 구절의 각주 용례 찾기</button></div>
     <label for="reviewCommentBody">해석·수정 의견</label>
     <textarea id="reviewCommentBody" class="textarea" required maxlength="20000" rows="6" placeholder="예: 여기의 巖棲客은 화자를 가리킨다. 뒤 문장의 질문 주체도 이에 맞춰 수정할 것."></textarea>
     <p class="muted">질문이나 아직 확정하지 않은 해석은 그 상태를 함께 적어주세요.</p>
     <p id="reviewCommentError" class="review-error" role="alert"></p>
     <div class="review-dialog-actions"><button id="reviewCommentCancel" class="btn" type="button">취소</button><button id="reviewCommentSave" class="btn btn-primary" type="submit">코멘트 저장</button></div>
   </form>
+</dialog>
+<dialog id="dlgFootnoteSearch" class="footnote-dialog" aria-labelledby="footnoteHeading">
+  <header class="footnote-head">
+    <div><p class="footnote-provider">한국고전종합DB · 고전번역서 각주</p><h2 id="footnoteHeading">각주 용례 찾기</h2></div>
+    <button class="btn btn-ghost" id="footnoteCloseTop" type="button" aria-label="각주 검색 닫기">닫기</button>
+  </header>
+  <p class="footnote-context" id="footnoteContext" hidden></p>
+  <form class="footnote-search-form" id="footnoteSearchForm">
+    <div class="footnote-query-field"><label for="footnoteQuery">검색어 <span class="muted">최대 100자</span></label><input class="input" id="footnoteQuery" type="search" placeholder="예: 태수 또는 太守" maxlength="200" required autocomplete="off" aria-describedby="footnoteSearchHelp"></div>
+    <div><label for="footnoteSearchMode">검색 범위</label><select class="select" id="footnoteSearchMode"><option value="target">각주 대상 구절</option><option value="content">대상·설명 전체</option></select></div>
+    <button class="btn btn-primary" id="footnoteSearchSubmit" type="submit">검색</button>
+  </form>
+  <p class="footnote-help" id="footnoteSearchHelp">각주가 붙은 표현에서 찾습니다. 한문 표현은 한국어 번역어로도 바꿔 찾아보세요.</p>
+  <div class="footnote-results-head"><p id="footnoteSearchStatus" role="status" aria-live="polite">검색어를 입력해 각주 용례를 찾아보세요.</p><div class="footnote-pages"><button class="btn btn-sm" id="footnotePrevious" type="button" disabled>이전</button><button class="btn btn-sm" id="footnoteNext" type="button" disabled>다음</button></div></div>
+  <p class="footnote-error" id="footnoteSearchError" role="alert" hidden></p>
+  <div class="footnote-results" id="footnoteResults" aria-busy="false">
+    <ol class="footnote-list" id="footnoteResultsList" aria-label="각주 검색 결과"></ol>
+    <section class="footnote-detail" id="footnoteDetail" aria-label="선택한 각주"><p class="muted">각주 대상 구절과 설명, 출처를 함께 확인할 수 있습니다.</p></section>
+  </div>
+  <footer class="footnote-footer">
+    <span id="footnoteActionStatus" role="status" aria-live="polite"></span><span class="sp"></span>
+    <button class="btn" id="footnoteCopy" type="button" disabled>출처와 함께 복사</button>
+    <button class="btn btn-primary" id="footnoteInsert" type="button" hidden disabled>코멘트에 참고자료 넣기</button>
+  </footer>
 </dialog>
 <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
 

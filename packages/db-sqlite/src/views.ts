@@ -240,7 +240,7 @@ export type EditorView = {
     textLayout?: {
       state: "pending" | "running" | "ready" | "needs_review" | "failed";
       sentences: Array<{ id: string; from: number; to: number; text: string }>;
-      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean }>;
+      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
       error: string | null;
     };
     originKind: string;
@@ -564,6 +564,13 @@ export type ReviewCommentView = {
 };
 
 export type CreateReviewCommentInput = Omit<ReviewCommentView, "id" | "lockVersion" | "createdAt" | "updatedAt">;
+export type SaveSentenceLinkInput = {
+  documentNodeId: string;
+  versionId: string;
+  sentenceId: string;
+  spans: Array<{ from: number; to: number; quote: string }>;
+  expectedLockVersion: number;
+};
 export type ReviewCommentCasInput = { id: string; expectedLockVersion: number };
 export type UpdateReviewCommentInput = ReviewCommentCasInput & { bodyMd: string };
 

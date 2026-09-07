@@ -1,6 +1,8 @@
 import type { CreateReviewCommentInput, EditorView, MunhaeApi, ReviewCommentView } from "../../shared/munhae-api";
 import { textareaRange } from "./review-selection";
 import { configureReviewMarks, type ReviewMarkRange } from "./review-marks";
+import { configureFootnoteSearch } from "./footnote-search-ui";
+import { appendFootnoteCitation } from "./footnote-citation";
 
 type Revision = { baseVersionId: string; commentIds: string[] };
 type Deps = {
@@ -37,6 +39,7 @@ export function configureReviewComments(deps: Deps) {
   const included = new Set<string>();
   const dialog = el<HTMLDialogElement>("#dlgReviewComment");
   const marks = configureReviewMarks(el("#rows"));
+  const footnotes = configureFootnoteSearch(deps.api, esc);
 
   function eligible(comment: ReviewCommentView): boolean {
     const v = deps.view();
@@ -244,6 +247,7 @@ export function configureReviewComments(deps: Deps) {
     saving = true;
     el<HTMLButtonElement>("#reviewCommentSave").disabled = true;
     el<HTMLButtonElement>("#reviewCommentCancel").disabled = true;
+    el<HTMLButtonElement>("#btnReviewFootnotes").disabled = true;
     try {
       const result = editing
         ? await deps.api.editor.updateReviewComment({ id: editing.id, expectedLockVersion: editing.lockVersion, bodyMd })
@@ -259,6 +263,7 @@ export function configureReviewComments(deps: Deps) {
       saving = false;
       el<HTMLButtonElement>("#reviewCommentSave").disabled = false;
       el<HTMLButtonElement>("#reviewCommentCancel").disabled = false;
+      el<HTMLButtonElement>("#btnReviewFootnotes").disabled = false;
       renderSelection();
       render();
     }
@@ -344,11 +349,30 @@ export function configureReviewComments(deps: Deps) {
     renderMarks();
   });
   el("#reviewCommentForm").addEventListener("submit", event => { event.preventDefault(); void save(); });
+  for (const id of ["#btnSearchFootnotes", "#btnSearchFootnotesContext"]) {
+    el(id).addEventListener("click", () => { cancelSelection(); footnotes.open(); });
+  }
+  el("#btnReviewFootnotes").addEventListener("click", () => {
+    const target = draftTarget;
+    if (!target || saving || !dialog.open) return;
+    footnotes.open({
+      query: target.quote,
+      quote: target.quote,
+      insert: note => {
+        if (!dialog.open || saving || draftTarget !== target) throw new Error("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요.");
+        const body = el<HTMLTextAreaElement>("#reviewCommentBody");
+        body.value = appendFootnoteCitation(body.value, note, body.maxLength);
+        body.dispatchEvent(new Event("input", { bubbles: true }));
+        queueMicrotask(() => { body.focus(); body.setSelectionRange(body.value.length, body.value.length); });
+      },
+    });
+  });
   el("#reviewCommentCancel").addEventListener("click", () => dialog.close());
   dialog.addEventListener("cancel", event => { if (saving) event.preventDefault(); });
   dialog.addEventListener("close", () => {
     // A queued close event from the previous comment must not clear a newly opened draft.
     if (dialog.open) return;
+    footnotes.closeAttached();
     draftTarget = null;
     editing = null;
     renderSelection();

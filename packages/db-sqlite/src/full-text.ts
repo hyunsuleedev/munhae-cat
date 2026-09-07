@@ -1,4 +1,4 @@
-import { textSentences, type TextSentence } from "@munhae/domain/text-sentences";
+import { matchUnchangedTextSentences, textSentences, type TextSentence } from "@munhae/domain/text-sentences";
 export { textSentences, type TextSentence } from "@munhae/domain/text-sentences";
 import {
   canonicalJson,
@@ -7,6 +7,7 @@ import {
   nowIso,
   sha256Hex,
   codepointCount,
+  sliceCodepoints,
 } from "@munhae/domain";
 import { BUNDLED_SKILLS } from "./bundled-skills.ts";
 import { listReviewComments } from "./review-comments.ts";
@@ -28,12 +29,14 @@ import type {
   BeginTranslationRunInput,
   CompleteTranslationRunInput,
   ReviewCommentView,
+  SaveSentenceLinkInput,
 } from "./views.ts";
 
 export type TextLink = {
   sentenceId: string;
   spans: Array<{ from: number; to: number; quote: string }>;
   needsReview: boolean;
+  reviewedBy?: "human";
 };
 export type TextLayout = {
   state: "pending" | "running" | "ready" | "needs_review" | "failed";
@@ -41,6 +44,15 @@ export type TextLayout = {
   links: TextLink[];
   error: string | null;
 };
+
+function hasUncoveredSource(source: string, links: TextLink[]): boolean {
+  const covered = new Set<number>();
+  for (const link of links)
+    for (const span of link.spans)
+      for (let i = span.from; i < span.to; i++) covered.add(i);
+  return Array.from(source).some((ch, i) => !/[\p{P}\p{Z}\s]/u.test(ch) && !covered.has(i));
+}
+
 export type FullTextSnapshot = {
   documentNodeId: string;
   sourceTextId: string;
@@ -633,12 +645,14 @@ export function saveText(
 ) {
   if (!text.trim()) fail("번역 내용을 입력하세요");
   return repo.db.transaction(() => {
-    if (!repo.getEditor(documentNodeId).translation?.isCurrentDependencies) throw new MunhaeError("stale_request", "원문이 변경되었습니다. 현재 원문 기준으로 새 번역안을 만드세요");
+    const editor = repo.getEditor(documentNodeId);
+    const previous = editor.translation;
+    if (!previous?.isCurrentDependencies) throw new MunhaeError("stale_request", "원문이 변경되었습니다. 현재 원문 기준으로 새 번역안을 만드세요");
     const preview = previewText(repo, { documentNodeId });
     const s = preview.snapshot;
     if (s.expectedHead?.lockVersion !== lock)
       throw new MunhaeError("cas_conflict", "번역안이 변경되었습니다");
-    return insertTextVersion(
+    const version = insertTextVersion(
       repo,
       s,
       text,
@@ -650,6 +664,29 @@ export function saveText(
         ),
       ),
     );
+    const previousLayout = previous.textLayout;
+    if (previousLayout?.links.length) {
+      const sentences = textSentences(text);
+      // Reopening an unchanged confirmed version keeps even repeated sentences
+      // at their exact positions. Edited text must never guess by T-number.
+      const matches = text === previous.textContent
+        ? new Map(sentences.map((sentence) => [sentence.id, sentence.id]))
+        : matchUnchangedTextSentences(previousLayout.sentences, sentences);
+      const previousLinks = new Map(previousLayout.links.map((link) => [link.sentenceId, link]));
+      const links: TextLink[] = sentences.map((sentence) => {
+        const previousId = matches.get(sentence.id);
+        const link = previousId ? previousLinks.get(previousId) : undefined;
+        return link
+          ? { ...link, sentenceId: sentence.id }
+          : { sentenceId: sentence.id, spans: [], needsReview: true };
+      });
+      const uncovered = hasUncoveredSource(editor.source.contentText, links);
+      const needsReview = uncovered || previousLayout.state !== "ready" || links.some((link) => link.needsReview);
+      repo.db.prepare(`UPDATE translation_text_layouts SET alignment_state=?, links_json=?, alignment_error=? WHERE version_id=?`)
+        .run(needsReview ? "needs_review" : "ready", canonicalJson(links),
+          uncovered ? "연결되지 않은 원문 범위가 있습니다" : needsReview ? previousLayout.error : null, version.versionId);
+    }
+    return version;
   })();
 }
 
@@ -680,6 +717,42 @@ export function confirmText(
         "UPDATE document_translation_heads SET confirmed_version_id=?,lock_version=lock_version+1 WHERE document_translation_id=?",
       )
       .run(e.translation!.versionId, h.document_translation_id);
+  })();
+}
+
+export function saveSentenceLink(repo: Context, input: SaveSentenceLinkInput): void {
+  repo.db.transaction(() => {
+    const editor = repo.getEditor(input.documentNodeId);
+    const translation = editor.translation;
+    const layout = translation?.textLayout;
+    if (!translation || !layout || translation.versionId !== input.versionId || !translation.isCurrentDependencies)
+      throw new MunhaeError("stale_request", "원문 또는 번역이 변경되었습니다. 현재 문장에서 대응을 다시 확인하세요");
+    if (!Number.isSafeInteger(input.expectedLockVersion) || input.expectedLockVersion < 1 || translation.lockVersion !== input.expectedLockVersion)
+      throw new MunhaeError("cas_conflict", "번역안이 변경되었습니다. 다시 불러오세요");
+    if (layout.state === "running")
+      throw new MunhaeError("alignment_running", "자동 원문 연결이 끝난 뒤 대응을 수정하세요");
+    if (!layout.sentences.some((sentence) => sentence.id === input.sentenceId)) fail("번역 문장을 찾을 수 없습니다");
+    if (!Array.isArray(input.spans) || input.spans.length < 1 || input.spans.length > 100) fail("대응하는 원문 범위를 선택하세요");
+    const spans = input.spans.map((span) => {
+      if (!span || !Number.isSafeInteger(span.from) || !Number.isSafeInteger(span.to)
+        || span.from < 0 || span.to <= span.from || span.to > 20_000_000 || span.to > codepointCount(editor.source.contentText)
+        || typeof span.quote !== "string" || !span.quote.trim() || span.quote.length > 100_000
+        || codepointCount(span.quote) !== span.to - span.from
+        || sliceCodepoints(editor.source.contentText, span.from, span.to) !== span.quote)
+        fail("선택한 원문 범위와 인용이 일치하지 않습니다");
+      return { from: span.from, to: span.to, quote: span.quote };
+    });
+    const existing = new Map(layout.links.map((link) => [link.sentenceId, link]));
+    const links: TextLink[] = layout.sentences.map((sentence) => sentence.id === input.sentenceId
+      ? { sentenceId: sentence.id, spans, needsReview: false, reviewedBy: "human" }
+      : existing.get(sentence.id) ?? { sentenceId: sentence.id, spans: [], needsReview: true });
+    const uncovered = hasUncoveredSource(editor.source.contentText, links);
+    const state = uncovered || links.some((link) => link.needsReview) ? "needs_review" : "ready";
+    const changed = repo.db.prepare(`UPDATE document_translation_heads SET lock_version=lock_version+1, updated_at=? WHERE current_version_id=? AND lock_version=?`)
+      .run(nowIso(), input.versionId, input.expectedLockVersion);
+    if (changed.changes !== 1) throw new MunhaeError("cas_conflict", "번역안이 변경되었습니다. 다시 불러오세요");
+    repo.db.prepare(`UPDATE translation_text_layouts SET links_json=?, alignment_state=?, alignment_error=? WHERE version_id=?`)
+      .run(canonicalJson(links), state, uncovered ? "연결되지 않은 원문 범위가 있습니다" : null, input.versionId);
   })();
 }
 
@@ -823,7 +896,9 @@ export function completeAlignment(
         const from = codepointCount(v.content_text.slice(0, at));
         return { from, to: from + codepointCount(q.text), quote: q.text };
       });
-      return {
+      // A rerun may fill missing links, but must not replace a human's correction.
+      const reviewed = layout.links.find((link) => link.sentenceId === l.sentenceId && link.reviewedBy === "human");
+      return reviewed ?? {
         sentenceId: l.sentenceId,
         spans,
         needsReview: l.needsReview || !spans.length,
@@ -831,13 +906,7 @@ export function completeAlignment(
     });
     if (seen.size !== layout.sentences.length)
       fail("모든 번역 문장에 연결 또는 확인 필요 표시가 있어야 합니다");
-    const covered = new Set<number>();
-    for (const l of links)
-      for (const s of l.spans)
-        for (let i = s.from; i < s.to; i++) covered.add(i);
-    const uncovered = Array.from(v.content_text).some(
-      (ch, i) => !/[\p{P}\p{Z}\s]/u.test(ch) && !covered.has(i),
-    );
+    const uncovered = hasUncoveredSource(v.content_text, links);
     const state =
       uncovered || links.some((l) => l.needsReview) ? "needs_review" : "ready";
     repo.db

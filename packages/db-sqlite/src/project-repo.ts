@@ -1,6 +1,7 @@
 import * as fullText from "./full-text.ts";
 import * as reviewComments from "./review-comments.ts";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   canonicalJson,
@@ -126,6 +127,7 @@ import type {
   ContextPreview,
   ContextPreviewInput,
   CreateReviewCommentInput,
+  SaveSentenceLinkInput,
   ReviewCommentCasInput,
   UpdateReviewCommentInput,
   CreateContextItemInput,
@@ -265,8 +267,18 @@ export class ProjectRepo {
 
   backupTo(destFile: string): void {
     assertSqliteIntegrity(this.db);
-    this.checkpoint();
-    checkpointAndZip(this.packagePath, destFile);
+    // A held WAL reader can prevent checkpointing without throwing. SQLite's
+    // snapshot includes committed WAL pages independently of other readers.
+    const staging = mkdtempSync(join(tmpdir(), "munhae-backup-"));
+    try {
+      const snapshotPath = join(staging, "project.sqlite3");
+      this.db.prepare("VACUUM INTO ?").run(snapshotPath);
+      checkpointAndZip(this.packagePath, destFile, {
+        databaseSnapshot: readFileSync(snapshotPath),
+      });
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+    }
   }
 
   getHome(): HomeView {
@@ -1697,6 +1709,10 @@ export class ProjectRepo {
   previewContext(input: ContextPreviewInput): fullText.FullTextPreview { return fullText.previewText(this.fullTextContext(), input); }
 
   listReviewComments(documentNodeId: string) { return reviewComments.listReviewComments(this.fullTextContext(), documentNodeId); }
+  saveSentenceLink(input: SaveSentenceLinkInput): EditorView {
+    fullText.saveSentenceLink(this.fullTextContext(), input);
+    return this.getEditor(input.documentNodeId);
+  }
   createReviewComment(input: CreateReviewCommentInput) { return reviewComments.createReviewComment(this.fullTextContext(), input); }
   updateReviewComment(input: UpdateReviewCommentInput) { return reviewComments.updateReviewComment(this.fullTextContext(), input); }
   archiveReviewComment(input: ReviewCommentCasInput) { reviewComments.archiveReviewComment(this.fullTextContext(), input); }

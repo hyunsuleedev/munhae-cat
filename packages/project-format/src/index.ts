@@ -376,17 +376,39 @@ export function releaseLock(packagePath: string): void {
   ownedLocks.delete(root);
 }
 
-export function checkpointAndZip(packagePath: string, destFile: string): void {
+export function checkpointAndZip(
+  packagePath: string,
+  destFile: string,
+  options: { databaseSnapshot?: Uint8Array } = {},
+): void {
   const root = resolve(packagePath);
   const rootStat = lstatSync(root);
   if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
     throw new MunhaeError("unsafe_backup_entry", "project backup root must be a real directory");
   }
   const realRoot = realpathSync(root);
+  const destination = resolve(destFile);
+  const destinationParent = realpathSync(dirname(destination));
+  const destinationFromRoot = relative(realRoot, destinationParent);
+  if (destinationFromRoot === "" || (!destinationFromRoot.startsWith(`..${sep}`) && destinationFromRoot !== ".." && !isAbsolutePathLike(destinationFromRoot))) {
+    throw new MunhaeError("invalid_backup_destination", "백업은 프로젝트 폴더 밖에 저장해 주세요");
+  }
   const files: Record<string, Uint8Array> = {};
-  collectZipEntries(root, "", files, realRoot);
+  collectZipEntries(root, "", files, realRoot, options.databaseSnapshot);
   const zipped = zipSync(files, { level: 6 });
-  writeFileSync(destFile, zipped);
+  const temporary = join(destinationParent, `.munhae-backup-${randomUUID()}.tmp`);
+  try {
+    writeFileSync(temporary, zipped, { flag: "wx", mode: 0o600 });
+    const fd = openSync(temporary, "r");
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporary, destination);
+  } finally {
+    rmSync(temporary, { force: true });
+  }
 }
 
 export type ImportedProjectAsset = {
@@ -569,6 +591,7 @@ function collectZipEntries(
   prefix: string,
   files: Record<string, Uint8Array>,
   realRoot: string,
+  databaseSnapshot?: Uint8Array,
 ): void {
   for (const name of readdirSync(dir)) {
     const abs = join(dir, name);
@@ -591,9 +614,11 @@ function collectZipEntries(
     ) continue;
     const rel = prefix ? posix.join(prefix, name) : name;
     if (st.isDirectory()) {
-      collectZipEntries(abs, rel, files, realRoot);
+      collectZipEntries(abs, rel, files, realRoot, databaseSnapshot);
     } else if (st.isFile()) {
-      files[rel.split(sep).join("/")] = new Uint8Array(readFileSync(abs));
+      files[rel.split(sep).join("/")] = rel === "project.sqlite3" && databaseSnapshot
+        ? databaseSnapshot
+        : new Uint8Array(readFileSync(abs));
     } else {
       throw new MunhaeError("unsafe_backup_entry", "project backups may contain only regular files and directories");
     }

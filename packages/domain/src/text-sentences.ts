@@ -53,3 +53,25 @@ export function replaceTextSentence(
       : { ...item, from: item.from + delta, to: item.to + delta }),
   };
 }
+
+/** Map each new sentence ID to an exact, unambiguous previous sentence ID. */
+export function matchUnchangedTextSentences(
+  previous: TextSentence[],
+  next: TextSentence[],
+): Map<string, string> {
+  const unique = (sentences: TextSentence[]) => {
+    const ids = new Map<string, string | null>();
+    for (const sentence of sentences) {
+      ids.set(sentence.text, ids.has(sentence.text) ? null : sentence.id);
+    }
+    return ids;
+  };
+  const previousIds = unique(previous);
+  const nextIds = unique(next);
+  const matches = new Map<string, string>();
+  for (const sentence of next) {
+    const previousId = previousIds.get(sentence.text);
+    if (previousId && nextIds.get(sentence.text)) matches.set(sentence.id, previousId);
+  }
+  return matches;
+}

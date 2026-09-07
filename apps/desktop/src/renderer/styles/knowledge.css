@@ -13,7 +13,8 @@
 }
 .term {
   font-family: var(--font-hanmun);
-  font-size: 14.5px;
+  font-size: 16px;
+  line-height: 1.7;
 }
 .tbl td {
   vertical-align: top;
@@ -22,7 +23,7 @@
   display: flex;
   gap: 8px;
   align-items: flex-start;
-  padding: 6px 8px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 5px;
   font-size: 12px;
@@ -34,8 +35,9 @@
 .detail {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   font-size: 12.5px;
+  line-height: 1.75;
 }
 .rules {
   margin: 0;
@@ -44,8 +46,24 @@
   color: var(--muted);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+  line-height: 1.7;
 }
 .rules b {
   color: var(--fg);
+}
+
+#ktabs { flex-shrink: 0; }
+#ktabs button { padding-inline: 12px; }
+#scopeBar { flex-wrap: wrap; gap: 8px; }
+#scopeBar .input { max-width: 100%; }
+#scopeBar .select, #scopeBar .btn { flex-shrink: 0; }
+#scopeNote { flex: 1 1 180px; line-height: 1.5; }
+.tbl tbody tr.is-active td:first-child { box-shadow: inset 2px 0 var(--accent); }
+.tbl tbody tr:focus-visible { outline-offset: -2px; }
+.empty { line-height: 1.8; }
+.knowledge-save-state { margin-top: 12px; min-height: 16px; color: var(--muted); font-size: 10.5px; text-align: right; }
+
+@media (max-width: 1120px) {
+  #ktabs button { padding-inline: 8px; }
 }

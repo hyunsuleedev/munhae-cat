@@ -1,8 +1,9 @@
 import type { DocumentListItem, HomeView, NodeContextView } from "../../shared/munhae-api";
 import {
-  bindSidebar, defaultSidebarTree, esc, go, initShell, must, notify,
+  bindSidebar, currentDocId, defaultSidebarTree, esc, go, initShell, must, notify,
   renderSidebar, requireProject, revealSidebarNode, setSelfTitle, shortPath, unwrap,
 } from "./shared";
+import { resolveContextNode } from "./context-node";
 
 const project = await requireProject();
 if (!project) throw new Error("redirect");
@@ -202,7 +203,7 @@ async function boot(): Promise<void> {
     if (!home || !knowledge) throw new Error("문맥을 불러오지 못했습니다. 페이지를 다시 열어 주세요.");
     docs = home.documents;
     const requestedId = new URLSearchParams(location.search).get("node");
-    node = requestedId ? docs.find((document) => document.id === requestedId) : docs.find((document) => document.isMaster);
+    node = resolveContextNode(docs, requestedId, currentDocId());
     if (!node) throw new Error("이 문서를 찾을 수 없습니다. 사이드바에서 문서를 선택해 주세요.");
     history.replaceState(null, "", `context.html?node=${encodeURIComponent(node.id)}`);
     const title = node.originalTitle || node.title;
@@ -230,7 +231,9 @@ async function boot(): Promise<void> {
     const inherited = ancestors.flatMap((ancestor) => knowledge.contextItems.filter((item) => item.scopeId === ancestor.id));
     must("#inheritedCount").textContent = String(inherited.length);
     must("#inheritedContexts").innerHTML = inherited.map((item) => referenceHtml(item, true)).join("")
-      || '<div class="context-empty"><span aria-hidden="true">↳</span><b>여기서 시작하는 문맥</b><p>상위 문서에 등록된 문맥이 없습니다.</p></div>';
+      || (ancestors.length === 0
+        ? '<div class="context-empty"><span aria-hidden="true">↳</span><b>프로젝트 최상위 문서</b><p>상속받을 상위 문서가 없습니다. 여기서 작성한 문맥은 하위 문서에 적용됩니다.</p></div>'
+        : '<div class="context-empty"><span aria-hidden="true">↳</span><b>상속된 문맥이 없습니다</b><p>상위 문서에 등록된 문맥이 없습니다.</p></div>');
     must("#openSource").hidden = node.nodeRole !== "source_unit";
     revealSidebarNode(docs, node.id);
     renderSidebar(defaultSidebarTree(docs), { currentDocId: node.id });

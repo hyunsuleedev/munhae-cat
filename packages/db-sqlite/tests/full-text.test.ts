@@ -313,3 +313,182 @@ it("refuses to silently rebase a manual translation onto changed source", () => 
   expect(()=>repo.saveTranslationDraft({documentNodeId:id,textContent:"이전 원문을 보고 편집한 번역",blocks:[],expectedLockVersion:before.translation!.lockVersion})).toThrow(/원문이 변경/);
   expect(repo.getEditor(id).translation!.versionId).toBe(before.translation!.versionId);
 });
+
+it("carries exact unchanged many-to-many links across shifted IDs and persists them without altering history", () => {
+  const { repo, id } = setup();
+  const { result } = translate(repo, id, "첫 문장.\n\n둘째 문장.\n셋째 문장.");
+  const versionId = result.version.versionId;
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 1, versionId, links: [
+    { sentenceId: "T1", quotes: [{ text: "學而時習之不亦說乎", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T2", quotes: [{ text: "有朋自遠方來不亦樂乎", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T3", quotes: [{ text: "學而", occurrence: 1 }, { text: "有朋", occurrence: 1 }], needsReview: true },
+  ] }));
+  const before = repo.getEditor(id).translation!;
+  const text = "고친 첫 문장.\n추가한 문장.\n\n둘째 문장.\n셋째 문장.";
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: text, blocks: [], expectedLockVersion: before.lockVersion });
+  const saved = repo.getEditor(id).translation!;
+  expect(saved.textLayout?.sentences).toEqual(textSentences(text));
+  expect(saved.textLayout?.links).toEqual([
+    { sentenceId: "T1", spans: [], needsReview: true },
+    { sentenceId: "T2", spans: [], needsReview: true },
+    { ...before.textLayout!.links[1], sentenceId: "T3" },
+    { ...before.textLayout!.links[2], sentenceId: "T4" },
+  ]);
+  expect(saved.textLayout?.state).toBe("needs_review");
+  expect(repo.getDocumentHistory(id).entries.find((entry) => entry.versionId === versionId)?.contentText).toBe(before.textContent);
+  const db = openSqlite(sqlitePath(repo.packagePath));
+  try {
+    const original = db.prepare("SELECT links_json FROM translation_text_layouts WHERE version_id=?").get(versionId) as { links_json: string };
+    expect(JSON.parse(original.links_json)).toEqual(before.textLayout!.links);
+  } finally { db.close(); }
+  repo.close();
+  const reopened = openProject(repo.packagePath);
+  try { expect(reopened.getEditor(id).translation?.textLayout).toEqual(saved.textLayout); }
+  finally { reopened.close(); }
+});
+
+it("preserves repeated sentence links when revising an unchanged confirmed translation", () => {
+  const { repo, id } = setup();
+  const { result } = translate(repo, id, "같다.\n같다.");
+  const versionId = result.version.versionId;
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 1, versionId, links: [
+    { sentenceId: "T1", quotes: [{ text: "學而時習之不亦說乎", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T2", quotes: [{ text: "有朋自遠方來不亦樂乎", occurrence: 1 }], needsReview: false },
+  ] }));
+  repo.confirmTranslation({ documentNodeId: id, expectedLockVersion: repo.getEditor(id).translation!.lockVersion });
+  const confirmed = repo.getEditor(id).translation!;
+  repo.reviseTranslation({ documentNodeId: id, expectedLockVersion: confirmed.lockVersion });
+  const draft = repo.getEditor(id).translation!;
+  expect(draft.versionId).not.toBe(versionId);
+  expect(draft.state).toBe("draft");
+  expect(draft.textLayout).toEqual(confirmed.textLayout);
+  expect(draft.textLayout?.state).toBe("ready");
+  expect(repo.getDocumentHistory(id).entries.find((entry) => entry.versionId === versionId)?.state).toBe("confirmed");
+});
+
+it("leaves repeated sentences unlinked after an ambiguous deletion", () => {
+  const { repo, id } = setup();
+  const { result } = translate(repo, id, "같다.\n같다.\n고유하다.");
+  const versionId = result.version.versionId;
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 1, versionId, links: [
+    { sentenceId: "T1", quotes: [{ text: "學而", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T2", quotes: [{ text: "時習之不亦說乎", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T3", quotes: [{ text: "有朋自遠方來不亦樂乎", occurrence: 1 }], needsReview: false },
+  ] }));
+  const before = repo.getEditor(id).translation!;
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: "같다.\n고유하다.", blocks: [], expectedLockVersion: before.lockVersion });
+  expect(repo.getEditor(id).translation?.textLayout?.links).toEqual([
+    { sentenceId: "T1", spans: [], needsReview: true },
+    { ...before.textLayout!.links[2], sentenceId: "T2" },
+  ]);
+});
+
+it("keeps missing source coverage visible after deleting a uniquely linked sentence", () => {
+  const { repo, id } = setup();
+  const { result } = translate(repo, id, "첫 문장.\n둘째 문장.");
+  const versionId = result.version.versionId;
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 1, versionId, links: [
+    { sentenceId: "T1", quotes: [{ text: "學而時習之不亦說乎", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T2", quotes: [{ text: "有朋自遠方來不亦樂乎", occurrence: 1 }], needsReview: false },
+  ] }));
+  const before = repo.getEditor(id).translation!;
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: "둘째 문장.", blocks: [], expectedLockVersion: before.lockVersion });
+  const saved = repo.getEditor(id).translation!;
+  expect(saved.textLayout?.links).toEqual([{ ...before.textLayout!.links[1], sentenceId: "T1" }]);
+  expect(saved.textLayout?.state).toBe("needs_review");
+  expect(saved.textLayout?.error).toMatch(/연결되지 않은 원문/);
+});
+
+it("persists human many-to-many corrections with exact Unicode ranges while keeping confirmed text and history immutable", () => {
+  const { repo, id } = setup();
+  repo.saveSourceDraft({ documentNodeId: id, contentText: "𠀀甲乙甲乙", originKind: "manual", expectedLockVersion: repo.getEditor(id).source.lockVersion });
+  translate(repo, id, "하나.\n둘.");
+  repo.confirmTranslation({ documentNodeId: id, expectedLockVersion: repo.getEditor(id).translation!.lockVersion });
+  const before = repo.getEditor(id).translation!, history = repo.getDocumentHistory(id);
+  const first = repo.saveSentenceLink({ documentNodeId: id, versionId: before.versionId, sentenceId: "T1",
+    spans: [{ from: 0, to: 1, quote: "𠀀" }, { from: 3, to: 5, quote: "甲乙" }], expectedLockVersion: before.lockVersion }).translation!;
+  expect(first.textLayout?.links).toEqual([
+    { sentenceId: "T1", spans: [{ from: 0, to: 1, quote: "𠀀" }, { from: 3, to: 5, quote: "甲乙" }], needsReview: false, reviewedBy: "human" },
+    { sentenceId: "T2", spans: [], needsReview: true },
+  ]);
+  expect(first.textLayout?.state).toBe("needs_review");
+  const saved = repo.saveSentenceLink({ documentNodeId: id, versionId: before.versionId, sentenceId: "T2",
+    spans: [{ from: 1, to: 5, quote: "甲乙甲乙" }], expectedLockVersion: first.lockVersion }).translation!;
+  expect(saved.textLayout?.state).toBe("ready");
+  expect(saved.textLayout?.error).toBeNull();
+  expect(saved.lockVersion).toBe(before.lockVersion + 2);
+  expect(saved.versionId).toBe(before.versionId);
+  expect(saved.textContent).toBe(before.textContent);
+  expect(saved.state).toBe("confirmed");
+  expect(repo.getDocumentHistory(id)).toEqual(history);
+  repo.close();
+  const reopened = openProject(repo.packagePath);
+  try { expect(reopened.getEditor(id).translation?.textLayout).toEqual(saved.textLayout); }
+  finally { reopened.close(); }
+});
+
+it("rejects invalid manual quotes and stale locks without partially changing a layout", () => {
+  const { repo, id } = setup();
+  translate(repo, id);
+  const before = repo.getEditor(id).translation!;
+  const input = { documentNodeId: id, versionId: before.versionId, sentenceId: "T1", spans: [{ from: 0, to: 2, quote: "學而" }], expectedLockVersion: before.lockVersion };
+  for (const invalid of [
+    { spans: [] }, { spans: [{ from: -1, to: 1, quote: "學而" }] },
+    { spans: [{ from: 0, to: 99, quote: repo.getEditor(id).source.contentText }] },
+    { spans: [{ from: 0, to: 2, quote: "時習" }] },
+    { spans: [{ from: 0.5, to: 2, quote: "學而" }] },
+    { sentenceId: "T999" }, { versionId: "another-version" }, { expectedLockVersion: 0 },
+  ]) {
+    expect(() => repo.saveSentenceLink({ ...input, ...invalid })).toThrow();
+    expect(repo.getEditor(id).translation).toEqual(before);
+  }
+  repo.saveSentenceLink(input);
+  expect(() => repo.saveSentenceLink(input)).toThrow(/번역안이 변경/);
+  const current = repo.getEditor(id).translation!;
+  repo.saveSourceDraft({ documentNodeId: id, contentText: "새 원문", originKind: "manual", expectedLockVersion: repo.getEditor(id).source.lockVersion });
+  expect(() => repo.saveSentenceLink({ ...input, expectedLockVersion: current.lockVersion })).toThrow(/원문 또는 번역/);
+  expect(repo.getEditor(id).translation?.textLayout).toEqual(current.textLayout);
+});
+
+it("does not accept a version from another document or the previous translation head", () => {
+  const { repo, id } = setup();
+  translate(repo, id);
+  const before = repo.getEditor(id).translation!;
+  const input = { documentNodeId: id, versionId: before.versionId, sentenceId: "T1", spans: [{ from: 0, to: 2, quote: "學而" }], expectedLockVersion: before.lockVersion };
+  const other = repo.createDocument({ title: "다른 문서", nodeRole: "source_unit", sourceText: "學而", originKind: "paste", parentId: null });
+  translate(repo, other.id);
+  expect(() => repo.saveSentenceLink({ ...input, documentNodeId: other.id })).toThrow(/원문 또는 번역/);
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: before.textContent + " 새 문장.", blocks: [], expectedLockVersion: before.lockVersion });
+  expect(() => repo.saveSentenceLink({ ...input, expectedLockVersion: repo.getEditor(id).translation!.lockVersion })).toThrow(/원문 또는 번역/);
+});
+
+it("waits for active automatic alignment and preserves human corrections when AI is rerun", () => {
+  const { repo, id } = setup();
+  const { result } = translate(repo, id);
+  const versionId = result.version.versionId;
+  const input = { documentNodeId: id, versionId, sentenceId: "T1", spans: [{ from: 0, to: 2, quote: "學而" }], expectedLockVersion: repo.getEditor(id).translation!.lockVersion };
+  repo.prepareAlignment(versionId);
+  expect(() => repo.saveSentenceLink(input)).toThrow(/자동 원문 연결/);
+  repo.failAlignment(versionId, "취소됨");
+  repo.saveSentenceLink(input);
+  const corrected = repo.getEditor(id).translation!.textLayout!.links[0];
+  repo.prepareAlignment(versionId);
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 1, versionId, links: [
+    { sentenceId: "T1", quotes: [{ text: "學而時習之不亦說乎", occurrence: 1 }], needsReview: false },
+    { sentenceId: "T2", quotes: [{ text: "時習之不亦說乎有朋自遠方來不亦樂乎", occurrence: 1 }], needsReview: false },
+  ] }));
+  expect(repo.getEditor(id).translation!.textLayout!.links[0]).toEqual(corrected);
+  expect(repo.getEditor(id).translation!.textLayout!.links[1]?.reviewedBy).toBeUndefined();
+});
+
+it("carries human correspondence confirmation only while the matched translation sentence is unchanged", () => {
+  const { repo, id } = setup();
+  translate(repo, id, "첫 문장.\n둘째 문장.");
+  const before = repo.getEditor(id).translation!;
+  repo.saveSentenceLink({ documentNodeId: id, versionId: before.versionId, sentenceId: "T2", spans: [{ from: 0, to: 2, quote: "學而" }], expectedLockVersion: before.lockVersion });
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: "새 문장.\n첫 문장.\n둘째 문장.", blocks: [], expectedLockVersion: repo.getEditor(id).translation!.lockVersion });
+  const carried = repo.getEditor(id).translation!;
+  expect(carried.textLayout?.links[2]).toMatchObject({ sentenceId: "T3", reviewedBy: "human", needsReview: false });
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: "새 문장.\n첫 문장.\n고친 둘째 문장.", blocks: [], expectedLockVersion: carried.lockVersion });
+  expect(repo.getEditor(id).translation!.textLayout!.links[2]).toEqual({ sentenceId: "T3", spans: [], needsReview: true });
+});

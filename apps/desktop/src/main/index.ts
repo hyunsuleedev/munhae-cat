@@ -21,12 +21,14 @@ import {
   focusMainWindow,
   getMainWindow,
   prepareMainWindowForProjectSwitch,
+  prepareMainWindowForQuit,
   showProjectHome,
 } from "./window";
 import { cancelAllAiRuns } from "./ai-runs";
 import { shutdownAgentRuntime } from "./agent-runtime-client";
 import { stopAgentToolBridge } from "./agent-tool-bridge";
 import { initAccount, shutdownAccount } from "./auth";
+import { createQuitHandler } from "./quit-lifecycle";
 
 app.setName("Munhae Studio");
 
@@ -41,7 +43,6 @@ function boot(): void {
   let queuedOpen: string | null = projectPathFromArgv(process.argv);
   let readyForExternalOpen = false;
   let openQueue = Promise.resolve();
-  let shuttingDown = false;
 
   const enqueueExternalOpen = (filePath: string): void => {
     openQueue = openQueue.then(() => openFromOs(filePath));
@@ -112,19 +113,24 @@ function boot(): void {
     if (process.platform !== "darwin") app.quit();
   });
 
-  app.on("before-quit", (event) => {
-    if (shuttingDown) return;
-    event.preventDefault();
-    shuttingDown = true;
-    stopBrowserBridge();
-    void (async () => {
+  const handleQuit = createQuitHandler({
+    prepare: prepareMainWindowForQuit,
+    shutdown: async () => {
+      stopBrowserBridge();
       await cancelAllAiRuns();
       await shutdownAgentRuntime();
       await stopAgentToolBridge();
       shutdownSession();
       shutdownAccount();
-      app.quit();
-    })();
+    },
+    quit: () => app.quit(),
+    onError: (error) => {
+      log.error("app shutdown failed", { name: error instanceof Error ? error.name : "unknown" });
+      focusMainWindow();
+    },
+  });
+  app.on("before-quit", (event) => {
+    void handleQuit(event);
   });
 
   process.on("uncaughtException", (error) => {

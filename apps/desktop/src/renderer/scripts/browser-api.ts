@@ -79,6 +79,7 @@ export function createBrowserApi(): MunhaeApi {
       getHistory: (documentNodeId) => invoke(IPC_CHANNELS.editorGetHistory, documentNodeId),
       compareVersions: (input) => invoke(IPC_CHANNELS.editorCompareVersions, input),
       listReviewComments: (documentNodeId) => invoke(IPC_CHANNELS.editorListReviewComments, documentNodeId),
+      saveSentenceLink: (input) => invoke(IPC_CHANNELS.editorSaveSentenceLink, input),
       createReviewComment: (input) => invoke(IPC_CHANNELS.editorCreateReviewComment, input),
       updateReviewComment: (input) => invoke(IPC_CHANNELS.editorUpdateReviewComment, input),
       archiveReviewComment: (input) => invoke(IPC_CHANNELS.editorArchiveReviewComment, input),
@@ -87,6 +88,9 @@ export function createBrowserApi(): MunhaeApi {
         invoke(IPC_CHANNELS.editorReadReference, documentNodeId, assetId),
       openReference: (documentNodeId, assetId) =>
         invoke(IPC_CHANNELS.editorOpenReference, documentNodeId, assetId),
+    },
+    research: {
+      searchFootnotes: (input) => invoke(IPC_CHANNELS.researchSearchFootnotes, input),
     },
     knowledge: {
       get: () => invoke(IPC_CHANNELS.knowledgeGet),

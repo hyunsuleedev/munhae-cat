@@ -86,6 +86,7 @@ const api = {
     listReviewComments: (documentNodeId) =>
       ipcRenderer.invoke(IPC_CHANNELS.editorListReviewComments, documentNodeId),
     createReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorCreateReviewComment, input),
+    saveSentenceLink: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorSaveSentenceLink, input),
     updateReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorUpdateReviewComment, input),
     archiveReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorArchiveReviewComment, input),
     attachReference: (documentNodeId) =>
@@ -94,6 +95,9 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.editorReadReference, documentNodeId, assetId),
     openReference: (documentNodeId, assetId) =>
       ipcRenderer.invoke(IPC_CHANNELS.editorOpenReference, documentNodeId, assetId),
+  },
+  research: {
+    searchFootnotes: (input) => ipcRenderer.invoke(IPC_CHANNELS.researchSearchFootnotes, input),
   },
   knowledge: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.knowledgeGet),

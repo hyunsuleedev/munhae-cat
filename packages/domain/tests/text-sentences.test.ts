@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { replaceTextSentence, textSentences } from "../src/text-sentences.ts";
+import { matchUnchangedTextSentences, replaceTextSentence, textSentences } from "../src/text-sentences.ts";
 
 describe("sentence translation editing", () => {
   it("preserves paragraph gaps, spaces, and supplementary characters across consecutive edits", () => {
@@ -24,5 +24,24 @@ describe("sentence translation editing", () => {
   it("segments decimals and quoted endings consistently after saving", () => {
     const sentences = textSentences('값은 3.14이다. “그렇다!”\n\n다음 줄。');
     expect(sentences.map((sentence) => sentence.text)).toEqual(['값은 3.14이다.', ' “그렇다!”', '다음 줄。']);
+  });
+});
+
+describe("unchanged sentence matching", () => {
+  it("matches exact unique sentences after insertion and reordering without relying on IDs", () => {
+    const previous = textSentences("첫 𠮷 문장.\n둘째 문장.\n셋째 문장.");
+    const next = textSentences("새 문장.\n셋째 문장.\n고친 첫 문장.\n둘째 문장.");
+    expect([...matchUnchangedTextSentences(previous, next)]).toEqual([["T2", "T3"], ["T4", "T2"]]);
+  });
+
+  it.each<[string, string, Array<[string, string]>]>([
+    ["같다.\n같다.\n고유하다.", "같다.\n고유하다.", [["T2", "T3"]]],
+    ["같다.\n고유하다.", "같다.\n같다.\n고유하다.", [["T3", "T2"]]],
+  ])("does not guess which repeated sentence survived", (previous, next, expected) => {
+    expect([...matchUnchangedTextSentences(textSentences(previous), textSentences(next))]).toEqual(expected);
+  });
+
+  it("does not normalize spaces or punctuation when inferring unchanged content", () => {
+    expect([...matchUnchangedTextSentences(textSentences("옛 문장.\n둘째 문장!"), textSentences("옛  문장.\n둘째 문장?"))]).toEqual([]);
   });
 });

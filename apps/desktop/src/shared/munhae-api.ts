@@ -60,6 +60,7 @@ export const IPC_CHANNELS = {
   editorGetHistory: "munhae:editor:getHistory",
   editorCompareVersions: "munhae:editor:compareVersions",
   editorListReviewComments: "munhae:editor:listReviewComments",
+  editorSaveSentenceLink: "munhae:editor:saveSentenceLink",
   editorCreateReviewComment: "munhae:editor:createReviewComment",
   editorUpdateReviewComment: "munhae:editor:updateReviewComment",
   editorArchiveReviewComment: "munhae:editor:archiveReviewComment",
@@ -81,6 +82,7 @@ export const IPC_CHANNELS = {
   knowledgeResolveUncertainty: "munhae:knowledge:resolveUncertainty",
 
   contextPreview: "munhae:context:preview",
+  researchSearchFootnotes: "munhae:research:searchFootnotes",
 
   aiStartTranslation: "munhae:ai:startTranslation",
   aiStartChat: "munhae:ai:startChat",
@@ -361,7 +363,7 @@ export type EditorView = {
     textLayout?: {
       state: "pending" | "running" | "ready" | "needs_review" | "failed";
       sentences: Array<{ id: string; from: number; to: number; text: string }>;
-      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean }>;
+      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
       error: string | null;
     };
     originKind: string;
@@ -457,6 +459,13 @@ export type ReviewCommentView = {
 };
 
 export type CreateReviewCommentInput = Omit<ReviewCommentView, "id" | "lockVersion" | "createdAt" | "updatedAt">;
+export type SaveSentenceLinkInput = {
+  documentNodeId: string;
+  versionId: string;
+  sentenceId: string;
+  spans: Array<{ from: number; to: number; quote: string }>;
+  expectedLockVersion: number;
+};
 export type UpdateReviewCommentInput = { id: string; bodyMd: string; expectedLockVersion: number };
 export type ArchiveReviewCommentInput = { id: string; expectedLockVersion: number };
 
@@ -877,6 +886,35 @@ export type AccountSignUpInput = AccountCredentials & { displayName: string };
 export type AccountVerifyInput = { email: string; code: string; purpose: "signup" | "recovery" };
 export type AccountPasswordInput = { password: string; currentPassword?: string };
 
+export type ItkcFootnoteSearchInput = {
+  query: string;
+  mode: "target" | "content";
+  start?: number;
+};
+
+export type ItkcFootnote = {
+  id: string;
+  annotatedText: string;
+  displayTitle: string;
+  bodyText: string;
+  bookTitle: string;
+  translator: string;
+  publisher: string;
+  year: string;
+  sourceUrl: string;
+};
+
+export type ItkcFootnoteSearchResult = {
+  query: string;
+  mode: "target" | "content";
+  searchMode: "annotated-text" | "all-text";
+  total: number;
+  start: number;
+  pageSize: 10;
+  hasMore: boolean;
+  items: ItkcFootnote[];
+};
+
 export type MunhaeApi = {
   auth: {
     getState(): Promise<IpcResult<AccountState>>;
@@ -937,6 +975,7 @@ export type MunhaeApi = {
     getHistory(documentNodeId: string): Promise<IpcResult<DocumentHistoryView>>;
     compareVersions(input: VersionDiffInput): Promise<IpcResult<VersionDiffView>>;
     listReviewComments(documentNodeId: string): Promise<IpcResult<ReviewCommentView[]>>;
+    saveSentenceLink(input: SaveSentenceLinkInput): Promise<IpcResult<EditorView>>;
     createReviewComment(input: CreateReviewCommentInput): Promise<IpcResult<ReviewCommentView>>;
     updateReviewComment(input: UpdateReviewCommentInput): Promise<IpcResult<ReviewCommentView>>;
     archiveReviewComment(input: ArchiveReviewCommentInput): Promise<IpcResult<void>>;
@@ -960,6 +999,9 @@ export type MunhaeApi = {
   };
   context: {
     preview(input: ContextPreviewInput): Promise<IpcResult<ContextPreview>>;
+  };
+  research: {
+    searchFootnotes(input: ItkcFootnoteSearchInput): Promise<IpcResult<ItkcFootnoteSearchResult>>;
   };
   ai: {
     startTranslation(input: StartTranslationInput): Promise<IpcResult<AiRunView>>;

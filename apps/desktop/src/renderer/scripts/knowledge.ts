@@ -29,6 +29,7 @@ const project = await requireProject();
 if (!project) throw new Error("redirect");
 
 type Tab = "glossary" | "persons" | "places" | "uncertainty" | "context";
+const TABS: readonly Tab[] = ["glossary", "persons", "places", "uncertainty", "context"];
 
 const NOTES: Record<Tab, string> = {
   glossary: "프로젝트 공통 사전 · 현재 문서 원문과 정확히 일치할 때만 자동 적용",
@@ -52,13 +53,96 @@ const api = initShell({
   selfTitle: `공통 지식 — ${project.title}`,
   pageCmd,
   pageKeys,
+  beforeNavigate: () => {
+    if (!canLeaveKnowledge()) return false;
+    allowUnload = true;
+    return true;
+  },
+  projectTransition: {
+    before: () => canLeaveKnowledge(),
+    committed: () => { allowUnload = true; },
+  },
 }).api;
 
 let data: KnowledgeView = { glossary: [], persons: [], places: [], uncertainties: [], contextItems: [] };
 let docs: DocumentListItem[] = [];
-let tab: Tab = location.hash === "#uncertainty" ? "uncertainty" : location.hash === "#context" ? "context" : "glossary";
+const requestedTab = location.hash.slice(1) as Tab;
+let tab: Tab = TABS.includes(requestedTab) ? requestedTab : "glossary";
 let active: string | null = null;
 let selectedNodeId: string | null = null;
+let detailBaseline = "";
+let addBaseline = "";
+let detailSaving = false;
+let addSaving = false;
+let allowUnload = false;
+
+function formSnapshot(selector: string): string {
+  return JSON.stringify($$<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    `${selector} input, ${selector} textarea, ${selector} select`,
+  ).map((field) => [field.id || field.name, field.value, field instanceof HTMLInputElement ? field.checked : null]));
+}
+
+function detailIsDirty(): boolean {
+  return detailBaseline !== "" && formSnapshot("#detail") !== detailBaseline;
+}
+
+function addIsDirty(): boolean {
+  return must<HTMLDialogElement>("#dlgAdd").open && formSnapshot("#addFields") !== addBaseline;
+}
+
+function canLeaveKnowledge(): boolean {
+  if (detailSaving || addSaving) {
+    notify("작업을 마치는 중입니다. 잠시 뒤 다시 시도해 주세요.", "공통 지식");
+    return false;
+  }
+  return (!detailIsDirty() && !addIsDirty())
+    || window.confirm("저장하지 않은 변경이 있습니다. 변경을 버리고 이동하시겠습니까?");
+}
+
+function updateDetailState(): void {
+  const status = $("#knowledgeSaveStatus");
+  if (status) status.textContent = detailSaving ? "저장 중…" : detailIsDirty() ? "저장하지 않은 변경" : "저장됨";
+  const save = $<HTMLButtonElement>("#dSave, #cSave, #uSave, #mSave");
+  if (save) save.disabled = detailSaving || !detailIsDirty();
+}
+
+function trackDetail(): void {
+  detailBaseline = formSnapshot("#detail");
+  if ($("#dSave, #cSave, #uSave, #mSave")) {
+    const status = document.createElement("p");
+    status.id = "knowledgeSaveStatus";
+    status.className = "knowledge-save-state";
+    status.setAttribute("role", "status");
+    must("#detail").append(status);
+  }
+  updateDetailState();
+}
+
+function clearDetail(): void {
+  active = null;
+  detailBaseline = "";
+  must("#detailMeta").textContent = "행을 선택하세요";
+  must("#sbSel").textContent = "";
+  must("#detail").innerHTML = '<p class="muted">항목을 선택하면 내용을 보고 편집할 수 있습니다.</p>';
+}
+
+async function runDetailOperation(operation: () => Promise<void>): Promise<void> {
+  if (detailSaving || addSaving) return;
+  detailSaving = true;
+  must("#detail").inert = true;
+  must("#detail").setAttribute("aria-busy", "true");
+  updateDetailState();
+  try {
+    await operation();
+  } catch {
+    notify("작업을 완료하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도해 주세요.", "공통 지식");
+  } finally {
+    detailSaving = false;
+    must("#detail").inert = false;
+    must("#detail").removeAttribute("aria-busy");
+    updateDetailState();
+  }
+}
 
 function tree() {
   return defaultSidebarTree(docs);
@@ -75,8 +159,18 @@ function stTag(st: GlossaryEntryView["usageStatus"]): string {
 }
 
 function setTab(t: Tab): void {
+  if (!TABS.includes(t)) return;
+  if (t !== tab) {
+    if (!canLeaveKnowledge()) return;
+    clearDetail();
+  }
   tab = t;
-  $$("#ktabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
+  history.replaceState(history.state, "", `${location.pathname}${location.search}#${t}`);
+  $$("#ktabs button").forEach((b) => {
+    b.setAttribute("aria-selected", String(b.dataset.tab === t));
+    b.setAttribute("aria-controls", `p-${b.dataset.tab}`);
+    b.tabIndex = b.dataset.tab === t ? 0 : -1;
+  });
   $$(".panel").forEach((p) => p.classList.toggle("is-open", p.id === `p-${t}`));
   const g = t === "glossary";
   must("#btnAdd").hidden = false;
@@ -94,6 +188,7 @@ function setTab(t: Tab): void {
   renderSidebar(tree(), { currentDocId: t === "context" ? selectedNodeId : null, currentTab: t });
   if (t === "glossary") renderGlossary();
   if (t === "context") renderContext();
+  if (t === "persons" || t === "places" || t === "uncertainty") renderOthers();
 }
 
 function renderGlossary(): void {
@@ -217,7 +312,10 @@ function showContext(item: EffectiveContext): void {
         <p style="white-space:pre-wrap;line-height:1.65">${esc(item.contentMd)}</p>
         <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="dEditMetadata" type="button">문서 정보 편집</button></div>
       </div>`;
-    must("#dEditMetadata").addEventListener("click", () => void showDocumentMetadata(item.scopeId));
+    trackDetail();
+    must("#dEditMetadata").addEventListener("click", () => {
+      if (canLeaveKnowledge()) void runDetailOperation(() => showDocumentMetadata(item.scopeId));
+    });
     return;
   }
   must("#detail").innerHTML = `<div class="detail">
@@ -228,8 +326,14 @@ function showContext(item: EffectiveContext): void {
       <label style="align-self:center"><input type="checkbox" id="cEnabled" ${item.enabled ? "checked" : ""}> AI 요청에 자동 포함</label></div>
       <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="cArchive" type="button">보관</button><button class="btn btn-primary btn-sm" id="cSave" type="button">저장 <kbd>⌘S</kbd></button></div>
     </div>`;
-  must("#cSave").addEventListener("click", () => void saveContext(item));
-  must("#cArchive").addEventListener("click", () => void archiveContext(item));
+  trackDetail();
+  must("#cSave").addEventListener("click", () => void runDetailOperation(() => saveContext(item)));
+  must("#cArchive").addEventListener("click", () => {
+    if (!canLeaveKnowledge()) return;
+    if (window.confirm(`‘${item.title}’ 문맥을 보관하시겠습니까? 앞으로의 AI 요청에서 제외됩니다.`)) {
+      void runDetailOperation(() => archiveContext(item));
+    }
+  });
 }
 
 async function saveContext(item: EffectiveContext): Promise<void> {
@@ -261,9 +365,9 @@ async function archiveContext(item: EffectiveContext): Promise<void> {
     return;
   }
   data.contextItems = data.contextItems.filter((candidate) => candidate.id !== item.id);
-  active = null;
+  clearDetail();
   renderContext();
-  must("#detail").innerHTML = '<p class="muted">문맥 카드를 보관했습니다. 과거 AI 실행의 request manifest는 유지됩니다.</p>';
+  must("#detail").innerHTML = '<p class="muted">문맥을 보관했습니다. 이전 번역 작업의 기록은 유지됩니다.</p>';
   notify(`${item.title} 보관`, "문맥 카드");
 }
 
@@ -285,7 +389,8 @@ async function showDocumentMetadata(nodeId: string): Promise<void> {
       <div class="field"><label for="mDescription">설명</label><textarea class="textarea" id="mDescription">${esc(metadata.descriptionMd ?? "")}</textarea></div>
       <div class="row" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" id="mSave" type="button">문서 정보 저장</button></div>
     </div>`;
-  must("#mSave").addEventListener("click", () => void (async () => {
+  trackDetail();
+  must("#mSave").addEventListener("click", () => void runDetailOperation(async () => {
     const save = await api.home.updateDocumentMetadata({
       documentNodeId: metadata.id,
       title: metadata.isMaster ? metadata.title : must<HTMLInputElement>("#mTitle").value.trim(),
@@ -300,13 +405,17 @@ async function showDocumentMetadata(nodeId: string): Promise<void> {
     });
     const saved = unwrap(save, "문서 정보");
     if (!saved) return;
+    docs = docs.map((document) => document.id === saved.id
+      ? { ...document, title: saved.title, originalTitle: saved.originalTitle }
+      : document);
+    renderSidebar(tree(), { currentDocId: selectedNodeId, currentTab: tab });
     const refreshed = await api.knowledge.get();
     const knowledge = unwrap(refreshed, "공통 지식");
     if (knowledge) data = knowledge;
     renderContext();
     await showDocumentMetadata(saved.id);
     notify(`${saved.title} 정보 저장`, "문서 정보");
-  })());
+  }));
 }
 
 function showGlossary(g: GlossaryEntryView): void {
@@ -320,21 +429,22 @@ function showGlossary(g: GlossaryEntryView): void {
       <div class="field"><label for="dSt">사용 상태</label><select class="select" id="dSt">${["preferred", "allowed", "forbidden"].map((s) => `<option ${g.usageStatus === s ? "selected" : ""}>${s}</option>`).join("")}</select></div>
       <div class="field"><label for="dNote">메모</label><textarea class="textarea" id="dNote">${esc(g.noteMd ?? "")}</textarea></div>
       <dl class="kv"><dt>종류</dt><dd class="mono">${esc(g.termKind)}</dd><dt>locale</dt><dd class="mono">${esc(g.targetLocale)}</dd></dl>
-      <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="dArchive" type="button">보관</button><button class="btn btn-primary btn-sm" id="dSave" type="button">저장 <kbd>⌘S</kbd></button></div>
+      <div class="row" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" id="dSave" type="button">저장 <kbd>⌘S</kbd></button></div>
     </div>`;
-  must("#dSave").addEventListener("click", () => {
-    void saveGlossary(g);
-  });
-  must("#dArchive").addEventListener("click", () => {
-    notify("보관(삭제) API는 아직 없습니다. 항목은 유지됩니다", "용어집");
-  });
+  trackDetail();
+  must("#dSave").addEventListener("click", () => void runDetailOperation(() => saveGlossary(g)));
 }
 
 async function saveGlossary(g: GlossaryEntryView): Promise<void> {
+  const target = must<HTMLInputElement>("#dTgt").value.trim();
+  if (!target) {
+    notify("번역 용어를 입력해 주세요.", "용어집");
+    return;
+  }
   const st = must<HTMLSelectElement>("#dSt").value as GlossaryEntryView["usageStatus"];
   if (
     st === "preferred" &&
-    data.glossary.some((x) => x.id !== g.id && x.sourceTerm === g.sourceTerm && x.usageStatus === "preferred")
+    data.glossary.some((x) => x.id !== g.id && x.sourceTerm === g.sourceTerm && x.targetLocale === g.targetLocale && x.usageStatus === "preferred")
   ) {
     notify(`${g.sourceTerm}에는 이미 preferred 항목이 있습니다. 기존 항목을 allowed로 바꾼 뒤 저장하세요`, "저장 실패");
     return;
@@ -343,7 +453,7 @@ async function saveGlossary(g: GlossaryEntryView): Promise<void> {
     id: g.id,
     expectedLockVersion: g.lockVersion,
     sourceTerm: g.sourceTerm,
-    targetTerm: must<HTMLInputElement>("#dTgt").value.trim() || g.targetTerm,
+    targetTerm: target,
     targetLocale: g.targetLocale,
     termKind: g.termKind,
     reading: g.reading,
@@ -373,12 +483,15 @@ function showPerson(p: PersonView): void {
       <div class="field"><label for="dDesc">설명</label><textarea class="textarea" id="dDesc">${esc(p.descriptionMd ?? "")}</textarea></div>
       <div class="row" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" id="dSave" type="button">저장 <kbd>⌘S</kbd></button></div>
     </div>`;
+  trackDetail();
   must("#dSave").addEventListener("click", () => {
-    void (async () => {
+    void runDetailOperation(async () => {
+      const name = must<HTMLInputElement>("#dName").value.trim();
+      if (!name) { notify("이름을 입력해 주세요.", "인물"); return; }
       const result = await api.knowledge.upsertPerson({
         id: p.id,
         expectedLockVersion: p.lockVersion,
-        preferredName: must<HTMLInputElement>("#dName").value.trim() || p.preferredName,
+        preferredName: name,
         hanjaName: must<HTMLInputElement>("#dHanja").value.trim() || null,
         reading: must<HTMLInputElement>("#dRead").value.trim() || null,
         aliases: must<HTMLInputElement>("#dAlias")
@@ -394,7 +507,7 @@ function showPerson(p: PersonView): void {
       if (i >= 0) data.persons[i] = saved;
       notify(`${saved.preferredName} 저장`, "인물");
       showPerson(saved);
-    })();
+    });
   });
 }
 
@@ -413,12 +526,15 @@ function showPlace(p: PlaceView): void {
       <div class="field"><label for="dDesc">설명</label><textarea class="textarea" id="dDesc">${esc(p.descriptionMd ?? "")}</textarea></div>
       <div class="row" style="justify-content:flex-end"><button class="btn btn-primary btn-sm" id="dSave" type="button">저장 <kbd>⌘S</kbd></button></div>
     </div>`;
+  trackDetail();
   must("#dSave").addEventListener("click", () => {
-    void (async () => {
+    void runDetailOperation(async () => {
+      const name = must<HTMLInputElement>("#dName").value.trim();
+      if (!name) { notify("지명을 입력해 주세요.", "지명"); return; }
       const result = await api.knowledge.upsertPlace({
         id: p.id,
         expectedLockVersion: p.lockVersion,
-        preferredName: must<HTMLInputElement>("#dName").value.trim() || p.preferredName,
+        preferredName: name,
         hanjaName: must<HTMLInputElement>("#dHanja").value.trim() || null,
         reading: must<HTMLInputElement>("#dRead").value.trim() || null,
         aliases: p.aliases,
@@ -432,7 +548,7 @@ function showPlace(p: PlaceView): void {
       if (i >= 0) data.places[i] = saved;
       notify(`${saved.preferredName} 저장`, "지명");
       showPlace(saved);
-    })();
+    });
   });
 }
 
@@ -451,10 +567,16 @@ function showUnc(u: UncertaintyView): void {
       <label><input type="checkbox" id="uBlocking" ${u.blocking ? "checked" : ""}> 해결 전 번역 확정 차단</label>
       <div class="row" style="justify-content:flex-end">${u.state === "open" ? `<button class="btn btn-sm" id="uResolve" type="button">해결로 표시</button><button class="btn btn-primary btn-sm" id="uSave" type="button">새 버전 저장</button>` : '<span class="tag tag-ok">해결</span>'}</div>
     </div>`;
+  if (u.state !== "open") {
+    $$<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("#detail input, #detail textarea, #detail select")
+      .forEach((field) => { field.disabled = true; });
+  }
+  trackDetail();
   $("#uResolve")?.addEventListener("click", () => {
-    void resolveUncertainty(u);
+    if (!canLeaveKnowledge()) return;
+    void runDetailOperation(() => resolveUncertainty(u));
   });
-  $("#uSave")?.addEventListener("click", () => void saveUncertaintyVersion(u));
+  $("#uSave")?.addEventListener("click", () => void runDetailOperation(() => saveUncertaintyVersion(u)));
 }
 
 function replaceUncertainty(saved: UncertaintyView): void {
@@ -557,9 +679,12 @@ function documentOptions(selected: string | null): string {
 }
 
 function openAdd(): void {
+  if (!canLeaveKnowledge()) return;
+  if (detailIsDirty()) clearDetail();
   must("#addTitle").textContent =
     tab === "glossary" ? "용어 추가" : tab === "persons" ? "인물 추가" : tab === "places" ? "지명 추가" : tab === "uncertainty" ? "불확실성 추가" : "문맥 카드 추가";
   must("#addFields").innerHTML = addFieldsHtml();
+  addBaseline = formSnapshot("#addFields");
   (must("#dlgAdd") as HTMLDialogElement).showModal();
 }
 
@@ -591,6 +716,16 @@ must("#ktabs").addEventListener("click", (e) => {
   const b = (e.target as HTMLElement).closest("button");
   if (b instanceof HTMLElement && b.dataset.tab) setTab(b.dataset.tab as Tab);
 });
+must("#ktabs").addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const index = TABS.indexOf(tab);
+  const next = event.key === "Home" ? TABS[0] : event.key === "End" ? TABS[TABS.length - 1]
+    : TABS[(index + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
+  if (!next) return;
+  setTab(next);
+  if (tab === next) $<HTMLButtonElement>(`#ktabs [data-tab="${next}"]`)?.focus();
+});
 ["#q", "#statusSel", "#kindSel"].forEach((s) => {
   $(s)?.addEventListener("input", () => {
     renderGlossary();
@@ -601,35 +736,35 @@ must("#gBody").addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-id]");
   if (tr instanceof HTMLElement && tr.dataset.id) {
     const g = data.glossary.find((x) => x.id === tr.dataset.id);
-    if (g) showGlossary(g);
+    if (g && canLeaveKnowledge()) showGlossary(g);
   }
 });
 must("#pBody").addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-pid]");
   if (tr instanceof HTMLElement && tr.dataset.pid) {
     const p = data.persons.find((x) => x.id === tr.dataset.pid);
-    if (p) showPerson(p);
+    if (p && canLeaveKnowledge()) showPerson(p);
   }
 });
 must("#plBody").addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-plid]");
   if (tr instanceof HTMLElement && tr.dataset.plid) {
     const p = data.places.find((x) => x.id === tr.dataset.plid);
-    if (p) showPlace(p);
+    if (p && canLeaveKnowledge()) showPlace(p);
   }
 });
 must("#uBody").addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-u]");
   if (tr instanceof HTMLElement && tr.dataset.u) {
     const u = data.uncertainties.find((x) => x.id === tr.dataset.u);
-    if (u) showUnc(u);
+    if (u && canLeaveKnowledge()) showUnc(u);
   }
 });
 must("#cBody").addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-cid]");
   if (!(tr instanceof HTMLElement) || !tr.dataset.cid) return;
   const item = contextRows().find((candidate) => candidate.id === tr.dataset.cid);
-  if (item) showContext(item);
+  if (item && canLeaveKnowledge()) showContext(item);
 });
 must("#btnOpenDocument").addEventListener("click", () => {
   const node = selectedNode();
@@ -637,12 +772,24 @@ must("#btnOpenDocument").addEventListener("click", () => {
 });
 must("#btnEditMetadata").addEventListener("click", () => {
   const node = selectedNode();
-  if (node) void showDocumentMetadata(node.id);
+  if (node && canLeaveKnowledge()) void runDetailOperation(() => showDocumentMetadata(node.id));
 });
 must("#btnAdd").addEventListener("click", openAdd);
-must("#addCancel").addEventListener("click", () => (must("#dlgAdd") as HTMLDialogElement).close());
+function canCloseAdd(): boolean {
+  return !addSaving && (!addIsDirty() || window.confirm("입력한 내용을 버리고 닫으시겠습니까?"));
+}
+must("#addCancel").addEventListener("click", () => {
+  if (canCloseAdd()) must<HTMLDialogElement>("#dlgAdd").close();
+});
+must<HTMLDialogElement>("#dlgAdd").addEventListener("cancel", (event) => {
+  if (!canCloseAdd()) event.preventDefault();
+});
 must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
   e.preventDefault();
+  if (addSaving || detailSaving) return;
+  addSaving = true;
+  must("#addForm").inert = true;
+  must("#addForm").setAttribute("aria-busy", "true");
   void (async () => {
     if (tab === "context") {
       const result = await api.knowledge.createContext({
@@ -691,7 +838,7 @@ must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
         | GlossaryEntryView["usageStatus"]
         | undefined;
       if (!src || !tgt) return;
-      if (st === "preferred" && data.glossary.some((x) => x.sourceTerm === src && x.usageStatus === "preferred")) {
+      if (st === "preferred" && data.glossary.some((x) => x.sourceTerm === src && x.targetLocale === "ko" && x.usageStatus === "preferred")) {
         notify(`${src}에는 이미 preferred 항목이 있습니다 (unique 제약)`, "추가 실패");
         return;
       }
@@ -756,10 +903,21 @@ must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
       showPlace(saved);
       notify(`${name} 추가`, "지명");
     }
-  })();
+  })().catch(() => {
+    notify("항목을 추가하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도해 주세요.", "공통 지식");
+  }).finally(() => {
+    addSaving = false;
+    must("#addForm").inert = false;
+    must("#addForm").removeAttribute("aria-busy");
+  });
 });
 document.addEventListener("keydown", (e) => {
   if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.code !== "KeyS") return;
+  if (must<HTMLDialogElement>("#dlgAdd").open) {
+    e.preventDefault();
+    if (!addSaving) must<HTMLFormElement>("#addForm").requestSubmit();
+    return;
+  }
   const save = $("#dSave") ?? $("#cSave") ?? $("#uSave") ?? $("#mSave");
   if (!save) return;
   e.preventDefault();
@@ -768,15 +926,34 @@ document.addEventListener("keydown", (e) => {
 
 bindSidebar(
   (id) => {
+    if (!canLeaveKnowledge()) return;
+    clearDetail();
     selectedNodeId = id;
-    active = null;
     setTab("context");
   },
-  undefined,
+  (nextTab) => setTab(nextTab as Tab),
   tree,
   undefined,
   { selectExpandable: true },
 );
+
+must("#detail").addEventListener("input", updateDetailState);
+must("#detail").addEventListener("change", updateDetailState);
+for (const selector of ["#gBody", "#pBody", "#plBody", "#uBody", "#cBody"]) {
+  must(selector).addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const row = (event.target as HTMLElement).closest<HTMLElement>("tr[tabindex]");
+    if (!row) return;
+    event.preventDefault();
+    row.click();
+  });
+}
+window.addEventListener("beforeunload", (event) => {
+  if (!allowUnload && (detailSaving || addSaving || detailIsDirty() || addIsDirty())) {
+    event.preventDefault();
+    event.returnValue = "";
+  }
+});
 
 async function boot(): Promise<void> {
   const home = await api.home.get();

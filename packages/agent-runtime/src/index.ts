@@ -1778,6 +1778,7 @@ function missingCapabilities(
 type ActiveRun = {
   child: ChildProcessWithoutNullStreams;
   termination: "canceled" | "timeout" | null;
+  terminationPromise: Promise<void> | null;
   absoluteTimer: NodeJS.Timeout | null;
   inactivityTimer: NodeJS.Timeout | null;
   resetInactivity(): void;
@@ -1891,7 +1892,8 @@ function waitForExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): 
 }
 
 function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
-  if (child.exitCode !== null || child.signalCode !== null) return;
+  // The detached process group can outlive its leader. Keep using the original
+  // PGID even after Node has observed the direct child's exit.
   if (process.platform !== "win32" && child.pid) {
     try {
       process.kill(-child.pid, signal);
@@ -1900,11 +1902,31 @@ function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS
       // Fall back to the direct child if the process group has already changed.
     }
   }
+  if (child.exitCode !== null || child.signalCode !== null) return;
   try {
     child.kill(signal);
   } catch {
     // The process may have exited between the state check and signal.
   }
+}
+
+function processGroupExists(pgid: number): boolean {
+  try {
+    process.kill(-pgid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+async function waitForProcessGroupExit(pgid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (processGroupExists(pgid)) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return false;
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(20, remaining)));
+  }
+  return true;
 }
 
 async function terminateProcessTree(
@@ -1914,25 +1936,25 @@ async function terminateProcessTree(
 ): Promise<void> {
   child.stdin.destroy();
   if (process.platform === "win32" && child.pid) {
-    await execFileCaptured(
-      "taskkill",
-      ["/PID", String(child.pid), "/T"],
-      sanitizeEnv(),
-      Math.max(graceMs, 1),
-    );
-    if (await waitForExit(child, graceMs)) return;
+    // Windows has no POSIX group handle here. Ask taskkill to stop the whole
+    // tree in one forced operation, while the leader still identifies it.
     await execFileCaptured(
       "taskkill",
       ["/PID", String(child.pid), "/T", "/F"],
       sanitizeEnv(),
-      Math.max(killGraceMs, 1),
+      Math.max(graceMs + killGraceMs, 1),
     );
+    signalProcessTree(child, "SIGKILL");
     await waitForExit(child, killGraceMs);
     return;
   }
   signalProcessTree(child, "SIGTERM");
-  if (await waitForExit(child, graceMs)) return;
+  const stopped = child.pid
+    ? await waitForProcessGroupExit(child.pid, graceMs)
+    : await waitForExit(child, graceMs);
+  if (stopped) return;
   signalProcessTree(child, "SIGKILL");
+  if (child.pid) await waitForProcessGroupExit(child.pid, killGraceMs);
   await waitForExit(child, killGraceMs);
 }
 
@@ -2108,11 +2130,16 @@ class CliAgentAdapter implements AgentAdapter {
     active.termination = "canceled";
     if (active.absoluteTimer) clearTimeout(active.absoluteTimer);
     if (active.inactivityTimer) clearTimeout(active.inactivityTimer);
-    await terminateProcessTree(
+    await this.terminateActiveRun(active);
+  }
+
+  private terminateActiveRun(active: ActiveRun): Promise<void> {
+    active.terminationPromise ??= terminateProcessTree(
       active.child,
       this.options.cancelGraceMs ?? 3_000,
       this.options.killGraceMs ?? 500,
     );
+    return active.terminationPromise;
   }
 
   private async execute(
@@ -2187,11 +2214,13 @@ class CliAgentAdapter implements AgentAdapter {
     this.pendingRuns.add(request.runId);
     try {
       executable = await this.resolveExecutable();
+      if (this.canceledRuns.has(request.runId)) return completeFailure(makeError("canceled", "Agent run was canceled"));
       if (!executable) {
         return completeFailure(makeError("cli_not_found", `${this.binaryNames[0] ?? this.agentId} CLI not found`));
       }
       const baseLaunchEnv = this.launchEnv(executable);
       const resolvedProbe = await this.probeResolved(executable);
+      if (this.canceledRuns.has(request.runId)) return completeFailure(makeError("canceled", "Agent run was canceled"));
       const probe = resolvedProbe.publicProbe;
       cliVersion = probe.version;
       const capabilityValidation = this.definition.validateCapabilities?.(
@@ -2289,6 +2318,9 @@ class CliAgentAdapter implements AgentAdapter {
       emittedSession = sessionRef ?? newSessionId ?? null;
       const stdinPayload = this.definition.formatPrompt(request.prompt);
 
+      // Staging directories/schema files and provider model locks are awaited
+      // after probing. A cancellation during any of them must still prevent spawn.
+      if (this.canceledRuns.has(request.runId)) return completeFailure(makeError("canceled", "Agent run was canceled"));
       emit({ type: "status", runId: request.runId, agentId: this.agentId, at: nowIso(), phase: "starting" });
       const child = spawn(executable, args, {
         cwd: runDir,
@@ -2341,11 +2373,7 @@ class CliAgentAdapter implements AgentAdapter {
           emit({ type: "error", runId: request.runId, agentId: this.agentId, at: nowIso(), error: event.error });
           const active = this.activeRuns.get(request.runId);
           if (active) {
-            void terminateProcessTree(
-              active.child,
-              this.options.cancelGraceMs ?? 3_000,
-              this.options.killGraceMs ?? 500,
-            );
+            void this.terminateActiveRun(active);
           }
         }
       };
@@ -2363,6 +2391,7 @@ class CliAgentAdapter implements AgentAdapter {
       const active: ActiveRun = {
         child,
         termination: null,
+        terminationPromise: null,
         absoluteTimer: null,
         inactivityTimer: null,
         resetInactivity: () => {},
@@ -2378,11 +2407,7 @@ class CliAgentAdapter implements AgentAdapter {
           phase: "stopping",
           detail: "timeout",
         });
-        void terminateProcessTree(
-          child,
-          this.options.cancelGraceMs ?? 3_000,
-          this.options.killGraceMs ?? 500,
-        );
+        void this.terminateActiveRun(active);
       };
       active.resetInactivity = () => {
         if (active.inactivityTimer) clearTimeout(active.inactivityTimer);
@@ -2429,6 +2454,9 @@ class CliAgentAdapter implements AgentAdapter {
       const completionValue = await completion;
       if (active.absoluteTimer) clearTimeout(active.absoluteTimer);
       if (active.inactivityTimer) clearTimeout(active.inactivityTimer);
+      // The parent's close event alone says nothing about detached descendants.
+      // Do not publish a canceled/timeout result while group cleanup is pending.
+      if (active.terminationPromise) await active.terminationPromise;
       this.activeRuns.delete(request.runId);
       parser.finish();
       const parsed = parser.snapshot();
@@ -2524,6 +2552,7 @@ class CliAgentAdapter implements AgentAdapter {
         usage,
       };
     } catch (error) {
+      if (this.canceledRuns.has(request.runId)) return completeFailure(makeError("canceled", "Agent run was canceled"));
       const normalized = normalizeAgentError(error instanceof Error ? error.message : "Agent run failed");
       return completeFailure(normalized);
     } finally {
@@ -2532,12 +2561,8 @@ class CliAgentAdapter implements AgentAdapter {
         if (active.absoluteTimer) clearTimeout(active.absoluteTimer);
         if (active.inactivityTimer) clearTimeout(active.inactivityTimer);
         this.activeRuns.delete(request.runId);
-        if (active.child.exitCode === null && active.child.signalCode === null) {
-          await terminateProcessTree(
-            active.child,
-            this.options.cancelGraceMs ?? 3_000,
-            this.options.killGraceMs ?? 500,
-          );
+        if (active.terminationPromise || (active.child.exitCode === null && active.child.signalCode === null)) {
+          await this.terminateActiveRun(active);
         }
       }
       releaseModelLock?.();

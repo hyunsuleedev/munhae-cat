@@ -25,6 +25,9 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.115.0
         version: 2.115.0
+      '@xmldom/xmldom':
+        specifier: ^0.8.15
+        version: 0.8.15
       better-sqlite3:
         specifier: ^11.10.0
         version: 11.10.0
@@ -33,7 +36,7 @@ importers:
         specifier: ^22.15.0
         version: 22.20.1
       electron:
-        specifier: ^37.2.5
+        specifier: 37.10.3
         version: 37.10.3
       electron-builder:
         specifier: ^26.0.12

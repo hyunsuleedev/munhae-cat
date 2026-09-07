@@ -18,7 +18,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 2px;
+  gap: 5px;
 }
 .work-title {
   display: flex;
@@ -29,7 +29,8 @@
 .work-title .name {
   overflow: hidden;
   font-family: var(--font-hanmun);
-  font-size: 14px;
+  font-size: 16px;
+  letter-spacing: 0.015em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -73,7 +74,7 @@ tr.d3 .tree-cell {
 }
 .home-empty {
   display: flex;
-  min-height: 180px;
+  min-height: 280px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -83,23 +84,24 @@ tr.d3 .tree-cell {
 }
 .home-empty b {
   color: var(--fg);
-  font-size: 13px;
-  font-weight: 600;
+  font-family: var(--font-hanmun);
+  font-size: 19px;
+  font-weight: 500;
 }
 .home-empty .btn {
   margin-top: 5px;
 }
 .structure-note {
   margin: 12px 0 0;
-  padding: 9px 10px;
-  border-radius: 7px;
+  padding: 12px;
+  border-radius: 5px;
   background: var(--fg-softer);
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.7;
 }
 .bar {
-  height: 5px;
+  height: 3px;
   background: var(--fg-soft);
   border-radius: 3px;
   overflow: hidden;
@@ -113,7 +115,7 @@ tr.d3 .tree-cell {
 .prog {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 12px;
   padding-top: 2px;
 }
 .prog-row {
@@ -130,6 +132,18 @@ tr.d3 .tree-cell {
 }
 .sel-title {
   font-family: var(--font-hanmun);
-  font-size: 18px;
-  margin: 2px 0 8px;
+  font-size: 21px;
+  font-weight: 500;
+  line-height: 1.6;
+  margin: 3px 0 12px;
 }
+
+.tbl td { padding-block: 15px; }
+.tbl td:first-child,
+.tbl th:first-child { padding-left: 22px; }
+.tbl tbody tr.is-active td:first-child { box-shadow: inset 2px 0 var(--accent); }
+.tbl tbody tr:focus-visible { outline-offset: -2px; }
+.scope { flex-wrap: wrap; }
+.scope .input { max-width: 100%; }
+.scope .btn { flex-shrink: 0; }
+.scope #scopeMeta { white-space: nowrap; }

@@ -52,7 +52,7 @@ p {
   flex: 0 0 auto;
   gap: 10px;
   width: fit-content;
-  color: #292b27;
+  color: var(--fg);
   white-space: nowrap;
   text-align: left;
 }
@@ -61,12 +61,12 @@ p {
   letter-spacing: 0.08em;
 }
 .munhae-brand > small {
-  color: #777a71;
+  color: var(--muted);
   font: 9px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
   letter-spacing: 0.1em;
 }
 .sidebar > .munhae-brand {
-  margin: 24px 22px 10px;
+  margin: 26px 22px 14px;
 }
 .muted {
   color: var(--muted);
@@ -88,6 +88,10 @@ kbd {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+::selection {
+  background: #e6d8c7;
+  color: var(--fg);
 }
 ::-webkit-scrollbar {
   width: 10px;
@@ -327,10 +331,11 @@ html[data-platform="mac"] .sb-top {
   -webkit-app-region: no-drag;
 }
 .sb-h {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.045em;
   color: var(--muted);
-  padding: 12px 8px 3px;
+  padding: 18px 10px 7px;
 }
 .sb-h-row {
   display: flex;
@@ -370,11 +375,12 @@ html[data-platform="mac"] .sb-top {
 .sb-item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  height: 26px;
+  gap: 8px;
+  min-height: 30px;
+  height: 30px;
   padding: 0 8px;
   border-radius: 5px;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   min-width: 0;
   width: 100%;
@@ -390,7 +396,14 @@ html[data-platform="mac"] .sb-top {
   font-weight: 500;
 }
 .sb-item .ic {
-  color: var(--accent-ink);
+  color: var(--muted);
+}
+.sb-item.is-current .ic {
+  color: var(--fg);
+}
+.sb-item .lbl.hanmun {
+  font-size: 13px;
+  letter-spacing: 0.015em;
 }
 .sb-item .lbl {
   flex: 1;
@@ -409,7 +422,6 @@ html[data-platform="mac"] .sb-top {
   width: 12px;
   height: 12px;
   color: var(--muted);
-  transition: transform 0.12s;
   margin-left: -2px;
 }
 .sb-item[aria-expanded="true"] .chev {
@@ -417,9 +429,9 @@ html[data-platform="mac"] .sb-top {
 }
 .sb-foot {
   flex: 0 0 auto;
-  padding: 8px 14px 9px;
+  padding: 12px 16px;
   border-top: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: var(--muted);
   display: flex;
   align-items: center;
@@ -538,9 +550,9 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   align-items: center;
   gap: 14px;
   padding: 0 12px;
-  background: var(--chrome);
+  background: var(--surface);
   border-top: 1px solid var(--border);
-  font-size: 11.5px;
+  font-size: 10.5px;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -569,12 +581,12 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 36px;
-  padding: 0 12px;
+  min-height: 44px;
+  padding: 8px 18px;
   border-bottom: 1px solid var(--border);
-  background: var(--chrome);
+  background: var(--surface);
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: 11px;
 }
 .split {
   flex: 1;
@@ -592,7 +604,7 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   border-left: 1px solid var(--border);
   overflow: auto;
   min-height: 0;
-  background: var(--surface);
+  background: var(--bg);
 }
 .grp {
   border-bottom: 1px solid var(--border);
@@ -602,8 +614,8 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 6px 16px;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--muted);
@@ -619,7 +631,6 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   border-top: 4px solid transparent;
   border-bottom: 4px solid transparent;
   border-left: 5px solid var(--muted);
-  transition: transform 0.12s;
   flex: 0 0 auto;
 }
 .grp[open] > summary::before {
@@ -633,7 +644,7 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   white-space: nowrap;
 }
 .grp-b {
-  padding: 0 12px 12px;
+  padding: 0 16px 16px;
 }
 .kv {
   display: grid;
@@ -674,18 +685,18 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
 }
 
 .btn {
-  height: 24px;
-  padding: 0 10px;
+  height: 28px;
+  padding: 0 11px;
   border: 1px solid var(--ctl-border);
   border-radius: var(--r);
   background: var(--surface);
   color: var(--fg);
-  box-shadow: 0 1px 1px color-mix(in oklch, var(--fg) 6%, transparent);
+  box-shadow: 0 1px 1px color-mix(in oklch, var(--fg) 3%, transparent);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
-  font-weight: 450;
+  font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
   justify-content: center;
 }
@@ -699,16 +710,16 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   opacity: 0.45;
 }
 .btn-primary {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
+  background: var(--fg);
+  border-color: var(--fg);
   color: white;
 }
 .btn-primary:hover:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-ink) 86%, black);
-  border-color: color-mix(in oklch, var(--accent-ink) 86%, black);
+  background: #43453f;
+  border-color: #43453f;
 }
 .btn-primary:active:not(:disabled) {
-  background: color-mix(in oklch, var(--accent-ink) 76%, black);
+  background: #1d1f1b;
 }
 .btn-ghost {
   border-color: transparent;
@@ -719,9 +730,9 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   background: var(--fg-soft);
 }
 .btn-sm {
-  height: 21px;
-  padding: 0 7px;
-  font-size: 11.5px;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
   border-radius: 5px;
 }
 .btn-block {
@@ -737,19 +748,20 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
 .seg {
   display: inline-flex;
   align-items: center;
-  height: 24px;
+  height: 28px;
   padding: 2px;
-  border-radius: 7px;
-  background: color-mix(in oklch, var(--fg) 7%, transparent);
-}
-.seg button {
-  height: 20px;
-  padding: 0 10px;
-  border: 0;
+  border: 1px solid var(--border);
   border-radius: 5px;
   background: transparent;
-  font-size: 12px;
-  color: var(--fg);
+}
+.seg button {
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  font-size: 11px;
+  color: var(--muted);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -761,10 +773,10 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
 }
 .seg button[aria-pressed="true"],
 .seg button[aria-selected="true"] {
-  background: var(--surface);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
   font-weight: 500;
-  box-shadow: 0 1px 2px color-mix(in oklch, var(--fg) 18%, transparent),
-    0 0 0 0.5px color-mix(in oklch, var(--fg) 8%, transparent);
+  box-shadow: none;
 }
 .seg button small {
   font-size: 10.5px;
@@ -788,14 +800,14 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
 .input,
 .textarea,
 .select {
-  height: 24px;
+  height: 28px;
   padding: 0 8px;
   border: 1px solid var(--ctl-border);
   border-radius: var(--r);
   background: var(--surface);
   color: var(--fg);
   font: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   width: 100%;
 }
 .input:focus,
@@ -914,17 +926,17 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
   color: var(--muted);
   font-size: 11.5px;
   text-align: left;
-  padding: 5px 10px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 .tbl td {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--fg-softer);
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border);
   vertical-align: middle;
 }
 .tbl tbody tr:nth-child(even) td {
-  background: var(--fg-softer);
+  background: transparent;
 }
 .tbl tbody tr:hover td {
   background: color-mix(in oklch, var(--fg) 4.5%, transparent);
@@ -938,7 +950,7 @@ html[data-platform="mac"] .win.sb-hidden .titlebar {
 }
 dialog {
   border: 0;
-  border-radius: 11px;
+  border-radius: 8px;
   padding: 0;
   background: var(--surface);
   color: var(--fg);
@@ -951,19 +963,19 @@ dialog::backdrop {
   background: color-mix(in oklch, var(--fg) 12%, transparent);
 }
 .dl-h {
-  padding: 18px 20px 0;
+  padding: 22px 24px 0;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
 }
 .dl-b {
-  padding: 12px 20px 18px;
+  padding: 16px 24px 22px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   font-size: 12.5px;
 }
 .dl-f {
-  padding: 0 20px 18px;
+  padding: 0 24px 22px;
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -987,7 +999,7 @@ dialog::backdrop {
   z-index: 90;
   opacity: 0;
   transform: translateY(-8px);
-  transition: 0.22s;
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
   pointer-events: none;
   line-height: 1.4;
 }
@@ -1076,10 +1088,7 @@ dialog::backdrop {
     inset: 0;
   }
   .split {
-    grid-template-columns: 1fr;
-  }
-  .insp {
-    display: none;
+    grid-template-columns: minmax(0, 1fr) min(40%, var(--iw));
   }
 }
 
@@ -1118,7 +1127,18 @@ html[data-platform="other"] .native-titlebar .titlebar-window-space { display: n
 .unified-titlebar .titlebar .tb-r { gap: 6px; }
 .unified-titlebar .titlebar .tb-r .tb { height: 30px; color: var(--muted); }
 .unified-titlebar .titlebar .tb-r .tb.is-on { border-color: transparent; background: var(--fg-soft); color: var(--fg); }
+.unified-titlebar .titlebar .tb-r .btn { height: 30px; }
 .unified-titlebar .titlebar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 html[data-platform="mac"] .win.unified-titlebar.sb-hidden > .titlebar { padding-left: 0; }
 .unified-titlebar.sb-hidden .titlebar-navigation { flex-basis: 194px; width: 194px; border-right-color: transparent; }
 @media (hover: hover) and (pointer: fine) { .unified-titlebar .titlebar-navigation .tb:hover:not(:disabled) { background: var(--fg-soft); } }
+
+@media (hover: hover) and (pointer: fine) {
+  .btn:active:not(:disabled),
+  .tb:active:not(:disabled) { transform: scale(0.98); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notif { transform: none; transition: opacity 120ms ease; }
+  .btn:active:not(:disabled),
+  .tb:active:not(:disabled) { transform: none; }
+}

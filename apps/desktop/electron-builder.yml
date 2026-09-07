@@ -12,7 +12,6 @@ asarUnpack:
   - "**/*.node"
   - "**/better-sqlite3/**"
 npmRebuild: true
-electronVersion: 37.2.5
 fileAssociations:
   - ext: munhae
     name: Munhae Project
@@ -24,6 +23,7 @@ fileAssociations:
     description: Munhae Studio backup
     role: Editor
 mac:
+  icon: build/icon.icns
   category: public.app-category.productivity
   target:
     - dmg

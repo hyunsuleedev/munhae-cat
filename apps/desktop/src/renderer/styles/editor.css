@@ -7,6 +7,133 @@
   border-top: 1px solid var(--border);
   font-size: 12px;
 }
+
+/* Folio: the working text is the primary surface; tools stay in the margins. */
+.folio-editor { --reading-size: 16px; --source-size: 18px; }
+.folio-editor.large-type { --reading-size: 19px; --source-size: 21px; }
+.folio-editor .pane-center { background: var(--bg); container-type: inline-size; }
+.workflow-region { display: flex; align-items: center; gap: 24px; padding: 0 28px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.folio-editor .workflow { display: grid; flex: 0 1 500px; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; align-items: stretch; }
+.folio-editor .workflow-step { position: relative; min-width: 0; min-height: 33px; border: 0; border-radius: 0; padding: 2px 4px; gap: 9px; align-items: center; background: transparent; color: var(--fg); }
+.folio-editor .workflow-step:not(:disabled):hover { background: var(--fg-softer); color: var(--accent-ink); }
+.folio-editor .workflow-step.is-on { background: transparent; box-shadow: none; color: var(--accent-ink); }
+.folio-editor .workflow-step.is-on::after { content: ""; position: absolute; height: 2px; bottom: 0; left: 34px; right: 4px; max-width: 90px; background: var(--accent-ink); }
+.folio-editor .workflow-step:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; border-radius: 3px; }
+.folio-editor .workflow-step:disabled { opacity: 1; color: var(--muted); background: transparent; }
+.folio-editor .workflow-step > .workflow-copy { flex: 1; flex-direction: column; align-items: stretch; gap: 1px; }
+.workflow-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 18px; }
+.folio-editor .workflow-step b { font-size: 12px; font-weight: 600; }
+.workflow-current, .workflow-optional { font-size: 9px; line-height: 16px; font-weight: 400; }
+.workflow-current { color: var(--accent-ink); }
+.workflow-optional { color: var(--muted); }
+.workflow-optional::before { content: "· "; }
+.workflow-description { display: none; }
+.folio-editor .workflow-step small { display: block; font-size: 10px; line-height: 1.5; max-width: none; white-space: normal; overflow: visible; color: var(--muted); }
+.folio-editor .workflow-step.is-done small { color: var(--muted); }
+.folio-editor .workflow-step.is-done small::before { content: "✓ "; }
+.folio-editor .workflow-step.is-attention small { color: var(--warn); }
+.folio-editor .workflow-no { display: block; width: 21px; height: auto; border: 0; border-radius: 0; background: transparent; color: var(--muted); font: 16px/1.4 var(--font-hanmun); }
+.folio-editor .workflow-step.is-done .workflow-no { color: var(--muted); }
+.folio-editor .workflow-step.is-on .workflow-no { background: transparent; color: var(--accent-ink); }
+.folio-editor .workflow-line { display: grid; place-items: center; width: auto; height: auto; background: transparent; color: var(--ctl-border); font-size: 14px; }
+.workflow-tools { display: flex; align-items: center; flex: 0 0 auto; gap: 10px; margin-left: auto; }
+.workflow-tools .btn { min-height: 27px; padding: 2px 0; font-size: 10px; color: var(--muted); }
+.workflow-tools #btnWorkflowTranslation { color: var(--accent-ink); }
+.workflow-help-trigger { min-width: 28px; anchor-name: --workflow-help; }
+.workflow-help-trigger .ic { width: 13px; height: 13px; }
+.workflow-guide { position: fixed; position-anchor: --workflow-help; inset: auto; top: anchor(bottom); right: anchor(right); width: min(320px, calc(100vw - 32px)); margin: 8px 0 0; padding: 15px 17px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--fg); box-shadow: 0 6px 24px #292b2714; font-size: 12px; line-height: 1.8; }
+.workflow-guide-label { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; color: var(--accent-ink); }
+.workflow-guide p { margin: 0; color: var(--muted); }
+.folio-editor #translationToolbar { min-height: 36px; padding: 3px 27px; background: var(--surface); gap: 9px; flex-wrap: wrap; }
+.folio-editor #translationToolbar .seg { background: var(--bg); }
+.folio-editor .center-body { padding: 16px 28px 60px; max-width: 1400px; margin: 0 auto; }
+.folio-editor .translation-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; font-size: 11px; }
+.folio-editor .translation-controls #alignmentStatus { flex: 1 1 190px; line-height: 1.6; }
+.folio-editor .translation-controls > .sp { display: none; }
+.folio-editor .translation-controls #btnPrepare { order: 2; }
+.folio-editor .segmentation-actions.has-translation { display: none; }
+.folio-editor .full-text-document #vstrip { display: none; }
+.folio-editor .full-text-document #translationEditHelp { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.folio-editor .review-toolbar { border-top: 0; margin: 0 0 12px; padding: 0; gap: 7px; }
+.folio-editor #reviewSelectionHint { font-size: 10px; flex: 1 1 140px; }
+.folio-sheet { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; box-shadow: 0 2px 7px #292b2704; overflow: clip; }
+.folio-columns { display: grid; grid-template-columns: 41% minmax(0, 1fr); padding: 15px 23px; border-bottom: 1px solid var(--border); color: var(--fg); font: 17px var(--font-hanmun); }
+.folio-columns > span { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.folio-columns > span:last-child { padding-left: 25px; }
+.folio-columns small { font: 10px var(--font-ui); color: var(--muted); }
+.comparison-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 10px; }
+.comparison-tools label { font-size: 10px; }
+.comparison-tools input { width: 12px; height: 12px; }
+.comparison-empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.folio-editor .rows { border-top: 0; }
+.folio-editor .brow { grid-template-columns: 41% minmax(0, 1fr); position: relative; transition: none; }
+.folio-editor .brow:last-child { border-bottom: 0; }
+.folio-editor .brow:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); }
+.folio-editor .brow.is-active { background: #f6f0e6; box-shadow: inset 2px 0 var(--accent-ink); }
+.folio-editor .brow.is-related { background: #f9f5ed; }
+.folio-editor .bcell { padding: 19px 23px 14px; }
+.folio-editor .bcell-src { font-size: var(--source-size); line-height: 2; letter-spacing: .025em; border-right-color: var(--border); }
+.folio-editor .bcell-tgt { font-family: var(--font-hanmun); font-size: var(--reading-size); line-height: 2; padding-left: 25px; }
+.folio-editor .bmeta { min-height: 20px; margin-bottom: 9px; font-family: var(--font-ui); font-size: 10px; letter-spacing: 0; line-height: 1.5; }
+.sentence-number { color: var(--accent-ink); font-variant-numeric: tabular-nums; min-width: 22px; }
+.sentence-relation { color: var(--muted); font-size: 10px; }
+.sentence-source { white-space: pre-wrap; overflow-wrap: anywhere; }
+.unlinked-source { font: 12px/1.8 var(--font-ui); color: var(--muted); letter-spacing: 0; }
+.sentence-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; font: 10px/1.5 var(--font-ui); color: var(--muted); }
+.sentence-actions .btn { font-size: 10px; min-height: 25px; padding: 3px 6px; }
+.folio-editor .sentence-edit { margin-top: 26px; line-height: 2; }
+.folio-editor .sentence-edit:focus { outline: 1px solid color-mix(in srgb, var(--accent-ink) 40%, transparent); outline-offset: 5px; background: transparent; }
+.folio-editor .sentence-edit:not(:read-only):hover { background: transparent; }
+.folio-spread { display: grid; grid-template-columns: 41% minmax(0, 1fr); }
+.folio-source { padding: 25px 24px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--source-size); line-height: 2.15; letter-spacing: .025em; border-right: 1px solid var(--border); }
+.folio-translation { padding: 24px 26px; min-width: 0; }
+.folio-editor #fullTranslationInput { display: block; width: 100%; padding: 0; border: 0; border-radius: 0; box-shadow: none; resize: vertical; min-height: 50vh; field-sizing: content; font: var(--reading-size)/2.15 var(--font-hanmun); background: transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
+.folio-editor #fullTranslationInput:focus { outline: 1px solid color-mix(in srgb, var(--accent-ink) 35%, transparent); outline-offset: 8px; }
+.folio-caption { margin: 0; padding: 13px 23px; border-top: 1px solid var(--border); font-size: 10px; line-height: 1.7; color: var(--muted); }
+.folio-editor .full-text { font-family: var(--font-hanmun); font-size: var(--reading-size); line-height: 2.15; }
+.folio-editor .draft-head h1 { font-size: 20px; font-weight: 500; }
+.folio-editor .draft-textarea { background: var(--surface); }
+.folio-editor .pane-right { background: var(--bg); }
+.folio-editor .pane-right .scope { min-height: 43px; }
+.folio-editor .rpanel .grp { background: var(--surface); }
+.folio-editor .statusbar #editorSaveState { white-space: nowrap; }
+.sentence-link-dialog { width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 70px); overflow: auto; padding: 24px; }
+.sentence-link-dialog h2 { margin: 0 0 8px; font-size: 18px; }
+.sentence-link-dialog header p { color: var(--muted); font-size: 12px; line-height: 1.7; }
+.sentence-link-dialog blockquote { margin: 18px 0; border-left: 2px solid var(--accent-ink); padding: 12px 16px; background: var(--bg); font: 15px/1.9 var(--font-hanmun); white-space: pre-wrap; max-height: 140px; overflow: auto; }
+.sentence-link-dialog label { display: block; font-size: 12px; margin-bottom: 7px; }
+.sentence-link-dialog textarea { width: 100%; font-size: 18px; line-height: 1.9; resize: vertical; }
+.sentence-link-dialog .row { margin: 8px 0 14px; font-size: 10px; }
+.sentence-link-dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.sentence-link-span { display: flex; align-items: flex-start; gap: 10px; margin: 6px 0; border: 1px solid var(--border); border-radius: 4px; padding: 7px 9px; }
+.sentence-link-span > button:first-child { flex: 1; min-width: 0; border: 0; background: transparent; font: 15px/1.8 var(--font-hanmun); text-align: left; overflow-wrap: anywhere; }
+@container (max-width: 680px) {
+  .folio-editor .center-body { padding: 13px 16px 45px; }
+  .workflow-region { padding-inline: 16px; gap: 12px; }
+  .folio-editor .workflow { grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr) 16px minmax(0, 1fr); }
+  .folio-editor .workflow-step { padding: 2px; gap: 6px; }
+  .folio-editor .workflow-no { width: 19px; font-size: 15px; }
+  .folio-editor .workflow-step b { font-size: 12px; }
+  .folio-editor .workflow-step.is-on::after { left: 27px; right: 2px; }
+  .workflow-tools { gap: 6px; }
+  .workflow-help-trigger > span { display: none; }
+  .folio-editor #translationToolbar { padding-inline: 16px; }
+  .folio-editor #reviewSelectionHint { flex-basis: 100%; order: 3; }
+  .folio-editor .bcell { padding: 14px 16px; }
+  .folio-editor .bcell-tgt { padding-left: 19px; }
+  .folio-source, .folio-translation { padding: 20px 18px; }
+  .folio-columns { padding-inline: 16px; }
+  .folio-columns small { font-size: 9px; }
+}
+@container (max-width: 440px) {
+  .workflow-title { gap: 3px; }
+  .workflow-current { display: none; }
+  .workflow-tools #btnWorkflowTranslation { display: none; }
+  .folio-editor .brow, .folio-spread { grid-template-columns: minmax(0, 1fr); }
+  .folio-editor .bcell-src, .folio-source { border-right: 0; border-bottom: 1px dashed var(--border); }
+  .folio-editor .sentence-edit { margin-top: 0; }
+  .folio-columns { grid-template-columns: 1fr 1fr; }
+}
 .review-toolbar[hidden] { display: none; }
 .review-toolbar #reviewSelectionHint { flex: 1 1 180px; overflow-wrap: anywhere; }
 #btnAddReviewComment[aria-pressed="true"] { background: var(--review-mark-fill); border-color: var(--review-mark-line); color: var(--fg); }
@@ -292,6 +419,34 @@
   font-size: 18px;
   line-height: 1.9;
   letter-spacing: 0.01em;
+}
+.folio-editor .pane-scroll:has(> .center-body > #sourceWorkspace:not([hidden])) { display: flex; overflow: hidden; }
+.folio-editor .center-body:has(> #sourceWorkspace:not([hidden])) { flex: 1; min-height: 0; width: 100%; padding-bottom: 16px; }
+#sourceWorkspace { height: 100%; min-height: 0; }
+.source-sheet { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.source-sheet > :not(textarea) { flex-shrink: 0; }
+.source-toolbar { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 18px; border-bottom: 1px solid var(--border); }
+.source-toolbar > label { font-size: 12px; font-weight: 600; }
+.source-toolbar .tag { background: transparent; border: 0; padding: 0; font-size: 10px; }
+.source-toolbar .tag::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: middle; }
+.source-sheet .btn { min-height: 28px; }
+.source-sheet .btn:not(:disabled):active { transform: scale(.97); }
+.source-sheet #sourceDraftText { display: block; flex: 1 1 0; width: 100%; height: 0; min-height: 0; margin: 0; padding: 24px 28px; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-family: var(--font-hanmun); font-size: 20px; line-height: 2; letter-spacing: .035em; resize: none; overflow-y: auto; overscroll-behavior-y: contain; box-shadow: none; }
+.source-sheet #sourceDraftText:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+.source-sheet #sourceDraftText:read-only:focus-visible { outline: 1px solid var(--ctl-border); outline-offset: -1px; }
+.source-sheet #sourceDraftText::placeholder { font-family: var(--font-ui); font-size: 14px; letter-spacing: 0; color: var(--muted); }
+.source-sheet #sourceMessage { min-height: 0; margin: 0 18px 12px; padding: 0 0 0 10px; border: 0; border-left: 2px solid var(--ctl-border); border-radius: 0; background: transparent; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.source-sheet #sourceMessage.is-warn { border-left-color: var(--warn); color: var(--warn-ink); }
+.source-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; min-height: 42px; padding: 8px 18px; border-top: 1px solid var(--border); }
+.source-info { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.source-info > span + span { padding-left: 12px; border-left: 1px solid var(--border); }
+.source-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+@container (max-width: 680px) {
+  .source-sheet #sourceDraftText { padding: 20px; font-size: 18px; }
+}
+@container (max-width: 440px) {
+  .source-toolbar, .source-footer { padding-inline: 12px; }
+  .source-sheet #sourceDraftText { padding: 16px; }
 }
 .field-help {
   align-self: flex-end;

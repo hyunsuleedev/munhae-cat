@@ -5,6 +5,8 @@ import { preloadScriptPath, rendererIndexHtml } from "./paths";
 import { isDev, lockSession } from "./security";
 
 let mainWindow: BrowserWindow | null = null;
+type LeaveCheck = { reason: "project-switch" | "quit"; cancelled: boolean };
+const pendingLeaveChecks = new WeakMap<BrowserWindow, LeaveCheck>();
 
 export type RendererPage = "index.html" | "home.html";
 
@@ -24,7 +26,7 @@ export function createMainWindow(initialPage: RendererPage = "index.html"): Brow
     minHeight: 640,
     show: false,
     title: "Munhae Studio",
-    backgroundColor: "#f3f4f6",
+    backgroundColor: "#f6f5f0",
     autoHideMenuBar: process.platform === "darwin",
     ...(process.platform === "darwin"
       ? {
@@ -54,6 +56,35 @@ export function createMainWindow(initialPage: RendererPage = "index.html"): Brow
     log.error("renderer failed to load", { code });
     if (!win.isDestroyed() && !win.isVisible()) win.show();
     void url;
+  });
+
+  // A renderer's beforeunload also protects ordinary red-button closes and
+  // reloads. One native handler covers them and scoped project/quit preflights.
+  win.webContents.on("will-prevent-unload", (event) => {
+    const check = pendingLeaveChecks.get(win);
+    const reason = check?.reason;
+    const response = dialog.showMessageBoxSync(win, {
+      type: "warning",
+      title: "저장하지 않은 변경",
+      message: "저장하지 않은 변경이 있습니다.",
+      detail: reason === "quit"
+        ? "앱을 종료하면 현재 화면의 저장하지 않은 변경은 사라집니다. 계속 편집하려면 현재 화면에 머물러 저장하세요."
+        : reason === "project-switch"
+          ? "다른 프로젝트를 열면 현재 화면의 저장하지 않은 변경은 사라집니다."
+          : "창을 닫거나 화면을 다시 불러오면 저장하지 않은 변경은 사라집니다. 계속 편집하려면 현재 화면에 머물러 저장하세요.",
+      buttons: ["현재 화면에 머물기", reason === "quit"
+        ? "저장하지 않고 종료"
+        : reason === "project-switch" ? "저장하지 않고 프로젝트 열기" : "저장하지 않고 계속"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (response === 1) {
+      // Electron requires preventDefault here to override the renderer's veto.
+      event.preventDefault();
+    } else if (check) {
+      check.cancelled = true;
+    }
   });
 
   win.on("closed", () => {
@@ -86,40 +117,35 @@ export async function loadRenderer(
  * unsaved drafts; Electron surfaces that veto through will-prevent-unload.
  */
 export async function prepareMainWindowForProjectSwitch(): Promise<boolean> {
+  return prepareMainWindowToLeave("project-switch");
+}
+
+export async function prepareMainWindowForQuit(): Promise<boolean> {
+  const accepted = await prepareMainWindowToLeave("quit");
+  if (accepted) getMainWindow()?.hide();
+  return accepted;
+}
+
+async function prepareMainWindowToLeave(reason: "project-switch" | "quit"): Promise<boolean> {
   const win = getMainWindow();
   if (!win) return true;
-
-  let cancelledForUnsavedChanges = false;
-  const onWillPreventUnload = (event: Electron.Event): void => {
-    const response = dialog.showMessageBoxSync(win, {
-      type: "warning",
-      title: "저장하지 않은 변경",
-      message: "저장하지 않은 변경이 있습니다.",
-      detail: "다른 프로젝트를 열면 현재 화면의 저장하지 않은 변경은 사라집니다.",
-      buttons: ["현재 화면에 머물기", "저장하지 않고 프로젝트 열기"],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    });
-    if (response === 1) {
-      // Electron requires preventDefault here to override the renderer's veto.
-      event.preventDefault();
-      return;
-    }
-    cancelledForUnsavedChanges = true;
-  };
-
-  win.webContents.on("will-prevent-unload", onWillPreventUnload);
+  if (pendingLeaveChecks.has(win)) return false;
+  const check: LeaveCheck = { reason, cancelled: false };
+  pendingLeaveChecks.set(win, check);
   try {
-    await loadRenderer(win, "home.html");
+    if (reason === "quit") {
+      // Trigger the existing page's beforeunload without booting another app
+      // page that could request project/agent state during service teardown.
+      await win.loadURL("about:blank");
+    } else {
+      await loadRenderer(win, "home.html");
+    }
     return true;
   } catch (error) {
-    if (cancelledForUnsavedChanges) return false;
+    if (check.cancelled) return false;
     throw error;
   } finally {
-    if (!win.isDestroyed()) {
-      win.webContents.removeListener("will-prevent-unload", onWillPreventUnload);
-    }
+    pendingLeaveChecks.delete(win);
   }
 }
 

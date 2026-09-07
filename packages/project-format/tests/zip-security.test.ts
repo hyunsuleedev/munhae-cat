@@ -1,5 +1,6 @@
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -9,11 +10,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { strToU8, zipSync } from "fflate";
-import { extractZip } from "../../../apps/desktop/src/main/zip.ts";
+import { extractMunhaePkg, extractZip } from "../../../apps/desktop/src/main/zip.ts";
 
 const CENTRAL_SIGNATURE = 0x02014b50;
 const LOCAL_SIGNATURE = 0x04034b50;
 const dirs: string[] = [];
+
+it("restores colliding backups as new Finder-recognized .munhae packages without overwriting the original", async () => {
+  const dir = tempDir();
+  const existing = join(dir, "서책 검증.munhae");
+  mkdirSync(existing);
+  writeFileSync(join(existing, "keep.txt"), "original project");
+  const pkg = join(dir, "서책 검증.munhaepkg");
+  writeFileSync(pkg, zipSync({ "manifest.json": strToU8('{"title":"restored"}'), "project.sqlite3": strToU8("snapshot") }));
+  expect(await extractMunhaePkg(pkg)).toBe(join(dir, "서책 검증-2.munhae"));
+  const next = await extractMunhaePkg(pkg);
+  expect(next).toBe(join(dir, "서책 검증-3.munhae"));
+  expect(readFileSync(join(next, "project.sqlite3"), "utf8")).toBe("snapshot");
+  expect(readFileSync(join(existing, "keep.txt"), "utf8")).toBe("original project");
+});
 
 function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "munhae-zip-security-"));

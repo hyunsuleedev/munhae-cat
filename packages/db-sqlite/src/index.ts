@@ -97,6 +97,7 @@ export type {
   ContextPreview,
   ContextPreviewInput,
   CreateReviewCommentInput,
+  SaveSentenceLinkInput,
   ReviewCommentView,
   ReviewCommentCasInput,
   UpdateReviewCommentInput,

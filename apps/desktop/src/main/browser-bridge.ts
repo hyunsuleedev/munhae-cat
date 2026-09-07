@@ -2,6 +2,7 @@ import { app } from "electron";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
 import { probeAgentsCached } from "./agents";
+import { searchItkcFootnotes } from "./itkc-footnotes";
 import { errorCode } from "./errors";
 import {
   parseArchiveReviewCommentInput,
@@ -36,6 +37,7 @@ import {
   parseSavePunctuationDraftInput,
   parseSaveSourceDraftInput,
   parseSaveDraftInput,
+  parseSaveSentenceLinkInput,
   parseSearchQueryInput,
   parseSplitBlockInput,
   parseStartTranslationInput,
@@ -128,6 +130,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.editorGetHistory,
   IPC_CHANNELS.editorCompareVersions,
   IPC_CHANNELS.editorListReviewComments,
+  IPC_CHANNELS.editorSaveSentenceLink,
   IPC_CHANNELS.editorCreateReviewComment,
   IPC_CHANNELS.editorUpdateReviewComment,
   IPC_CHANNELS.editorArchiveReviewComment,
@@ -147,6 +150,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.knowledgeVersionUncertainty,
   IPC_CHANNELS.knowledgeResolveUncertainty,
   IPC_CHANNELS.contextPreview,
+  IPC_CHANNELS.researchSearchFootnotes,
   IPC_CHANNELS.aiStartTranslation,
   IPC_CHANNELS.aiStartChat,
   IPC_CHANNELS.aiStartPunctuation,
@@ -202,6 +206,7 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
 }
 
 async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> {
+  if (channel === IPC_CHANNELS.researchSearchFootnotes) return wrap(() => searchItkcFootnotes(args[0]));
   if (ACCOUNT_CHANNELS.includes(channel)) return wrap(() => dispatchAccount(channel, args[0]));
   switch (channel) {
     case IPC_CHANNELS.appGetVersion: return app.getVersion();
@@ -261,6 +266,8 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => requireRepo().compareVersions(parseVersionDiffInput(args[0])));
     case IPC_CHANNELS.editorListReviewComments:
       return wrap(() => requireRepo().listReviewComments(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.editorSaveSentenceLink:
+      return wrap(() => requireRepo().saveSentenceLink(parseSaveSentenceLinkInput(args[0])));
     case IPC_CHANNELS.editorCreateReviewComment:
       return wrap(() => requireRepo().createReviewComment(parseCreateReviewCommentInput(args[0])));
     case IPC_CHANNELS.editorUpdateReviewComment:

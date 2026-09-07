@@ -1,4 +1,6 @@
-import { replaceTextSentence, textSentences, type TextSentence } from "@munhae/domain/text-sentences";
+import { matchUnchangedTextSentences, replaceTextSentence, textSentences, type TextSentence } from "@munhae/domain/text-sentences";
+import { configureSentenceLinkUi } from "./sentence-link-ui";
+import { termMarkup } from "./term-markup";
 import { configureReviewComments } from "./review-comments-ui";
 import type {
   AgentProbe,
@@ -99,6 +101,13 @@ let workspace: Workspace = "source";
 let blocks: Block[] = [];
 let dirty = false;
 let translationSaving = false;
+let workspaceSaving = false;
+let workspaceSwitching = false;
+const activeMutations = new Map<HTMLButtonElement, string>();
+let editorLoadSerial = 0;
+let editorEditSerial = 0;
+let translationDraftText = "";
+let selectedSentenceId: string | null = null;
 let sentenceDrafts: TextSentence[] = [];
 let sentenceLinks: NonNullable<NonNullable<EditorView["translation"]>["textLayout"]>["links"] = [];
 const pendingTranslationEdits = new Set<string>();
@@ -162,7 +171,7 @@ const reviewComments = configureReviewComments({
   api,
   view: () => view,
   hasUnsavedChanges: () => hasUnsavedChanges() || aiStarting || aiRun?.state === "running",
-  canEditTranslation: () => editing() && !translationSaving,
+  canEditTranslation: () => editing() && !editorMutationBusy(),
   escape: esc,
   notify,
   showComments: () => { setWorkspace("translation"); setView("parallel"); setTab("comments"); },
@@ -172,6 +181,15 @@ const reviewComments = configureReviewComments({
     await loadVersionHistory(view.document.id, "translation", "translation");
     openVersionDiff("translation", "translation", true);
   },
+});
+
+const sentenceLinkUi = configureSentenceLinkUi({
+  api, view: () => view, hasUnsavedChanges,
+  apply: (data) => {
+    applyView(data); must("#sbSaved").textContent = nowHM();
+    queueMicrotask(() => { renderEditingLocks(); renderComparisonState(); renderSaveState(); });
+  },
+  escape: esc, notify,
 });
 
 const VERSION_STATE_LABELS: Record<EditorView["source"]["state"], string> = {
@@ -1420,17 +1438,32 @@ function editing(): boolean {
     && view.translation.state !== "confirmed";
 }
 
+function editorMutationBusy(): boolean {
+  return workspaceSaving || translationSaving || activeMutations.size > 0 || sentenceLinkUi.isBusy();
+}
+
+function renderEditingLocks(): void {
+  if (!view) return;
+  const busy = editorMutationBusy();
+  const sourceLocked = view.source.state === "confirmed" && !sourceEditingConfirmed;
+  const punctuationLocked = !!previewedPunctuationSuggestion() || !view.punctuation || view.punctuation.state === "superseded";
+  must<HTMLTextAreaElement>("#sourceDraftText").readOnly = busy || sourceLocked;
+  must<HTMLButtonElement>("#btnEditSource").disabled = busy;
+  must<HTMLButtonElement>("#btnCancelSourceEdit").disabled = busy;
+  must<HTMLTextAreaElement>("#punctuationDraftText").readOnly = busy || punctuationLocked;
+  must<HTMLSelectElement>("#punctuationMode").disabled = busy || punctuationLocked;
+  must<HTMLInputElement>("#punctuationChangeSummary").disabled = busy || punctuationLocked;
+  must<HTMLTextAreaElement>("#fullTranslationInput").readOnly = busy || !editing();
+  $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach((el) => { el.readOnly = busy || !editing() || reviewComments.isSelecting(); });
+  $$("#rows .tgt-edit").forEach((el) => { el.contentEditable = String(!busy && editing()); });
+}
+
 function shownBlocks(): Block[] {
   return blocks;
 }
 
 function markTerms(text: string): string {
-  let html = esc(text);
-  const keys = Object.keys(terms).sort((a, b) => b.length - a.length);
-  for (const t of keys) {
-    html = html.split(t).join(`<span class="term" data-term="${esc(t)}">${esc(t)}</span>`);
-  }
-  return html;
+  return termMarkup(text, Object.keys(terms), esc);
 }
 
 function validate(bs: Block[]): string[] {
@@ -1468,6 +1501,9 @@ function quoteFor(key: string): string {
 }
 
 function renderSource(): void {
+  must("#viewSource > p").textContent = view?.punctuation
+    ? view.punctuation.state === "confirmed" ? "확정 표점 원문" : "표점 작업안"
+    : "원문";
   if (!view) return;
   const punctuation = view.punctuation;
   const spans = punctuation?.structureSpans ?? [];
@@ -1510,11 +1546,16 @@ function renderSource(): void {
 function renderRows(): void {
   const textLayout=view?.translation?.textLayout;
   if(textLayout) {
-    must("#rows").innerHTML=sentenceDrafts.map(sentence=>{
-      const link=sentenceLinks.find(link=>link.sentenceId===sentence.id);
-      const source=link?.spans.map(span=>`<span data-review-source-from="${span.from}" data-review-source-to="${span.to}">${esc(span.quote).replaceAll("\r", "&#13;")}</span>`).join('<span class="review-source-gap"> … </span>') || "원문 연결 확인 필요";
-      return `<article class="brow" data-review-sentence="${esc(sentence.id)}"><div class="bcell bcell-src"><div class="bmeta"><span class="tag tag-plain">${esc(sentence.id)}</span><span class="tag tag-warn" data-sentence-review="${esc(sentence.id)}"${link && !link.needsReview ? " hidden" : ""}>확인 필요</span><span data-review-row-count></span></div><div>${source}</div></div><div class="bcell bcell-tgt"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || translationSaving || reviewComments.isSelecting() ? " readonly" : ""}>${esc(sentence.text)}</textarea></div></article>`;
+    const signature = (spans: typeof sentenceLinks[number]["spans"]) => spans.map((span) => `${span.from}:${span.to}`).join(",");
+    must("#rows").innerHTML = sentenceDrafts.map((sentence, index) => {
+      const link = sentenceLinks.find((item) => item.sentenceId === sentence.id);
+      const source = link?.spans.map(span => `<span data-review-source-from="${span.from}" data-review-source-to="${span.to}">${esc(span.quote).replaceAll("\r", "&#13;")}</span>`).join('<span class="review-source-gap"> … </span>') || '<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>';
+      const relatedCount = link?.spans.length ? sentenceLinks.filter((item) => signature(item.spans) === signature(link.spans)).length : 0;
+      const relation = relatedCount > 1 ? `같은 원문 · 번역 ${relatedCount}문장` : link?.spans.length ? `연결 구절 ${link.spans.length}개` : "미연결";
+      const canLink = !!view?.translation?.isCurrentDependencies && !dirty && !translationSaving && textLayout.state !== "running";
+      return `<article class="brow" data-review-sentence="${esc(sentence.id)}" aria-label="번역 ${index + 1} 대조"><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span><span data-review-row-count></span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || translationSaving || reviewComments.isSelecting() ? " readonly" : ""}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state">${!link?.spans.length || link.needsReview ? "대응 확인 필요" : link.reviewedBy === "human" ? "대응 확인됨" : "자동 연결"}</span><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(sentence.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? "대응 확인·수정" : "원문 연결"}</button></div></div></article>`;
     }).join("");
+    renderComparisonState();
     must("#blockCount").textContent=String(sentenceDrafts.length);
     resizeSentenceEditors();
     reviewComments.refresh();
@@ -1541,6 +1582,56 @@ function renderRows(): void {
   must("#blockCount").textContent = String(bs.length);
 }
 
+function sentenceNeedsReview(id: string): boolean {
+  const link = sentenceLinks.find((item) => item.sentenceId === id);
+  return !link?.spans.length || link.needsReview;
+}
+
+function renderComparisonState(): void {
+  const whole = !!view?.translation?.textLayout;
+  must("#viewParallel .comparison-tools").hidden = !whole;
+  if (!whole) { must("#comparisonEmpty").hidden = true; return; }
+  const only = must<HTMLInputElement>("#alignmentReviewOnly").checked;
+  const visible = sentenceDrafts.filter((sentence) => !only || sentenceNeedsReview(sentence.id));
+  if (!visible.some((sentence) => sentence.id === selectedSentenceId)) selectedSentenceId = visible[0]?.id ?? null;
+  const selected = sentenceLinks.find((link) => link.sentenceId === selectedSentenceId);
+  const sameSource = (id: string) => {
+    const link = sentenceLinks.find((item) => item.sentenceId === id);
+    return !!selected?.spans.length && JSON.stringify(link?.spans) === JSON.stringify(selected.spans);
+  };
+  $$("#rows [data-review-sentence]").forEach((row) => {
+    const id = row.dataset.reviewSentence!;
+    row.hidden = only && !sentenceNeedsReview(id);
+    row.classList.toggle("is-active", id === selectedSentenceId);
+    row.classList.toggle("is-related", id !== selectedSentenceId && sameSource(id));
+    const label = row.querySelector<HTMLElement>("[data-sentence-review]");
+    const link = sentenceLinks.find((item) => item.sentenceId === id);
+    if (label) { label.hidden = false; label.textContent = sentenceNeedsReview(id) ? "대응 확인 필요" : link?.reviewedBy === "human" ? "대응 확인됨" : "자동 연결"; }
+    const button = row.querySelector<HTMLButtonElement>("[data-edit-sentence-link]");
+    if (button) button.disabled = dirty || editorMutationBusy() || !view?.translation?.isCurrentDependencies || view.translation.textLayout?.state === "running";
+  });
+  const pending = sentenceDrafts.filter((sentence) => sentenceNeedsReview(sentence.id)).length;
+  must("#comparisonSummary").textContent = pending
+    ? `번역 ${sentenceDrafts.length}문장 · 대응 확인 필요 ${pending}`
+    : `번역 문장 연결 ${sentenceDrafts.length}/${sentenceDrafts.length}${view?.translation?.textLayout?.error ? " · 원문 전체 범위는 별도 확인" : ""}`;
+  must("#comparisonEmpty").hidden = visible.length > 0;
+  must("#comparisonEmpty").textContent = sentenceDrafts.length ? "대응을 확인할 문장이 없습니다." : "서책 보기에서 번역을 입력하면 문장별로 대조할 수 있습니다.";
+  const index = visible.findIndex((sentence) => sentence.id === selectedSentenceId);
+  must<HTMLButtonElement>("#btnPreviousSentence").disabled = index <= 0;
+  must<HTMLButtonElement>("#btnNextSentence").disabled = index < 0 || index >= visible.length - 1;
+}
+
+function moveSentence(direction: -1 | 1): void {
+  const only = must<HTMLInputElement>("#alignmentReviewOnly").checked;
+  const visible = sentenceDrafts.filter((sentence) => !only || sentenceNeedsReview(sentence.id));
+  const index = visible.findIndex((sentence) => sentence.id === selectedSentenceId);
+  selectedSentenceId = visible[index + direction]?.id ?? selectedSentenceId;
+  renderComparisonState();
+  const row = $$("#rows [data-review-sentence]").find((item) => item.dataset.reviewSentence === selectedSentenceId);
+  row?.scrollIntoView({ block: "nearest" });
+  row?.querySelector<HTMLTextAreaElement>(".sentence-edit")?.focus({ preventScroll: true });
+}
+
 function resizeSentenceEditor(editor: HTMLTextAreaElement): void {
   if (!editor.getClientRects().length) return;
   editor.style.height = "0px";
@@ -1553,11 +1644,14 @@ function resizeSentenceEditors(): void {
 
 function renderFull(): void {
   const whole=!!view?.translation?.textLayout;
+  renderSaveState();
+  renderComparisonState();
   reviewComments.refresh();
   must("#reviewCommentToolbar").hidden = !whole;
   must("#fullTranslationInput").hidden=!whole;
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly=!editing() || translationSaving;
   $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach((editor) => { editor.readOnly = !editing() || translationSaving || reviewComments.isSelecting(); });
+  renderEditingLocks();
   must("#translationEditHelp").hidden=!whole;
   must("#translationEditHelp").textContent=editing()
     ? "번역문을 클릭해 수정하세요. 번역 저장 또는 ⌘S로 저장합니다."
@@ -1767,20 +1861,18 @@ function updateDraftActionDisabled(): void {
 }
 
 function renderDraftWorkspaces(): void {
+  renderSaveState();
   if (!view) return;
   const sourceText = must<HTMLTextAreaElement>("#sourceDraftText");
   const sourceLocked = view.source.state === "confirmed" && !sourceEditingConfirmed;
   sourceText.readOnly = sourceLocked;
   must("#btnEditSource").hidden = !sourceLocked;
   must("#btnCancelSourceEdit").hidden = !sourceEditingConfirmed;
-  must("#sourceDraftMeta").hidden = sourceLocked;
-  must<HTMLSelectElement>("#sourceOrigin").disabled = sourceLocked;
-  must<HTMLInputElement>("#sourceChangeSummary").disabled = sourceLocked;
   must("#btnSaveSourceDraft").hidden = sourceLocked;
   must("#btnConfirmSource").hidden = sourceLocked;
   if (!sourceDirty) sourceText.value = view.source.contentText;
   must("#sourceTextCount").textContent = `${fmt(codepointLength(sourceText.value))}자`;
-  must("#sourceVersion").textContent = `원문 V${view.source.versionNo} · 잠금 ${view.source.lockVersion}`;
+  must("#sourceVersion").textContent = `원문 V${view.source.versionNo}`;
   const sourceBadge = must("#sourceStateBadge");
   sourceBadge.className = `tag ${versionTagClass(view.source.state)}`;
   sourceBadge.textContent = VERSION_STATE_LABELS[view.source.state];
@@ -1791,8 +1883,9 @@ function renderDraftWorkspaces(): void {
     : view.source.state === "confirmed"
       ? sourceEditingConfirmed
         ? "확정 원문을 수정 중입니다. 저장하면 새 원문안으로 보존됩니다."
-        : "확정된 원문입니다. 내용을 변경하려면 수정 버튼을 누르세요."
+        : ""
       : "원문안을 저장한 뒤 확정하세요.";
+  sourceMessage.hidden = !sourceMessage.textContent;
 
   const punctuationText = must<HTMLTextAreaElement>("#punctuationDraftText");
   const punctuation = view.punctuation;
@@ -1818,7 +1911,7 @@ function renderDraftWorkspaces(): void {
   must("#punctuationSourceReference").textContent = view.source.contentText;
   must("#punctuationTextCount").textContent = `${fmt(codepointLength(punctuationText.value))}자${preview ? " · AI 제안 · 읽기 전용" : ""}`;
   must("#punctuationVersion").textContent = punctuationEditable
-    ? `표점 P${punctuation.versionNo} · 잠금 ${punctuation.lockVersion}${punctuation.anchorSetId ? ` · 앵커 집합 ${punctuation.anchorSetId.slice(0, 8)}` : " · 앵커 미생성"}`
+    ? `표점 P${punctuation.versionNo}`
     : "현재 원문 기준 표점 원문 미생성";
   const punctuationBadge = must("#punctuationStateBadge");
   punctuationBadge.className = `tag ${punctuationEditable ? versionTagClass(punctuation.state) : "tag-plain"}`;
@@ -1850,8 +1943,53 @@ function renderDraftWorkspaces(): void {
   must<HTMLElement>("#punctuationChangeField").hidden = !punctuationEditable;
   must<HTMLElement>("#punctuationDraftFields").hidden = !!preview;
   must<HTMLElement>("#punctuationDraftActions").hidden = !!preview || !punctuationEditable;
+  renderEditingLocks();
 
   updateDraftActionDisabled();
+}
+
+function renderWorkflowProgress(): void {
+  if (!view) return;
+  const source = view.source;
+  const punctuation = view.punctuation;
+  const translation = view.translation;
+  const ready = translationReady();
+  const currentTranslation = translation?.isCurrentDependencies ? translation : null;
+  const progress = [
+    { id: "Source", done: source.state === "confirmed" && !sourceDirty,
+      attention: sourceDirty || source.state === "rejected" },
+    { id: "Punctuation", done: punctuation?.state === "confirmed" && !punctuationDirty && !sourceDirty,
+      attention: punctuationDirty || punctuation?.state === "superseded" || punctuation?.state === "rejected" },
+    { id: "Translation", done: currentTranslation?.state === "confirmed" && !dirty && !sourceDirty && !punctuationDirty,
+      attention: dirty || (!!translation && !translation.isCurrentDependencies) || currentTranslation?.state === "rejected" },
+  ];
+  for (const step of progress) {
+    const button = must<HTMLButtonElement>(`#step${step.id}`);
+    button.classList.toggle("is-done", step.done);
+    button.classList.toggle("is-attention", step.attention);
+  }
+  const completed = workspace === "translation" && currentTranslation?.state === "confirmed" && !dirty;
+  must("#workflowGuideLabel").textContent = completed ? "번역 확정됨" : "다음 할 일";
+  must("#workflowHint").textContent = workspace === "source"
+    ? sourceDirty ? "원문 변경을 저장하세요. 다른 단계로 이동할 때도 먼저 저장합니다."
+      : !ready ? "원문을 입력하고 저장하세요. 표점 없이 바로 번역할 수 있습니다."
+      : source.state === "confirmed" ? "원문이 준비되었습니다. 바로 번역하거나, 필요하면 표점을 먼저 정리하세요."
+      : "원문을 대조하고 확정하세요. 저장된 원문만으로 번역을 시작할 수도 있습니다."
+    : workspace === "punctuation"
+      ? punctuationDirty ? "표점 변경을 저장한 뒤 확정하세요. 표점은 선택 작업입니다."
+        : previewedPunctuationSuggestion() ? "AI 제안을 원문과 대조하고 적용하세요. 표점 없이 번역할 수도 있습니다."
+        : punctuation?.state === "confirmed" ? "표점이 확정되었습니다. 번역 단계에서 문장별로 대조하세요."
+        : "필요한 구두점과 문단을 정리하세요. 표점은 생략하고 번역할 수 있습니다."
+      : !ready ? "원문 단계에서 번역할 내용을 먼저 입력하고 저장하세요."
+        : translation && !currentTranslation ? "원문 또는 표점 기준이 변경되었습니다. 현재 기준으로 새 번역안을 만드세요."
+        : !currentTranslation ? "직접 번역을 입력하거나 AI 번역을 시작하세요. 표점은 선택 사항입니다."
+        : completed ? "내용이 승인된 번역입니다. 수정하려면 ‘새 번역안으로 수정’을 누르세요."
+        : validate(shownBlocks()).length ? "저장 검사에서 발견된 문제를 먼저 수정한 뒤 번역안을 확정하세요."
+        : "문장별 대조로 원문 대응과 번역 내용을 검토한 뒤, 상단의 ‘확정’을 누르세요.";
+  const next = must<HTMLButtonElement>("#btnWorkflowTranslation");
+  next.hidden = workspace === "translation" || !ready;
+  next.disabled = editorMutationBusy() || workspaceSwitching;
+  next.firstChild!.textContent = workspace === "punctuation" && punctuation?.state !== "confirmed" ? "표점 없이 번역 " : "번역으로 ";
 }
 
 function renderWorkflow(): void {
@@ -1860,22 +1998,10 @@ function renderWorkflow(): void {
   const currentTranslation = view.translation?.isCurrentDependencies ? view.translation : null;
   const staleTranslation = view.translation && !view.translation.isCurrentDependencies ? view.translation : null;
   const hasTranslation = currentTranslation !== null;
-  must("#sourceStepState").textContent = `V${view.source.versionNo} · ${VERSION_STATE_LABELS[view.source.state]}`;
-  must("#punctuationStepState").textContent = view.source.state !== "confirmed"
-    ? "원문 확정 필요"
-    : view.punctuation
-      ? `P${view.punctuation.versionNo} · ${VERSION_STATE_LABELS[view.punctuation.state]}`
-      : "표점 원문 생성 필요";
+  renderWorkflowProgress();
   must("#segmentationStepState").textContent = ready
     ? `앵커 ${view.anchors.length}개`
     : "표점 확정 필요";
-  must("#translationStepState").textContent = !ready
-    ? "원문 필요"
-    : currentTranslation
-      ? `v${currentTranslation.versionNo} · ${currentTranslation.state === "confirmed" ? "확정" : "작성 중"}`
-      : staleTranslation
-        ? "현재 원문 기준 번역 필요"
-        : "번역안 없음";
   const punctuationStep = must<HTMLButtonElement>("#stepPunctuation");
   const segmentationStep = must<HTMLButtonElement>("#stepSegmentation");
   const translationStep = must<HTMLButtonElement>("#stepTranslation");
@@ -1889,6 +2015,9 @@ function renderWorkflow(): void {
     const selected = button.dataset.workspace === workspace;
     button.classList.toggle("is-on", selected);
     button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    const current = button.querySelector<HTMLElement>(".workflow-current");
+    if (current) current.hidden = !selected;
   });
   $$(".workspace-panel").forEach((panel) => {
     const selected = panel.id === `${workspace}Workspace`;
@@ -1925,7 +2054,12 @@ function renderWorkflow(): void {
   document.title = `${docTitle} — 문해 Munhae Studio`;
 }
 
-function setWorkspace(next: Workspace): void {
+function setWorkspace(next: Workspace, committedMutation = false): void {
+  if (!committedMutation && next !== workspace && (editorMutationBusy() || workspaceSwitching)) return;
+  if (next !== workspace && (sourceDirty || punctuationDirty || dirty)) {
+    void saveBeforeWorkspaceSwitch(next);
+    return;
+  }
   if (next !== "translation") reviewComments.cancelSelection();
   if (!view) return;
   if (next === "punctuation" && view.source.state !== "confirmed") {
@@ -1951,6 +2085,45 @@ function setWorkspace(next: Workspace): void {
       must<HTMLTextAreaElement>("#punctuationDraftText").focus();
     }
   }
+}
+
+async function saveBeforeWorkspaceSwitch(next: Workspace): Promise<void> {
+  if (workspaceSwitching || editorMutationBusy()) return;
+  workspaceSwitching = true;
+  try {
+    // A workspace is left only after its draft is durable. A failed save keeps
+    // the user in the same editor with their exact input and retry controls.
+    const saved = sourceDirty ? await saveSourceDraft()
+      : punctuationDirty ? await savePunctuationDraft()
+      : dirty ? !!(await saveDraft()) : true;
+    workspaceSwitching = false;
+    if (saved) setWorkspace(next);
+  } finally {
+    workspaceSwitching = false;
+    renderSaveState();
+  }
+}
+
+function renderSaveState(): void {
+  must("#editorSaveState").textContent = editorMutationBusy() ? "저장 중…"
+    : hasUnsavedChanges() ? "저장하지 않은 변경" : "저장됨";
+  renderWorkflowProgress();
+}
+
+function renderFolioDocument(): void {
+  if (!view) return;
+  const d = view.document;
+  must("#titleDoc").textContent = d.originalTitle || d.title;
+  const punctuation = view.punctuation?.state === "confirmed" ? view.punctuation : null;
+  must("#folioSourceLabel").textContent = punctuation ? "확정 표점 원문" : "원문";
+  const source = punctuation?.punctuatedText ?? view.source.contentText;
+  must("#folioSourceText").textContent = source;
+  must("#translationWorkspace").classList.toggle("full-text-document", !!view.translation?.textLayout);
+  const aiButton = must("#btnPrepare");
+  const actions = must("#translationWorkspace > .segmentation-actions");
+  (view.translation?.textLayout ? must("#textTranslationControls") : actions).append(aiButton);
+  actions.classList.toggle("has-translation", !!view.translation?.isCurrentDependencies);
+  renderSaveState();
 }
 
 function renderDocMeta(): void {
@@ -2074,6 +2247,7 @@ function renderAll(): void {
   renderAuxiliaryRunControls();
   renderTerms();
   renderDocMeta();
+  renderFolioDocument();
   renderReferencePanel();
   renderDraftWorkspaces();
   renderSegmentation();
@@ -2096,6 +2270,7 @@ function setView(v: Layout): void {
   $$("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
   $$(".view").forEach((el) => el.classList.toggle("is-open", el.id === `view${v[0]?.toUpperCase()}${v.slice(1)}`));
   if (v === "parallel") resizeSentenceEditors();
+  renderComparisonState();
 }
 
 function setTab(t: string): void {
@@ -2121,6 +2296,8 @@ function togglePane(which: "ref" | "ctx", force?: boolean): void {
 function applyView(v: EditorView): void {
   const documentChanged = view?.document.id !== v.document.id;
   if (documentChanged) {
+    selectedSentenceId = null;
+    must<HTMLInputElement>("#alignmentReviewOnly").checked = false;
     chatLoadSerial += 1;
     prepRequest += 1;
     prepPreview = null;
@@ -2156,8 +2333,9 @@ function applyView(v: EditorView): void {
   if (v.translation?.textLayout) {
     sentenceDrafts = v.translation.textLayout.sentences.map((sentence) => ({ ...sentence }));
     sentenceLinks = v.translation.textLayout.links.map((link) => ({ ...link }));
-    must<HTMLTextAreaElement>("#fullTranslationInput").value = v.translation.textContent;
-    if(documentChanged) layout="full";
+    translationDraftText = v.translation.textContent;
+    must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
+    if (documentChanged) layout = "parallel";
   }
 
   active = null;
@@ -2188,7 +2366,7 @@ type SaveBlocks = Array<{
 
 async function saveDraft(title = "저장"): Promise<EditorView | null> {
   if (!view || !editing()) return view;
-  if (translationSaving) return null;
+  if (editorMutationBusy()) return null;
   const lockVersion = translationLockVersion();
   if (lockVersion === undefined) {
     notify("편집 중인 번역안의 잠금 버전을 찾을 수 없습니다", title);
@@ -2200,7 +2378,7 @@ async function saveDraft(title = "저장"): Promise<EditorView | null> {
   try {
     const result = await api.editor.saveDraft({
       documentNodeId: view.document.id,
-      textContent: view.translation?.textLayout ? must<HTMLTextAreaElement>("#fullTranslationInput").value : joinBlocks(blocks),
+      textContent: view.translation?.textLayout ? translationDraftText : joinBlocks(blocks),
       blocks: payloadBlocks(),
       expectedLockVersion: lockVersion,
     });
@@ -2317,7 +2495,7 @@ function openCtx(i: number, x: number, y: number): void {
 }
 
 async function mergeAt(i: number): Promise<void> {
-  if (!view) return;
+  if (!view || editorMutationBusy()) return;
   collectEdits();
   if (!(await saveIfDirty())) return;
   const bs = blocks;
@@ -2326,13 +2504,13 @@ async function mergeAt(i: number): Promise<void> {
   if (!left || !right) return;
   const lockVersion = translationLockVersion();
   if (lockVersion === undefined) return;
-  const result = await api.editor.mergeBlocks({
-    documentNodeId: view.document.id,
+  const documentNodeId = view.document.id;
+  const data = await runEditorViewAction("#btnSaveFullTranslation", "합치기", () => api.editor.mergeBlocks({
+    documentNodeId,
     leftBlockKey: left.key,
     rightBlockKey: right.key,
     expectedLockVersion: lockVersion,
-  });
-  const data = unwrap(result, "합치기");
+  }));
   if (data) {
     applyView(data);
     notify("블록을 합쳤습니다", "블록");
@@ -2391,16 +2569,55 @@ function openConfirm(): void {
 
 function setActionBusy(button: HTMLButtonElement, busy: boolean, busyLabel: string): void {
   if (busy) {
+    activeMutations.set(button, view?.document.id ?? "");
     button.dataset.idleLabel = button.textContent ?? "";
     button.textContent = busyLabel;
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
+    renderEditingLocks();
+    renderSaveState();
     return;
   }
+  activeMutations.delete(button);
   button.textContent = button.dataset.idleLabel ?? button.textContent;
   delete button.dataset.idleLabel;
   button.removeAttribute("aria-busy");
+  button.disabled = false;
   updateDraftActionDisabled();
+  renderEditingLocks();
+  renderComparisonState();
+  renderSaveState();
+}
+
+function actionResultIsCurrent(button: HTMLButtonElement): boolean {
+  return view?.document.id === activeMutations.get(button);
+}
+
+async function runEditorViewAction(
+  buttonSelector: string,
+  title: string,
+  request: () => ReturnType<typeof api.editor.get>,
+): Promise<EditorView | null> {
+  if (!view || editorMutationBusy()) return null;
+  const button = must<HTMLButtonElement>(buttonSelector);
+  setActionBusy(button, true, "처리 중…");
+  try {
+    const result = await request();
+    if (!actionResultIsCurrent(button)) return null;
+    return unwrap(result, title);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : "작업을 마치지 못했습니다", title);
+    return null;
+  } finally {
+    setActionBusy(button, false, "처리 중…");
+  }
+}
+
+function updateSentenceDraft(sentenceId: string, replacement: string) {
+  const updated = replaceTextSentence(translationDraftText, sentenceDrafts, sentenceId, replacement);
+  translationDraftText = updated.text;
+  sentenceDrafts = updated.sentences;
+  return updated;
 }
 
 function showWorkflowError(target: "source" | "punctuation", message: string): void {
@@ -2411,6 +2628,7 @@ function showWorkflowError(target: "source" | "punctuation", message: string): v
 }
 
 async function saveSourceDraft(): Promise<boolean> {
+  if (editorMutationBusy()) return false;
   if (!view) return false;
   if (view.source.state === "confirmed" && !sourceEditingConfirmed) return false;
   const text = must<HTMLTextAreaElement>("#sourceDraftText").value;
@@ -2419,20 +2637,24 @@ async function saveSourceDraft(): Promise<boolean> {
     return false;
   }
   const button = must<HTMLButtonElement>("#btnSaveSourceDraft");
+  workspaceSaving = true;
+  const savingDocumentId = view.document.id;
+  must<HTMLTextAreaElement>("#sourceDraftText").readOnly = true;
+  renderSaveState();
   setActionBusy(button, true, "저장 중…");
   try {
     const result = await api.editor.saveSourceDraft({
       documentNodeId: view.document.id,
       contentText: text,
-      originKind: must<HTMLSelectElement>("#sourceOrigin").value as "manual" | "paste" | "import",
-      changeSummary: must<HTMLInputElement>("#sourceChangeSummary").value.trim() || null,
+      originKind: "manual",
+      changeSummary: null,
       expectedLockVersion: view.source.lockVersion,
     });
+    if (view?.document.id !== savingDocumentId) return false;
     if (!result.ok) {
       showWorkflowError("source", result.error.message);
       return false;
     }
-    must<HTMLInputElement>("#sourceChangeSummary").value = "";
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
     notify("원문안을 새 버전으로 저장했습니다", "원문");
@@ -2441,12 +2663,15 @@ async function saveSourceDraft(): Promise<boolean> {
     showWorkflowError("source", error instanceof Error ? error.message : "원문안을 저장하지 못했습니다.");
     return false;
   } finally {
+    workspaceSaving = false;
+    renderDraftWorkspaces();
+    renderSaveState();
     setActionBusy(button, false, "저장 중…");
   }
 }
 
 async function confirmSource(): Promise<void> {
-  if (!view) return;
+  if (!view || editorMutationBusy()) return;
   if (view.source.state === "confirmed" && (!sourceEditingConfirmed || !sourceDirty)) return;
   if (sourceDirty && !(await saveSourceDraft())) return;
   const button = must<HTMLButtonElement>("#btnConfirmSource");
@@ -2456,13 +2681,14 @@ async function confirmSource(): Promise<void> {
       documentNodeId: view.document.id,
       expectedLockVersion: view.source.lockVersion,
     });
+    if (!actionResultIsCurrent(button)) return;
     if (!result.ok) {
       showWorkflowError("source", result.error.message);
       return;
     }
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
-    setWorkspace("translation");
+    setWorkspace("translation", true);
     notify("원문을 확정했습니다. 전체 번역을 시작하거나 표점을 작성할 수 있습니다", "원문 확정");
   } catch (error) {
     showWorkflowError("source", error instanceof Error ? error.message : "원문안을 확정하지 못했습니다.");
@@ -2503,7 +2729,7 @@ function structureValidationMessage(text: string): string | null {
 }
 
 async function createPunctuationDraft(): Promise<void> {
-  if (!view) return;
+  if (!view || editorMutationBusy()) return;
   if (view.source.state !== "confirmed") {
     showWorkflowError("punctuation", "원문안을 먼저 확정하세요.");
     return;
@@ -2520,6 +2746,7 @@ async function createPunctuationDraft(): Promise<void> {
       structureMode: must<HTMLSelectElement>("#punctuationMode").value as "prose" | "poetry",
       expectedSourceLockVersion: view.source.lockVersion,
     });
+    if (!actionResultIsCurrent(button)) return;
     if (!result.ok) {
       showWorkflowError("punctuation", result.error.message);
       return;
@@ -2540,6 +2767,7 @@ async function createPunctuationDraft(): Promise<void> {
 }
 
 async function savePunctuationDraft(): Promise<boolean> {
+  if (editorMutationBusy()) return false;
   if (!view) return false;
   if (previewedPunctuationSuggestion()) {
     notify("AI 제안을 먼저 적용하거나 작업안으로 전환한 뒤 저장하세요.", "표점 원문");
@@ -2565,6 +2793,10 @@ async function savePunctuationDraft(): Promise<boolean> {
     return false;
   }
   const button = must<HTMLButtonElement>("#btnSavePunctuationDraft");
+  workspaceSaving = true;
+  const savingDocumentId = view.document.id;
+  must<HTMLTextAreaElement>("#punctuationDraftText").readOnly = true;
+  renderSaveState();
   setActionBusy(button, true, "저장 중…");
   try {
     const result = await api.editor.savePunctuationDraft({
@@ -2575,6 +2807,7 @@ async function savePunctuationDraft(): Promise<boolean> {
       changeSummary: must<HTMLInputElement>("#punctuationChangeSummary").value.trim() || null,
       expectedLockVersion: punctuation.lockVersion,
     });
+    if (view?.document.id !== savingDocumentId) return false;
     if (!result.ok) {
       showWorkflowError("punctuation", result.error.message);
       return false;
@@ -2588,12 +2821,15 @@ async function savePunctuationDraft(): Promise<boolean> {
     showWorkflowError("punctuation", error instanceof Error ? error.message : "표점 원문을 저장하지 못했습니다.");
     return false;
   } finally {
+    workspaceSaving = false;
+    renderDraftWorkspaces();
+    renderSaveState();
     setActionBusy(button, false, "저장 중…");
   }
 }
 
 async function confirmPunctuation(): Promise<void> {
-  if (!view) return;
+  if (!view || editorMutationBusy()) return;
   if (previewedPunctuationSuggestion()) {
     notify("AI 제안을 먼저 적용하거나 작업안으로 전환한 뒤 확정하세요.", "표점 원문");
     return;
@@ -2611,13 +2847,14 @@ async function confirmPunctuation(): Promise<void> {
       documentNodeId: view.document.id,
       expectedLockVersion: punctuation.lockVersion,
     });
+    if (!actionResultIsCurrent(button)) return;
     if (!result.ok) {
       showWorkflowError("punctuation", result.error.message);
       return;
     }
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
-    if (translationReady()) setWorkspace("translation");
+    if (translationReady()) setWorkspace("translation", true);
     notify(`표점 원문을 확정하고 분절 앵커 ${result.data.anchors.length}개를 만들었습니다`, "표점 원문 확정");
   } catch (error) {
     showWorkflowError("punctuation", error instanceof Error ? error.message : "표점 원문을 확정하지 못했습니다.");
@@ -2627,7 +2864,7 @@ async function confirmPunctuation(): Promise<void> {
 }
 
 async function createTranslationDraft(): Promise<void> {
-  if (!view || !translationReady() || view.translation) return;
+  if (!view || editorMutationBusy() || !translationReady() || view.translation) return;
   const button = must<HTMLButtonElement>("#btnCreateTranslationDraft");
   setActionBusy(button, true, "초안 만드는 중…");
   try {
@@ -2638,9 +2875,9 @@ async function createTranslationDraft(): Promise<void> {
       expectedPunctuationLockVersion: 0,
     });
     const data = unwrap(result, "사람 번역 초안");
-    if (!data) return;
+    if (!data || !actionResultIsCurrent(button)) return;
     applyView(data);
-    setWorkspace("translation");
+    setWorkspace("translation", true);
     setView("full");
     must("#sbSaved").textContent = nowHM();
     notify("빈 번역 작업안을 만들었습니다. 번역 전문을 입력하세요", "사람 번역 초안");
@@ -2652,7 +2889,7 @@ async function createTranslationDraft(): Promise<void> {
 }
 
 async function resetTranslationDraft(): Promise<void> {
-  if (!view || !translationReady() || !view.translation || view.translation.isCurrentDependencies) return;
+  if (!view || editorMutationBusy() || !translationReady() || !view.translation || view.translation.isCurrentDependencies) return;
   if (!window.confirm("이전 번역안은 이력에 보존하고, 현재 원문에 맞는 빈 번역 작업안을 새로 만드시겠습니까?")) return;
   const button = must<HTMLButtonElement>("#btnResetTranslationDraft");
   setActionBusy(button, true, "작업안 만드는 중…");
@@ -2665,9 +2902,9 @@ async function resetTranslationDraft(): Promise<void> {
       expectedTranslationLockVersion: view.translation.lockVersion,
     });
     const data = unwrap(result, "현재 원문 번역 작업안");
-    if (!data) return;
+    if (!data || !actionResultIsCurrent(button)) return;
     applyView(data);
-    setWorkspace("translation");
+    setWorkspace("translation", true);
     setView("full");
     must("#sbSaved").textContent = nowHM();
     notify("이전 번역은 이력에 보존하고 현재 원문의 빈 번역 작업안을 만들었습니다", "번역 작업안");
@@ -2686,19 +2923,23 @@ function showEditorError(msg: string, title = "편집기를 열 수 없습니다
 }
 
 async function loadEditor(id: string): Promise<void> {
-  persistDoc(id);
+  if (editorMutationBusy()) return;
+  const serial = ++editorLoadSerial;
+  const editSerial = editorEditSerial;
   let result: Awaited<ReturnType<typeof api.editor.get>>;
   try {
     result = await api.editor.get(id);
   } catch (error) {
-    showEditorError(error instanceof Error ? error.message : "편집기 연결에 실패했습니다.");
+    if (serial === editorLoadSerial && editSerial === editorEditSerial && !editorMutationBusy()) showEditorError(error instanceof Error ? error.message : "편집기 연결에 실패했습니다.");
     return;
   }
+  if (serial !== editorLoadSerial || editSerial !== editorEditSerial || editorMutationBusy()) return;
   if (!result.ok) {
     showEditorError(result.error.message || "문서 데이터를 불러오지 못했습니다.");
     return;
   }
   const v = result.data;
+  persistDoc(id);
   const url = new URL(location.href);
   url.searchParams.set("doc", id);
   history.replaceState(null, "", url);
@@ -2710,13 +2951,14 @@ async function loadEditor(id: string): Promise<void> {
 }
 
 async function attachReference(): Promise<void> {
-  if (!view) return;
+  if (!view || editorMutationBusy()) return;
   const button = must<HTMLButtonElement>("#btnAttachReference");
   const before = new Set(view.referenceAssets.map((asset) => asset.id));
   setActionBusy(button, true, "첨부 중…");
   must<HTMLButtonElement>("#btnAttachReferenceEmpty").disabled = true;
   try {
     const result = await api.editor.attachReference(view.document.id);
+    if (!actionResultIsCurrent(button)) return;
     if (!result.ok) {
       notify(result.error.message, "참고 자료");
       return;
@@ -2823,9 +3065,11 @@ function pageCmd(id: string): boolean {
 
 function pageKeys(e: KeyboardEvent, m: boolean): void {
   const typing = (e.target as HTMLElement).matches("textarea,input,[contenteditable=true]");
-  if (m && !e.shiftKey && !e.altKey && e.code === "KeyS" && workspace === "translation" && view?.translation?.textLayout) {
+  if (m && !e.shiftKey && !e.altKey && e.code === "KeyS") {
     e.preventDefault();
-    if (dirty && !translationSaving) void saveDraft();
+    if (workspace === "source" && sourceDirty) void saveSourceDraft();
+    else if (workspace === "punctuation" && punctuationDirty) void savePunctuationDraft();
+    else if (workspace === "translation" && dirty && !translationSaving) void saveDraft();
     return;
   }
   if (m && !e.shiftKey && !e.altKey && /^Digit[1-3]$/.test(e.code)) {
@@ -2885,40 +3129,55 @@ must<HTMLSelectElement>("#referenceSelect").addEventListener("change", (event) =
 must("#btnPrepare").addEventListener("click", openPreparation);
 const refPref = store.get("munhae.ref");
 togglePane("ref", refPref ? refPref === "0" : innerWidth < 1500);
-togglePane("ctx", store.get("munhae.ctx") === "0");
+togglePane("ctx", store.get("munhae.ctx") !== "1");
 
 must("#workflow").addEventListener("click", (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-workspace]");
   if (!button || button.disabled) return;
   setWorkspace(button.dataset.workspace as Workspace);
 });
+must("#workflow").addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  const buttons = $$<HTMLButtonElement>("#workflow [data-workspace]").filter((button) => !button.hidden && !button.disabled);
+  const index = buttons.indexOf(event.target as HTMLButtonElement);
+  if (index < 0) return;
+  event.preventDefault();
+  const target = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+    : (index + (event.key === "ArrowRight" ? 1 : -1) + buttons.length) % buttons.length;
+  buttons.forEach((button, i) => { button.tabIndex = i === target ? 0 : -1; });
+  buttons[target]?.focus();
+});
+must("#btnWorkflowTranslation").addEventListener("click", () => setWorkspace("translation"));
 
 must<HTMLTextAreaElement>("#sourceDraftText").addEventListener("input", () => {
   if (must<HTMLTextAreaElement>("#sourceDraftText").readOnly) return;
+  editorEditSerial += 1;
   sourceDirty = true;
   renderDraftWorkspaces();
 });
 must("#btnEditSource").addEventListener("click", () => {
-  if (view?.source.state !== "confirmed") return;
+  if (view?.source.state !== "confirmed" || editorMutationBusy()) return;
   sourceEditingConfirmed = true;
   renderDraftWorkspaces();
   must<HTMLTextAreaElement>("#sourceDraftText").focus();
 });
 must("#btnCancelSourceEdit").addEventListener("click", () => {
-  if (!sourceEditingConfirmed) return;
+  if (!sourceEditingConfirmed || editorMutationBusy()) return;
   sourceEditingConfirmed = false;
   sourceDirty = false;
-  must<HTMLInputElement>("#sourceChangeSummary").value = "";
   renderDraftWorkspaces();
   must<HTMLButtonElement>("#btnEditSource").focus();
 });
 must<HTMLTextAreaElement>("#punctuationDraftText").addEventListener("input", () => {
   if (must<HTMLTextAreaElement>("#punctuationDraftText").readOnly) return;
+  editorEditSerial += 1;
   punctuationDirty = true;
   structureDrafts = undefined;
   renderDraftWorkspaces();
 });
 must<HTMLSelectElement>("#punctuationMode").addEventListener("change", () => {
+  if (editorMutationBusy()) return;
+  editorEditSerial += 1;
   if (!view?.punctuation || view.punctuation.state === "superseded") {
     renderAuxiliaryRunControls();
     updateDraftActionDisabled();
@@ -3007,7 +3266,30 @@ src.addEventListener("click", (e) => {
   }
 });
 
+must("#btnReadingSize").addEventListener("click", () => {
+  const large = document.body.classList.toggle("large-type");
+  must("#btnReadingSize").setAttribute("aria-pressed", String(large));
+  store.set("munhae.reading-size", large ? "large" : "normal");
+  resizeSentenceEditors();
+});
+if (store.get("munhae.reading-size") === "large") {
+  document.body.classList.add("large-type");
+  must("#btnReadingSize").setAttribute("aria-pressed", "true");
+}
+must("#alignmentReviewOnly").addEventListener("change", () => { renderComparisonState(); resizeSentenceEditors(); });
+must("#btnPreviousSentence").addEventListener("click", () => moveSentence(-1));
+must("#btnNextSentence").addEventListener("click", () => moveSentence(1));
 const rows = must("#rows");
+rows.addEventListener("focusin", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-review-sentence]");
+  if (row) { selectedSentenceId = row.dataset.reviewSentence!; renderComparisonState(); }
+});
+rows.addEventListener("click", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-review-sentence]");
+  if (row) { selectedSentenceId = row.dataset.reviewSentence!; renderComparisonState(); }
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-edit-sentence-link]");
+  if (button && !button.disabled) sentenceLinkUi.open(button.dataset.editSentenceLink!);
+});
 let sentenceEditorWidth = 0;
 new ResizeObserver(([entry]) => {
   if (entry && entry.contentRect.width !== sentenceEditorWidth) {
@@ -3053,12 +3335,13 @@ rows.addEventListener("contextmenu", (e) => {
   openCtx(Number(r.dataset.i), e.clientX, e.clientY);
 });
 rows.addEventListener("input", (e) => {
+  if (editorMutationBusy()) return;
+  editorEditSerial += 1;
   const sentenceEditor = (e.target as HTMLElement).closest<HTMLTextAreaElement>(".sentence-edit");
   if (sentenceEditor && editing() && !translationSaving) {
     const full = must<HTMLTextAreaElement>("#fullTranslationInput");
     const id = sentenceEditor.dataset.sentenceEdit!;
-    const updated = replaceTextSentence(full.value, sentenceDrafts, id, sentenceEditor.value);
-    sentenceDrafts = updated.sentences;
+    const updated = updateSentenceDraft(id, sentenceEditor.value);
     full.value = updated.text;
     const link = sentenceLinks.find((item) => item.sentenceId === id);
     const savedSentence = view?.translation?.textLayout?.sentences.find((item) => item.id === id);
@@ -3066,7 +3349,7 @@ rows.addEventListener("input", (e) => {
     if (link) link.needsReview = sentenceEditor.value !== savedSentence?.text || (savedLink?.needsReview ?? true);
     const review = sentenceEditor.closest(".brow")?.querySelector<HTMLElement>("[data-sentence-review]");
     if (review) review.hidden = !!link && !link.needsReview;
-    dirty = full.value !== view?.translation?.textContent;
+    dirty = translationDraftText !== view?.translation?.textContent;
     resizeSentenceEditor(sentenceEditor);
     renderFull();
     renderStrip();
@@ -3125,7 +3408,7 @@ cm.addEventListener("click", (e) => {
 must("#splitCancel").addEventListener("click", () => (must("#dlgSplit") as HTMLDialogElement).close());
 must("#splitOk").addEventListener("click", () => {
   void (async () => {
-    if (splitIdx === null || !view) return;
+    if (splitIdx === null || !view || editorMutationBusy()) return;
     const ta = must<HTMLTextAreaElement>("#splitText");
     const splitAt = utf16CaretToCodepoint(ta.value, ta.selectionStart);
     const textLength = codepointLength(ta.value);
@@ -3149,14 +3432,14 @@ must("#splitOk").addEventListener("click", () => {
     if (!(await saveIfDirty())) return;
     const lockVersion = translationLockVersion();
     if (lockVersion === undefined) return;
-    const result = await api.editor.splitBlock({
-      documentNodeId: view.document.id,
+    const documentNodeId = view.document.id;
+    const data = await runEditorViewAction("#splitOk", "나누기", () => api.editor.splitBlock({
+      documentNodeId,
       blockKey: b.key,
       splitAt,
       ...(anchorSplitAt === undefined ? {} : { anchorSplitAt }),
       expectedLockVersion: lockVersion,
-    });
-    const data = unwrap(result, "나누기");
+    }));
     if (data) {
       (must("#dlgSplit") as HTMLDialogElement).close();
       applyView(data);
@@ -3167,7 +3450,7 @@ must("#splitOk").addEventListener("click", () => {
 must("#linkCancel").addEventListener("click", () => (must("#dlgLink") as HTMLDialogElement).close());
 must("#linkOk").addEventListener("click", () => {
   void (async () => {
-    if (linkIdx === null) return;
+    if (linkIdx === null || editorMutationBusy()) return;
     const sel = $$<HTMLInputElement>('input[name="la"]:checked').map((x) => x.value);
     const b = blocks[linkIdx];
     if (!b) return;
@@ -3186,7 +3469,7 @@ must("#btnConfirm").addEventListener("click", openConfirm);
 must("#confirmCancel").addEventListener("click", () => (must("#dlgConfirm") as HTMLDialogElement).close());
 must("#confirmOk").addEventListener("click", () => {
   void (async () => {
-    if (!view) return;
+    if (!view || editorMutationBusy()) return;
     collectEdits();
     if (!(await saveIfDirty())) return;
     const lockVersion = translationLockVersion();
@@ -3194,11 +3477,11 @@ must("#confirmOk").addEventListener("click", () => {
       notify("편집 중인 번역안의 잠금 버전을 찾을 수 없습니다", "확정");
       return;
     }
-    const result = await api.editor.confirm({
-      documentNodeId: view.document.id,
+    const documentNodeId = view.document.id;
+    const data = await runEditorViewAction("#confirmOk", "확정", () => api.editor.confirm({
+      documentNodeId,
       expectedLockVersion: lockVersion,
-    });
-    const data = unwrap(result, "확정");
+    }));
     if (data) {
       (must("#dlgConfirm") as HTMLDialogElement).close();
       applyView(data);
@@ -3208,14 +3491,14 @@ must("#confirmOk").addEventListener("click", () => {
 });
 must("#btnRevise").addEventListener("click", () => {
   void (async () => {
-    if (!view) return;
+    if (!view || editorMutationBusy()) return;
     const lockVersion = translationLockVersion();
     if (lockVersion === undefined) return;
-    const result = await api.editor.revise({
-      documentNodeId: view.document.id,
+    const documentNodeId = view.document.id;
+    const data = await runEditorViewAction("#btnRevise", "새 번역안", () => api.editor.revise({
+      documentNodeId,
       expectedLockVersion: lockVersion,
-    });
-    const data = unwrap(result, "새 번역안");
+    }));
     if (data) {
       applyView(data);
       notify("새 번역안이 열렸습니다. 확정본은 유지됩니다", "새 번역안");
@@ -3284,6 +3567,10 @@ function hasUnsavedChanges(): boolean {
 }
 
 function canLeaveEditor(): boolean {
+  if (editorMutationBusy() || workspaceSwitching) {
+    notify("저장이 끝난 뒤 이동할 수 있습니다", "저장 중");
+    return false;
+  }
   collectEdits();
   return !hasUnsavedChanges() || window.confirm("저장하지 않은 변경이 있습니다. 이 화면을 떠나시겠습니까?");
 }
@@ -3297,7 +3584,7 @@ function clearUnsavedChanges(): void {
 
 window.addEventListener("beforeunload", (event) => {
   collectEdits();
-  if (hasUnsavedChanges()) event.preventDefault();
+  if (hasUnsavedChanges() || editorMutationBusy()) event.preventDefault();
 });
 
 must("#btnHome").addEventListener("click", () => {
@@ -3405,11 +3692,18 @@ window.addEventListener("pagehide", () => {
 await boot();
 
 must("#fullTranslationInput").addEventListener("input",()=>{
-  if (!editing() || translationSaving) return;
+  if (!editing() || editorMutationBusy()) return;
+  editorEditSerial += 1;
   const text = must<HTMLTextAreaElement>("#fullTranslationInput").value;
+  translationDraftText = text;
   dirty=text !== view?.translation?.textContent;
   sentenceDrafts=textSentences(text);
-  sentenceLinks=dirty ? [] : (view?.translation?.textLayout?.links ?? []).map((link) => ({ ...link }));
+  const savedLayout = view?.translation?.textLayout;
+  const matches = matchUnchangedTextSentences(savedLayout?.sentences ?? [], sentenceDrafts);
+  sentenceLinks = dirty ? sentenceDrafts.flatMap((sentence) => {
+    const previous = savedLayout?.links.find((link) => link.sentenceId === matches.get(sentence.id));
+    return previous ? [{ ...previous, sentenceId: sentence.id }] : [];
+  }) : (savedLayout?.links ?? []).map((link) => ({ ...link }));
   renderRows();
   renderFull();
   renderStrip();

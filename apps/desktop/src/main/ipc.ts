@@ -1,6 +1,7 @@
 import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
 import { probeAgentsCached } from "./agents";
+import { searchItkcFootnotes } from "./itkc-footnotes";
 import { AppError, errorCode } from "./errors";
 import { redact, log } from "./log";
 import {
@@ -36,6 +37,7 @@ import {
   parseSavePunctuationDraftInput,
   parseSaveSourceDraftInput,
   parseSaveDraftInput,
+  parseSaveSentenceLinkInput,
   parseSearchQueryInput,
   parseSplitBlockInput,
   parseStartTranslationInput,
@@ -137,6 +139,7 @@ function handleResult(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...ar
 }
 
 export function registerIpcHandlers(): void {
+  handleResult(IPC_CHANNELS.researchSearchFootnotes, (_event, input) => searchItkcFootnotes(input));
   for (const channel of ACCOUNT_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchAccount(channel, input));
   }
@@ -260,6 +263,9 @@ export function registerIpcHandlers(): void {
   });
   handleResult(IPC_CHANNELS.editorListReviewComments, (_event, documentNodeId) => {
     return requireRepo().listReviewComments(parseDocumentNodeId(documentNodeId));
+  });
+  handleResult(IPC_CHANNELS.editorSaveSentenceLink, (_event, input) => {
+    return requireRepo().saveSentenceLink(parseSaveSentenceLinkInput(input));
   });
   handleResult(IPC_CHANNELS.editorCreateReviewComment, (_event, input) => {
     return requireRepo().createReviewComment(parseCreateReviewCommentInput(input));

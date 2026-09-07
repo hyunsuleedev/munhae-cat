@@ -24,6 +24,7 @@ import {
   type SavePunctuationDraftInput,
   type SaveSourceDraftInput,
   type SaveTranslationDraftInput,
+  type SaveSentenceLinkInput,
   type SearchQueryInput,
   type SplitBlockInput,
   type StartProjectChatInput,
@@ -362,6 +363,30 @@ export function parseCreateReviewCommentInput(value: unknown): CreateReviewComme
     codepointTo,
     quote,
     bodyMd: asNonEmptyString(rec.bodyMd, "bodyMd", 20_000),
+  };
+}
+
+export function parseSaveSentenceLinkInput(value: unknown): SaveSentenceLinkInput {
+  const rec = asRecord(value, "input");
+  if (Object.keys(rec).some((key) => !["documentNodeId", "versionId", "sentenceId", "spans", "expectedLockVersion"].includes(key))) fail("input");
+  const expectedLockVersion = parseExpectedLockVersion(rec.expectedLockVersion);
+  if (!Number.isSafeInteger(expectedLockVersion)) fail("expectedLockVersion");
+  if (!Array.isArray(rec.spans) || rec.spans.length < 1 || rec.spans.length > 100) fail("spans");
+  const spans = rec.spans.map((value) => {
+    const span = asRecord(value, "span");
+    if (Object.keys(span).some((key) => !["from", "to", "quote"].includes(key))) fail("span");
+    const from = asInt(span.from, "from"), to = asInt(span.to, "to");
+    const quote = asString(span.quote, "quote", { max: 100_000 });
+    if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from < 0 || to <= from || to > 20_000_000) fail("range");
+    if (!quote.trim() || Array.from(quote).length !== to - from) fail("quote");
+    return { from, to, quote };
+  });
+  return {
+    documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    versionId: asNonEmptyString(rec.versionId, "versionId", 80),
+    sentenceId: asNonEmptyString(rec.sentenceId, "sentenceId", 80),
+    spans,
+    expectedLockVersion,
   };
 }
 

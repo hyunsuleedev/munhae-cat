@@ -22,11 +22,12 @@
     "@munhae/domain": "workspace:*",
     "@munhae/project-format": "workspace:*",
     "@supabase/supabase-js": "^2.115.0",
+    "@xmldom/xmldom": "^0.8.15",
     "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
-    "electron": "^37.2.5",
+    "electron": "37.10.3",
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
     "typescript": "^5.9.2",
