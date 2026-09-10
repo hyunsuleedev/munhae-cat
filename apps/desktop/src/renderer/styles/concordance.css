@@ -1,0 +1,44 @@
+.concordance-dialog { width: min(1080px, calc(100vw - 40px)); max-height: calc(100vh - 48px); margin: 24px auto; padding: 24px; overflow: auto; }
+.concordance-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.concordance-head h2 { margin: 3px 0 0; font-size: 21px; }
+.concordance-eyebrow { margin: 0; color: var(--muted); font-size: 12px; }
+.concordance-head kbd { margin-left: 5px; font-size: 10px; opacity: .65; }
+.concordance-form { display: flex; align-items: flex-end; gap: 10px; }
+.concordance-form label { display: block; margin: 0 0 6px; font-size: 12px; font-weight: 600; }
+.concordance-form label span { font-size: 10px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.concordance-form .input { width: 100%; }
+.concordance-query { flex: 1; min-width: 160px; }
+.concordance-form .btn { min-height: 32px; }
+.concordance-options { display: flex; gap: 18px; align-items: center; margin-top: 10px; color: var(--muted); font-size: 11px; }
+.concordance-options label { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.concordance-options p { margin: 0; line-height: 1.6; }
+.concordance-status { font-size: 12px; margin: 20px 0 12px; }
+.concordance-error { font-size: 13px; color: var(--danger, #b42318); }
+.concordance-results { display: grid; gap: 12px; min-height: 80px; }
+.concordance-result { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.concordance-result > header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 14px 16px 0; }
+.concordance-result h3 { font-size: 14px; margin: 0 0 5px; overflow-wrap: anywhere; }
+.concordance-result header p { font-size: 11px; color: var(--muted); margin: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.concordance-result header .btn { flex-shrink: 0; }
+.concordance-version-state { color: var(--fg); }
+.concordance-stale { color: var(--warn, #96712d); }
+.concordance-provenance { font-size: 10px; color: var(--muted); padding: 0 16px; margin: 9px 0 12px; }
+.concordance-provenance.needs-review { color: var(--warn, #96712d); }
+.concordance-pair { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--border); }
+.concordance-pair section { padding: 14px 16px 18px; min-width: 0; }
+.concordance-pair section + section { border-left: 1px solid var(--border); }
+.concordance-cell-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 10px; }
+.concordance-pair section > div { font-size: 13px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.concordance-pair .concordance-source { font-family: var(--font-hanmun, "Noto Serif CJK KR", serif); font-size: 15px; line-height: 1.9; }
+.concordance-pair mark { background: var(--review-mark-fill, #eee2b4); color: inherit; border-bottom: 1px solid var(--review-mark-line, #b89940); padding: 1px 0; }
+.concordance-pair.is-document-context section > div { max-height: 240px; overflow: auto; }
+.concordance-footer { display: flex; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+@media (max-width: 740px) {
+  .concordance-dialog { width: calc(100vw - 24px); padding: 18px; margin: 12px auto; max-height: calc(100vh - 24px); }
+  .concordance-form { flex-wrap: wrap; }
+  .concordance-query { flex-basis: 100%; }
+  .concordance-options { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .concordance-pair { grid-template-columns: 1fr; }
+  .concordance-pair section + section { border-left: 0; border-top: 1px solid var(--border); }
+  .concordance-result > header { flex-wrap: wrap; gap: 6px; }
+}

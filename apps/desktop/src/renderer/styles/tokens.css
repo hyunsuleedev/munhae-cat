@@ -1,0 +1,37 @@
+:root {
+  /* Folio: paper and ink for the document, quiet warmth for the workspace. */
+  --bg: #f6f5f0;
+  --surface: #fffefa;
+  --fg: #292b27;
+  --muted: #62665d;
+  --border: #dedfd5;
+  --accent: #794e40;
+  --accent-ink: #794e40;
+  --accent-soft: #f1e9df;
+  --fg-soft: color-mix(in oklch, var(--fg) 6%, transparent);
+  --fg-softer: color-mix(in oklch, var(--fg) 3%, transparent);
+  --ok: oklch(47% 0.12 150);
+  --ok-soft: color-mix(in oklch, var(--ok) 14%, transparent);
+  --warn: oklch(48% 0.12 70);
+  --warn-soft: color-mix(in oklch, var(--warn) 16%, transparent);
+  --danger: oklch(48% 0.17 25);
+  --danger-soft: color-mix(in oklch, var(--danger) 12%, transparent);
+  --chrome: #f6f5f0;
+  --sidebar: #efeee8;
+  --desk-a: #e8e7df;
+  --desk-b: #d4d5cb;
+  --ctl-border: #d0d1c6;
+  --sel: #e1e2d8;
+  --tl-r: oklch(67% 0.19 25);
+  --tl-y: oklch(83% 0.16 85);
+  --tl-g: oklch(74% 0.19 145);
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-hanmun: "Noto Serif KR", "Noto Serif CJK KR", "Apple Myungjo", "AppleMyungjo",
+    "Nanum Myeongjo", "Songti SC", "Batang", serif;
+  --r: 5px;
+  --sbw: 216px;
+  --iw: 300px;
+  --lw: 260px;
+  --rw: 340px;
+}

@@ -1,0 +1,10 @@
+가야금 단음(긴음 + 짧은음) G4 / Gayageum_SingleNote2_G4
+국립국악원, 2022. 공공누리 제1유형 (출처표시).
+상업적 이용 및 변경 허용. 기관의 후원이나 보증을 의미하지 않습니다.
+출처 및 이용조건:
+https://www.kogl.or.kr/recommend/recommendDivView.do?division=audio&recommendIdx=51591
+원본: Gayageum_SingleNote2_G4.wav (9 seconds, 48kHz stereo)
+공식 페이지의 공개 오디오 원본을 2026-09-10에 취득.
+변경: 3.94초부터 0.8초 발췌, 5ms 페이드인/250ms 페이드아웃,
+44.1kHz 모노 PCM 변환. 앱에서 음량 조절 및 단계 완료 시 240ms 간격으로 2회 재생.
+이 음원의 이용허락은 앱 소프트웨어 라이선스와 별개입니다.

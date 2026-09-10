@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>프로젝트 홈 · 세 가지 구성 — 문해</title><link rel="icon" href="data:,"><link rel="stylesheet" href="./base.css"><link rel="stylesheet" href="./index.css"></head>
+<body class="comparison-page">
+  <header class="comparison-top"><a class="brand" href="./index.html"><span class="brand-mark">文解</span><span>MUNHAE<br>STUDIO</span></a><span>DESIGN STUDIES <span class="top-dot">·</span> 02</span><a href="/home.html">현재 프로젝트 홈 ↗</a></header>
+  <main class="comparison-main">
+    <section class="comparison-intro"><div><p class="eyebrow">PROJECT HOME / INFORMATION ARCHITECTURE</p><h1>프로젝트의 전체가 보이는 홈.</h1><p>같은 문헌, 같은 작업 상태. 무엇을 중심에 둘지 세 가지 구성으로 비교합니다.</p></div><div class="study-count" aria-hidden="true">01 — 03</div></section>
+    <div class="direction-tabs" role="tablist" aria-label="홈 구성 선택">
+      <button id="tab-01-atlas" class="direction-tab" role="tab" aria-controls="live-study" aria-selected="true" data-view="01-atlas"><span class="direction-heading"><i>01</i><strong>문헌 지도</strong><span class="recommend-label">추천</span></span><span class="direction-desc">전체 목차 속에서 작업의 위치를 찾습니다.</span><span class="direction-flow"><b>목차와 진행</b><span>→</span>다음 문서</span></button>
+      <button id="tab-02-desk" class="direction-tab" role="tab" aria-controls="live-study" aria-selected="false" tabindex="-1" data-view="02-desk"><span class="direction-heading"><i>02</i><strong>오늘의 책상</strong></span><span class="direction-desc">작업을 이어 하고 검토할 내용을 모읍니다.</span><span class="direction-flow"><b>작업 재개</b><span>→</span>검토와 번역</span></button>
+      <button id="tab-03-study" class="direction-tab" role="tab" aria-controls="live-study" aria-selected="false" tabindex="-1" data-view="03-study"><span class="direction-heading"><i>03</i><strong>연구 서재</strong></span><span class="direction-desc">프로젝트의 범위와 연구 맥락을 펼칩니다.</span><span class="direction-flow"><b>프로젝트 개요</b><span>→</span>구성과 자료</span></button>
+    </div>
+    <section class="preview-workbench" aria-label="인터랙티브 시안">
+      <div class="preview-controls"><div class="scenario-controls" role="group" aria-label="예시 프로젝트 크기"><span class="control-label">문서 수</span><button data-scenario="empty" aria-pressed="false">없음</button><button data-scenario="single" aria-pressed="false">1개</button><button data-scenario="full" aria-pressed="true">12개</button><button data-scenario="large" aria-pressed="false">80개</button></div><div class="viewport-controls"><label for="viewport">화면 너비</label><select id="viewport"><option value="fit">창에 맞춤</option><option value="1440">1440px</option><option value="1024">1024px</option><option value="768">768px</option><option value="390">390px</option></select><a id="standalone" href="./01-atlas.html?scenario=full" target="_blank" rel="noopener">따로 열기 ↗</a></div></div>
+      <div class="preview-caption"><span><strong id="current-title">01 · 문헌 지도</strong><span id="current-description">목차를 중심에 놓고, 프로젝트 진행과 다음 작업을 연결합니다.</span></span><span id="frame-dimensions" class="mono"></span></div>
+      <div id="live-study" role="tabpanel" aria-labelledby="tab-01-atlas"><div class="preview-stage"><div class="frame-size"><iframe id="preview-frame" src="./01-atlas.html?scenario=full" title="문헌 지도 시안 · 인터랙티브 미리보기"></iframe></div></div></div>
+    </section>
+    <footer class="comparison-footer"><p><strong>직접 조작해 보세요.</strong> 검색·필터·목차·문서 미리보기를 사용할 수 있습니다. 세 안의 구성을 조합해도 좋습니다.</p><p>레이아웃 검토용 예시 데이터입니다.<br>실제 프로젝트에 연결하거나 저장하지 않습니다.</p></footer>
+  </main><script type="module" src="./index.js"></script>
+</body></html>

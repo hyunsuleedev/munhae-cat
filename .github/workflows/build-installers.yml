@@ -1,0 +1,31 @@
+name: Build installers
+on:
+  push:
+    branches: [release/installers-20260910]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      MUNHAE_UPDATE_URL: https://download.munhaestudio.com/windows/x64/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @munhae/desktop typecheck
+      - run: node scripts/release/build-windows.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munhae-windows-x64
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+            apps/desktop/release/SHA256SUMS.txt
+          if-no-files-found: error

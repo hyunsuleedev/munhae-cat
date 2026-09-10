@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+<title>문해 Munhae Studio — 시작</title>
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/chrome.css">
+<link rel="stylesheet" href="./styles/welcome.css">
+<script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
+</head>
+<body data-auth-pending class="welcome-page">
+<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
+<div class="welcome-drag" aria-hidden="true"></div>
+
+<main class="welcome" data-od-id="welcome-window" aria-label="문해 시작">
+  <section class="w-left" data-od-id="welcome-actions">
+    <h1 class="munhae-brand" aria-label="문해 Munhae Studio"><strong aria-hidden="true">文解</strong><small aria-hidden="true">MUNHAE<br>STUDIO</small></h1>
+    <p class="ver" id="verLine">버전 0.1.0</p>
+    <div class="welcome-account" id="welcomeAccount"><span id="welcomeAccountLabel">문해 계정</span><a class="btn btn-primary" id="welcomeAccountLink" href="account.html">로그인</a><a class="btn" id="welcomeSignUpLink" href="account.html?mode=signup">회원가입</a></div>
+    <div class="w-actions">
+      <button class="w-act" type="button" data-cmd="newproj" data-od-id="action-new-project"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M8 5.5v5M5.5 8h5"/></svg><div><b>새 프로젝트 만들기</b><span>.munhae 프로젝트 · 로컬 SQLite</span></div><kbd>⇧⌘N</kbd></button>
+      <button class="w-act" type="button" data-cmd="open" data-od-id="action-open-project"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/></svg><div><b>기존 프로젝트 열기…</b><span>.munhae 또는 .munhaepkg 백업에서 복원</span></div><kbd>⌘O</kbd></button>
+      <button class="w-act" type="button" data-cmd="seeddemo" id="btnSeedDemo" hidden data-od-id="action-seed-demo"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/></svg><div><b>훈민정음 데모 열기</b><span>御製序 원문·표점·번역안이 들어 있는 예시 프로젝트</span></div></button>
+    </div>
+  </section>
+
+  <section class="w-right" data-od-id="welcome-recent">
+    <div class="w-h">최근 프로젝트</div>
+    <div id="recentList"></div>
+  </section>
+</main>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+</body>
+</html>

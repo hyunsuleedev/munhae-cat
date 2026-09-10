@@ -1,0 +1,58 @@
+:root {
+  --review-mark-line: #b78a2a;
+  --review-mark-fill: rgba(220, 166, 43, 0.18);
+  --review-selection-fill: rgba(220, 166, 43, 0.3);
+}
+
+.review-range-mark {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: var(--review-mark-line);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: none;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.review-range-mark.is-emphasized {
+  background: var(--review-mark-fill);
+  border-radius: 2px;
+}
+
+.is-comment-selecting [data-review-source-from]::selection,
+.is-comment-selecting [data-review-source-from] *::selection,
+.is-comment-selecting .sentence-edit::selection {
+  background: var(--review-selection-fill);
+  color: inherit;
+}
+
+.review-marks-container {
+  position: relative;
+}
+
+.review-textarea-mirror {
+  position: absolute;
+  z-index: 0;
+  box-sizing: border-box;
+  margin: 0;
+  border-style: solid;
+  border-color: transparent;
+  overflow: hidden;
+  color: transparent;
+  text-shadow: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.review-textarea-mirror[hidden] {
+  display: none;
+}
+
+.sentence-edit.has-review-marks,
+.sentence-edit.has-review-marks:not(:read-only):hover,
+.sentence-edit.has-review-marks:focus {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+}

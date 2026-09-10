@@ -1,0 +1,61 @@
+appId: org.munhae.studio
+productName: Munhae Studio
+copyright: Copyright © 2026 Munhae
+asar: true
+# A feed is supplied explicitly by scripts/release/build-windows.mjs.
+publish: null
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: src/main/data/hanja-NOTICE.txt
+    to: licenses/hanja-NOTICE.txt
+  - from: src/main/data/hanja-Unihan-NOTICE.txt
+    to: licenses/hanja-Unihan-NOTICE.txt
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**"
+npmRebuild: true
+fileAssociations:
+  - ext: munhae
+    name: Munhae Project
+    description: Munhae Studio project
+    role: Editor
+    isPackage: true
+  - ext: munhaepkg
+    name: Munhae Backup
+    description: Munhae Studio backup
+    role: Editor
+mac:
+  icon: build/icon.icns
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  darkModeSupport: false
+  hardenedRuntime: true
+  gatekeeperAssess: false
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: Munhae-Studio-${version}-${arch}-setup.${ext}
+linux:
+  target:
+    - AppImage
+  category: Office
+  artifactName: ${productName}-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh
+  allowToChangeInstallationDirectory: true
+extraMetadata:
+  main: out/main/index.js

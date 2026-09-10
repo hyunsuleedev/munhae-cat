@@ -1,0 +1,46 @@
+.review-reference-tools { display: flex; margin: -4px 0 16px; }
+.footnote-dialog { width: min(960px, calc(100vw - 40px)); max-height: calc(100vh - 48px); margin: 24px auto; padding: 24px; overflow: auto; }
+.footnote-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.footnote-head h2 { margin: 4px 0 0; font-size: 20px; }
+.footnote-provider { margin: 0; color: var(--muted); font-size: 12px; }
+.footnote-context { margin: 0 0 16px; padding: 9px 12px; border-left: 2px solid var(--review-mark-line); background: var(--review-mark-fill); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 80px; overflow: auto; }
+.footnote-search-form { display: flex; align-items: flex-end; gap: 10px; }
+.footnote-query-field { flex: 1; min-width: 0; }
+.footnote-search-form label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; }
+.footnote-search-form .input { width: 100%; }
+.footnote-search-form .btn { min-height: 32px; }
+.footnote-help { color: var(--muted); font-size: 12px; line-height: 1.65; margin: 9px 0 18px; }
+.footnote-results-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.footnote-results-head p { margin: 0; font-size: 12px; }
+.footnote-pages { display: flex; gap: 5px; flex-shrink: 0; }
+.footnote-error { color: var(--danger, #b42318); margin: 0 0 10px; font-size: 13px; }
+.footnote-results { display: grid; grid-template-columns: minmax(220px, .85fr) minmax(0, 1.4fr); min-height: 280px; height: min(46vh, 480px); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.footnote-list { padding: 0; margin: 0; list-style: none; overflow: auto; border-right: 1px solid var(--border); }
+.footnote-list li + li { border-top: 1px solid var(--border); }
+.footnote-list button { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 14px; border: 0; text-align: left; font: inherit; color: var(--fg); background: transparent; cursor: pointer; }
+.footnote-list button:hover, .footnote-list button[aria-pressed="true"] { background: var(--review-mark-fill); }
+.footnote-list button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.footnote-list strong { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.footnote-result-book { color: var(--muted); font-size: 11px; }
+.footnote-preview { font-size: 12px; line-height: 1.65; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.footnote-detail { padding: 20px; overflow: auto; min-width: 0; font-size: 13px; line-height: 1.8; }
+.footnote-detail h3 { margin: 2px 0 14px; font-size: 19px; line-height: 1.65; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.footnote-label { font-size: 11px; color: var(--muted); margin: 0 0 4px; }
+.footnote-display-title { margin: -6px 0 18px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.footnote-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.footnote-bibliography { margin: 22px 0 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; }
+.footnote-bibliography > div { display: grid; grid-template-columns: 58px 1fr; gap: 8px; }
+.footnote-bibliography dt { color: var(--muted); }
+.footnote-bibliography dd { margin: 0; overflow-wrap: anywhere; }
+.footnote-origin-note { font-size: 11px; color: var(--muted); margin: 12px 0 0; }
+.footnote-footer { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+#footnoteActionStatus { font-size: 12px; color: var(--muted); }
+@media (max-width: 700px) {
+  .footnote-dialog { width: calc(100vw - 24px); margin: 12px auto; padding: 18px; max-height: calc(100vh - 24px); }
+  .footnote-search-form { flex-wrap: wrap; }
+  .footnote-query-field { flex-basis: 100%; }
+  .footnote-results { grid-template-columns: 1fr; height: auto; }
+  .footnote-list { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .footnote-detail { max-height: 360px; }
+  .footnote-footer { flex-wrap: wrap; }
+}
