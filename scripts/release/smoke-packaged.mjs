@@ -21,7 +21,7 @@ try{
  await main.send('Debugger.enable'); const paused=main.once('Debugger.paused');await main.send('Runtime.runIfWaitingForDebugger');let frame=(await paused).callFrames[0];
  await main.send('Debugger.setBreakpoint',{location:{scriptId:frame.location.scriptId,lineNumber:3}}); const entry=main.once('Debugger.paused');await main.send('Debugger.resume');frame=(await entry).callFrames[0];
  const setup=await main.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,expression:`app.setPath('userData', ${JSON.stringify(data)}); app.setAppLogsPath(${JSON.stringify(join(data,'logs'))}); JSON.stringify({userData: app.getPath('userData'), arch: process.arch, electron: process.versions.electron})`,returnByValue:true});
- if(setup.exceptionDetails || !setup.result?.value?.includes(data))throw Error('Failed to isolate packaged data: '+JSON.stringify(setup));
+ if(setup.exceptionDetails || !setup.result?.value || JSON.parse(setup.result.value).userData !== data)throw Error('Failed to isolate packaged data: '+JSON.stringify(setup));
  console.log('Isolated packaged runtime: '+setup.result.value);
  await main.send('Debugger.resume');
  let result;
