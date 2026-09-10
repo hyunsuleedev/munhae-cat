@@ -9,7 +9,8 @@ async function port() { const server=net.createServer(); await new Promise(r=>se
 const inspector=await port(), renderer=await port();
 const data=await mkdtemp(join(tmpdir(),'munhae-package-smoke-'));
 await mkdir(join(data,'logs'));
-const child=spawn(executable,[`--inspect-brk=127.0.0.1:${inspector}`,`--remote-debugging-port=${renderer}`],{stdio:['ignore','pipe','pipe'],env:{...process.env,ELECTRON_RUN_AS_NODE:''}});
+const launchEnv={...process.env}; delete launchEnv.ELECTRON_RUN_AS_NODE;
+const child=spawn(executable,[`--inspect-brk=127.0.0.1:${inspector}`,`--remote-debugging-port=${renderer}`],{stdio:['ignore','pipe','pipe'],env:launchEnv});
 let output=''; child.stdout.on('data',b=>output+=b); child.stderr.on('data',b=>output+=b);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function targets(p){for(let i=0;i<100;i++){try {const r=await fetch(`http://127.0.0.1:${p}/json/list`); if(r.ok) return await r.json();}catch{} if(child.exitCode!==null)throw Error('Packaged process exited early: '+output); await sleep(200);}throw Error('Debug endpoint unavailable: '+output);}

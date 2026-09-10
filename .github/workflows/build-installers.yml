@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   windows:
+    if: "!contains(github.event.head_commit.message, '[verify only]')"
     runs-on: windows-2022
     timeout-minutes: 40
     env:

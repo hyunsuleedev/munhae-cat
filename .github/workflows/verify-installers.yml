@@ -1,0 +1,46 @@
+name: Verify existing Windows installer
+on:
+  push:
+    branches: [release/installers-20260910]
+    paths:
+      - .github/workflows/verify-installers.yml
+      - scripts/release/smoke-packaged.mjs
+  workflow_dispatch:
+    inputs:
+      build_run:
+        description: 'Build installers run ID containing munhae-windows-x64'
+        required: true
+        default: '34536539524'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN: ${{ inputs.build_run || '34536539524' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download exact build artifact
+        run: gh run download $env:BUILD_RUN --repo hyunsuleedev/munhae-cat --name munhae-windows-x64 --dir installer
+      - name: Verify artifact hashes, install and launch
+        shell: pwsh
+        run: |
+          Get-Content installer/SHA256SUMS.txt | ForEach-Object {
+            $parts = $_ -split '  ', 2
+            $hash = (Get-FileHash (Join-Path installer $parts[1]) -Algorithm SHA256).Hash.ToLower()
+            if ($hash -ne $parts[0]) { throw "Artifact hash mismatch: $($parts[1])" }
+          }
+          $installer = (Get-ChildItem installer/*-x64-setup.exe).FullName
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer
+          Write-Host "Installer signing status: $($signature.Status)"
+          $destination = Join-Path $env:RUNNER_TEMP 'MunhaeSmoke'
+          $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$destination") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          node scripts/release/smoke-packaged.mjs "$destination/Munhae Studio.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged startup smoke failed' }
