@@ -13,9 +13,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@munhae/domain": "workspace:*"
+    "@munhae/domain": "workspace:*",
+    "cross-spawn": "7.0.6"
   },
   "devDependencies": {
+    "@types/cross-spawn": "6.0.6",
     "@types/node": "^22.18.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

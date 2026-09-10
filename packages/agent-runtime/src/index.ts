@@ -1,6 +1,5 @@
+import { spawn, execFileCaptured } from "./process-launch";
 import {
-  execFile as execFileCb,
-  spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
@@ -429,34 +428,6 @@ export function normalizeAgentError(
     return makeError("connection_dropped", clean);
   }
   return makeError(fallback, clean);
-}
-
-type ExecResult = {
-  error: NodeJS.ErrnoException | null;
-  stdout: string;
-  stderr: string;
-};
-
-function execFileCaptured(
-  command: string,
-  args: readonly string[],
-  env: NodeJS.ProcessEnv,
-  timeout = 5_000,
-): Promise<ExecResult> {
-  return new Promise((resolve) => {
-    execFileCb(
-      command,
-      [...args],
-      { env, timeout, maxBuffer: 1024 * 1024, windowsHide: true, shell: false },
-      (error, stdout, stderr) => {
-        resolve({
-          error: error as NodeJS.ErrnoException | null,
-          stdout: String(stdout ?? ""),
-          stderr: String(stderr ?? ""),
-        });
-      },
-    );
-  });
 }
 
 async function isExecutable(path: string): Promise<boolean> {

@@ -19,6 +19,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @munhae/desktop typecheck
+      - run: pnpm --filter @munhae/agent-runtime exec vitest run tests/process-launch.test.ts
       - run: node scripts/release/build-windows.mjs
       - name: Install and launch packaged preview
         shell: pwsh
