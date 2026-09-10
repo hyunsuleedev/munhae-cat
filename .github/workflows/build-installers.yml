@@ -20,6 +20,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @munhae/desktop typecheck
       - run: node scripts/release/build-windows.mjs
+      - name: Install and launch packaged preview
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem apps/desktop/release/*-x64-setup.exe).FullName
+          $destination = Join-Path $env:RUNNER_TEMP 'MunhaeSmoke'
+          $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$destination") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          node scripts/release/smoke-packaged.mjs "$destination/Munhae Studio.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged startup smoke failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: munhae-windows-x64

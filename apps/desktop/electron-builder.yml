@@ -37,7 +37,10 @@ mac:
     - zip
   artifactName: ${productName}-${version}-${arch}.${ext}
   darkModeSupport: false
-  hardenedRuntime: true
+  # Unnotarized preview: ad-hoc signing keeps the packaged app internally valid.
+  identity: "-"
+  hardenedRuntime: false
+  notarize: false
   gatekeeperAssess: false
 win:
   target:

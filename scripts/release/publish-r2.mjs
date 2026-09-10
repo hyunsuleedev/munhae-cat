@@ -19,11 +19,16 @@ if (!process.argv.includes('--publish')) {
   console.log(JSON.stringify({ mode: 'dry-run', version, files: [...release.files, 'latest.yml'], destination: base }, null, 2));
   process.exit(0);
 }
-if (process.platform !== 'win32') throw new Error('Publish on Windows after verifying Authenticode.');
-const signature = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
-  '$s = Get-AuthenticodeSignature -LiteralPath $env:MUNHAE_INSTALLER; if ($s.Status -ne "Valid") { throw "Installer signature is not valid" }'],
-  { env: { ...process.env, MUNHAE_INSTALLER: resolve(directory, release.name) }, stdio: 'inherit' });
-if (signature.status !== 0) throw new Error('Refusing to publish an unsigned or invalid installer.');
+// Unsigned previews are an explicit publishing choice; hashes and immutable paths remain enforced.
+if (process.argv.includes('--allow-unsigned')) {
+  console.log('Publishing an explicitly selected unsigned preview.');
+} else {
+  if (process.platform !== 'win32') throw new Error('Signed releases must be verified on Windows; unsigned previews require --allow-unsigned.');
+  const signature = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    '$s = Get-AuthenticodeSignature -LiteralPath $env:MUNHAE_INSTALLER; if ($s.Status -ne "Valid") { throw "Installer signature is not valid" }'],
+    { env: { ...process.env, MUNHAE_INSTALLER: resolve(directory, release.name) }, stdio: 'inherit' });
+  if (signature.status !== 0) throw new Error('Refusing to publish an unsigned or invalid installer without --allow-unsigned.');
+}
 const required = name => { const value = process.env[name]; if (!value) throw new Error(`Missing ${name}`); return value; };
 const account = required('R2_ACCOUNT_ID');
 if (!/^[a-f0-9]{32}$/i.test(account)) throw new Error('Invalid R2 account ID.');
