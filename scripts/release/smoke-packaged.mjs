@@ -1,5 +1,5 @@
 // Launch the exact packaged app, isolating its data before its entry point runs.
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {mkdtemp, mkdir, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -10,13 +10,19 @@ const inspector=await port(), renderer=await port();
 const data=await mkdtemp(join(tmpdir(),'munhae-package-smoke-'));
 await mkdir(join(data,'logs'));
 const launchEnv={...process.env}; delete launchEnv.ELECTRON_RUN_AS_NODE;
-const child=spawn(executable,[`--inspect-brk=127.0.0.1:${inspector}`,`--remote-debugging-port=${renderer}`],{stdio:['ignore','pipe','pipe'],env:launchEnv});
+const child=spawn(executable,[`--inspect-brk=127.0.0.1:${inspector}`,`--remote-debugging-port=${renderer}`],{stdio:['ignore','pipe','pipe'],env:launchEnv,detached:process.platform!=='win32'});
 let output=''; child.stdout.on('data',b=>output+=b); child.stderr.on('data',b=>output+=b);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function targets(p){for(let i=0;i<100;i++){try {const r=await fetch(`http://127.0.0.1:${p}/json/list`); if(r.ok) return await r.json();}catch{} if(child.exitCode!==null)throw Error('Packaged process exited early: '+output); await sleep(200);}throw Error('Debug endpoint unavailable: '+output);}
 async function connect(url){const ws=new WebSocket(url);await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j});let seq=0;const pending=new Map(),events=new Map();ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p?.reject(Error(m.error.message)):p?.resolve(m.result);}else{events.get(m.method)?.(m.params);}};return {ws,send(method,params={}){return new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});},once(method){return new Promise(r=>events.set(method,r));}};}
 let main, page;
-const deadline=setTimeout(()=>{console.error('Packaged smoke timed out');child.kill();process.exitCode=1;},60000);
+function stopTestProcess() {
+ if (!child.pid) return;
+ if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {stdio:'ignore'});
+ else { try { process.kill(-child.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } }
+ child.stdout.destroy(); child.stderr.destroy(); child.unref();
+}
+const deadline=setTimeout(()=>{console.error('Packaged smoke timed out');stopTestProcess();process.exit(1);},60000);
 try{
  main=await connect((await targets(inspector))[0].webSocketDebuggerUrl);
  await main.send('Debugger.enable'); const paused=main.once('Debugger.paused');await main.send('Runtime.runIfWaitingForDebugger');let frame=(await paused).callFrames[0];
@@ -35,4 +41,4 @@ try{
  console.log('Packaged renderer: '+result.result.value);
  await writeFile(join(data,'smoke-output.log'),output);
  console.log('SMOKE PASS — startup and renderer only; not an OS compatibility or signed-install test.');
-}finally{clearTimeout(deadline);page?.ws.close();main?.ws.close();child.kill();}
+}finally{clearTimeout(deadline);page?.ws.close();main?.ws.close();stopTestProcess();}
