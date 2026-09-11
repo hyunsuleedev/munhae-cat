@@ -1,12 +1,14 @@
-name: Build installers
+name: Release 0.1.1 installers
 on:
   push:
-    branches: [release/installers-20260910]
+    branches: [release/installers-20260911]
 permissions:
   contents: read
+concurrency:
+  group: munhae-public-release
+  cancel-in-progress: false
 jobs:
   windows:
-    if: "!contains(github.event.head_commit.message, '[verify only]')"
     runs-on: windows-2022
     timeout-minutes: 40
     env:
@@ -20,7 +22,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @munhae/desktop typecheck
-      - run: pnpm --filter @munhae/agent-runtime exec vitest run tests/process-launch.test.ts
+      - run: pnpm --filter @munhae/agent-runtime test
+      - run: pnpm --filter @munhae/desktop exec vitest run tests/ai-runs-privacy.test.ts tests/update-controller.test.ts tests/update-logging.test.ts tests/quit-lifecycle.test.ts
+      - run: node --test scripts/release/release-utils.test.mjs
       - run: node scripts/release/build-windows.mjs
       - name: Install and launch packaged preview
         shell: pwsh
@@ -41,3 +45,72 @@ jobs:
             apps/desktop/release/latest.yml
             apps/desktop/release/SHA256SUMS.txt
           if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munhae-release-config
+          path: apps/desktop/release-config.generated.yml
+          if-no-files-found: error
+  mac:
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @munhae/desktop dist --mac --arm64 --x64 --publish never
+      - name: Verify both disk images and app signatures
+        run: |
+          hdiutil verify "apps/desktop/release/Munhae Studio-0.1.1-arm64.dmg"
+          hdiutil verify "apps/desktop/release/Munhae Studio-0.1.1-x64.dmg"
+          codesign --verify --deep --strict "apps/desktop/release/mac-arm64/Munhae Studio.app"
+          codesign --verify --deep --strict "apps/desktop/release/mac/Munhae Studio.app"
+      - name: Launch native packaged app
+        run: |
+          if [ "$(uname -m)" = arm64 ]; then
+            node scripts/release/smoke-packaged.mjs "apps/desktop/release/mac-arm64/Munhae Studio.app/Contents/MacOS/Munhae Studio"
+          else
+            node scripts/release/smoke-packaged.mjs "apps/desktop/release/mac/Munhae Studio.app/Contents/MacOS/Munhae Studio"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munhae-mac
+          path: apps/desktop/release/*.dmg
+          if-no-files-found: error
+  publish:
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: windows-release
+    env:
+      MUNHAE_UPDATE_URL: ${{ vars.MUNHAE_UPDATE_URL }}
+      R2_BUCKET: ${{ vars.R2_BUCKET }}
+      R2_PREFIX: ${{ vars.R2_PREFIX }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: munhae-windows-x64
+          path: apps/desktop/release
+      - uses: actions/download-artifact@v4
+        with:
+          name: munhae-release-config
+          path: apps/desktop
+      - uses: actions/download-artifact@v4
+        with:
+          name: munhae-mac
+          path: apps/desktop/release
+      - run: node scripts/release/publish-macos.mjs --publish
+      - run: node scripts/release/publish-r2.mjs --publish --allow-unsigned

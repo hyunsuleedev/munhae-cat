@@ -193,6 +193,7 @@ const PUBLIC_RUN_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   canceled: "AI 실행을 취소했습니다.",
   timeout: "AI 실행 시간이 초과되었습니다.",
   invalid_stream: "AI 응답 스트림을 처리하지 못했습니다.",
+  tool_permission_required: "AI가 요청한 도구의 실행 권한이 없어 중단됐습니다. 터미널에서 해당 CLI의 도구 권한을 설정한 뒤 다시 시도하세요.",
   provider_failed: "AI CLI 실행에 실패했습니다.",
   event_log_unavailable: "AI 실행 기록을 안전하게 만들 수 없습니다.",
   runtime_transport_failed: "AI 실행 프로세스와 통신하지 못했습니다.",
@@ -232,7 +233,13 @@ export function publicRunError(error: { code: string; message: string }): { code
 export function updateFromEvent(view: AiRunView, event: AgentRunEvent): void {
   if (event.type === "status") {
     view.phase = event.phase;
-    view.detail = "응답 처리 중…";
+    view.detail = {
+      starting: "AI 실행을 준비하고 있습니다…",
+      initializing: "AI 연결을 준비하고 있습니다…",
+      thinking: "AI 응답을 기다리고 있습니다. 긴 작업은 시간이 더 걸릴 수 있습니다.",
+      streaming: "AI 응답을 받고 있습니다…",
+      stopping: "AI 실행을 취소하고 있습니다…",
+    }[event.phase];
   } else if (event.type === "text_delta") {
     view.phase = "streaming";
     if (view.taskKind !== "chat") {
@@ -282,6 +289,9 @@ async function executeProjectTask(
   sessionStore: RuntimeSessionStore,
 ): Promise<void> {
   const request = requestFromPreferences(prepared.messageId, prepared.requestText, config, view.agentId);
+  if (view.agentId === "antigravity" && view.taskKind === "punctuation_suggest") {
+    request.antigravitySkipPermissions = true;
+  }
   const sessionKey = {
     providerKind: view.agentId,
     projectId: entry.projectId,

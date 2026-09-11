@@ -84,7 +84,7 @@ describe("AI run renderer privacy", () => {
       });
 
       expect(view.phase).toBe("thinking");
-      expect(view.detail).toBe("응답 처리 중…");
+      expect(view.detail).toBe("AI 응답을 기다리고 있습니다. 긴 작업은 시간이 더 걸릴 수 있습니다.");
     },
   );
 
@@ -120,6 +120,7 @@ describe("AI run renderer privacy", () => {
   it.each([
     "provider_failed",
     "connection_dropped",
+    "tool_permission_required",
     "session_unavailable",
     "unknown_future_provider_error",
   ])("never exposes provider-authored %s error details", (code) => {

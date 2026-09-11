@@ -23,6 +23,14 @@ export function parseAntigravityModels(stdout: string): AgentModelOption[] | nul
 }
 
 export function antigravityFailure(text: string): AgentRunError | null {
+  if (/a tool required[^\n]*permission[^\n]*headless mode cannot prompt|Print mode: soft-denying tool confirmation/i.test(text)) {
+    return { code: "tool_permission_required", retryable: false,
+      message: "Antigravity 도구 실행에 권한이 필요하지만 비대화형 실행에서는 승인할 수 없습니다. 터미널에서 필요한 도구 권한을 설정한 뒤 다시 시도하세요." };
+  }
+  if (/\[agy\].*print timeout after|Print mode: print timeout after/i.test(text)) {
+    return { code: "timeout", retryable: true,
+      message: "Antigravity가 제한 시간 안에 응답을 완료하지 못했습니다. 잠시 후 다시 시도하세요." };
+  }
   if (/authentication required.*please visit|authentication timed out|not logged into antigravity|error getting token source|invalid_grant/i.test(text)) {
     return { code: "auth_required", retryable: false,
       message: "Antigravity 로그인이 필요합니다. 터미널에서 agy를 실행해 Google 로그인을 완료한 뒤 다시 시도하세요." };
@@ -94,6 +102,14 @@ export async function writeAntigravityModelSelection(path: string, model: string
   await rename(temp, path);
 }
 
+/** Startup token lookups can fail before agy restores a valid keyring session. */
+export function antigravityLogFailure(text: string): AgentRunError | null {
+  const authenticated = /(?:Print mode: silent auth succeeded|ChainedAuth: authenticated via|OAuth: authenticated successfully)[^\n]*(?:\n|$)/g;
+  let start = 0;
+  for (const match of text.matchAll(authenticated)) start = match.index! + match[0].length;
+  return antigravityFailure(text.slice(start));
+}
+
 export async function readAntigravityDiagnostic(path: string): Promise<AgentRunError | null> {
   try {
     const file = await open(path, "r");
@@ -102,7 +118,7 @@ export async function readAntigravityDiagnostic(path: string): Promise<AgentRunE
       const buffer = Buffer.alloc(Math.min(size, 64 * 1024));
       await file.read(buffer, 0, buffer.length, Math.max(0, size - buffer.length));
       // Only return classified, fixed guidance; never forward raw diagnostic logs.
-      return antigravityFailure(buffer.toString("utf8"));
+      return antigravityLogFailure(buffer.toString("utf8"));
     } finally { await file.close(); }
   } catch { return null; }
 }

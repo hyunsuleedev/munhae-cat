@@ -1,12 +1,11 @@
-# Munhae 0.1.0 unsigned preview
+# Munhae 0.1.1 unsigned preview
 
-Published to https://munhaestudio.com and https://download.munhaestudio.com.
+Release candidate based on 0.1.0 snapshot d8d5695, with only the Antigravity integration and AI waiting-status changes from the original checkout.
 
-Release source snapshot: `release/installers-20260910` in private hyunsuleedev/munhae-cat. Original dirty checkout preserved, no main merge.
+- Antigravity available in translation preparation.
+- Distinguish recovered authentication, timeout, and native tool permission errors.
+- Allow up to 30 minutes; quiet periods show waiting status instead of canceling by default.
+- Antigravity punctuation requests explicitly approve the native tool loop.
+- Windows x64 and macOS arm64/x64 installers remain unsigned previews (Mac ad-hoc signed).
 
-Windows build 34536539524 / source 21530ef; exact artifact verification 34536998669 passed.
-Mac ad-hoc settings 357f45f / source f6888aa; arm64 startup verified, Intel startup unverified.
-
-Scoped R2 upload secrets saved in GitHub windows-release environment. Temporary local credentials deleted.
-
-See docs/windows-release.md for verification limits, file hashes, build and publish commands.
+CI builds and validates both platforms before publishing immutable files and finally promoting the Windows update feed. Website download links follow public file verification.

@@ -79,6 +79,7 @@ export type AgentErrorCode =
   | "canceled"
   | "timeout"
   | "invalid_stream"
+  | "tool_permission_required"
   | "invalid_envelope"
   | "provider_failed";
 
@@ -128,7 +129,10 @@ export type AgentRunRequest = {
   outputSchema?: JsonSchema;
   outputContract?: string;
   appTool?: AgentAppTool;
+  /** Explicit approval for Antigravity's non-interactive native tool loop. */
+  antigravitySkipPermissions?: boolean;
   timeoutMs?: number;
+  /** Optional inactivity cutoff; omitted means silence does not cancel the run. */
   inactivityTimeoutMs?: number;
 };
 
@@ -220,8 +224,8 @@ export type ProbeAllOptions = {
 };
 
 const CREDENTIAL_ENV_KEY = /(?:AWS|GOOGLE|OPENAI|ANTHROPIC|AUTHORIZATION|API[_-]?KEY|ACCESS[_-]?KEY|TOKEN|SECRET|PASSWORD|PASSWD|BEARER|COOKIE|SESSION|DATABASE[_-]?URL|CONNECTION[_-]?STRING|PRIVATE[_-]?KEY|CLIENT[_-]?SECRET|(?:^|[_-])(?:AUTH|CREDENTIALS?|CRED|DSN|KEY|PAT)(?:[_-]|$))/i;
-const DEFAULT_TIMEOUT_MS = 20 * 60_000;
-const DEFAULT_INACTIVITY_TIMEOUT_MS = 2 * 60_000;
+const DEFAULT_TIMEOUT_MS = 30 * 60_000;
+const QUIET_NOTICE_MS = 2 * 60_000;
 const MAX_TIMEOUT_MS = 24 * 60 * 60_000;
 const STDERR_RAW_TAIL_LIMIT = 12_000;
 const STDERR_REDACTED_TAIL_LIMIT = 4_000;
@@ -1337,14 +1341,16 @@ export function createClaudeJsonlParser(
 type DetectedCapabilities = {
   public: AgentCapabilities;
   claude: ClaudeCapabilities | null;
-  antigravity?: { nativeModel: boolean; logFile: boolean; print: boolean };
+  antigravity?: { nativeModel: boolean; logFile: boolean; print: boolean; printTimeout?: boolean };
 };
 
 type AgentDefinitionBuildOptions = {
+  timeoutMs?: number;
   cwd: string;
   prompt: string;
   capabilities: DetectedCapabilities;
   hasAppTool?: boolean;
+  antigravitySkipPermissions?: boolean;
   model?: string;
   reasoningEffort?: AgentRunRequest["reasoningEffort"];
   serviceTier?: AgentRunRequest["serviceTier"];
@@ -1630,11 +1636,14 @@ export const antigravityAgentDefinition = {
         reasoningEffort: help.includes("--effort"), structuredOutput: help.includes("--json-schema"),
         nativeTools: help.includes("--dangerously-skip-permissions") },
       claude: null,
-      antigravity: { nativeModel: help.includes("--model"), logFile: help.includes("--log-file"), print },
+      antigravity: { nativeModel: help.includes("--model"), logFile: help.includes("--log-file"), print, printTimeout: help.includes("--print-timeout") },
     };
   },
   validateCapabilities(capabilities: DetectedCapabilities, request: AgentRunRequest): string | null {
     if (!capabilities.antigravity?.print) return "Installed Antigravity CLI does not support print mode.";
+    if (request.antigravitySkipPermissions && !capabilities.public.nativeTools) {
+      return "Installed Antigravity CLI cannot approve tools in print mode; update agy.";
+    }
     if (request.reasoningEffort && !["low", "medium", "high"].includes(request.reasoningEffort)) {
       return "Antigravity reasoning effort must be low, medium or high.";
     }
@@ -1645,8 +1654,9 @@ export const antigravityAgentDefinition = {
   },
   buildArgs(options: AgentDefinitionBuildOptions): string[] {
     const args: string[] = [];
+    if (options.capabilities.antigravity?.printTimeout) args.push("--print-timeout", `${options.timeoutMs ?? DEFAULT_TIMEOUT_MS}ms`);
     if (options.capabilities.antigravity?.logFile) args.push("--log-file", join(options.cwd, "antigravity.log"));
-    if (options.hasAppTool && options.capabilities.public.nativeTools) args.push("--dangerously-skip-permissions");
+    if ((options.hasAppTool || options.antigravitySkipPermissions) && options.capabilities.public.nativeTools) args.push("--dangerously-skip-permissions");
     if (options.model && options.model !== "default" && options.capabilities.antigravity?.nativeModel) args.push("--model", options.model);
     if (options.reasoningEffort) args.push("--effort", options.reasoningEffort);
     if (options.outputSchema) args.push("--json-schema", JSON.stringify(options.outputSchema));
@@ -2272,11 +2282,14 @@ class CliAgentAdapter implements AgentAdapter {
         && probe.capabilities.explicitSessionId
         ? randomUUID()
         : undefined;
+      const timeoutMs = boundedTimeout(request.timeoutMs, this.options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS);
       const args = this.definition.buildArgs({
+        timeoutMs,
         cwd: runDir,
         prompt: request.prompt,
         capabilities: resolvedProbe.capabilities,
         ...(preparedAppTool ? { hasAppTool: true } : {}),
+        ...(request.antigravitySkipPermissions ? { antigravitySkipPermissions: true } : {}),
         ...(request.model ? { model: request.model } : {}),
         ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
         ...(request.serviceTier ? { serviceTier: request.serviceTier } : {}),
@@ -2354,10 +2367,9 @@ class CliAgentAdapter implements AgentAdapter {
         [sessionRef, newSessionId].filter((value): value is string => Boolean(value)),
       );
 
-      const timeoutMs = boundedTimeout(request.timeoutMs, this.options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS);
       const inactivityTimeoutMs = boundedTimeout(
         request.inactivityTimeoutMs,
-        this.options.defaultInactivityTimeoutMs ?? DEFAULT_INACTIVITY_TIMEOUT_MS,
+        this.options.defaultInactivityTimeoutMs ?? 0,
       );
       const active: ActiveRun = {
         child,
@@ -2382,7 +2394,13 @@ class CliAgentAdapter implements AgentAdapter {
       };
       active.resetInactivity = () => {
         if (active.inactivityTimer) clearTimeout(active.inactivityTimer);
-        active.inactivityTimer = setTimeout(stopForTimeout, inactivityTimeoutMs);
+        active.inactivityTimer = setTimeout(() => {
+          if (active.termination) return;
+          if (inactivityTimeoutMs > 0) stopForTimeout();
+          else emit({ type: "status", runId: request.runId, agentId: this.agentId,
+            at: nowIso(), phase: "thinking",
+            detail: "응답 대기 중입니다. 긴 문서나 높은 추론 수준에서는 시간이 더 걸릴 수 있습니다. 원하면 취소할 수 있습니다." });
+        }, inactivityTimeoutMs || QUIET_NOTICE_MS);
         active.inactivityTimer.unref?.();
       };
       active.absoluteTimer = setTimeout(stopForTimeout, timeoutMs);
@@ -2433,14 +2451,16 @@ class CliAgentAdapter implements AgentAdapter {
       const parsed = parser.snapshot();
       // agy logs transient auth errors before loading its keyring even on
       // successful runs. Like OpenDesign, consult logs only for failed/empty output.
-      const antigravityDiagnostic = this.agentId === "antigravity"
-        && (!parsed.outputText.trim() || completionValue.exitCode !== 0)
+      const inspectAntigravityFailure = this.agentId === "antigravity"
+        && (!parsed.outputText.trim() || completionValue.exitCode !== 0);
+      const antigravityTerminalFailure = inspectAntigravityFailure ? antigravityFailure(stderrRaw) : null;
+      const antigravityDiagnostic = inspectAntigravityFailure
         ? await readAntigravityDiagnostic(join(runDir, "antigravity.log")) : null;
       output = parsed.outputText;
       usage = parsed.usage ?? usage;
       emittedSession = parsed.sessionRef ?? emittedSession;
       parsedModel = parsed.model ?? parsedModel;
-      parserFatal = antigravityDiagnostic ?? parsed.error ?? parserFatal;
+      parserFatal = parsed.error ?? antigravityTerminalFailure ?? antigravityDiagnostic ?? parserFatal;
       await eventQueue;
 
       // If the raw diagnostic was truncated, a credential may straddle the
