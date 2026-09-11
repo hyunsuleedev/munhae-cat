@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { EditorView, IpcResult, MunhaeApi, ReadingAnnotationView } from "../src/shared/munhae-api";
+import type { EditorView, IpcResult, MunhaeApi, ReadingAnnotationView, ReadingCitation } from "../src/shared/munhae-api";
 import { configureReadingStudy } from "../src/renderer/scripts/reading-study-ui";
 
 const flush = async () => { for (let n = 0; n < 16; n++) await Promise.resolve(); };
@@ -48,6 +48,7 @@ class Element extends EventTarget {
   }
   querySelector(selector: string): Element | null {
     if (selector.startsWith("[")) return this.querySelectorAll(selector)[0] ?? null;
+    if (this.selector === "host" && selector.startsWith("#") && !this.markup.includes(`id="${selector.slice(1)}"`)) return null;
     const key = selector.startsWith("#") || this.selector === "host" ? selector : `${this.selector}/${selector}`;
     if (!this.elements.has(key)) this.elements.set(key, new Element(this.elements, key));
     return this.elements.get(key)!;
@@ -61,6 +62,10 @@ const savedNote = (extra: Partial<ReadingAnnotationView> = {}): ReadingAnnotatio
   id: "existing", documentNodeId: "doc", sourceVersionId: "source-1", codepointFrom: 0, codepointTo: 1,
   quote: "甲", reading: "갑", gloss: "기존 풀이", readingOrder: null, citation: null, lockVersion: 7,
   createdAt: "2026-09-10", updatedAt: "2026-09-10", ...extra,
+});
+const savedCitation = (extra: Partial<ReadingCitation> = {}): ReadingCitation => ({
+  source: "libhangul", sourceLabel: "사전", entryId: "dict:甲", headword: "甲", reading: "갑", sense: "선택한 사전 뜻",
+  sourceUrl: "https://example.invalid/source", license: "test", licenseUrl: null, attribution: "test", ...extra,
 });
 
 function fixture() {
@@ -94,7 +99,7 @@ function fixture() {
   };
   const type = (selector: string, text: string) => { const target = element(selector); target.value = text; target.dispatchEvent(new Event("input")); };
   controller.setDocument(sourceView()); controller.setVisible(true);
-  return { controller, api, listRequests, saveRequests, saveReadingAnnotation, edited, element, click, type,
+  return { controller, api, host, listRequests, saveRequests, saveReadingAnnotation, edited, element, click, type,
     setEditable: (value: boolean) => { editable = value; }, sense: () => host.querySelectorAll("[data-rs-sense]")[0]! };
 }
 
@@ -105,26 +110,29 @@ describe("reading study draft and async boundaries", () => {
     f.sense().disabled = false; f.click(f.sense()); // Guard also checks state, not just DOM styling.
     expect(f.controller.hasUnsavedDraft()).toBe(false);
     expect(f.edited).not.toHaveBeenCalled();
-    f.listRequests[0]!.resolve({ ok: true, data: [savedNote()] }); await flush();
+    const legacyGloss = "  사용자가 남긴 문맥 풀이\n원문 그대로  ";
+    f.listRequests[0]!.resolve({ ok: true, data: [savedNote({ gloss: legacyGloss })] }); await flush();
     expect(f.sense().disabled).toBe(false);
     f.click(f.sense());
     expect(f.controller.hasUnsavedDraft()).toBe(true);
     const saving = f.controller.save();
     expect(f.saveReadingAnnotation).toHaveBeenCalledWith(expect.objectContaining({ id: "existing", expectedLockVersion: 7,
-      citation: expect.objectContaining({ headword: "甲", sense: "사전 뜻" }) }));
-    f.saveRequests[0]!.resolve({ ok: true, data: savedNote({ lockVersion: 8 }) });
+      gloss: legacyGloss, citation: expect.objectContaining({ headword: "甲", sense: "사전 뜻" }) }));
+    f.saveRequests[0]!.resolve({ ok: true, data: savedNote({ gloss: legacyGloss, lockVersion: 8, citation: savedCitation({ sense: "사전 뜻" }) }) });
     expect(await saving).toBe(true);
   });
 
   it("signals actual draft edits separately from async loading and rendering", async () => {
     const f = fixture(); f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
     expect(f.edited).not.toHaveBeenCalled();
-    f.type("#rsGloss", "내 풀이"); expect(f.edited).toHaveBeenCalledTimes(1);
-    f.click(f.sense()); expect(f.edited).toHaveBeenCalledTimes(2);
-    f.element("#rsClearCitation").dispatchEvent(new Event("click")); expect(f.edited).toHaveBeenCalledTimes(3);
+    f.type("#rsReading", "갑독음"); expect(f.edited).toHaveBeenCalledTimes(1);
+    f.type("#rsOrder", "2"); expect(f.edited).toHaveBeenCalledTimes(2);
+    f.click(f.sense()); expect(f.edited).toHaveBeenCalledTimes(3);
+    f.element("#rsClearCitation").dispatchEvent(new Event("click")); expect(f.edited).toHaveBeenCalledTimes(4);
     f.controller.setVisible(false); f.controller.setVisible(true); await flush();
-    expect(f.edited).toHaveBeenCalledTimes(3);
-    expect(f.element("#rsGloss").value).toBe("내 풀이");
+    expect(f.edited).toHaveBeenCalledTimes(4);
+    expect(f.element("#rsReading").value).toBe("갑독음");
+    expect(f.element("#rsOrder").value).toBe("2");
   });
 
   it("cannot import a sense while other editor work prevents editing", async () => {
@@ -136,12 +144,14 @@ describe("reading study draft and async boundaries", () => {
 
   it("keeps a failed autosave draft and original selection instead of selecting another character", async () => {
     const f = fixture(); f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
-    f.type("#rsGloss", "보존할 풀이");
+    f.type("#rsReading", "보존할 독음");
+    f.type("#rsOrder", "3");
     const target = f.element("#rsTokens").querySelector('[data-rs-from="1"]')!;
     f.click(target); expect(f.controller.isBusy()).toBe(true);
     f.saveRequests[0]!.resolve({ ok: false, error: { code: "conflict", message: "다른 창에서 변경되었습니다" } }); await flush();
     expect(f.element("#rsSelected").textContent).toBe("甲");
-    expect(f.element("#rsGloss").value).toBe("보존할 풀이");
+    expect(f.element("#rsReading").value).toBe("보존할 독음");
+    expect(f.element("#rsOrder").value).toBe("3");
     expect(f.controller.hasUnsavedDraft()).toBe(true);
     expect(f.element("#rsStatus").textContent).toBe("다른 창에서 변경되었습니다");
   });
@@ -149,10 +159,65 @@ describe("reading study draft and async boundaries", () => {
   it("ignores an older document annotation response after the document changes", async () => {
     const f = fixture();
     f.controller.setDocument(sourceView("other-doc", "source-2"));
-    f.listRequests[1]!.resolve({ ok: true, data: [savedNote({ id: "new-note", documentNodeId: "other-doc", sourceVersionId: "source-2", gloss: "새 문서 풀이" })] });
+    f.listRequests[1]!.resolve({ ok: true, data: [savedNote({ id: "new-note", documentNodeId: "other-doc", sourceVersionId: "source-2", reading: "새 문서 독음", readingOrder: 4 })] });
     await flush();
     f.listRequests[0]!.resolve({ ok: true, data: [savedNote()] }); await flush();
-    expect(f.element("#rsGloss").value).toBe("새 문서 풀이");
+    expect(f.element("#rsReading").value).toBe("새 문서 독음");
+    expect(f.element("#rsOrder").value).toBe("4");
+    expect(f.edited).not.toHaveBeenCalled();
+  });
+});
+
+describe("reading study dictionary meanings without manual gloss editing", () => {
+  it("removes the manual gloss field while retaining reading and reading-order controls", async () => {
+    const f = fixture(); f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
+    expect(f.host.querySelector("#rsGloss")).toBeNull();
+    expect(f.element("#rsReading").disabled).toBe(false);
+    expect(f.element("#rsOrder").disabled).toBe(false);
+  });
+
+  it("preserves the exact legacy gloss and citation when updating a note's reading and order", async () => {
+    const f = fixture();
+    const legacyGloss = "  예전 문맥 풀이\n보존할 둘째 줄  ", citation = savedCitation();
+    f.listRequests[0]!.resolve({ ok: true, data: [savedNote({ gloss: legacyGloss, citation })] }); await flush();
+    f.type("#rsReading", "수정한 독음"); f.type("#rsOrder", "2");
+    const saving = f.controller.save();
+    expect(f.saveReadingAnnotation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      id: "existing", expectedLockVersion: 7, reading: "수정한 독음", readingOrder: 2, gloss: legacyGloss, citation,
+    }));
+    f.saveRequests[0]!.resolve({ ok: true, data: savedNote({ gloss: legacyGloss, citation, reading: "수정한 독음", readingOrder: 2, lockVersion: 8 }) });
+    expect(await saving).toBe(true);
+    expect(f.controller.hasUnsavedDraft()).toBe(false);
+  });
+
+  it("saves a new selected dictionary meaning as a citation with an empty manual gloss", async () => {
+    const f = fixture(); f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
+    f.click(f.sense());
+    const saving = f.controller.save();
+    expect(f.saveReadingAnnotation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      documentNodeId: "doc", sourceVersionId: "source-1", codepointFrom: 0, codepointTo: 1, quote: "甲",
+      gloss: "", reading: "갑", expectedLockVersion: 0, citation: expect.objectContaining({ headword: "甲", sense: "사전 뜻" }),
+    }));
+    f.saveRequests[0]!.resolve({ ok: true, data: savedNote({ id: "new-note", gloss: "", lockVersion: 1, citation: savedCitation({ sense: "사전 뜻" }) }) });
+    expect(await saving).toBe(true);
+    expect(f.controller.hasUnsavedDraft()).toBe(false);
+  });
+
+  it("shows cited senses or basic dictionary glosses on cards and cited phrase senses instead of legacy glosses", async () => {
+    const f = fixture();
+    f.listRequests[0]!.resolve({ ok: true, data: [
+      savedNote({ gloss: "숨길 낱자 풀이", citation: savedCitation({ sense: "선택한 낱자 뜻" }) }),
+      savedNote({ id: "second", codepointFrom: 1, codepointTo: 2, quote: "乙", reading: "을", gloss: "숨길 기본훈 대체 풀이" }),
+      savedNote({ id: "phrase", codepointTo: 2, quote: "甲乙", gloss: "숨길 어휘 풀이", citation: savedCitation({ entryId: "dict:甲乙", headword: "甲乙", sense: "선택한 어휘 뜻" }) }),
+    ] }); await flush();
+    const cards = f.element("#rsTokens").innerHTML, phrases = f.element("#rsSavedPhrases").innerHTML;
+    expect(cards).toContain("선택한 낱자 뜻");
+    expect(cards).toContain("사전 뜻");
+    expect(cards).not.toContain("숨길 낱자 풀이");
+    expect(cards).not.toContain("숨길 기본훈 대체 풀이");
+    expect(phrases).toContain("선택한 어휘 뜻");
+    expect(phrases).not.toContain("숨길 어휘 풀이");
+    expect(f.controller.hasUnsavedDraft()).toBe(false);
     expect(f.edited).not.toHaveBeenCalled();
   });
 });

@@ -2,21 +2,24 @@ import { chmod, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createAgentAdapter, redactSecrets, type AgentRunEvent } from "../src/index";
+import { createAgentAdapter, redactSecrets, type AgentParsedEvent, type AgentRunEvent } from "../src/index";
 import { acquireAntigravityModelLock, antigravityLogFailure, createAntigravityParser, parseAntigravityModels, writeAntigravityModelSelection } from "../src/antigravity";
 let dir: string;
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), "munhae-agy-test-")); });
 afterEach(async () => { await rm(dir, { recursive: true, force: true }); });
-async function fake(behavior = "success", legacy = false) {
+async function fake(behavior = "success", legacy = false, outputEnvelope?: Record<string, unknown>) {
   const binary = join(dir, "agy");
   await writeFile(binary, `#!${process.execPath}
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const args = process.argv.slice(2);
 if (args[0] === '--version') { console.log('1.1.27'); process.exit(0); }
-if (args[0] === '--help') { console.log('--print -p --print-timeout --log-file --dangerously-skip-permissions ${legacy ? '' : '--model --effort --json-schema'}'); process.exit(0); }
+if (args[0] === '--help') { console.log('--print -p --print-timeout --log-file --dangerously-skip-permissions ${legacy ? '' : '--model --effort --output-format --json-schema'}'); process.exit(0); }
 if (args[0] === 'models') { ${legacy ? "process.exit(1);" : "console.log('Fetching available models...\\ngemini-test\\tGemini Test'); process.exit(0);"} }
 writeFileSync(${JSON.stringify(join(dir, 'call.json'))}, JSON.stringify({args, cwd:process.cwd(), model:${legacy ? "JSON.parse(readFileSync(join(process.env.HOME, '.gemini/antigravity-cli/settings.json'), 'utf8')).model" : "null"}}));
+if (args.includes('--json-schema') && !['json', 'stream-json'].includes(args[args.indexOf('--output-format') + 1])) { console.error('--json-schema can only be used when --output-format is json or stream-json'); process.exit(1); }
+${outputEnvelope === undefined ? "" : `console.log(${JSON.stringify(JSON.stringify(outputEnvelope))}); process.exit(0);`}
+if (${JSON.stringify(behavior)} === 'empty') process.exit(0);
 if (${JSON.stringify(behavior)} === 'quota') { writeFileSync(args[args.indexOf('--log-file')+1], 'RESOURCE_EXHAUSTED: Individual quota reached'); process.exit(0); }
 if (${JSON.stringify(behavior)} === 'permission') { console.error('jetski: no output produced — a tool required the "read_url" permission that headless mode cannot prompt for, so it was auto-denied. api_key=private-token'); process.exit(0); }
 if (${JSON.stringify(behavior)} === 'timeout-output') { writeFileSync(args[args.indexOf('--log-file')+1], 'You are not logged into Antigravity.\\nPrint mode: silent auth succeeded'); console.error('[agy] print timeout after 45s with turn in progress; returning partial output'); process.exit(0); }
@@ -46,8 +49,58 @@ describe("Antigravity adapter", () => {
     expect(call.args.slice(-2)).toEqual(["-p", prompt]);
     expect(call.args).toEqual(expect.arrayContaining(["--model", "gemini-test", "--effort", "medium"]));
     expect(call.args).not.toContain("--dangerously-skip-permissions");
+    expect(call.args).not.toContain("--output-format");
+    expect(call.args).not.toContain("--json-schema");
     expect(call.cwd).not.toBe(process.cwd());
     expect(await adapter.resume("unsupported", { runId: "resume", prompt })).toMatchObject({ ok: false });
+  });
+  it("requests JSON mode for a schema and extracts the actual agy 1.2.1 structured result", async () => {
+    const payload = { ok: true };
+    const schema = { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] };
+    // Observed agy 1.2.1 envelope: no type/subtype/is_error/result fields.
+    const adapter = await fake("success", false, {
+      conversation_id: "private-conversation-id", status: "SUCCESS",
+      response: '{"ok":true}\n{"ok":true,"toolAction":"Finishing task","toolSummary":"Finish task"}\n',
+      duration_seconds: 0.25, num_turns: 1, structured_output: payload,
+      json_schema: { ...schema, description: "private-schema-metadata" }, usage: { diagnostic: "private-usage-metadata" },
+    });
+    const events: AgentRunEvent[] = [];
+    const result = await adapter.run({ runId: "schema", prompt: "Recommend footnotes for 天地。", outputSchema: schema }, (event) => { events.push(event); });
+    expect(result).toMatchObject({ ok: true, structuredOutput: payload, sessionRef: null });
+    if (!result.ok) throw new Error(result.error.message);
+    expect(JSON.parse(result.outputText)).toEqual(payload);
+    expect(events.filter((event) => event.type === "text_delta")).toEqual([
+      expect.objectContaining({ type: "text_delta", text: result.outputText }),
+    ]);
+    const call = JSON.parse(await readFile(join(dir, "call.json"), "utf8"));
+    expect(call.args[call.args.indexOf("--output-format") + 1]).toBe("json");
+    expect(call.args.filter((arg: string) => arg === "--output-format")).toHaveLength(1);
+    expect(JSON.parse(call.args[call.args.indexOf("--json-schema") + 1])).toEqual(schema);
+    expect(call.args).not.toContain("--dangerously-skip-permissions");
+    const published = JSON.stringify({ result, events });
+    for (const hidden of ["private-conversation-id", "private-schema-metadata", "private-usage-metadata", "toolAction", "toolSummary", "Finishing task"]) {
+      expect(published).not.toContain(hidden);
+    }
+  });
+  it.each(["response", "result"])("extracts a JSON payload from the %s fallback", async (field) => {
+    const payload = { summary: "풀이가 필요하지 않습니다.", recommendations: [] };
+    const adapter = await fake("success", false, { status: "success", [field]: JSON.stringify(payload) });
+    const result = await adapter.run({ runId: `schema-${field}`, prompt: "天地", outputSchema: { type: "object" } });
+    expect(result).toMatchObject({ ok: true, structuredOutput: payload });
+    if (result.ok) expect(JSON.parse(result.outputText)).toEqual(payload);
+  });
+  it("rejects a JSON error envelope without publishing its response or structured payload", async () => {
+    const adapter = await fake("success", false, {
+      conversation_id: "private-conversation-id", status: "error", response: "RESOURCE_EXHAUSTED api_key=private-token",
+      structured_output: { summary: "discard-partial-recommendation", recommendations: [] },
+    });
+    const events: AgentRunEvent[] = [];
+    const result = await adapter.run({ runId: "schema-error", prompt: "天地", outputSchema: { type: "object" } }, (event) => { events.push(event); });
+    expect(result).toMatchObject({ ok: false, error: { code: "rate_limited" }, partialOutput: "" });
+    expect(result.structuredOutput).toBeUndefined();
+    expect(events.some((event) => event.type === "text_delta")).toBe(false);
+    const published = JSON.stringify({ result, events });
+    for (const hidden of ["private-conversation-id", "private-token", "discard-partial-recommendation"]) expect(published).not.toContain(hidden);
   });
   it("keeps a quiet run alive and aligns the CLI deadline with the app deadline", async () => {
     const adapter = await fake("slow-success");
@@ -95,6 +148,25 @@ describe("Antigravity adapter", () => {
     expect(JSON.stringify({ result, events })).not.toContain("private-token");
     expect(events.some((e) => e.type === "text_delta")).toBe(false);
   });
+  it.each([['quota', 'rate_limited'], ['timeout-output', 'timeout'], ['permission', 'tool_permission_required']])("preserves %s diagnostics when a schema run returns empty stdout", async (behavior, code) => {
+    const adapter = await fake(behavior);
+    const events: AgentRunEvent[] = [];
+    const result = await adapter.run({ runId: `schema-${behavior}`, prompt: "天地", outputSchema: { type: "object" } }, (event) => { events.push(event); });
+    expect(result).toMatchObject({ ok: false, error: { code }, partialOutput: "" });
+    expect(result.structuredOutput).toBeUndefined();
+    expect(events.some((event) => event.type === "text_delta")).toBe(false);
+    expect(events.filter((event) => event.type === "error").map((event) => event.error.code)).toEqual([code]);
+    expect(JSON.stringify({ result, events })).not.toContain("private-token");
+  });
+  it("still rejects empty schema output when there is no CLI failure diagnostic", async () => {
+    const adapter = await fake("empty");
+    const events: AgentRunEvent[] = [];
+    const result = await adapter.run({ runId: "schema-empty", prompt: "天地", outputSchema: { type: "object" } }, (event) => { events.push(event); });
+    expect(result).toMatchObject({ ok: false, error: { code: "invalid_stream" }, partialOutput: "" });
+    expect(result.structuredOutput).toBeUndefined();
+    expect(events.some((event) => event.type === "text_delta")).toBe(false);
+    expect(events.filter((event) => event.type === "error").map((event) => event.error.code)).toEqual(["invalid_stream"]);
+  });
   it("times out and cancels plain output runs", async () => {
     const adapter = await fake("hang");
     expect(await adapter.run({ runId: "timeout", prompt: "hello", timeoutMs: 100 })).toMatchObject({ ok: false, error: { code: "timeout" } });
@@ -113,6 +185,59 @@ describe("Antigravity adapter", () => {
     expect(parser.snapshot().outputText).not.toContain("abcdefghi");
     expect(parseAntigravityModels("Fetching...\ngemini-test\tGemini Test")).toHaveLength(2);
     expect(parseAntigravityModels("unknown command models")).toBeNull();
+  });
+  it("buffers JSON chunks and redacts decoded credentials and conversation IDs before publishing", () => {
+    const events: AgentParsedEvent[] = [];
+    const parser = createAntigravityParser((event) => events.push(event), redactSecrets, "json");
+    const envelope = JSON.stringify({
+      conversation_id: "private-conversation-id", status: "success", response: "unused response",
+      structured_output: { summary: "하늘과 땅.", nested: [{ credential: "api_key=private-token", echoedConversation: "private-conversation-id" }] },
+    }).replace("private-token", "private-\\u0074oken");
+    const bytes = Buffer.from(envelope);
+    const koreanByte = bytes.indexOf(Buffer.from("하"));
+    parser.feed(bytes.subarray(0, koreanByte + 1));
+    parser.feed(bytes.subarray(koreanByte + 1, koreanByte + 2));
+    parser.feed(bytes.subarray(koreanByte + 2));
+    expect(events).toEqual([]);
+    expect(parser.snapshot().structuredOutput).toBeUndefined();
+    parser.finish();
+    const snapshot = parser.snapshot();
+    expect(snapshot.structuredOutput).toEqual({ summary: "하늘과 땅.", nested: [{ credential: "api_key=[REDACTED]", echoedConversation: "[REDACTED]" }] });
+    expect(JSON.parse(snapshot.outputText)).toEqual(snapshot.structuredOutput);
+    expect(snapshot.sessionRef).toBeNull();
+    expect(events).toEqual([{ type: "text_delta", text: snapshot.outputText }]);
+    expect(JSON.stringify({ snapshot, events })).not.toContain("private-token");
+    expect(JSON.stringify({ snapshot, events })).not.toContain("private-conversation-id");
+    parser.finish();
+    expect(events).toHaveLength(1);
+  });
+  it("keeps JSON-looking application output unchanged in plain mode", () => {
+    const events: AgentParsedEvent[] = [];
+    const parser = createAntigravityParser((event) => events.push(event), redactSecrets);
+    const text = JSON.stringify({ status: "error", structured_output: { translation: "하늘과 땅." }, response: "literal application JSON" });
+    parser.feed(text);
+    parser.finish();
+    expect(parser.snapshot()).toMatchObject({ outputText: text, error: null });
+    expect(parser.snapshot().structuredOutput).toBeUndefined();
+    expect(events).toEqual([{ type: "text_delta", text }]);
+  });
+  it.each([
+    ["malformed CLI JSON", "{broken", "invalid_stream"],
+    ["missing payload", JSON.stringify({ status: "success", conversation_id: "private-conversation-id" }), "invalid_stream"],
+    ["malformed response JSON", JSON.stringify({ status: "success", response: "not JSON api_key=private-token" }), "invalid_envelope"],
+    ["generic status error", JSON.stringify({ status: "failed", response: "private-diagnostic api_key=private-token" }), "provider_failed"],
+    ["compatibility error flag", JSON.stringify({ is_error: true, result: "private-diagnostic api_key=private-token" }), "provider_failed"],
+  ])("rejects %s without exposing raw JSON or diagnostics", (_name, body, code) => {
+    const events: AgentParsedEvent[] = [];
+    const parser = createAntigravityParser((event) => events.push(event), redactSecrets, "json");
+    parser.feed(body);
+    parser.finish();
+    const snapshot = parser.snapshot();
+    expect(snapshot).toMatchObject({ outputText: "", error: { code }, terminal: true });
+    expect(snapshot.structuredOutput).toBeUndefined();
+    expect(events).toEqual([{ type: "fatal", error: snapshot.error }]);
+    const published = JSON.stringify({ snapshot, events });
+    for (const hidden of ["private-token", "private-conversation-id", "private-diagnostic", "{broken"]) expect(published).not.toContain(hidden);
   });
   it("serializes model settings and preserves corrupt configuration", async () => {
     const path = join(dir, "settings.json");

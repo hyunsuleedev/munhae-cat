@@ -42,31 +42,103 @@ export function antigravityFailure(text: string): AgentRunError | null {
   return null;
 }
 
-// Buffer plain output until completion so split credentials and OAuth URLs never
-// leak as partial text events. Print mode may emit auth diagnostics on stdout.
+function redactJson(value: unknown, redact: (text: string) => string, depth = 0): unknown {
+  if (typeof value === "string") return redact(value);
+  if (depth > 64) return null;
+  if (Array.isArray(value)) return value.map((item) => redactJson(item, redact, depth + 1));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [redact(key), redactJson(item, redact, depth + 1)]));
+}
+
+// Buffer output until completion so split credentials and OAuth URLs never leak
+// as partial text events. JSON mode contains a CLI envelope, not the app payload.
 export function createAntigravityParser(
   sink: AgentParsedEventSink,
   redact: (text: string) => string = (text) => text,
+  format: "text" | "json" = "text",
+  initialSecrets: readonly string[] = [],
 ): AgentJsonlParser {
   const decoder = new StringDecoder("utf8");
+  const secrets = new Set(initialSecrets.filter(Boolean));
   let raw = "";
   let output = "";
+  let structuredOutput: unknown = undefined;
   let finished = false;
   let error: AgentRunError | null = null;
+  const clean = (text: string): string => {
+    for (const secret of [...secrets].sort((a, b) => b.length - a.length)) text = text.split(secret).join("[REDACTED]");
+    return redact(text);
+  };
+  const fail = (failure: AgentRunError): void => {
+    error = failure;
+    sink({ type: "fatal", error });
+  };
+  const invalid = (code: "invalid_stream" | "invalid_envelope", message: string): void => {
+    fail({ code, message, retryable: false });
+  };
   return {
-    feed(chunk) { raw += typeof chunk === "string" ? chunk : decoder.write(Buffer.from(chunk)); },
+    feed(chunk) {
+      if (!finished) raw += typeof chunk === "string" ? chunk : decoder.write(Buffer.from(chunk));
+    },
     finish() {
       if (finished) return;
       finished = true;
-      raw += decoder.end();
-      error = antigravityFailure(raw);
-      if (error) { sink({ type: "fatal", error }); return; }
-      output = redact(raw);
-      if (output) sink({ type: "text_delta", text: output });
+      const body = raw + decoder.end();
       raw = "";
+      if (format === "text") {
+        const failure = antigravityFailure(body);
+        if (failure) { fail(failure); return; }
+        output = clean(body);
+      } else {
+        // Empty stdout may have a more specific error in stderr or the agy log.
+        // Let the runtime inspect those before classifying a missing result.
+        if (!body.trim()) return;
+        let envelope: Record<string, unknown>;
+        try {
+          const parsed: unknown = JSON.parse(body);
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an envelope");
+          envelope = parsed as Record<string, unknown>;
+        } catch {
+          const failure = antigravityFailure(body);
+          if (failure) fail(failure);
+          else invalid("invalid_stream", "Antigravity emitted a malformed JSON result envelope");
+          return;
+        }
+        for (const key of ["conversation_id", "session_id"]) {
+          if (typeof envelope[key] === "string" && envelope[key]) secrets.add(envelope[key]);
+        }
+        const status = typeof envelope.status === "string" ? envelope.status.toLowerCase() : "";
+        const subtype = typeof envelope.subtype === "string" ? envelope.subtype : "";
+        if (envelope.is_error === true || envelope.type === "error" || subtype.startsWith("error")
+          || /^(?:error|failed|failure|canceled|cancelled|timeout)(?:$|[_ -])/.test(status)
+          || (envelope.error !== undefined && envelope.error !== null && envelope.error !== false && envelope.error !== "")) {
+          const failure = antigravityFailure(JSON.stringify({ status, error: envelope.error, errors: envelope.errors,
+            response: envelope.response, result: envelope.result }));
+          fail(failure ?? { code: status === "timeout" ? "timeout" : /^(?:canceled|cancelled)$/.test(status) ? "canceled" : "provider_failed",
+            message: "Antigravity reported an unsuccessful structured result", retryable: status === "timeout" });
+          return;
+        }
+        let payload: unknown;
+        if (Object.prototype.hasOwnProperty.call(envelope, "structured_output")) {
+          payload = envelope.structured_output;
+        } else {
+          const response = envelope.response ?? envelope.result;
+          if (response === undefined || (typeof response === "string" && !response.trim())) {
+            invalid("invalid_stream", "Antigravity completed without a structured result"); return;
+          }
+          try { payload = typeof response === "string" ? JSON.parse(response) : response; }
+          catch { invalid("invalid_envelope", "Antigravity result is not valid structured JSON"); return; }
+        }
+        // Redact decoded strings before serialization; escaped secrets otherwise
+        // evade exact-value matching. Never expose CLI metadata or schema fields.
+        structuredOutput = redactJson(payload, clean);
+        output = JSON.stringify(structuredOutput);
+      }
+      if (output) sink({ type: "text_delta", text: output });
     },
-    snapshot: () => ({ outputText: output, sessionRef: null, model: null, usage: null, terminal: finished, error }),
-    redact,
+    snapshot: () => ({ outputText: output, ...(structuredOutput !== undefined ? { structuredOutput } : {}),
+      sessionRef: null, model: null, usage: null, terminal: finished, error }),
+    redact: clean,
   };
 }
 

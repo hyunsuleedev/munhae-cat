@@ -1407,6 +1407,7 @@ export type AgentAdapterDefinition = {
     sink: AgentParsedEventSink,
     textRedactor?: (text: string) => string,
     initialSecrets?: readonly string[],
+    request?: Pick<AgentRunRequest, "outputSchema">,
   ): AgentJsonlParser;
 };
 
@@ -1659,13 +1660,15 @@ export const antigravityAgentDefinition = {
     if ((options.hasAppTool || options.antigravitySkipPermissions) && options.capabilities.public.nativeTools) args.push("--dangerously-skip-permissions");
     if (options.model && options.model !== "default" && options.capabilities.antigravity?.nativeModel) args.push("--model", options.model);
     if (options.reasoningEffort) args.push("--effort", options.reasoningEffort);
-    if (options.outputSchema) args.push("--json-schema", JSON.stringify(options.outputSchema));
+    if (options.outputSchema) args.push("--output-format", "json", "--json-schema", JSON.stringify(options.outputSchema));
     // Like OpenDesign: '-' is a literal agy prompt, not a stdin sentinel.
     args.push("-p", options.prompt);
     return args;
   },
   formatPrompt(): string { return ""; },
-  createParser: createAntigravityParser,
+  createParser(sink, redact, initialSecrets, request) {
+    return createAntigravityParser(sink, redact, request?.outputSchema ? "json" : "text", initialSecrets);
+  },
 } satisfies AgentAdapterDefinition;
 
 export function assertUniqueAgentDefinitionIds(
@@ -2365,6 +2368,7 @@ class CliAgentAdapter implements AgentAdapter {
         publicFromParsed,
         redactForRun,
         [sessionRef, newSessionId].filter((value): value is string => Boolean(value)),
+        request,
       );
 
       const inactivityTimeoutMs = boundedTimeout(
