@@ -4,38 +4,33 @@ import { esc, must, notify, requireApi, unwrap } from "./shared";
 let view: HomeView | null = null;
 let opening = false;
 let submitting = false;
+let sourceOrigin: "paste" | "manual" | "import" = "manual";
 
 function ensureDialog(): void {
   if (document.querySelector("#dlgNew")) return;
-  document.body.insertAdjacentHTML("beforeend", `<dialog id="dlgNew" data-od-id="dialog-new-doc" aria-label="새 항목">
+  document.body.insertAdjacentHTML("beforeend", `<dialog id="dlgNew" data-od-id="dialog-new-doc" aria-labelledby="ndHeading">
   <form method="dialog" id="newForm">
-    <div class="dl-h">새 항목</div>
+    <div class="dl-h" id="ndHeading">새 원문</div>
     <div class="dl-b">
-      <div class="field"><label>역할</label>
-        <div class="radio-list">
-          <label><input type="radio" name="nodeRole" value="source_unit" checked> 원문 문서 <span class="muted">— 원문·표점·번역 작업</span></label>
-          <label><input type="radio" name="nodeRole" value="container"> 목차 폴더 <span class="muted">— 하위 항목·문맥 정리</span></label>
-        </div>
-      </div>
-      <div class="field"><label for="ndTitle">제목</label><input class="input" id="ndTitle" required placeholder="예: 서문" style="font-size:14px"></div>
-      <div class="field"><label for="ndOriginal">원제 (선택)</label><input class="input hanmun" id="ndOriginal" placeholder="예: 御製序" style="font-size:14px"></div>
-      <div class="field"><label for="nParent">상위 항목</label><select class="select" id="nParent"></select></div>
+      <fieldset class="nd-kind"><legend class="sr-only">만들 항목</legend>
+        <label><input type="radio" name="nodeRole" value="source_unit" checked><span>원문</span></label>
+        <label><input type="radio" name="nodeRole" value="container"><span>폴더</span></label>
+      </fieldset>
+      <div class="field"><label for="ndTitle">제목</label><input class="input" id="ndTitle" required placeholder="예: 서문" autocomplete="off"></div>
       <div id="ndSourceFields">
-        <div class="field"><label>원문</label>
-          <div class="radio-list">
-            <label><input type="radio" name="origin" value="paste" checked> 붙여넣기</label>
-            <label><input type="radio" name="origin" value="manual"> 직접 입력</label>
-            <label><input type="radio" name="origin" value="import"> 텍스트 파일 가져오기</label>
-          </div>
-        </div>
-        <div class="field" id="ndTextWrap"><label for="ndText">원문 내용</label>
-          <textarea class="textarea hanmun" id="ndText" placeholder="원문을 붙여넣거나 입력하세요. 먼저 원문안만 만들어집니다." style="min-height:96px"></textarea>
-          <button class="btn btn-sm" type="button" id="ndPickFile" style="margin-top:6px;align-self:flex-start">파일 선택…</button>
+        <div class="field" id="ndTextWrap">
+          <div class="nd-source-head"><label for="ndText">원문</label><button class="btn btn-ghost btn-sm" type="button" id="ndPickFile">텍스트 파일 가져오기</button></div>
+          <textarea class="textarea hanmun" id="ndText" placeholder="원문을 붙여넣거나 입력하세요."></textarea>
         </div>
       </div>
-      <p class="muted" id="ndRoleHelp" style="font-size:12px">원문 문서는 하위 항목을 가질 수 없습니다. 원문안을 확정한 뒤 표점 원문을 별도로 만듭니다.</p>
+      <details class="nd-options" id="ndOptions"><summary>추가 정보 <span id="ndParentSummary"></span></summary>
+        <div class="nd-options-fields">
+          <div class="field"><label for="ndOriginal">원제 <span class="muted">(선택)</span></label><input class="input hanmun" id="ndOriginal" placeholder="예: 御製序"></div>
+          <div class="field"><label for="nParent">위치</label><select class="select" id="nParent"></select></div>
+        </div>
+      </details>
     </div>
-    <div class="dl-f"><button class="btn" value="cancel" type="button" id="newCancel">취소</button><button class="btn btn-primary" id="newSubmit" type="submit">원문 문서 만들기</button></div>
+    <div class="dl-f"><button class="btn" value="cancel" type="button" id="newCancel">취소</button><button class="btn btn-primary" id="newSubmit" type="submit">원문 만들기</button></div>
   </form>
 </dialog>`);
   must("#newCancel").addEventListener("click", () => {
@@ -49,6 +44,8 @@ function ensureDialog(): void {
       if (input.checked) setNewNodeRole(input.value as DocumentNodeRole);
     });
   });
+  must("#ndText").addEventListener("paste", () => { sourceOrigin = "paste"; });
+  must("#nParent").addEventListener("change", updateParentSummary);
   must("#ndPickFile").addEventListener("click", () => void pickSourceTextForNewDocument());
   must<HTMLFormElement>("#newForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -65,11 +62,8 @@ function ensureDialog(): void {
           (document.querySelector('input[name="nodeRole"]:checked') as HTMLInputElement | null)?.value === "container"
             ? "container"
             : "source_unit";
-        const originRaw =
-          (document.querySelector('input[name="origin"]:checked') as HTMLInputElement | null)?.value ?? "paste";
         const sourceText = must<HTMLTextAreaElement>("#ndText").value;
-        const originKind: "paste" | "manual" | "import" =
-          originRaw === "import" ? "import" : originRaw === "manual" ? "manual" : "paste";
+        const originKind = sourceOrigin;
         if (nodeRole === "source_unit" && !sourceText.trim()) {
           notify("원문 문서에는 원문 내용이 필요합니다", "새 항목");
           return;
@@ -84,6 +78,8 @@ function ensureDialog(): void {
         if (!item) return;
         (must("#dlgNew") as HTMLDialogElement).close();
         must<HTMLFormElement>("#newForm").reset();
+        sourceOrigin = "manual";
+        must<HTMLDetailsElement>("#ndOptions").open = false;
         setNewNodeRole("source_unit");
         notify(
           nodeRole === "source_unit" ? `${title} 원문 문서를 만들었습니다` : `${title} 목차 폴더를 만들었습니다`,
@@ -121,6 +117,13 @@ function fillParents(preferred: string | null = null): void {
     ? preferred
     : master?.id;
   if (selected) selEl.value = selected;
+  updateParentSummary();
+}
+
+function updateParentSummary(): void {
+  const select = must<HTMLSelectElement>("#nParent");
+  const parent = view?.documents.find(d => d.id === select.value);
+  must("#ndParentSummary").textContent = parent ? `위치: ${parent.originalTitle || parent.title}` : "프로젝트 안에 만들기";
 }
 
 function setNewNodeRole(role: DocumentNodeRole): void {
@@ -128,11 +131,9 @@ function setNewNodeRole(role: DocumentNodeRole): void {
   if (roleInput) roleInput.checked = true;
   must("#ndSourceFields").hidden = role === "container";
   must<HTMLTextAreaElement>("#ndText").required = role === "source_unit";
-  must("#ndRoleHelp").textContent =
-    role === "container"
-      ? "목차 폴더는 하위 항목과 문맥만 정리하며 원문·표점·번역안을 가질 수 없습니다."
-      : "원문 문서는 하위 항목을 가질 수 없습니다. 먼저 원문안만 만들고, 확정한 뒤 표점 원문을 별도로 만듭니다.";
-  must("#newSubmit").textContent = role === "container" ? "목차 폴더 만들기" : "원문 문서 만들기";
+  must("#ndHeading").textContent = role === "container" ? "새 폴더" : "새 원문";
+  must<HTMLInputElement>("#ndTitle").placeholder = role === "container" ? "예: 제1권" : "예: 서문";
+  must("#newSubmit").textContent = role === "container" ? "폴더 만들기" : "원문 만들기";
 }
 
 export async function openNewDocument(parentId: string | null = null, role: DocumentNodeRole = "source_unit", importText = false): Promise<void> {
@@ -160,14 +161,13 @@ export async function openNewDocument(parentId: string | null = null, role: Docu
 }
 
 async function pickSourceTextForNewDocument(): Promise<void> {
-  const picked = document.querySelector('input[name="origin"][value="import"]') as HTMLInputElement | null;
-  if (picked) picked.checked = true;
   const result = await requireApi().home.pickTextFile();
   if (!result.ok) {
     notify(result.error.message, "가져오기");
     return;
   }
   if (result.data == null) return;
+  sourceOrigin = "import";
   must<HTMLTextAreaElement>("#ndText").value = result.data;
   notify("파일을 읽었습니다. 문서 만들기를 누르면 저장됩니다", "가져오기");
 }

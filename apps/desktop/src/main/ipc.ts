@@ -1,7 +1,13 @@
+import { checkAppUpdates } from "./app-updates";
+import { MATERIAL_CHANNELS, dispatchMaterial } from "./translation-materials";
+import { parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
+import { exportReviewTranslations } from "./session";
 import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
 import { probeAgentsCached } from "./agents";
 import { searchItkcFootnotes } from "./itkc-footnotes";
+import { dictionarySearch, dictionaryGetStatus, dictionarySetKey } from "./dictionary";
+import { startFootnoteAnalysis, getFootnoteAnalysis, cancelFootnoteAnalysis } from "./footnote-analysis";
 import { AppError, errorCode } from "./errors";
 import { redact, log } from "./log";
 import {
@@ -29,8 +35,6 @@ import {
   parseMergeBlocksInput,
   parseMessageId,
   parseOptionalPath,
-  parsePersonInput,
-  parsePlaceInput,
   parseResolveUncertaintyInput,
   parseResetTranslationDraftInput,
   parseReviseTranslationInput,
@@ -82,6 +86,7 @@ import {
 } from "./ai-runs";
 import { getAgentLoginInstruction } from "./agent-runtime-client";
 import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
+import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
 
 const runtimeSessionStore = {
   get: getRuntimeSessionRef,
@@ -139,10 +144,23 @@ function handleResult(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...ar
 }
 
 export function registerIpcHandlers(): void {
+  for (const channel of MATERIAL_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchMaterial(channel, input));
+  }
+  for (const channel of READING_ANNOTATION_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchReadingAnnotation(channel, input));
+  }
+  handleResult(IPC_CHANNELS.dictionarySearch, (_event, input) => dictionarySearch(input));
+  handleResult(IPC_CHANNELS.dictionaryGetStatus, () => dictionaryGetStatus());
+  handleResult(IPC_CHANNELS.dictionarySetKey, (_event, input) => dictionarySetKey(input));
   handleResult(IPC_CHANNELS.researchSearchFootnotes, (_event, input) => searchItkcFootnotes(input));
+  handleResult(IPC_CHANNELS.researchStartFootnoteAnalysis, (_event, input) => startFootnoteAnalysis(requireRepo(), getAppConfig(), input));
+  handleResult(IPC_CHANNELS.researchGetFootnoteAnalysis, (_event, id) => getFootnoteAnalysis(requireRepo(), parseMessageId(id)));
+  handleResult(IPC_CHANNELS.researchCancelFootnoteAnalysis, (_event, id) => cancelFootnoteAnalysis(requireRepo(), parseMessageId(id)));
   for (const channel of ACCOUNT_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchAccount(channel, input));
   }
+  handleRaw(IPC_CHANNELS.appCheckUpdates, () => { void checkAppUpdates(); });
   handleRaw(IPC_CHANNELS.appGetVersion, () => app.getVersion());
   handleRaw(IPC_CHANNELS.appGetConfig, () => getAppConfig());
   handleRaw(IPC_CHANNELS.appSetConfig, (_event, patch) => setAppConfig(patch));
@@ -193,6 +211,8 @@ export function registerIpcHandlers(): void {
   handleRaw(IPC_CHANNELS.projectGetCurrent, () => getCurrentSummary());
   handleRaw(IPC_CHANNELS.projectListRecent, () => listRecent());
   handleResult(IPC_CHANNELS.projectBackup, () => backupProject());
+  handleResult(IPC_CHANNELS.projectConcordance, (_event, input) => requireRepo().concordance(parseConcordanceInput(input)));
+  handleResult(IPC_CHANNELS.projectExportReview, (_event, input) => exportReviewTranslations(parseReviewExportInput(input)));
   handleResult(IPC_CHANNELS.projectExportConfirmed, (_event, input) => {
     return exportConfirmedTranslations(parseConfirmedExportInput(input));
   });
@@ -289,12 +309,6 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.knowledgeGet, () => requireRepo().getKnowledge());
   handleResult(IPC_CHANNELS.knowledgeUpsertGlossary, (_event, entry) => {
     return requireRepo().upsertGlossary(parseGlossaryInput(entry));
-  });
-  handleResult(IPC_CHANNELS.knowledgeUpsertPerson, (_event, person) => {
-    return requireRepo().upsertPerson(parsePersonInput(person));
-  });
-  handleResult(IPC_CHANNELS.knowledgeUpsertPlace, (_event, place) => {
-    return requireRepo().upsertPlace(parsePlaceInput(place));
   });
   handleResult(IPC_CHANNELS.knowledgeCreateContext, (_event, input) => {
     return requireRepo().createContextItem(parseCreateContextItemInput(input));

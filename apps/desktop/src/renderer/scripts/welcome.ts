@@ -98,7 +98,10 @@ async function boot(): Promise<void> {
     const link = $("#welcomeAccountLink");
     const signup = $("#welcomeSignUpLink");
     if (label) label.textContent = user ? `${user.displayName || user.email} · 로그인됨` : "문해 계정";
-    if (link) link.textContent = user ? "내 계정" : "로그인";
+    if (link) {
+      link.textContent = user ? "계정 설정" : "로그인";
+      link.setAttribute("href", user ? "settings.html#account" : "account.html");
+    }
     if (signup) signup.hidden = !!user;
   };
   void api.auth.getState().then(renderAccount).catch(() => undefined);
@@ -106,21 +109,9 @@ async function boot(): Promise<void> {
   const ver = $("#verLine");
   try {
     const v = await api.app.getVersion();
-    if (ver) ver.textContent = `버전 ${v} · Phase 1 로컬 CAT`;
+    if (ver) ver.textContent = `버전 ${v}`;
   } catch {
     /* keep fallback */
-  }
-  try {
-    const cfg = await api.app.getConfig();
-    const chk = $("#chkWelcome") as HTMLInputElement | null;
-    if (chk) {
-      chk.checked = cfg.showWelcomeOnLaunch;
-      chk.addEventListener("change", () => {
-        void api.app.setConfig({ showWelcomeOnLaunch: chk.checked });
-      });
-    }
-  } catch {
-    /* ignore */
   }
   try {
     recent = await api.project.listRecent();
@@ -146,4 +137,4 @@ async function boot(): Promise<void> {
   if (persisted) persistDoc(persisted);
 }
 
-void boot();
+await boot();

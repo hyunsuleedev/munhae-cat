@@ -1,0 +1,55 @@
+#documentMaterials { padding: 14px 12px 16px; min-width: 0; }
+.document-material-heading { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.document-material-heading h2 { font-size: 13px; margin: 0; }
+.document-material-heading > span { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.document-material-chain { padding: 11px 8px; background: var(--bg); border: 1px solid var(--border); border-radius: 7px; margin-bottom: 18px; }
+.document-material-chain > p { color: var(--muted); font-size: 11px; margin: 0 5px 9px; }
+.document-material-chain .material-node-chain { font-size: 12px; }
+.document-material-chain .material-node-chain small { display: block; white-space: normal; margin-top: 3px; }
+.document-material-chain .material-node-chain b { font-weight: 400; font-size: 11px; color: var(--muted); }
+.document-material-group { margin: 18px 0; }
+.document-material-group > header { display: flex; gap: 7px; flex-wrap: wrap; align-items: baseline; margin: 0 2px 8px; }
+.document-material-group > header > span { font-size: 10px; color: var(--muted); width: 100%; }
+.document-material-group > header strong { font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+.document-material-group > header > small { margin-left: auto; color: var(--muted); font-size: 10px; }
+.document-material-card { border: 1px solid var(--border); border-radius: 6px; padding: 11px 12px; margin-bottom: 9px; background: var(--surface); min-width: 0; }
+.document-material-card.is-excluded { border-style: dashed; background: var(--bg); }
+.document-material-card.is-excluded .document-material-title b { color: var(--muted); }
+.document-material-path { font-size: 10px; color: var(--muted); line-height: 1.6; border-bottom: 1px solid var(--border); margin-bottom: 9px; padding-bottom: 8px; overflow-wrap: anywhere; }
+.document-material-path > span { display: block; }
+.document-material-title { display: flex; align-items: flex-start; gap: 7px; font-size: 12px; line-height: 1.6; cursor: pointer; }
+.document-material-title input { flex-shrink: 0; margin-top: 3px; }
+.document-material-title b { overflow-wrap: anywhere; }
+.document-material-title button { margin-left: auto; }
+.document-material-card > p { font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; margin: 9px 0; }
+.document-material-card > small { color: var(--muted); font-size: 10px; line-height: 1.6; display: block; overflow-wrap: anywhere; }
+.document-material-condition { border-left: 2px solid var(--border); padding-left: 9px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.7; }
+.document-material-card-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; }
+.document-material-link { background: none; border: 0; color: var(--accent); padding: 3px 0; cursor: pointer; font: inherit; font-size: 11px; text-align: left; }
+.document-material-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+.document-material-link:disabled { color: var(--muted); cursor: default; }
+.document-material-actions { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-wrap: wrap; gap: 9px; }
+.document-material-help,.document-material-empty { font-size: 11px; line-height: 1.7; color: var(--muted); margin: 9px 0 0; }
+.document-material-show { display: flex; align-items: center; gap: 6px; font-size: 11px; margin: 10px 0 15px; }
+.document-material-error { font-size: 12px; color: var(--danger); line-height: 1.7; }
+.document-material-dialog { width: min(700px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 0; }
+.document-material-dialog[open] { display: flex; flex-direction: column; }
+.document-material-dialog-heading { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); }
+.document-material-dialog-heading h2 { margin: 0 0 7px; font-size: 17px; }
+.document-material-dialog-heading p { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.document-material-dialog-body { padding: 16px 24px; min-height: 0; overflow: auto; line-height: 1.75; font-size: 13px; }
+.document-material-dialog-body > .document-material-help { margin: 0 0 15px; font-size: 12px; }
+.document-material-dialog-footer { border-top: 1px solid var(--border); padding: 14px 24px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+.document-material-dialog-footer > span { margin-right: auto; color: var(--muted); font-size: 12px; }
+.document-material-picker-tabs { display: flex; gap: 8px; padding: 12px 24px 0; }
+.document-material-picker-tabs [aria-selected=true] { background: var(--accent-soft); color: var(--accent); }
+.document-material-pick { display: flex; gap: 10px; padding: 14px 0; border-bottom: 1px solid var(--border); cursor: pointer; align-items: flex-start; }
+.document-material-pick input { margin-top: 5px; flex-shrink: 0; }
+.document-material-pick > span { min-width: 0; }
+.document-material-pick small { display: block; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.document-material-pick b { display: block; margin: 4px 0; font-size: 13px; overflow-wrap: anywhere; }
+.document-material-pick p { margin: 0; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.document-material-source { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 13px 15px; margin: 12px 0; overflow-wrap: anywhere; }
+.document-material-source p { margin: 6px 0; }
+.document-material-source small { color: var(--muted); font-size: 11px; }
+.document-material-source blockquote { margin: 12px 0; padding-left: 12px; border-left: 2px solid var(--border); font-family: var(--font-hanmun, serif); font-size: 19px; }

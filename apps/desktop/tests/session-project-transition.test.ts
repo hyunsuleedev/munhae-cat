@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { dialog } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const electronPaths = vi.hoisted(() => ({ documents: "" }));
@@ -102,6 +103,7 @@ describe("main project transition preflight", () => {
   beforeEach(async () => {
     closeProject(true);
     fakeProjects.reset();
+    vi.mocked(dialog.showOpenDialog).mockReset();
     root = mkdtempSync(join(tmpdir(), "munhae-session-transition-"));
     electronPaths.documents = join(root, "documents");
     const current = await createProjectInteractive({ title: "Current", parentDir: root });
@@ -144,6 +146,50 @@ describe("main project transition preflight", () => {
     expect(opened?.projectId).not.toBe(currentProjectId);
     expect(opened?.packagePath).toBe(targetPath);
     expect(getCurrentSummary()?.projectId).toBe(opened?.projectId);
+  });
+
+  it("keeps the current repo when the native project chooser is cancelled", async () => {
+    const current = requireRepo();
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+    expect(await openProjectInteractive()).toBeNull();
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledOnce();
+    expect(requireRepo()).toBe(current);
+    expect(getCurrentSummary()?.projectId).toBe(currentProjectId);
+    expect(current.close).not.toHaveBeenCalled();
+  });
+
+  it("opens the existing package directory returned by the native chooser", async () => {
+    const current = requireRepo();
+    const targetPath = join(root, "선택한 문헌.munhae");
+    mkdirSync(targetPath);
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [targetPath] });
+
+    const opened = await openProjectInteractive();
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledOnce();
+    expect(opened?.packagePath).toBe(targetPath);
+    expect(opened?.projectId).not.toBe(currentProjectId);
+    expect(getCurrentSummary()?.projectId).toBe(opened?.projectId);
+    expect(requireRepo().packagePath).toBe(targetPath);
+    expect(current.close).toHaveBeenCalledOnce();
+  });
+
+  it("restricts the native chooser to Munhae projects and backups without an all-files option", async () => {
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: true, filePaths: [] });
+
+    await openProjectInteractive();
+
+    expect(dialog.showOpenDialog).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      filters: [{ name: "문해 프로젝트 및 백업", extensions: ["munhae", "munhaepkg"] }],
+    }));
+    const [options] = vi.mocked(dialog.showOpenDialog).mock.calls[0]!;
+    if (process.platform === "darwin") {
+      // Packages are files in the native panel. Ordinary folders are for navigation only.
+      expect(options).toHaveProperty("properties", ["openFile"]);
+    }
+    expect(getCurrentSummary()?.projectId).toBe(currentProjectId);
   });
 
   it("keeps the current repo when Seed Demo is cancelled and adopts it when approved", () => {

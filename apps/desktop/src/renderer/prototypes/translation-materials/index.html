@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>번역 자료 · 문해 디자인 데모</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="프로젝트 탐색">
+      <a class="brand" href="#materials/background" aria-label="문해 번역 자료"><span class="brand-glyph">文解</span><span>MUNHAE<br>STUDIO</span></a>
+      <div class="project-name"><span class="eyebrow">PROJECT</span><strong>관제 문헌 번역</strong><span class="project-caption">원문 3편 · 개인 프로젝트</span></div>
+      <nav>
+        <a href="#materials/background" class="nav-main" id="materialsNav"><span data-icon="library"></span>번역 자료<span class="nav-dot"></span></a>
+        <div class="nav-label">문서</div>
+        <div id="documentNav"></div>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="try-link" id="tryFlow"><span data-icon="arrow"></span><span>코멘트 재사용해 보기<small>선택부터 적용까지</small></span></button>
+        <div class="demo-stamp"><span class="demo-dot"></span>설계 데모 · 예시 자료<button id="resetDemo" title="데모를 처음 상태로" aria-label="데모 초기화"><span data-icon="reset"></span></button></div>
+      </div>
+    </aside>
+    <main id="main"></main>
+  </div>
+  <dialog id="editDialog" aria-labelledby="editTitle"></dialog>
+  <dialog id="pickerDialog" aria-labelledby="pickerTitle"></dialog>
+  <dialog id="previewDialog" aria-labelledby="previewTitle"></dialog>
+  <dialog id="sourceDialog" aria-labelledby="sourceTitle"></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

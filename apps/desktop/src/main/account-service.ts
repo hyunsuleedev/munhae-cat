@@ -1,10 +1,16 @@
-import type { Session, SupabaseClient } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, SupabaseClient, User } from "@supabase/supabase-js";
 import type { AccountCredentials, AccountPasswordInput, AccountSignUpInput, AccountState, AccountVerifyInput } from "../shared/munhae-api";
 import type { AccountStorage } from "./auth-storage";
 import { AppError } from "./errors";
 
 const RECOVERY_KEY = "munhae-password-recovery";
 type AuthClient = SupabaseClient["auth"];
+type Mutation = { id: number; signedOutRevision: number };
+
+function invalidSession(error: { status?: number; name?: string; code?: string }): boolean {
+  return error.status === 401 || error.status === 403 || error.name === "AuthSessionMissingError"
+    || ["session_not_found", "refresh_token_not_found", "refresh_token_already_used"].includes(error.code ?? "");
+}
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_credentials: "이메일 또는 비밀번호가 올바르지 않습니다.",
@@ -37,16 +43,23 @@ export function throwAccountError(error: unknown): never {
 
 export class AccountService {
   private recovery: boolean;
+  private restoring: Promise<AccountState> | null = null;
+  private state: AccountState | null = null;
+  private user: User | null = null;
+  private revision = 0;
+  private signedOutRevision = 0;
+  private mutationId = 0;
+  private mutationTail: Promise<void> = Promise.resolve();
+  private pendingMutations = 0;
+  private mutationsSettled: Promise<void> | null = null;
+  private settleMutations: (() => void) | null = null;
+  private disposed = false;
   private readonly unsubscribe: () => void;
 
   constructor(private readonly auth: AuthClient, private readonly storage: AccountStorage,
     private readonly notify: (state: AccountState) => void = () => undefined) {
     this.recovery = storage.getItem(RECOVERY_KEY) === "1";
-    const { data } = auth.onAuthStateChange((event, session) => {
-      if (event === "PASSWORD_RECOVERY") this.setRecovery(true);
-      if (event === "SIGNED_OUT") this.setRecovery(false);
-      this.notify(this.view(session));
-    });
+    const { data } = auth.onAuthStateChange((event, session) => this.changed(event, session));
     this.unsubscribe = () => data.subscription.unsubscribe();
   }
 
@@ -56,8 +69,78 @@ export class AccountService {
     else this.storage.removeItem(RECOVERY_KEY);
   }
 
-  private view(session: Session | null): AccountState {
-    const user = session?.user;
+  private changed(event: AuthChangeEvent, session: Session | null): void {
+    if (this.disposed || event === "INITIAL_SESSION") return;
+    if (event === "SIGNED_OUT") {
+      this.signedOutRevision += 1;
+      this.setRecovery(false);
+      this.publish(null);
+      return;
+    }
+    if (!["SIGNED_IN", "TOKEN_REFRESHED", "USER_UPDATED", "PASSWORD_RECOVERY"].includes(event) || !session?.user) return;
+    this.revision += 1;
+    // SDK startup also emits SIGNED_IN for a session read from local storage.
+    // Only the initial server verification or an explicit successful sign-in
+    // may establish the first signed-in state. Managed mutations publish after
+    // setting their recovery mode, so OTP events never briefly unlock the app.
+    if (this.pendingMutations) return;
+    if (event === "PASSWORD_RECOVERY") this.setRecovery(true);
+    if (!this.state) return;
+    this.publish(session.user);
+  }
+
+  private publish(user: User | null): AccountState {
+    this.user = user;
+    const state = this.view(user);
+    const changed = JSON.stringify(state) !== JSON.stringify(this.state);
+    this.state = state;
+    this.revision += 1;
+    if (changed && !this.disposed) this.notify(state);
+    return state;
+  }
+
+  private async mutate<T>(action: (mutation: Mutation) => Promise<T>): Promise<T> {
+    this.ensureActive();
+    const id = ++this.mutationId;
+    const previous = this.mutationTail;
+    let finish!: () => void;
+    this.mutationTail = new Promise((resolve) => { finish = resolve; });
+    this.revision += 1;
+    if (this.pendingMutations++ === 0) {
+      this.mutationsSettled = new Promise((resolve) => { this.settleMutations = resolve; });
+    }
+    try {
+      // SDK credential methods also write persistent session state. Serializing
+      // them ensures a queued logout clears a late login's SDK session as well
+      // as its UI state. Newer requests prevent older results being published.
+      await previous;
+      const mutation = { id, signedOutRevision: this.signedOutRevision };
+      this.ensureCurrent(mutation);
+      return await action(mutation);
+    }
+    finally {
+      finish();
+      this.revision += 1;
+      if (--this.pendingMutations === 0) {
+        this.settleMutations?.();
+        this.settleMutations = null;
+        this.mutationsSettled = null;
+      }
+    }
+  }
+
+  private ensureActive(): void {
+    if (this.disposed) throw new AppError("auth_not_ready", "계정 연결을 준비 중입니다. 앱을 다시 열어 주세요.");
+  }
+
+  private ensureCurrent(mutation: Mutation, signingOut = false): void {
+    this.ensureActive();
+    if (mutation.id !== this.mutationId || (!signingOut && mutation.signedOutRevision !== this.signedOutRevision)) {
+      throw new AppError("auth_request_superseded", "계정 상태가 바뀌어 이전 요청을 취소했습니다. 다시 시도하세요.");
+    }
+  }
+
+  private view(user: User | null): AccountState {
     return {
       status: !user ? "signed_out" : this.recovery ? "password_recovery" : "signed_in",
       user: user ? {
@@ -72,49 +155,94 @@ export class AccountService {
   }
 
   async getState(): Promise<AccountState> {
-    const { data, error } = await this.auth.getSession();
-    if (error) throwAccountError(error);
-    return this.view(data.session);
+    this.ensureActive();
+    if (this.state) return this.state;
+    // Every renderer shares the one main-process restoration. Once ready,
+    // Supabase's refresh lifecycle and auth events keep the snapshot current.
+    this.restoring ??= this.restoreState().finally(() => { this.restoring = null; });
+    return this.restoring;
+  }
+
+  private async restoreState(): Promise<AccountState> {
+    for (;;) {
+      this.ensureActive();
+      if (this.state) return this.state;
+      if (this.mutationsSettled) { await this.mutationsSettled; continue; }
+      const revision = this.revision;
+      const { data, error } = await this.auth.getSession();
+      if (revision !== this.revision) continue;
+      if (error) {
+        if (invalidSession(error)) return this.signOut();
+        throwAccountError(error);
+      }
+      if (!data.session) { this.setRecovery(false); return this.publish(null); }
+      // A restored local session is not proof that the account is still valid.
+      const verified = await this.auth.getUser(data.session.access_token);
+      if (revision !== this.revision) continue;
+      if (verified.error) {
+        if (invalidSession(verified.error)) {
+          return this.signOut();
+        }
+        throwAccountError(verified.error);
+      }
+      if (!verified.data.user) return this.signOut();
+      return this.publish(verified.data.user);
+    }
   }
 
   async signUp(input: AccountSignUpInput): Promise<{ state: AccountState; confirmationRequired: boolean }> {
-    const { data, error } = await this.auth.signUp({
-      email: input.email, password: input.password,
-      options: { data: { display_name: input.displayName } },
+    return this.mutate(async (mutation) => {
+      const { data, error } = await this.auth.signUp({
+        email: input.email, password: input.password,
+        options: { data: { display_name: input.displayName } },
+      });
+      if (error) throwAccountError(error);
+      this.ensureCurrent(mutation);
+      this.setRecovery(false);
+      return { state: this.publish(data.session?.user ?? null), confirmationRequired: !data.session };
     });
-    if (error) throwAccountError(error);
-    return { state: this.view(data.session), confirmationRequired: !data.session };
   }
 
   async signIn(input: AccountCredentials): Promise<AccountState> {
-    const { data, error } = await this.auth.signInWithPassword(input);
-    if (error) throwAccountError(error);
-    this.setRecovery(false);
-    return this.view(data.session);
+    return this.mutate(async (mutation) => {
+      const { data, error } = await this.auth.signInWithPassword(input);
+      if (error) throwAccountError(error);
+      this.ensureCurrent(mutation);
+      this.setRecovery(false);
+      return this.publish(data.session?.user ?? null);
+    });
   }
 
   async signOut(): Promise<AccountState> {
-    const { error } = await this.auth.signOut({ scope: "local" });
-    if (error) throwAccountError(error);
-    this.setRecovery(false);
-    return this.view(null);
+    return this.mutate(async (mutation) => {
+      const { error } = await this.auth.signOut({ scope: "local" });
+      if (error && !invalidSession(error)) throwAccountError(error);
+      this.ensureCurrent(mutation, true);
+      this.signedOutRevision += 1;
+      this.setRecovery(false);
+      return this.publish(null);
+    });
   }
 
   async acceptGoogleSession(tokens: { access_token: string; refresh_token: string }): Promise<AccountState> {
-    const { data, error } = await this.auth.setSession(tokens);
-    if (error) throwAccountError(error);
-    if (!data.session) throw new AppError("oauth_failed", "구글 로그인 세션을 저장하지 못했습니다.");
-    this.setRecovery(false);
-    const state = this.view(data.session);
-    this.notify(state);
-    return state;
+    return this.mutate(async (mutation) => {
+      const { data, error } = await this.auth.setSession(tokens);
+      if (error) throwAccountError(error);
+      this.ensureCurrent(mutation);
+      if (!data.session) throw new AppError("oauth_failed", "구글 로그인 세션을 저장하지 못했습니다.");
+      this.setRecovery(false);
+      return this.publish(data.session.user);
+    });
   }
 
   async verifyCode(input: AccountVerifyInput): Promise<AccountState> {
-    const { data, error } = await this.auth.verifyOtp({ email: input.email, token: input.code, type: input.purpose });
-    if (error) throwAccountError(error);
-    this.setRecovery(input.purpose === "recovery");
-    return this.view(data.session);
+    return this.mutate(async (mutation) => {
+      const { data, error } = await this.auth.verifyOtp({ email: input.email, token: input.code, type: input.purpose });
+      if (error) throwAccountError(error);
+      this.ensureCurrent(mutation);
+      this.setRecovery(input.purpose === "recovery");
+      return this.publish(data.session?.user ?? null);
+    });
   }
 
   async resendConfirmation(email: string): Promise<void> {
@@ -130,20 +258,29 @@ export class AccountService {
   async updatePassword(input: AccountPasswordInput): Promise<AccountState> {
     const state = await this.getState();
     if (!state.user) throw new AppError("session_not_found", "로그인 세션이 만료되었습니다. 다시 로그인하세요.");
-    if (!this.recovery) {
-      if (!input.currentPassword) throw new AppError("current_password_required", "현재 비밀번호를 입력하세요.");
-      const { error } = await this.auth.signInWithPassword({ email: state.user.email, password: input.currentPassword });
+    const email = state.user.email;
+    const userId = state.user.id;
+    return this.mutate(async (mutation) => {
+      if (this.user?.id !== userId) throw new AppError("session_not_found", "계정 상태가 바뀌었습니다. 다시 로그인하세요.");
+      if (!this.recovery) {
+        if (!input.currentPassword) throw new AppError("current_password_required", "현재 비밀번호를 입력하세요.");
+        const { error } = await this.auth.signInWithPassword({ email, password: input.currentPassword });
+        if (error) throwAccountError(error);
+        this.ensureCurrent(mutation);
+      }
+      const { data, error } = await this.auth.updateUser({ password: input.password });
       if (error) throwAccountError(error);
-    }
-    const { error } = await this.auth.updateUser({ password: input.password });
-    if (error) throwAccountError(error);
-    this.setRecovery(false);
-    const updated = await this.getState();
-    this.notify(updated);
-    return updated;
+      this.ensureCurrent(mutation);
+      this.setRecovery(false);
+      return this.publish(data.user);
+    });
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.revision += 1;
+    this.user = null;
+    this.state = null;
     this.unsubscribe();
     this.auth.stopAutoRefresh();
   }

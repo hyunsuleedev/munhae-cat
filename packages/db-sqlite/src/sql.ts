@@ -5,6 +5,9 @@ import {
   APP_INIT_SQL,
   CONTEXT_WITHOUT_KIND_SQL,
   FULL_TEXT_SQL,
+  REMOVE_PEOPLE_PLACES_SQL,
+  READING_ANNOTATIONS_SQL,
+  TRANSLATION_MATERIALS_SQL,
   PROJECT_INIT_SQL,
   REVIEW_COMMENTS_SQL,
 } from "./embedded-sql.ts";
@@ -15,6 +18,9 @@ const EMBEDDED: Record<string, string> = {
   "sqlite/002_full_text_translation.sql": FULL_TEXT_SQL,
   "sqlite/003_context_without_kind.sql": CONTEXT_WITHOUT_KIND_SQL,
   "sqlite/004_review_comments.sql": REVIEW_COMMENTS_SQL,
+  "sqlite/005_remove_people_places.sql": REMOVE_PEOPLE_PLACES_SQL,
+  "sqlite/006_reading_annotations.sql": READING_ANNOTATIONS_SQL,
+  "sqlite/007_translation_materials.sql": TRANSLATION_MATERIALS_SQL,
 };
 
 function migrationCandidates(rel: string): string[] {

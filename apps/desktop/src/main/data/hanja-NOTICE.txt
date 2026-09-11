@@ -1,0 +1,60 @@
+Munhae offline Hanja dictionary data — source and license notices
+
+Generated from sources retrieved 2026-09-08. Application code is separate from these data licenses.
+
+1. hanja-libhangul.json: BSD 3-Clause
+Source: https://raw.githubusercontent.com/libhangul/libhangul/main/data/hanja/hanja.txt
+SHA-256: dd44dcc856cf542b1022d0f39c2e9b9f8805fdcc5923be80f04849ed97ce0996
+Changes: character subset; reading-specific glosses merged without rewriting; empty meanings retained.
+The following notice applies to the source data and the readings used in the Wiktionary subset:
+
+Copyright (c) 2005,2006 Choe Hwanjin
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+3. Neither the name of the author nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+2. hanja-wiktionary.json: Creative Commons Attribution-ShareAlike 4.0 International
+License: https://creativecommons.org/licenses/by-sa/4.0/
+Legal code: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+Authors: Korean Wiktionary contributors. Each headword's authors and edits are credited via
+https://ko.wiktionary.org/w/index.php?title=URL_ENCODED_HEADWORD&action=history
+Original text: https://ko.wiktionary.org/wiki/URL_ENCODED_HEADWORD
+Some original entries include National Institute of Korean Language (국립국어원) material:
+https://creativecommons.org/licenses/by-sa/2.0/kr/ ; https://opendict.korean.go.kr/
+Extraction: Kaikki.org / Wiktextract, Tatu Ylonen and contributors.
+Source: https://kaikki.org/kowiktionary/raw-wiktextract-data.jsonl.gz
+SHA-256: ae0872f93f01d181b1c6c844e0fde5e7e3ff17a3ec2a9ee18bc4551c2452d369
+Wikimedia dump: 2026-09-01; Kaikki extraction: 2026-09-05.
+Changes: selected Han-only headwords in 한자/한국어/중국어 sections with Korean glosses;
+merged glosses while retaining language/part-of-speech labels; omitted examples, quotations,
+etymologies, translations, audio and images; added Korean readings from libhangul (BSD 3-Clause).
+No NFKC/NFC normalization of Han characters. The adapted Wiktionary dataset is distributed
+under CC-BY-SA-4.0. Preserve attribution and this license when sharing adapted dictionary data.
+No endorsement by the original authors or institutions is implied.
+
+Regeneration (from repository root; downloads are separate):
+python3 scripts/build-hanja-dictionary.py --libhangul PATH/hanja.txt --wiktionary PATH/kowiktionary.jsonl.gz
+The script checks the original hashes before generating data. Update hashes and source dates
+explicitly only after reviewing a new source release. See JSON provenance for measured counts.

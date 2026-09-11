@@ -1,10 +1,11 @@
 import type { ItkcFootnote, ItkcFootnoteSearchInput, ItkcFootnoteSearchResult, MunhaeApi } from "../../shared/munhae-api";
 import { footnoteCitation } from "./footnote-citation";
+import { configureFootnoteAnalysisUi, type FootnoteAnalysisContext, type FootnoteAnalysisViewDeps } from "./footnote-analysis-ui";
 import "../styles/footnote-search.css";
 
-type SearchContext = { query?: string; quote?: string; insert?: (note: ItkcFootnote) => void };
+type SearchContext = FootnoteAnalysisContext & { query?: string; quote?: string; insert?: (note: ItkcFootnote) => void };
 
-export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown) => string) {
+export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown) => string, deps?: FootnoteAnalysisViewDeps) {
   const el = <T extends HTMLElement = HTMLElement>(id: string): T => {
     const element = document.getElementById(id);
     if (!element) throw new Error(`missing ${id}`);
@@ -18,8 +19,33 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   let selected = 0;
   let loading = false;
   let request = 0;
+  let recommendationNote: ItkcFootnote | null = null;
+  const rawResults = document.createElement("details");
+  rawResults.className = "footnote-raw-results";
+  rawResults.id = "footnoteRawResults";
+  const rawSummary = document.createElement("summary");
+  rawSummary.textContent = "검색 결과 직접 살펴보기";
+  rawResults.append(rawSummary);
+  const resultsHead = el("footnoteSearchStatus").parentElement!;
+  resultsHead.before(rawResults);
+  rawResults.append(resultsHead, el("footnoteSearchError"), el("footnoteResults"), dialog.querySelector(".footnote-footer")!);
+  const analysisHost = document.createElement("section");
+  rawResults.before(analysisHost);
+  const analysis = configureFootnoteAnalysisUi(analysisHost, {
+    api, dialog, query, mode, escape,
+    view: deps?.view ?? (() => null),
+    hasUnsavedChanges: deps?.hasUnsavedChanges ?? (() => false),
+    context: () => context,
+    onStart: () => { recommendationNote = null; rawResults.open = false; renderDetail(); },
+    showNote: note => {
+      recommendationNote = note;
+      rawResults.open = true;
+      renderDetail();
+      el("footnoteDetail").scrollIntoView({ block: "nearest" });
+    },
+  });
 
-  function selectedNote(): ItkcFootnote | undefined { return result?.items[selected]; }
+  function selectedNote(): ItkcFootnote | undefined { return recommendationNote ?? result?.items[selected]; }
   function error(message: string): void {
     el("footnoteSearchError").textContent = message;
     el("footnoteSearchError").hidden = !message;
@@ -31,11 +57,12 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   }
   function renderDetail(): void {
     const note = selectedNote();
-    el<HTMLButtonElement>("footnoteCopy").disabled = loading || !note;
-    el<HTMLButtonElement>("footnoteInsert").disabled = loading || !note;
+    const staleRecommendation = !!recommendationNote && !analysis.isCurrent();
+    el<HTMLButtonElement>("footnoteCopy").disabled = loading || !note || staleRecommendation;
+    el<HTMLButtonElement>("footnoteInsert").disabled = loading || !note || staleRecommendation;
     el("footnoteInsert").hidden = !context.insert;
     for (const button of el("footnoteResultsList").querySelectorAll<HTMLButtonElement>("[data-footnote-index]")) {
-      button.setAttribute("aria-pressed", String(Number(button.dataset.footnoteIndex) === selected));
+      button.setAttribute("aria-pressed", String(!recommendationNote && Number(button.dataset.footnoteIndex) === selected));
     }
     if (!note) {
       el("footnoteDetail").innerHTML = `<p class="muted">${loading ? "각주 자료를 불러오고 있습니다." : "각주 대상 구절과 설명, 출처를 함께 확인할 수 있습니다."}</p>`;
@@ -71,6 +98,8 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
     loading = true;
     result = null;
     selected = 0;
+    recommendationNote = null;
+    rawResults.open = true;
     error("");
     el("footnoteActionStatus").textContent = "";
     render();
@@ -88,6 +117,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
 
   function open(next: SearchContext = {}): void {
     context = next;
+    recommendationNote = null;
     if (next.query !== undefined) {
       const value = Array.from(next.query.trim()).slice(0, 100).join("");
       if (query.value !== value || mode.value !== "target" || (result && (result.query !== value || result.mode !== "target"))) {
@@ -108,13 +138,16 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
     if (!dialog.open) dialog.showModal();
     query.focus();
     query.select();
+    rawResults.open = false;
+    analysis.reset();
   }
 
   el("footnoteSearchForm").addEventListener("submit", event => {
     event.preventDefault();
     void search({ query: query.value, mode: mode.value === "content" ? "content" : "target", start: 0 });
   });
-  mode.addEventListener("change", renderHelp);
+  query.addEventListener("input", () => { analysis.reset(); recommendationNote = null; renderDetail(); });
+  mode.addEventListener("change", () => { renderHelp(); analysis.reset(); recommendationNote = null; renderDetail(); });
   el("footnotePrevious").addEventListener("click", () => {
     if (result && !loading) void search({ query: result.query, mode: result.mode, start: Math.max(0, result.start - result.pageSize) });
   });
@@ -124,6 +157,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   el("footnoteResultsList").addEventListener("click", event => {
     const button = (event.target as HTMLElement).closest<HTMLElement>("[data-footnote-index]");
     if (!button || loading) return;
+    recommendationNote = null;
     selected = Number(button.dataset.footnoteIndex);
     el("footnoteActionStatus").textContent = "";
     renderDetail();
@@ -139,7 +173,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   el("footnoteCopy").addEventListener("click", () => {
     const note = selectedNote();
     const current = request;
-    if (note) void navigator.clipboard.writeText(footnoteCitation(note)).then(() => {
+    if (note && (!recommendationNote || analysis.isCurrent())) void navigator.clipboard.writeText(footnoteCitation(note)).then(() => {
       if (dialog.open && current === request) el("footnoteActionStatus").textContent = "출처와 함께 복사했습니다.";
     }).catch(() => {
       if (dialog.open && current === request) error("클립보드에 복사하지 못했습니다. 다시 시도해 주세요.");
@@ -147,7 +181,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   });
   el("footnoteInsert").addEventListener("click", () => {
     const note = selectedNote();
-    if (!note || !context.insert || loading) return;
+    if (!note || !context.insert || loading || recommendationNote && !analysis.isCurrent()) return;
     try { context.insert(note); dialog.close(); }
     catch (cause) { error(cause instanceof Error ? cause.message : "코멘트에 자료를 넣지 못했습니다."); }
   });
@@ -156,7 +190,20 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
     if (dialog.open) return;
     ++request;
     loading = false;
+    analysis.reset();
+    recommendationNote = null;
     context = {};
   });
-  return { open, closeAttached: () => { if (dialog.open && context.insert) dialog.close(); } };
+  return {
+    open,
+    // The context-menu command is an explicit search action; ordinary open
+    // continues to let the translator edit the proposed query before sending it.
+    openAndSearch: (next: SearchContext & { query: string }) => {
+      open(next);
+      void search({ query: query.value, mode: "target", start: 0 });
+    },
+    openAndAnalyze: (next: SearchContext & { query: string }) => { open(next); analysis.start(); },
+    refreshContext: () => { analysis.refresh(); renderDetail(); },
+    closeAttached: () => { if (dialog.open && context.insert) dialog.close(); },
+  };
 }

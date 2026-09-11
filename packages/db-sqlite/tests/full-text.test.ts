@@ -13,6 +13,7 @@ import { openSqlite } from "../src/sqlite.ts";
 import { textSentences } from "../src/full-text.ts";
 import { replaceTextSentence } from "@munhae/domain/text-sentences";
 import { BUNDLED_SKILLS } from "../src/bundled-skills.ts";
+import { restoreV4KnowledgeFixture } from "./legacy-knowledge-fixture.ts";
 const clean: Array<() => void> = [];
 afterEach(() => {
   while (clean.length) clean.pop()!();
@@ -255,6 +256,7 @@ it("upgrades an actual v1 table without losing legacy history and creates a pre-
   const before = repo.getDocumentHistory(id);
   repo.close();
   const db = openSqlite(sqlitePath(path));
+  restoreV4KnowledgeFixture(db);
   const baseline = readFileSync(
     new URL("../migrations/sqlite/001_init.sql", import.meta.url),
     "utf8",
@@ -286,7 +288,7 @@ it("upgrades an actual v1 table without losing legacy history and creates a pre-
     expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
     expect(
       check.prepare("SELECT schema_version FROM meta_project_state").get(),
-    ).toEqual({ schema_version: 4 });
+    ).toEqual({ schema_version: 7 });
   } finally {
     check.close();
   }

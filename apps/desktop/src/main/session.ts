@@ -1,3 +1,4 @@
+import type { ReviewExportInput, ReviewExportSaveResult } from "../shared/munhae-api";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -204,11 +205,10 @@ async function chooseProjectPath(): Promise<string | null> {
     title: "문해 프로젝트 열기",
     message: ".munhae 폴더 또는 .munhaepkg 백업을 선택하세요.",
     buttonLabel: "열기",
-    properties: ["openFile", "openDirectory", "createDirectory"],
-    filters: [
-      { name: "Munhae", extensions: ["munhae", "munhaepkg"] },
-      { name: "All Files", extensions: ["*"] },
-    ],
+    // macOS selects .munhae packages as files; ordinary folders remain navigable.
+    // Requires Electron's package-filter fix (electron/electron#49444).
+    properties: process.platform === "darwin" ? ["openFile"] : ["openFile", "openDirectory"],
+    filters: [{ name: "문해 프로젝트 및 백업", extensions: ["munhae", "munhaepkg"] }],
   });
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0] ?? null;
@@ -495,4 +495,15 @@ export function projectPathFromArgv(argv: string[]): string | null {
     if (lower.endsWith(".munhae") || lower.endsWith(".munhaepkg")) return arg;
   }
   return null;
+}
+
+export async function exportReviewTranslations(input: ReviewExportInput): Promise<ReviewExportSaveResult | null> {
+  const repo = requireRepo();
+  const payload = repo.createReviewExport(input);
+  const result = await saveDialog({ title: "번역 검토본 내보내기", defaultPath: join(dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`), filters: [{ name: payload.format === "html" ? "인쇄용 HTML" : "Markdown", extensions: [payload.extension] }] });
+  if (result.canceled || !result.filePath) return null;
+  const suffix = `.${payload.extension}`;
+  const filePath = result.filePath.toLowerCase().endsWith(suffix) ? result.filePath : `${result.filePath}${suffix}`;
+  writeFileSync(filePath, payload.content, { encoding: "utf8" });
+  return { filePath, format: payload.format, documentCount: payload.documentCount };
 }

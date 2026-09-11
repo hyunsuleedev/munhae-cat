@@ -1,0 +1,27 @@
+.footnote-analysis { margin: 18px 0; padding: 18px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface, #fffdf8); }
+.footnote-analysis-heading h3 { margin: 0 0 6px; font-size: 17px; }
+.footnote-analysis-heading p, .footnote-analysis-status, .footnote-analysis-action-status { font-size: 12px; line-height: 1.65; margin: 0; color: var(--muted); }
+.footnote-analysis-controls { display: flex; align-items: center; gap: 8px; margin: 14px 0 8px; }
+.footnote-analysis-status.is-error { color: var(--danger, #b42318); }
+.footnote-analysis-summary { font-size: 14px; line-height: 1.8; white-space: pre-wrap; margin: 16px 0 8px; }
+.footnote-analysis-coverage, .footnote-analysis-limitations { color: var(--muted); font-size: 11px; line-height: 1.7; }
+.footnote-analysis-limitations { padding-left: 18px; margin: 6px 0 16px; }
+.footnote-recommendations { display: grid; gap: 12px; margin-top: 16px; }
+.footnote-recommendation { border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.footnote-recommendation-heading span { color: var(--muted); font-size: 11px; }
+.footnote-recommendation-heading h4 { margin: 5px 0 14px; font-size: 17px; line-height: 1.6; }
+.footnote-recommendation dl { display: grid; grid-template-columns: 108px minmax(0, 1fr); gap: 9px 12px; font-size: 13px; line-height: 1.8; margin: 0; }
+.footnote-recommendation dt { color: var(--muted); font-size: 12px; }
+.footnote-recommendation dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.footnote-recommendation blockquote { margin: 16px 0 12px; padding: 10px 12px; border-left: 2px solid var(--review-mark-line, #b58c4b); background: var(--review-mark-fill, #f8ecd5); font-size: 12px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.footnote-recommendation cite { display: block; color: var(--muted); font-size: 11px; font-style: normal; margin-top: 6px; }
+.footnote-recommendation-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.footnote-analysis-context { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; font-size: 12px; }
+.footnote-analysis-context summary { cursor: pointer; color: var(--muted); }
+.footnote-analysis-context .footnote-label { margin-top: 14px; }
+.footnote-analysis-context div { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; max-height: 180px; overflow: auto; }
+.footnote-analysis-empty { font-size: 13px; line-height: 1.8; margin: 8px 0; }
+.footnote-analysis-action-status:not(:empty) { margin-top: 12px; }
+.footnote-raw-results { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.footnote-raw-results > summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+@media (max-width: 600px) { .footnote-analysis { padding: 14px; } .footnote-recommendation { padding: 12px; } .footnote-recommendation dl { grid-template-columns: 1fr; gap: 3px; } .footnote-recommendation dd + dt { margin-top: 9px; } }

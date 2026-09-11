@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+  <title>문해 — 시작하는 중</title>
+  <link rel="stylesheet" href="./styles/tokens.css">
+  <link rel="stylesheet" href="./splash/splash.css">
+</head>
+<body>
+  <div class="splash-drag" aria-hidden="true"></div>
+  <main id="startup" class="startup" aria-label="문해 시작">
+    <header class="splash-header"><span>文解</span><small>MUNHAE STUDIO</small></header>
+    <div id="splashScene" class="splash-scene" aria-hidden="true"></div>
+    <div id="splashFallback" class="splash-fallback" aria-hidden="true"><span>文<br>解</span></div>
+    <div id="splashIdentity" class="splash-identity">
+      <div class="splash-brand"><h1>文解</h1><span class="splash-seal" aria-hidden="true">문<br>해</span></div>
+      <p class="splash-roman">MUNHAE STUDIO</p>
+      <p class="splash-tagline">옛 글을 읽고, 뜻을 잇다.</p>
+    </div>
+    <footer class="splash-footer">
+      <p class="splash-status" role="status" aria-live="polite"><span class="splash-dot" aria-hidden="true"></span><span id="splashStatus">문해를 준비하고 있습니다</span></p>
+      <button id="splashContinue" type="button" hidden>문해 시작하기 <span aria-hidden="true">↗</span></button>
+    </footer>
+  </main>
+  <script type="module" src="./splash/startup.ts"></script>
+</body>
+</html>

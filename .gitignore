@@ -15,3 +15,11 @@ coverage/
 .vite/
 *.tsbuildinfo
 apps/desktop/src/renderer/assets/generated/
+/.codex-audit/
+/.playwright-cli/
+/output/
+
+apps/desktop/release-config.generated.yml
+
+!scripts/release/
+!scripts/release/**

@@ -113,7 +113,7 @@ export type ConfirmedExportPayload = {
 
 export type SearchScope = "all" | "source" | "translation";
 export type SearchState = "current" | "confirmed" | "all";
-export type SearchEntityType = "glossary" | "person" | "place";
+export type SearchEntityType = "glossary";
 
 export type SearchEntityFilterInput = {
   entityType: SearchEntityType;
@@ -818,22 +818,13 @@ function entityTerms(values: Array<string | null | undefined>): string[] {
   return [...unique].slice(0, 100);
 }
 
-function aliasesFromJson(value: string): string[] {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter((alias): alias is string => typeof alias === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
 function resolveSearchEntityFilter(
   db: SqliteDb,
   projectId: string,
   input: SearchEntityFilterInput | null | undefined,
 ): ResolvedSearchEntityFilter | null {
   if (!input) return null;
-  if (!( ["glossary", "person", "place"] as const).includes(input.entityType)) {
+  if (input.entityType !== "glossary") {
     throw new MunhaeError("invalid_search", "지식 엔티티 종류가 올바르지 않습니다");
   }
   const entityId = input.entityId.trim();
@@ -841,55 +832,24 @@ function resolveSearchEntityFilter(
     throw new MunhaeError("invalid_search", "지식 엔티티 ID가 올바르지 않습니다");
   }
 
-  if (input.entityType === "glossary") {
-    const row = getRow<{
-      source_term: string;
-      target_term: string;
-      reading: string | null;
-    }>(
-      db,
-      `SELECT source_term, target_term, reading
-       FROM glossary_entries
-       WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-      entityId,
-      projectId,
-    );
-    if (!row) throw new MunhaeError("not_found", "이 프로젝트에서 용어 항목을 찾을 수 없습니다");
-    return {
-      entityType: input.entityType,
-      entityId,
-      label: `${row.source_term} → ${row.target_term}`,
-      terms: entityTerms([row.source_term, row.target_term, row.reading]),
-    };
-  }
-
-  const table = input.entityType === "person" ? "persons" : "places";
   const row = getRow<{
-    preferred_name: string;
-    hanja_name: string | null;
+    source_term: string;
+    target_term: string;
     reading: string | null;
-    aliases_json: string;
   }>(
     db,
-    `SELECT preferred_name, hanja_name, reading, aliases_json
-     FROM ${table}
+    `SELECT source_term, target_term, reading
+     FROM glossary_entries
      WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
     entityId,
     projectId,
   );
-  if (!row) {
-    throw new MunhaeError(
-      "not_found",
-      input.entityType === "person" ? "이 프로젝트에서 인물 항목을 찾을 수 없습니다" : "이 프로젝트에서 지명 항목을 찾을 수 없습니다",
-    );
-  }
+  if (!row) throw new MunhaeError("not_found", "이 프로젝트에서 용어 항목을 찾을 수 없습니다");
   return {
     entityType: input.entityType,
     entityId,
-    label: row.hanja_name && row.hanja_name !== row.preferred_name
-      ? `${row.preferred_name} (${row.hanja_name})`
-      : row.preferred_name,
-    terms: entityTerms([row.preferred_name, row.hanja_name, row.reading, ...aliasesFromJson(row.aliases_json)]),
+    label: `${row.source_term} → ${row.target_term}`,
+    terms: entityTerms([row.source_term, row.target_term, row.reading]),
   };
 }
 

@@ -1,0 +1,27 @@
+.translator-dialog { width: min(880px, calc(100vw - 40px)); max-height: calc(100vh - 48px); padding: 26px; overflow: auto; }
+.translator-dialog h2 { margin: 0; font-size: 21px; }
+.translator-dialog-head, .translator-filters { display: flex; align-items: center; gap: 12px; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; }
+.translator-dialog > p { margin: 12px 0; line-height: 1.6; }
+.translator-filters label { display: flex; gap: 8px; align-items: center; }
+.translator-check-list { border-top: 1px solid var(--border); }
+.translator-check { display: flex; gap: 18px; align-items: start; border-bottom: 1px solid var(--border); padding: 16px 0; }
+.translator-check > div { flex: 1; min-width: 0; }
+.translator-check p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; line-height: 1.65; max-height: 150px; overflow: auto; }
+.translator-check > button { flex-shrink: 0; }
+.translator-workbench { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 9px 0; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.translator-workbench > .muted { margin-right: auto; font-size: 12px; }
+.document-find { position: fixed; z-index: 80; display: grid; gap: 12px; box-sizing: border-box; width: min(480px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--fg); margin: 0; box-shadow: 0 12px 36px rgb(41 43 39 / 16%), 0 2px 8px rgb(41 43 39 / 8%); }
+.document-find[hidden], .document-find [hidden] { display: none; }
+.document-find-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.document-find-head strong { font-size: 13px; }
+.document-find-head kbd { margin-left: 4px; font: inherit; font-size: 10px; color: var(--muted); }
+.document-find-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.document-find-row .input { flex: 1; min-width: 120px; width: 0; }
+.document-find-row .select { width: auto; }
+.document-find [data-replace-value] { flex-basis: 100%; }
+.document-find [role=status] { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 0; overflow-wrap: anywhere; }
+.comparison-tools { flex-wrap: wrap; }
+.comparison-tools .input { width: 155px; min-width: 110px; }
+.comparison-tools .select { max-width: 150px; }
+.translator-filters label { white-space: nowrap; }
+.translator-filters .select { width: auto; min-width: 145px; }

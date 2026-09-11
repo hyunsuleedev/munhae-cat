@@ -1,4 +1,9 @@
 import { canonicalJson, canonicalJsonHash } from "@munhae/domain";
+import type { MaterialOrigin } from "./views.ts";
+
+export function materialOriginFromJson(value: string | null): MaterialOrigin | null {
+  return value ? JSON.parse(value) as MaterialOrigin : null;
+}
 
 export type ContextItemContent = {
   scopeId: string;
@@ -6,6 +11,8 @@ export type ContextItemContent = {
   contentMd: string;
   priority: number;
   enabled: boolean;
+  inheritToChildren?: boolean;
+  conditionMd?: string;
 };
 
 export function contextItemContentHash(value: ContextItemContent): string {
@@ -16,6 +23,8 @@ export function contextItemContentHash(value: ContextItemContent): string {
     contentMd: value.contentMd,
     priority: value.priority,
     enabled: value.enabled,
+    ...(value.inheritToChildren === false ? { inheritToChildren: false } : {}),
+    ...(value.conditionMd?.trim() ? { conditionMd: value.conditionMd.trim() } : {}),
   });
 }
 
@@ -27,25 +36,6 @@ export type GlossaryContent = {
   reading: string | null;
   noteMd: string | null;
   usageStatus: "preferred" | "allowed" | "forbidden";
-};
-
-export type PersonContent = {
-  preferredName: string;
-  hanjaName: string | null;
-  reading: string | null;
-  aliases: string[];
-  descriptionMd: string | null;
-  dateText: string | null;
-};
-
-export type PlaceContent = {
-  preferredName: string;
-  hanjaName: string | null;
-  reading: string | null;
-  aliases: string[];
-  placeKind: string | null;
-  locationNoteMd: string | null;
-  descriptionMd: string | null;
 };
 
 function glossaryManifest(value: GlossaryContent): GlossaryContent {
@@ -60,49 +50,10 @@ function glossaryManifest(value: GlossaryContent): GlossaryContent {
   };
 }
 
-function personManifest(value: PersonContent): PersonContent {
-  return {
-    preferredName: value.preferredName,
-    hanjaName: value.hanjaName,
-    reading: value.reading,
-    aliases: [...value.aliases],
-    descriptionMd: value.descriptionMd,
-    dateText: value.dateText,
-  };
-}
-
-function placeManifest(value: PlaceContent): PlaceContent {
-  return {
-    preferredName: value.preferredName,
-    hanjaName: value.hanjaName,
-    reading: value.reading,
-    aliases: [...value.aliases],
-    placeKind: value.placeKind,
-    locationNoteMd: value.locationNoteMd,
-    descriptionMd: value.descriptionMd,
-  };
-}
-
 export function glossaryContentJson(value: GlossaryContent): string {
   return canonicalJson(glossaryManifest(value));
 }
 
 export function glossaryContentHash(value: GlossaryContent): string {
   return canonicalJsonHash(glossaryManifest(value));
-}
-
-export function personContentJson(value: PersonContent): string {
-  return canonicalJson(personManifest(value));
-}
-
-export function personContentHash(value: PersonContent): string {
-  return canonicalJsonHash(personManifest(value));
-}
-
-export function placeContentJson(value: PlaceContent): string {
-  return canonicalJson(placeManifest(value));
-}
-
-export function placeContentHash(value: PlaceContent): string {
-  return canonicalJsonHash(placeManifest(value));
 }

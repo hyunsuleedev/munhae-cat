@@ -21,7 +21,7 @@ export default defineConfig({
     build: {
       lib: {
         entry: {
-          index: resolve(__dirname, "src/main/index.ts"),
+          index: resolve(__dirname, "src/main/bootstrap.ts"),
           "agent-runtime-worker": resolve(__dirname, "src/main/agent-runtime-worker.ts"),
           "agent-tool-cli": resolve(__dirname, "src/main/agent-tool-cli.ts"),
         },
@@ -48,6 +48,19 @@ export default defineConfig({
   renderer: {
     root: rendererRoot,
     base: "./",
+    plugins: [{
+      name: "munhae-protected-entry-render-blocking",
+      transformIndexHtml: {
+        order: "post",
+        handler(html) {
+          if (!html.includes("<body data-auth-pending")) return html;
+          // Vite rebuilds module script tags and drops blocking="render".
+          // The pagereveal listener must run before the first incoming paint.
+          return html.replace(/<script\b[^>]*\btype="module"[^>]*>/g, tag =>
+            /\bblocking=/.test(tag) ? tag : tag.replace(/>$/, ' blocking="render">'));
+        },
+      },
+    }],
     server: {
       proxy: {
         "/__munhae": {
@@ -61,6 +74,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(rendererRoot, "index.html"),
+          splash: resolve(rendererRoot, "splash.html"),
           home: resolve(rendererRoot, "home.html"),
           editor: resolve(rendererRoot, "editor.html"),
           knowledge: resolve(rendererRoot, "knowledge.html"),

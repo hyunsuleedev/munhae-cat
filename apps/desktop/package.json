@@ -23,11 +23,14 @@
     "@munhae/project-format": "workspace:*",
     "@supabase/supabase-js": "^2.115.0",
     "@xmldom/xmldom": "^0.8.15",
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^11.10.0",
+    "electron-updater": "6.6.2",
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
-    "electron": "37.10.3",
+    "@types/three": "0.185.4",
+    "electron": "38.8.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^4.0.0",
     "typescript": "^5.9.2",

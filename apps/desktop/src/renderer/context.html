@@ -8,15 +8,15 @@
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
 <link rel="stylesheet" href="./styles/context.css">
-<script type="module" blocking="render" src="./scripts/context.ts"></script>
+<script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
 </head>
-<body>
+<body data-auth-pending>
 <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
 <div class="win" id="win">
   <aside class="sidebar" id="sidebar" aria-label="탐색">
     <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
     <div class="sb-scroll" id="sbTree"></div>
-    <div class="sb-foot"><i class="dot"></i>AI<span class="sp"></span><span class="mono">0.1.0</span></div>
+    <div class="sb-foot"><a class="sb-account" href="settings.html#account" aria-label="계정 설정 열기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></svg><span class="sb-account-label">문해 계정</span></a></div>
   </aside>
   <div class="main">
     <header class="titlebar">
@@ -28,27 +28,34 @@
       <div class="context-page" id="contextPage" hidden>
         <header class="context-heading">
           <p class="context-path" id="contextPath"></p>
-          <div class="context-title-row"><div><span class="context-eyebrow">번역의 배경을 기록하는 곳</span><h1 id="contextTitle">문맥</h1></div><span class="context-mark" aria-hidden="true">文</span></div>
-          <p class="muted">해제부터 용어의 쓰임까지, 번역에 필요한 배경을 모아 두세요.</p>
         </header>
         <div class="context-layout">
           <section class="context-writing" aria-label="직접 문맥">
-            <div class="context-section-head"><h2>이 문서의 문맥</h2><span>직접 작성</span></div>
+            <div class="context-section-head"><h2 id="directContextTitle">이 문서의 문맥</h2><span>직접 작성</span></div>
             <div id="contextEditors" class="context-editors"></div>
             <button class="btn context-add" id="addContext" type="button"><span aria-hidden="true">＋</span> 문맥 추가</button>
           </section>
           <aside class="context-rail" aria-label="문맥 적용 안내와 상속">
             <section class="context-scope">
               <span class="context-eyebrow">적용 범위</span>
-              <h2>여기서 쓰고,<br>하위 문서까지 함께.</h2>
-              <div class="context-scope-tree" aria-hidden="true"><span><i></i>현재 문서</span><span><i></i>하위 문서</span></div>
-              <p>AI 요청에 포함한 문맥은 이 문서와 하위 문서의 번역에 참고됩니다.</p>
+              <h2>이곳의 배경을 쓰고,<br>필요한 곳에 이어 주세요.</h2>
+              <div class="context-scope-tree" aria-hidden="true"><span><i></i><span id="currentScopeLabel">현재 문서</span></span><span><i></i>하위 폴더·문서</span></div>
+              <p>문맥마다 하위 적용 여부와 참고 조건을 정할 수 있습니다. 문서별 참고 패널에서 제외한 자료는 해당 문서의 AI 요청에 포함되지 않습니다.</p>
             </section>
             <section class="context-reference-section" id="documentDescriptions" hidden aria-label="문서 설명"></section>
             <section class="context-reference-section" aria-labelledby="inheritedTitle">
               <h2 id="inheritedTitle">상속된 문맥 <span id="inheritedCount">0</span></h2>
-              <p class="muted context-help">상위 문서의 문맥을 함께 참고합니다. 같은 사안은 현재 문서의 문맥이 우선합니다.</p>
+              <p class="muted context-help">상위 폴더·문서에서 하위 적용을 켠 문맥입니다. 현재 문서에서의 포함 상태를 함께 표시합니다.</p>
               <div id="inheritedContexts"></div>
+            </section>
+            <section class="context-reference-section" id="selectedReferences" hidden aria-labelledby="selectedTitle">
+              <h2 id="selectedTitle">직접 가져온 참고 자료 <span id="selectedCount">0</span></h2>
+              <p class="muted context-help">문서별 참고 패널에서 따로 선택한 자료입니다.</p>
+              <div id="selectedContexts"></div>
+            </section>
+            <section class="context-reference-section context-materials-link" aria-label="프로젝트 자료 관리">
+              <p class="muted context-help">프로젝트 전체의 문맥·코멘트·용어집을 모아 보려면</p>
+              <button class="btn btn-ghost" id="openMaterials" type="button">번역 자료에서 전체 보기</button>
             </section>
           </aside>
         </div>

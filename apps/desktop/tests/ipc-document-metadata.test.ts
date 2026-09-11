@@ -19,7 +19,7 @@ describe("document metadata without node classification", () => {
       documentNodeId: "document",
       title: "문서",
       originalTitle: null,
-      authorPersonId: null,
+      authorName: null,
       language: null,
       periodText: null,
       dateText: null,
@@ -28,6 +28,14 @@ describe("document metadata without node classification", () => {
       expectedLockVersion: 1,
     };
     expect(parseUpdateDocumentMetadataInput(input)).toEqual(input);
-    expect(parseUpdateDocumentMetadataInput({ ...input, structuralKind: "section", genre: "prose" })).toEqual(input);
+    expect(parseUpdateDocumentMetadataInput({ ...input, structuralKind: "section", genre: "prose", authorPersonId: "legacy-person" })).toEqual(input);
+    expect(parseUpdateDocumentMetadataInput({
+      ...input,
+      authorName: "  정약용(丁若鏞)  ",
+      periodText: "조선",
+      dateText: "순조 10년",
+    })).toMatchObject({ authorName: "정약용(丁若鏞)", periodText: "조선", dateText: "순조 10년" });
+    expect(parseUpdateDocumentMetadataInput({ ...input, authorName: "   " }).authorName).toBeNull();
+    expect(() => parseUpdateDocumentMetadataInput({ ...input, authorName: "가".repeat(501) })).toThrow();
   });
 });

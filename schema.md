@@ -2,6 +2,10 @@
 
 > 2026-09-05 기본 흐름 변경: [전문 번역 후 원문 연결](docs/full-text-translation.md)이 현재 실행·저장·UI 계약이다. 아래의 표점/앵커 필수 및 `translation-envelope.v2` 설명은 기존 번역의 호환 경로에 적용한다. 스키마 1 → 2 자동 백업·업그레이드를 지원한다.
 
+> 2026-09-10 구절 연구: SQLite 스키마 6에서 `reading_annotations`에 위치별 독음·문맥 풀이·풀이 순서·사전 출처를 저장한다. 원문·번역·프로젝트 공통 용어집과 구분한다. 자세한 계약은 12.7절을 따른다.
+
+> 2026-09-10 번역 자료: 현재 SQLite 스키마 7은 기존 문맥 카드에 하위 적용 여부·조건·채택 당시 코멘트 출처를 추가하고, 문서별 직접 참조·제외를 `material_preferences`에 저장한다. v6 프로젝트를 열 때 기존 DB를 백업한 뒤 업그레이드한다. 자세한 계약은 16.2절을 따른다.
+
 상태: 구현 전 기준안
 관련 문서: `plan.md`
 범위: Phase 1 로컬 SQLite·프로젝트 문맥·LLM 실행. Cloud는 18절 Phase 2에서 별도 정의
@@ -22,7 +26,7 @@
 - OCR
 - 전사 workflow
 - 원본 이미지·필사본의 물리적 행 단위 전사 데이터(논리적 시행은 표점 구조로 지원)
-- 문자 token
+- 원문과 독립적인 문자 token identity (구절 연구는 원문 version의 문자 범위에 연결한다)
 - 외자 편집
 - 이미지 영역과 문자 연결
 - 다판본 자동 교감
@@ -47,6 +51,7 @@ Project
  └─ Document Node
      ├─ Source Asset / Page (선택적 참고 이미지·PDF)
      └─ Source Text → Source Text Version
+         ├─ Reading Annotation (구절 연구의 독음·문맥 풀이·출처)
          └─ Punctuation Version
              ├─ Punctuation Structure Span
              └─ Translation Anchor Set → Translation Anchor
@@ -241,7 +246,7 @@ human | llm | importer | system
 
 ## 8. DOCUMENT NODE
 
-- `document_nodes(id, project_id, parent_node_id, node_role, is_master, title, original_title, ordinal, author_person_id, language, period_text, date_text, description_md, source_reference, lock_version, created_at, updated_at, archived_at)`
+- `document_nodes(id, project_id, parent_node_id, node_role, is_master, title, original_title, ordinal, author_text, language, period_text, date_text, description_md, source_reference, lock_version, created_at, updated_at, archived_at)`
 
 `parent_node_id`는 프로젝트 마스터에서만 null이며, 다른 node의 부모는 같은 프로젝트의 `container`여야 한다. 순환 관계는 허용하지 않는다.
 
@@ -254,7 +259,7 @@ human | llm | importer | system
 
 node의 구조 분류·장르는 컬럼으로 저장하지 않는다. 트리는 `node_role`, `parent_node_id`, `ordinal`로 표현하며 문서 생성·수정 API에도 구조 분류·장르 필드를 두지 않는다. 확인한 문헌 구조·장르가 번역에 필요하면 근거와 함께 `context_items`에 선택적으로 기록한다. document node에 묶인 context는 두 역할 모두에 허용하며, 하위 `source_unit`은 조상 `container`의 context를 요청 조립 시 상속한다. 표점 버전의 산문·운문 구조 모드는 node의 분류와 별개다.
 
-문맥을 만들 때 `author_person_id`, `language`, `period_text`, `source_reference`는 현재 node부터 부모 방향으로 올라가며 처음 발견한 값을 사용한다. `title`, `original_title`, `ordinal`, `date_text`는 현재 node의 값만 사용한다. `description_md`는 상위 설명과 현재 설명을 구분해 함께 렌더링할 수 있지만 하나의 값처럼 덮어쓰거나 합쳐 저장하지 않는다.
+문맥을 만들 때 `author_text`, `language`, `period_text`, `source_reference`는 현재 node부터 부모 방향으로 올라가며 처음 발견한 값을 사용한다. 저자는 자유 텍스트이며 빈 입력은 null로 저장해 상속한다. `title`, `original_title`, `ordinal`, `date_text`는 현재 node의 값만 사용한다. `description_md`는 상위 설명과 현재 설명을 구분해 함께 렌더링할 수 있지만 하나의 값처럼 덮어쓰거나 합쳐 저장하지 않는다.
 
 발신자·수신자 컬럼과 별도 문서-인물 연결 table은 Phase 1 데모에 두지 않는다. 필요한 장르 특화 정보는 우선 `description_md` 또는 `context_items`에 기록한다.
 
@@ -509,11 +514,23 @@ empty_block | empty_translation | stale_snapshot | cas_conflict
 
 별도의 segmentation/segment identity, version, lineage, head는 두지 않는다. `translation_anchors`가 source 경계를, `translation_blocks`가 사용자가 합치고 나누고 순서를 조정하는 번역 편집 단위를 맡으며, 두 계층의 many-to-many 관계가 alignment다. 세부 대조·참고 번역 조회·export의 콘텐츠 단위는 `translation_blocks`이며, `translation_anchors`는 원문 위치와 coverage 근거로만 사용한다.
 
+### 12.7 구절 연구 주석 (`reading_annotations`)
+
+- `reading_annotations(id, project_id, document_node_id, source_version_id, source_content_hash, codepoint_from, codepoint_to, quote, reading, gloss, reading_order, citation_json, content_hash, lock_version, created_by_actor_id, updated_by_actor_id, created_at, updated_at, archived_at)`
+- 한 row는 저장된 원문 version의 `[codepoint_from, codepoint_to)`에 연결된다. 위치 단위는 Unicode codepoint이며 구두점·공백도 위치 계산에 포함한다. 보조평면 한자도 한 글자로 계산하며 1~100 codepoint 범위를 허용한다. 같은 한자가 여러 번 나와도 위치별로 독립된 주석이다.
+- 활성 row는 `(project_id, document_node_id, source_version_id, codepoint_from, codepoint_to)`별 하나다. 범위가 서로 겹치는 낱자·복수 글자 주석은 허용한다. 기존 row의 문서·원문 version·범위·quote는 불변이며 다른 위치로 자동 이동하지 않는다.
+- `reading`은 100자 이하, `gloss`는 2,000자 이하, `reading_order`는 null 또는 1~1,000,000의 정수다. 풀이 순서는 주석의 표시 정보이며 원문 순서를 변경하지 않는다. 독음·풀이·순서·출처가 모두 비어 있는 row는 만들지 않는다.
+- `citation_json`은 선택한 사전의 source/sourceLabel/entryId/headword/reading/sense/senseLabel/sourceUrl/license/licenseUrl/attribution을 보존한다. URL은 자격 증명이 없는 절대 HTTP(S) 주소만 허용한다. 사전 결과를 선택하는 UI가 재사용 가능 여부를 확인하며, 저장 계층은 출처 형식과 길이를 검사하고 원문·뜻·이용 조건을 보존한다.
+- 새 row는 `expectedLockVersion = 0`, 기존 row 수정·보관은 현재 `lock_version`을 요구한다. SQLite transaction에서 현재 source head와 version/hash, 정확한 quote, 활성 문서 소속, 중복 및 CAS를 검사한 뒤 저장한다. row의 콘텐츠 해시와 작성·수정 actor/time을 함께 기록한다.
+- 원문 초안 저장도 매번 새 `src_text_versions.id`를 만든다. 이전 원문 주석은 조회 결과에 남지만 수정·보관은 거부한다. 동일 원문을 다시 입력하거나 같은 글자가 다른 위치에 나타나도 예전 주석을 현재 version으로 조용히 연결하지 않는다. 같은 원문 version을 확정하는 동작은 주석을 유지한다.
+- 사전 조회·풀이 저장은 원문, 표점, 번역, 공통 용어집 및 AI 실행 head를 변경하지 않는다. 주석은 `.munhae/project.sqlite3`에 포함되어 프로젝트 백업과 함께 보존된다.
+- `006_reading_annotations.sql`은 기존 행을 수정하지 않고 테이블·인덱스·트리거를 추가한다. v5 프로젝트를 처음 열 때 일관된 SQLite snapshot을 `.before-reading-annotations-*.bak`에 보관하고 한 번만 적용한다. 이전 v4 인물·지명 삭제 migration의 별도 사본 금지 정책은 유지한다.
+
 ## 13. KNOWLEDGE
 
 ### 13.1 Glossary
 
-- `glossary_entries(id, project_id, source_term, target_locale, target_term, reading, note_md, usage_status, content_hash, lock_version, created_by_actor_id, updated_by_actor_id, created_at, updated_at, archived_at)`
+- `glossary_entries(id, project_id, source_term, target_locale, target_term, term_kind, reading, note_md, usage_status, content_hash, lock_version, created_by_actor_id, updated_by_actor_id, created_at, updated_at, archived_at)`
 
 한 row는 하나의 `원문 용어 → 번역 용어` 대응이다. 같은 `source_term`에 후보가 여러 개면 row를 여러 개 만들고 `usage_status`로 `preferred | allowed | forbidden`을 구분한다. 프로젝트가 용어집 범위이므로 별도 glossary container를 두지 않는다.
 
@@ -521,12 +538,11 @@ empty_block | empty_translation | stale_snapshot | cas_conflict
 
 표기 변형·다의어 의미·출현 위치를 별도 table로 분리하지 않는다. 현재 `src_text_versions.content_text`에서 `source_term`을 exact match하고, 검색 범위를 포함하는 현재 anchor set의 source 좌표를 이용해 표점문 highlight와 LLM context를 만든다. 위치는 실행 시 계산하며 기준 데이터로 저장하지 않는다.
 
-### 13.2 Person / Place
+### 13.2 인물·지명 설명은 문맥으로 통합
 
-- `persons(id, project_id, preferred_name, hanja_name, reading, aliases_json, description_md, date_text, content_hash, lock_version, created_by_actor_id, updated_by_actor_id, created_at, updated_at, archived_at)`
-- `places(id, project_id, preferred_name, hanja_name, reading, aliases_json, place_kind, location_note_md, description_md, content_hash, lock_version, created_by_actor_id, updated_by_actor_id, created_at, updated_at, archived_at)`
+스키마 v5부터 인물·지명 전용 table과 CRUD API를 두지 않는다. 이름·별칭·시기·위치·근거를 자유로운 `context_items` 본문에 기록한다. 관직·문헌 등의 배경 설명도 같은 방식으로 관리하며, 원문 표현과 번역 표현의 사용 규칙은 `glossary_entries`에 둔다.
 
-인물과 지명은 별도 table로 저장하고 관직·책 제목·기관·연호는 `glossary_entries.term_kind`로 구분한다. 이름과 별칭은 현재 source text에서 실행 시 exact match하며 출현 좌표 table은 만들지 않는다.
+v4 이전 프로젝트는 새 migration에서 `persons`·`places`와 전용 데이터를 삭제한다. 사용자 결정에 따라 문맥 카드, 이관 artifact 또는 전용 백업을 생성하지 않는다. 문서에 이미 지정한 저자명만 `author_text`로 옮기며, 부모에서 상속하던 값은 자손에 복사하지 않는다. 기존 일반 문맥·용어·원문·번역·코멘트와 과거 AI 요청은 유지한다. 자세한 범위는 [지식 모델 단순화](docs/knowledge-simplification.md)를 따른다.
 
 ### 13.3 Uncertainty
 
@@ -543,9 +559,9 @@ empty_block | empty_translation | stale_snapshot | cas_conflict
 textual | interpretive | identification
 ```
 
-## 14. 주석·댓글·협업 검토 — 데모 제외
+## 14. 구절 검토 코멘트
 
-Phase 1 데모에는 관련 table을 만들지 않는다. Phase 2 협업 workflow가 구체화될 때 별도로 설계한다.
+`review_comments`는 번역 버전과 원문 또는 번역문 버전, codepoint 범위, 정확한 인용구, 코멘트 본문, 작성·수정자와 시각을 보존한다. 선택한 코멘트를 이전 번역과 함께 재번역에 전달한다. 번역가는 코멘트의 내용을 검토·정리하여 별도 문맥 카드로 저장할 수 있다. 이때 원본 코멘트는 수정하지 않으며, 채택 당시의 인용·본문·버전·범위·lock version을 별도 출처 artifact에 고정한다. 다른 문서의 원본 코멘트를 이번 번역에만 참고할 경우 `referenceCommentIds`로 선택하며, 현재 번역의 수정 명령과 구분해서 전달한다.
 
 ## 15. AI 작업 경계
 
@@ -557,7 +573,7 @@ Phase 1은 범용 recipe·step·execution table을 두지 않는다. provider가
 
 ```text
 1. 원본 지식
-   정책·원문·용어·인물·지명·불확실성·확정 번역
+   정책·원문·용어·자유 문맥·불확실성·확정 번역
 
 2. 문맥 선택 규칙
    Phase 1 코드에 고정한 순서·exact match·token budget·overflow 정책
@@ -575,12 +591,11 @@ Phase 1은 범용 recipe·step·execution table을 두지 않는다. provider가
 | 현재 원문 | `src_text_versions`, `punctuation_versions` |
 | 번역 경계 | `translation_anchor_sets`, `translation_anchors` |
 | 용어 | `glossary_entries` |
-| 인물 | `persons` |
-| 지명 | `places` |
+| 인물·지명 등 배경 설명 | `context_items` |
 | 불확실성 | `uncertainty_versions` |
 | 확정 번역 | `document_translation_versions`, `translation_blocks` |
 
-용어·인물·지명·확정 번역을 `context_items`에 다시 복사하지 않는다. `context_items`는 다른 domain table로 표현되지 않는 사용자의 문맥 카드에만 사용한다.
+용어·확정 번역은 각 기준 table에서 조회한다. 인물·지명 등 배경 설명은 `context_items`를 기준으로 관리하며 별도 목록에 중복 저장하지 않는다.
 
 ### 16.2 사용자 문맥 카드
 
@@ -596,6 +611,10 @@ context_items(
   scope_id,
   title,
   content_md,
+  inherit_to_children,
+  condition_md,
+  source_comment_id,
+  origin_artifact_id,
   priority,
   enabled,
   content_hash,
@@ -610,17 +629,25 @@ context_items(
 
 별도 version/head는 두지 않는다. 사용자는 카드를 직접 수정하고 `enabled`로 기본 포함 여부를 정한다. 수정·포함 여부·우선순위·보관은 `lock_version` CAS로 충돌을 검출한다. 과거 AI 실행에 사용한 정확한 내용은 해당 assistant `chat_message`의 request manifest와 exact request artifact가 보존한다. 채팅 전체를 자동 문맥으로 사용하지 않는다.
 
-`scope_kind`는 `document_node`만 허용하며 `scope_id`는 같은 프로젝트의 활성 `document_nodes.id`를 가리킨다. 요청 조립기는 현재 node에서 시작해 프로젝트 마스터까지 조상을 올라가며 관련 카드만 선택한다. 정렬은 `(scope_distance ASC, priority DESC, updated_at ASC)`이다. `scope_distance=0`은 현재 node, `1`은 부모 node다. 프로젝트 공통 카드는 마스터 node 문맥으로 저장되므로 조상 경로의 마지막에 자연스럽게 포함된다. 다른 문서 가지의 카드는 포함하지 않는다.
+`scope_kind`는 `document_node`만 허용하며 `scope_id`는 같은 프로젝트의 활성 `document_nodes.id`를 가리킨다. `inherit_to_children=1`이면 실제 `parent_node_id` 계층을 따라 모든 하위 문서에 적용하며, `0`이면 연결 노드 자체에만 적용한다. 기존 카드는 기본값 1로 이전 동작을 유지한다. 프로젝트 공통 카드는 마스터 node에 연결한다. 같은 깊이의 형제 문서라는 이유만으로 자료를 적용하지 않는다. 정렬은 현재 문서부터 가까운 조상 순, 이후 직접 가져온 자료 순이며 같은 범위에서는 priority 내림차순과 ID로 안정적으로 정렬한다.
+
+`condition_md`는 사람이 작성한 적용 조건·예외이며 AI 요청에 본문과 함께 전달한다. 코멘트에서 만든 카드는 `source_comment_id`와 `origin_artifact_id`를 함께 가진다. artifact 종류는 `material_comment_origin`이고 `payload_json`에 원본 코멘트 스냅샷을 저장한다. 카드의 제목·본문·범위를 수정해도 이 출처는 바뀌지 않는다. 원본 코멘트의 후속 수정·보관 역시 이미 채택한 스냅샷을 덮어쓰지 않는다.
+
+#### `material_preferences`
+
+`(project_id, document_node_id, source_kind, source_id)`를 복합 키로 사용한다. `source_kind`는 `context_item` 또는 `document_description`이며 `source_id`는 실제 카드 ID 또는 문서 ID다. UI에서 사용하는 `document:<id>:description` 가상 ID를 DB에 저장하지 않는다. 같은 프로젝트의 활성 자료·문서인지 저장 시 검증한다.
+
+`referenced`와 `excluded`는 독립적이다. 다른 가지의 자료를 직접 가져오면 `referenced=1`, 현재 문서에서만 끄면 `excluded=1`로 기록한다. 끄더라도 기존 직접 연결은 남는다. `reset`은 설정 행을 삭제하여 계층 기본값으로 돌아간다. 명시적 include 설정은 globally disabled 카드도 해당 문서에서만 포함하며, 문서별 제외는 이번 요청의 이전 pin보다 우선한다. 문서 설명 역시 같은 규칙으로 가져오거나 제외할 수 있다. 요청 manifest는 사용한 카드의 연결 노드·하위 적용 여부·lock version·출처를 기록하고 exact request artifact가 실제 전달 본문을 보존한다.
 
 ### 16.3 고정 문맥 조립 규칙
 
-Phase 1에는 profile·override·retrieval 기록 table을 두지 않고 다음 순서를 코드에 고정한다.
+Phase 1은 다음 순서를 코드에 고정하며 문서별 자료 선택은 위 `material_preferences`로 관리한다.
 
 1. 정확한 punctuation version의 전체 표점 원문
 2. 해당 translation anchor manifest
 3. confirmed translation policy
-4. 전체 원문에서 이름·별칭이 exact match된 glossary entry·person·place
-5. 관련 uncertainty와 `enabled`인 context item. context item은 현재 node부터 가까운 조상을 거쳐 프로젝트 마스터 순으로 붙인다.
+4. 전체 원문에서 표현이 exact match된 glossary entry
+5. 관련 uncertainty와 문서별 적용 규칙으로 선택된 context item. context item은 현재 node부터 가까운 조상을 거쳐 프로젝트 마스터 순, 이후 명시적으로 가져온 다른 자료 순으로 붙인다.
 6. 기존 confirmed translation에서 직접 조회한 참고 번역
 7. 번역 task라면 `translation-envelope.v2` 단일 완성 번역 schema, 일반 chat이라면 없음
 
@@ -654,7 +681,7 @@ manifest는 canonical JSON으로 만든 뒤 `request_manifest_hash`를 계산한
 
 1. task, document translation, source text version, punctuation version 결정
 2. 정확한 translation anchor set과 전체 `punctuated_text` 로드
-3. `glossary_entries.source_term`과 `persons`·`places` 이름·별칭 exact match
+3. `glossary_entries.source_term`의 일치 여부로 용어 후보를 선택
 4. 관련 uncertainty와 `enabled` context item 로드
 5. 기존 confirmed translation에서 필요한 참고 번역 직접 조회
 6. 문서 상세의 AI 번역 대화상자에서 사용자가 보조 항목 포함·제외
@@ -856,7 +883,6 @@ SQLite와 PostgreSQL의 migration 파일은 분리한다. 교환 형식은 canon
 - unique `document_nodes(project_id, parent_node_id, ordinal) WHERE parent_node_id IS NOT NULL`
 - unique `document_nodes(project_id, ordinal) WHERE parent_node_id IS NULL`
 - unique `document_nodes(project_id) WHERE is_master = 1 AND archived_at IS NULL`
-- `document_nodes(project_id, author_person_id) WHERE author_person_id IS NOT NULL`
 - unique `src_node_assets(document_node_id, asset_id, ordinal)`
 - unique `punctuation_structure_spans(punctuation_version_id, parent_span_id, span_kind, ordinal) WHERE parent_span_id IS NOT NULL`
 - unique `punctuation_structure_spans(punctuation_version_id, span_kind, ordinal) WHERE parent_span_id IS NULL`
@@ -925,7 +951,7 @@ JSON은 실제 query path가 확인된 경우에만 expression/GIN index를 추�
 35. 수동 분할 전후의 source unit은 별도 version 사슬로 보존하며 앱이 임의로 원문 범위나 structure/anchor 좌표를 재기준화하지 않는다.
 36. glossary는 `glossary_entries` 단일 table을 기준으로 한다. 같은 원문 용어·target locale에는 활성 `preferred` row가 최대 하나다. 용어 출현 좌표는 저장하지 않고 현재 source text version에서 동적으로 exact match하며, AI 실행에 사용한 entry ID/hash와 렌더링 결과는 request manifest와 request artifact로 보존한다.
 37. document translation version은 `parent_version_id` 하나만 가질 수 있다. parent는 같은 `document_translation_id`에 속해야 하고 순환할 수 없으며, multi-parent 계보가 필요한 자동 merge는 초기 범위에 포함하지 않는다.
-38. document node의 parent와 `author_person_id`는 같은 project에 속해야 하며 parent 관계는 순환할 수 없다.
+38. document node의 parent는 같은 project에 속해야 하며 parent 관계는 순환할 수 없다. 저자는 관계 FK가 아닌 자유 텍스트 `author_text`로 저장한다.
 39. `src_texts`, `src_node_assets`, translation anchor set과 document translation의 `document_node_id`는 모두 같은 project의 실제 node를 가리켜야 한다.
 40. document node는 `container | source_unit` 역할을 명시한다. `container`는 하위 node·context를 가질 수 있지만 source chain을 가질 수 없고, `source_unit`은 source chain을 가질 수 있지만 하위 node를 가질 수 없다.
 41. 프로젝트에는 이동·삭제할 수 없는 활성 최상위 마스터 `container`가 정확히 하나 있으며 모든 다른 document node는 그 자손이다. 프로젝트 공통 문맥은 마스터 node의 `document_node` 문맥으로 저장한다.

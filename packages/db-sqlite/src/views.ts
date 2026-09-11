@@ -134,7 +134,6 @@ export type DocumentMetadataView = {
   isMaster: boolean;
   title: string;
   originalTitle: string | null;
-  authorPersonId: string | null;
   authorName: string | null;
   language: string | null;
   periodText: string | null;
@@ -149,7 +148,7 @@ export type UpdateDocumentMetadataInput = {
   documentNodeId: string;
   title: string;
   originalTitle: string | null;
-  authorPersonId: string | null;
+  authorName: string | null;
   language: string | null;
   periodText: string | null;
   dateText: string | null;
@@ -358,42 +357,7 @@ export type GlossaryEntryView = {
   usageStatus: "preferred" | "allowed" | "forbidden";
 };
 
-export type PersonView = {
-  id: string;
-  contentHash: string;
-  lockVersion: number;
-  preferredName: string;
-  hanjaName: string | null;
-  reading: string | null;
-  aliases: string[];
-  descriptionMd: string | null;
-  dateText: string | null;
-};
-
-export type PlaceView = {
-  id: string;
-  contentHash: string;
-  lockVersion: number;
-  preferredName: string;
-  hanjaName: string | null;
-  reading: string | null;
-  aliases: string[];
-  placeKind: string | null;
-  locationNoteMd: string | null;
-  descriptionMd: string | null;
-};
-
 export type UpsertGlossaryInput = Omit<GlossaryEntryView, "id" | "contentHash" | "lockVersion"> & {
-  id?: string;
-  expectedLockVersion?: number;
-};
-
-export type UpsertPersonInput = Omit<PersonView, "id" | "contentHash" | "lockVersion"> & {
-  id?: string;
-  expectedLockVersion?: number;
-};
-
-export type UpsertPlaceInput = Omit<PlaceView, "id" | "contentHash" | "lockVersion"> & {
   id?: string;
   expectedLockVersion?: number;
 };
@@ -477,6 +441,58 @@ export type NodeContextView = {
   enabled: boolean;
   lockVersion: number;
   updatedAt: string;
+  inheritToChildren?: boolean;
+  conditionMd?: string;
+  origin?: MaterialOrigin | null;
+};
+
+export type MaterialOrigin = {
+  commentId: string;
+  documentNodeId: string;
+  translationVersionId: string;
+  targetKind: "source" | "translation";
+  targetVersionId: string;
+  codepointFrom: number;
+  codepointTo: number;
+  quote: string;
+  bodyMd: string;
+  lockVersion: number;
+};
+
+export type MaterialCommentView = ReviewCommentView & { authorName: string; materialIds: string[] };
+export type MaterialPreferenceView = {
+  documentNodeId: string;
+  source: "context_item" | "document_description";
+  /** Actual context_items.id or document_nodes.id, never a virtual display ID. */
+  sourceId: string;
+  mode: "include" | "exclude";
+  referenced: boolean;
+  excluded: boolean;
+  lockVersion: number;
+};
+export type ResolvedMaterialView = NodeContextView & {
+  reason: "current" | "ancestor" | "selected";
+  excluded: boolean;
+  referenced: boolean;
+  included: boolean;
+};
+export type MaterialsView = {
+  items: NodeContextView[];
+  comments: MaterialCommentView[];
+  preferences: MaterialPreferenceView[];
+  documentNodeId?: string;
+  resolved?: ResolvedMaterialView[];
+};
+export type SetMaterialPreferenceInput = {
+  documentNodeId: string;
+  source: MaterialPreferenceView["source"];
+  sourceId: string;
+  mode: "include" | "exclude" | "reset";
+  expectedLockVersion?: number;
+};
+export type ReuseCommentAsMaterialInput = CreateContextItemInput & {
+  commentId: string;
+  expectedCommentLockVersion: number;
 };
 
 export type CreateContextItemInput = {
@@ -485,6 +501,8 @@ export type CreateContextItemInput = {
   contentMd: string;
   priority: number;
   enabled: boolean;
+  inheritToChildren?: boolean;
+  conditionMd?: string;
 };
 
 export type UpdateContextItemInput = CreateContextItemInput & {
@@ -502,8 +520,6 @@ export type SetContextItemPriorityInput = ContextItemCasInput & { priority: numb
 
 export type KnowledgeView = {
   glossary: GlossaryEntryView[];
-  persons: PersonView[];
-  places: PlaceView[];
   uncertainties: UncertaintyView[];
   contextItems: NodeContextView[];
 };
@@ -536,6 +552,7 @@ export type ContextPreview = {
     chars: number;
     /** Exact candidate payload, including when the item is excluded. */
     content: string;
+    material?: { scopeId: string; inheritToChildren: boolean; lockVersion: number; origin: MaterialOrigin | null };
   }>;
   status: "ready";
   manifestJson: string;
@@ -546,6 +563,7 @@ export type ContextPreviewInput = {
   documentNodeId: string;
   selections?: Array<{ id: string; mode: "auto" | "pin" | "exclude" }>;
   revision?: { baseVersionId: string; commentIds: string[] };
+  referenceCommentIds?: string[];
 };
 
 export type ReviewCommentView = {

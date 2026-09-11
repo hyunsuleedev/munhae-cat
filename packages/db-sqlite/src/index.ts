@@ -2,6 +2,8 @@ export { assertSqliteIntegrity, openSqlite, type SqliteDb } from "./sqlite.ts";
 export { migrateProjectDb, migrateAppDb, applySqlMigration } from "./migrate.ts";
 export { AppDb, openAppDatabase, type OpenAppDb, type RuntimeSessionKey } from "./app-db.ts";
 export { createProject, openProject, seedDemoProject, sqlitePath, ProjectRepo } from "./project-repo.ts";
+export type { ReadingCitation, ReadingAnnotationView, SaveReadingAnnotationInput, ReadingAnnotationCasInput } from "./reading-annotations.ts";
+export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "./views.ts";
 export {
   compareDocumentVersions,
   createConfirmedExport,
@@ -117,8 +119,6 @@ export type {
   KnowledgeView,
   MergeBlocksInput,
   NodeContextView,
-  PersonView,
-  PlaceView,
   PreparedTranslationRun,
   PreparedProjectTaskRun,
   PunctuationSuggestionView,
@@ -148,8 +148,6 @@ export type {
   UncertaintyOptionInput,
   UncertaintyView,
   UpsertGlossaryInput,
-  UpsertPersonInput,
-  UpsertPlaceInput,
   UpdateContextItemInput,
   UpdateDocumentMetadataInput,
   VersionUiState,

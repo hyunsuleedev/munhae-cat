@@ -1,5 +1,11 @@
+import { searchConcordance, type ConcordanceInput } from "./concordance.ts";
+import { buildReviewExport, type ReviewExportInput } from "./review-export.ts";
 import * as fullText from "./full-text.ts";
+import * as materials from "./materials.ts";
+import type { MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "./views.ts";
 import * as reviewComments from "./review-comments.ts";
+import * as readingAnnotations from "./reading-annotations.ts";
+import type { SaveReadingAnnotationInput, ReadingAnnotationCasInput } from "./reading-annotations.ts";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -92,10 +98,6 @@ import {
 import {
   glossaryContentHash,
   glossaryContentJson,
-  personContentHash,
-  personContentJson,
-  placeContentHash,
-  placeContentJson,
 } from "./knowledge-content.ts";
 import {
   archiveContextItem as archiveStoredContextItem,
@@ -146,8 +148,6 @@ import type {
   KnowledgeView,
   MergeBlocksInput,
   NodeContextView,
-  PersonView,
-  PlaceView,
   PreparedTranslationRun,
   PreparedProjectTaskRun,
   PunctuationSuggestionView,
@@ -166,8 +166,6 @@ import type {
   SplitBlockInput,
   UncertaintyView,
   UpsertGlossaryInput,
-  UpsertPersonInput,
-  UpsertPlaceInput,
   UpdateContextItemInput,
   UpdateDocumentMetadataInput,
   VersionUiState,
@@ -197,7 +195,7 @@ function requireKnowledgeLock(expected: number | undefined): number {
 function throwKnowledgeCasFailure(
   db: SqliteDb,
   projectId: string,
-  table: "glossary_entries" | "persons" | "places",
+  table: "glossary_entries",
   id: string,
 ): never {
   const row = getRow<{ lock_version: number }>(
@@ -384,7 +382,7 @@ export class ProjectRepo {
         title: input.title,
         original_title: input.originalTitle?.trim() || null,
         ordinal,
-        author_person_id: null,
+        author_text: null,
         language: null,
         period_text: null,
         date_text: null,
@@ -420,7 +418,7 @@ export class ProjectRepo {
       title: string;
       original_title: string | null;
       node_role: DocumentNodeRole;
-      author_person_id: string | null;
+      author_text: string | null;
       language: string | null;
       period_text: string | null;
       date_text: string | null;
@@ -1320,6 +1318,10 @@ export class ProjectRepo {
     return createConfirmedExport(this.db, this.projectId, input);
   }
 
+  concordance(input: ConcordanceInput) { return searchConcordance(this.db, this.projectId, input); }
+
+  createReviewExport(input: ReviewExportInput) { return buildReviewExport(this.db, this.projectId, input); }
+
   search(input: SearchQueryInput): SearchView {
     return searchProject(this.db, this.projectId, input);
   }
@@ -1356,124 +1358,11 @@ export class ProjectRepo {
       usageStatus: g.usage_status,
     }));
 
-    const persons: PersonView[] = allRows<{
-      id: string;
-      preferred_name: string;
-      hanja_name: string | null;
-      reading: string | null;
-      aliases_json: string;
-      description_md: string | null;
-      date_text: string | null;
-      content_hash: string;
-      lock_version: number;
-    }>(
-      this.db,
-      `SELECT id, preferred_name, hanja_name, reading, aliases_json, description_md, date_text,
-              content_hash, lock_version
-       FROM persons WHERE project_id = ? AND archived_at IS NULL ORDER BY preferred_name`,
-      this.projectId,
-    ).map((p) => ({
-      id: p.id,
-      contentHash: p.content_hash,
-      lockVersion: p.lock_version,
-      preferredName: p.preferred_name,
-      hanjaName: p.hanja_name,
-      reading: p.reading,
-      aliases: JSON.parse(p.aliases_json) as string[],
-      descriptionMd: p.description_md,
-      dateText: p.date_text,
-    }));
-
-    const places: PlaceView[] = allRows<{
-      id: string;
-      preferred_name: string;
-      hanja_name: string | null;
-      reading: string | null;
-      aliases_json: string;
-      place_kind: string | null;
-      location_note_md: string | null;
-      description_md: string | null;
-      content_hash: string;
-      lock_version: number;
-    }>(
-      this.db,
-      `SELECT id, preferred_name, hanja_name, reading, aliases_json, place_kind, location_note_md,
-              description_md, content_hash, lock_version
-       FROM places WHERE project_id = ? AND archived_at IS NULL ORDER BY preferred_name`,
-      this.projectId,
-    ).map((p) => ({
-      id: p.id,
-      contentHash: p.content_hash,
-      lockVersion: p.lock_version,
-      preferredName: p.preferred_name,
-      hanjaName: p.hanja_name,
-      reading: p.reading,
-      aliases: JSON.parse(p.aliases_json) as string[],
-      placeKind: p.place_kind,
-      locationNoteMd: p.location_note_md,
-      descriptionMd: p.description_md,
-    }));
-
     const uncertainties = loadUncertainties(this.db, this.projectId);
 
-    const contextItems: NodeContextView[] = allRows<{
-      id: string;
-      scope_id: string;
-      title: string;
-      content_md: string;
-      priority: number;
-      enabled: number;
-      lock_version: number;
-      updated_at: string;
-    }>(
-      this.db,
-      `SELECT id, scope_id, title, content_md, priority, enabled, lock_version, updated_at
-       FROM context_items
-       WHERE project_id = ? AND archived_at IS NULL
-         AND scope_kind = 'document_node' AND scope_id IS NOT NULL`,
-      this.projectId,
-    ).map((item) => ({
-      id: item.id,
-      source: "context_item",
-      scopeKind: "document_node",
-      scopeId: item.scope_id,
-      title: item.title,
-      contentMd: item.content_md,
-      priority: item.priority,
-      enabled: item.enabled === 1,
-      lockVersion: item.lock_version,
-      updatedAt: item.updated_at,
-    }));
-    const descriptions = allRows<{
-      id: string;
-      title: string;
-      original_title: string | null;
-      description_md: string;
-      lock_version: number;
-      updated_at: string;
-    }>(
-      this.db,
-      `SELECT id, title, original_title, description_md, lock_version, updated_at
-       FROM document_nodes
-       WHERE project_id = ? AND archived_at IS NULL AND trim(COALESCE(description_md, '')) <> ''`,
-      this.projectId,
-    ).map<NodeContextView>((node) => ({
-      id: `document:${node.id}:description`,
-      source: "document_description",
-      scopeKind: "document_node",
-      scopeId: node.id,
-      title: `문서 설명 · ${node.original_title || node.title}`,
-      contentMd: node.description_md,
-      priority: 0,
-      enabled: true,
-      lockVersion: node.lock_version,
-      updatedAt: node.updated_at,
-    }));
+    const contextItems = materials.loadMaterialItems(this.db, this.projectId);
 
-    contextItems.push(...descriptions);
-    contextItems.sort((a, b) => b.priority - a.priority || a.updatedAt.localeCompare(b.updatedAt));
-
-    return { glossary, persons, places, uncertainties, contextItems };
+    return { glossary, uncertainties, contextItems };
   }
 
   upsertGlossary(entry: UpsertGlossaryInput): GlossaryEntryView {
@@ -1529,111 +1418,6 @@ export class ProjectRepo {
     return row;
   }
 
-  upsertPerson(person: UpsertPersonInput): PersonView {
-    const now = nowIso();
-    const id = person.id ?? createId();
-    const hash = personContentHash(person);
-    if (person.id) {
-      const info = this.db
-        .prepare(
-          `UPDATE persons SET preferred_name=@preferredName, hanja_name=@hanjaName, reading=@reading,
-           aliases_json=@aliases, description_md=@descriptionMd, date_text=@dateText,
-           content_hash=@hash, lock_version=lock_version+1, updated_by_actor_id=@actor, updated_at=@now
-           WHERE id=@id AND project_id=@projectId AND archived_at IS NULL AND lock_version=@lock`,
-        )
-        .run({
-          id,
-          projectId: this.projectId,
-          lock: requireKnowledgeLock(person.expectedLockVersion),
-          preferredName: person.preferredName,
-          hanjaName: person.hanjaName,
-          reading: person.reading,
-          aliases: JSON.stringify(person.aliases),
-          descriptionMd: person.descriptionMd,
-          dateText: person.dateText,
-          hash,
-          actor: this.actors.humanId,
-          now,
-        });
-      if (info.changes !== 1) throwKnowledgeCasFailure(this.db, this.projectId, "persons", id);
-    } else {
-      insertRow(this.db, "persons", {
-        id,
-        project_id: this.projectId,
-        preferred_name: person.preferredName,
-        hanja_name: person.hanjaName,
-        reading: person.reading,
-        aliases_json: JSON.stringify(person.aliases),
-        description_md: person.descriptionMd,
-        date_text: person.dateText,
-        content_hash: hash,
-        lock_version: 1,
-        created_by_actor_id: this.actors.humanId,
-        updated_by_actor_id: this.actors.humanId,
-        created_at: now,
-        updated_at: now,
-        archived_at: null,
-      });
-    }
-    const row = this.getKnowledge().persons.find((p) => p.id === id);
-    if (!row) throw new MunhaeError("internal", "person upsert failed");
-    return row;
-  }
-
-  upsertPlace(place: UpsertPlaceInput): PlaceView {
-    const now = nowIso();
-    const id = place.id ?? createId();
-    const hash = placeContentHash(place);
-    if (place.id) {
-      const info = this.db
-        .prepare(
-          `UPDATE places SET preferred_name=@preferredName, hanja_name=@hanjaName, reading=@reading,
-           aliases_json=@aliases, place_kind=@placeKind, location_note_md=@locationNoteMd,
-           description_md=@descriptionMd, content_hash=@hash, lock_version=lock_version+1,
-           updated_by_actor_id=@actor, updated_at=@now
-           WHERE id=@id AND project_id=@projectId AND archived_at IS NULL AND lock_version=@lock`,
-        )
-        .run({
-          id,
-          projectId: this.projectId,
-          lock: requireKnowledgeLock(place.expectedLockVersion),
-          preferredName: place.preferredName,
-          hanjaName: place.hanjaName,
-          reading: place.reading,
-          aliases: JSON.stringify(place.aliases),
-          placeKind: place.placeKind,
-          locationNoteMd: place.locationNoteMd,
-          descriptionMd: place.descriptionMd,
-          hash,
-          actor: this.actors.humanId,
-          now,
-        });
-      if (info.changes !== 1) throwKnowledgeCasFailure(this.db, this.projectId, "places", id);
-    } else {
-      insertRow(this.db, "places", {
-        id,
-        project_id: this.projectId,
-        preferred_name: place.preferredName,
-        hanja_name: place.hanjaName,
-        reading: place.reading,
-        aliases_json: JSON.stringify(place.aliases),
-        place_kind: place.placeKind,
-        location_note_md: place.locationNoteMd,
-        description_md: place.descriptionMd,
-        content_hash: hash,
-        lock_version: 1,
-        created_by_actor_id: this.actors.humanId,
-        updated_by_actor_id: this.actors.humanId,
-        created_at: now,
-        updated_at: now,
-        archived_at: null,
-      });
-    }
-    const row = this.getKnowledge().places.find((p) => p.id === id);
-    if (!row) throw new MunhaeError("internal", "place upsert failed");
-    return row;
-  }
-
   getDocumentMetadata(documentNodeId: string): DocumentMetadataView {
     return loadDocumentMetadata(this.db, this.projectId, documentNodeId);
   }
@@ -1643,6 +1427,18 @@ export class ProjectRepo {
       { db: this.db, projectId: this.projectId, actors: this.actors },
       input,
     );
+  }
+
+  getMaterials(documentNodeId?: string): MaterialsView {
+    return materials.getMaterials({ db: this.db, projectId: this.projectId, actors: this.actors }, documentNodeId);
+  }
+
+  setMaterialPreference(input: SetMaterialPreferenceInput): void {
+    materials.setMaterialPreference({ db: this.db, projectId: this.projectId, actors: this.actors }, input);
+  }
+
+  reuseCommentAsMaterial(input: ReuseCommentAsMaterialInput): NodeContextView {
+    return materials.reuseCommentAsMaterial({ db: this.db, projectId: this.projectId, actors: this.actors }, input);
   }
 
   createContextItem(input: CreateContextItemInput): NodeContextView {
@@ -1716,6 +1512,9 @@ export class ProjectRepo {
   createReviewComment(input: CreateReviewCommentInput) { return reviewComments.createReviewComment(this.fullTextContext(), input); }
   updateReviewComment(input: UpdateReviewCommentInput) { return reviewComments.updateReviewComment(this.fullTextContext(), input); }
   archiveReviewComment(input: ReviewCommentCasInput) { reviewComments.archiveReviewComment(this.fullTextContext(), input); }
+  listReadingAnnotations(documentNodeId: string) { return readingAnnotations.listReadingAnnotations(this.fullTextContext(), documentNodeId); }
+  saveReadingAnnotation(input: SaveReadingAnnotationInput) { return readingAnnotations.saveReadingAnnotation(this.fullTextContext(), input); }
+  archiveReadingAnnotation(input: ReadingAnnotationCasInput) { readingAnnotations.archiveReadingAnnotation(this.fullTextContext(), input); }
 
   beginFullTextRun(input: BeginTranslationRunInput & {alignmentVersionId?:string}) { return fullText.beginText(this.fullTextContext(), input); }
   finishFullTextRun(input: CompleteTranslationRunInput) { fullText.finishTextRun(this.fullTextContext(),input); }
@@ -1875,18 +1674,6 @@ export class ProjectRepo {
     });
     const lineage = this.documentLineage(documentNodeId);
     const distanceByNodeId = new Map(lineage.map((node) => [node.id, node.distance]));
-    for (const node of lineage) {
-      if (!node.descriptionMd?.trim()) continue;
-      addAuxiliary({
-        id: `document:${node.id}:description`,
-        kind: "document_context",
-        label: `문서 설명 · ${node.originalTitle || node.title}`,
-        reason: node.distance === 0 ? "current_document_context" : `ancestor_document_context:${node.distance}`,
-        defaultIncluded: true,
-        chars: codepointCount(node.descriptionMd),
-        content: node.descriptionMd,
-      });
-    }
     for (const g of knowledge.glossary) {
       const hit = source.includes(g.sourceTerm);
       const content = glossaryContentJson(g);
@@ -1895,34 +1682,6 @@ export class ProjectRepo {
         kind: "glossary",
         label: `${g.sourceTerm} → ${g.targetTerm}`,
         reason: hit ? "exact_match" : "project_glossary",
-        defaultIncluded: hit,
-        chars: codepointCount(content),
-        content,
-      });
-    }
-    for (const p of knowledge.persons) {
-      const names = [p.preferredName, p.hanjaName, ...p.aliases].filter(Boolean) as string[];
-      const hit = names.some((n) => source.includes(n) || (editor.document.authorName ?? "").includes(n));
-      const content = personContentJson(p);
-      addAuxiliary({
-        id: p.id,
-        kind: "person",
-        label: p.preferredName,
-        reason: hit ? "exact_match" : "project_person",
-        defaultIncluded: hit,
-        chars: codepointCount(content),
-        content,
-      });
-    }
-    for (const p of knowledge.places) {
-      const names = [p.preferredName, p.hanjaName, ...p.aliases].filter(Boolean) as string[];
-      const hit = names.some((n) => source.includes(n) || punctuated.includes(n));
-      const content = placeContentJson(p);
-      addAuxiliary({
-        id: p.id,
-        kind: "place",
-        label: p.preferredName,
-        reason: hit ? "exact_match" : "project_place",
         defaultIncluded: hit,
         chars: codepointCount(content),
         content,
@@ -1944,53 +1703,18 @@ export class ProjectRepo {
         content,
       });
     }
-    const items = allRows<{
-      id: string;
-      title: string;
-      content_md: string;
-      enabled: number;
-      priority: number;
-      scope_kind: string | null;
-      scope_id: string | null;
-      updated_at: string;
-    }>(
-      this.db,
-      `SELECT id, title, content_md, enabled, priority, scope_kind, scope_id, updated_at
-       FROM context_items WHERE project_id = ? AND archived_at IS NULL`,
-      this.projectId,
-    )
-      .map((item) => {
-        const nodeDistance = item.scope_kind === "document_node" && item.scope_id
-          ? distanceByNodeId.get(item.scope_id)
-          : undefined;
-        if (nodeDistance === undefined) return null;
-        return {
-          ...item,
-          scopeDistance: nodeDistance,
-          reason:
-            nodeDistance === 0
-              ? "current_document_context"
-              : `ancestor_document_context:${nodeDistance}`,
-        };
-      })
-      .filter((item): item is NonNullable<typeof item> => item !== null)
-      .sort(
-        (a, b) =>
-          a.scopeDistance - b.scopeDistance ||
-          b.priority - a.priority ||
-          a.updated_at.localeCompare(b.updated_at) ||
-          a.title.localeCompare(b.title, "ko"),
-      );
-    for (const it of items) {
-      addAuxiliary({
-        id: it.id,
-        kind: "context_item",
-        label: it.title,
-        reason: it.reason,
-        defaultIncluded: it.enabled === 1,
-        chars: codepointCount(it.content_md),
-        content: it.content_md,
-      });
+    for (const item of materials.resolveMaterials(this.db, this.projectId, documentNodeId)) {
+      const content = materials.materialPromptContent(item);
+      addAuxiliary({ id: item.id, kind: item.source === "document_description" ? "document_context" : "context_item",
+        label: item.title, reason: item.reason === "selected" ? "selected_document_context" : item.reason === "current" ? "current_document_context" : `ancestor_document_context:${distanceByNodeId.get(item.scopeId)}`,
+        defaultIncluded: item.included, chars: codepointCount(content), content,
+        material: { scopeId: item.scopeId, inheritToChildren: item.inheritToChildren !== false, lockVersion: item.lockVersion, origin: item.origin ?? null } });
+      if (item.excluded) auxiliary[auxiliary.length - 1]!.included = false;
+    }
+    const pastComments = materials.referenceComments(this.db, this.projectId, input.referenceCommentIds);
+    for (const comment of pastComments) {
+      const content = canonicalJson({ instruction: "과거 원문 구절의 검토 사례입니다. 현재 문맥에 적용되는지 확인하고 질문을 확정 사실로 바꾸지 마세요.", comment });
+      addAuxiliary({ id: `reference-comment:${comment.id}`, kind: "reference_comment", label: "과거 구절의 검토 사례", reason: "selected_comment_reference", defaultIncluded: true, chars: codepointCount(content), content });
     }
 
     // Translation memory is derived directly from immutable confirmed heads;
@@ -2196,28 +1920,12 @@ export class ProjectRepo {
         this.projectId,
       );
       if (!master) throw new MunhaeError("invalid_project", "프로젝트 마스터 폴더가 없습니다");
-      const enabledProjectContext = allRows<{
-        id: string;
-        title: string;
-        content_md: string;
-        content_hash: string;
-        priority: number;
-      }>(
-        this.db,
-        `SELECT id, title, content_md, content_hash, priority
-         FROM context_items
-         WHERE project_id = ? AND scope_kind = 'document_node' AND scope_id = ?
-           AND enabled = 1 AND archived_at IS NULL
-         ORDER BY priority DESC, updated_at, title`,
-        this.projectId,
-        master.id,
-      ).map((item) => ({
-        contextItemId: item.id,
-        title: item.title,
-        content: item.content_md,
-        contentHash: item.content_hash,
-        priority: item.priority,
-      }));
+      const enabledProjectContext = materials.resolveMaterials(this.db, this.projectId, master.id)
+        .filter(item => item.included).map(item => {
+          const content = materials.materialPromptContent(item);
+          return { contextItemId: item.id, title: item.title, content,
+            contentHash: sha256Hex(content), priority: item.priority };
+        });
       snapshot = {
         scopeKind: "project",
         projectTitle: editor.project.title,
@@ -3143,17 +2851,10 @@ export class ProjectRepo {
       directContextCounts.set(row.id, (directContextCounts.get(row.id) ?? 0) + 1);
     }
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
-    const effectiveContextCount = (nodeId: string): number => {
-      let count = 0;
-      let current = nodeById.get(nodeId);
-      const visited = new Set<string>();
-      while (current && !visited.has(current.id)) {
-        visited.add(current.id);
-        count += directContextCounts.get(current.id) ?? 0;
-        current = current.parent_node_id ? nodeById.get(current.parent_node_id) : undefined;
-      }
-      return count;
-    };
+    const materialItems = materials.loadMaterialItems(this.db, this.projectId);
+    const materialPreferences = materials.loadMaterialPreferences(this.db, this.projectId);
+    const effectiveContextCount = (nodeId: string): number =>
+      materials.resolveMaterials(this.db, this.projectId, nodeId, materialItems, materialPreferences).filter(item => item.included).length;
     const ordered: Array<(typeof nodes)[number] & { depth: number }> = [];
     const walk = (parent: string | null, depth: number) => {
       const kids = (byParent.get(parent) ?? []).slice().sort((a, b) => a.ordinal - b.ordinal);
@@ -3239,40 +2940,35 @@ export class ProjectRepo {
   }
 
   private inheritMetadata(node: {
-    author_person_id: string | null;
+    author_text: string | null;
     language: string | null;
     period_text: string | null;
     source_reference: string | null;
     parent_node_id: string | null;
   }): { authorName: string | null; language: string | null; periodText: string | null; sourceReference: string | null } {
-    let authorId = node.author_person_id;
+    let authorName = node.author_text;
     let language = node.language;
     let periodText = node.period_text;
     let sourceReference = node.source_reference;
     let parentId = node.parent_node_id;
-    while (parentId && (!authorId || !language || !periodText || !sourceReference)) {
+    while (parentId && (!authorName || !language || !periodText || !sourceReference)) {
       const p = getRow<{
-        author_person_id: string | null;
+        author_text: string | null;
         language: string | null;
         period_text: string | null;
         source_reference: string | null;
         parent_node_id: string | null;
       }>(
         this.db,
-        `SELECT author_person_id, language, period_text, source_reference, parent_node_id FROM document_nodes WHERE id = ?`,
+        `SELECT author_text, language, period_text, source_reference, parent_node_id FROM document_nodes WHERE id = ?`,
         parentId,
       );
       if (!p) break;
-      authorId ??= p.author_person_id;
+      authorName ??= p.author_text;
       language ??= p.language;
       periodText ??= p.period_text;
       sourceReference ??= p.source_reference;
       parentId = p.parent_node_id;
-    }
-    let authorName: string | null = null;
-    if (authorId) {
-      const person = getRow<{ preferred_name: string }>(this.db, `SELECT preferred_name FROM persons WHERE id = ?`, authorId);
-      authorName = person?.preferred_name ?? null;
     }
     return { authorName, language, periodText, sourceReference };
   }
@@ -3426,7 +3122,7 @@ export function createProject(opts: {
     title: opts.title,
     original_title: null,
     ordinal: 0,
-    author_person_id: null,
+    author_text: null,
     language: "lzh",
     period_text: null,
     date_text: null,

@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -500,8 +500,8 @@ describe("probe and login", () => {
     });
 
     expect(result).toMatchObject({ ok: true });
-    expect(result.executable).toBe(firstPath);
-    expect(result.executable).not.toBe(secondPath);
+    expect(await realpath(result.executable!)).toBe(await realpath(firstPath));
+    expect(await realpath(result.executable!)).not.toBe(await realpath(secondPath));
   });
 
   it("prefers the active user Node toolchain over a stale system-first GUI PATH", async () => {

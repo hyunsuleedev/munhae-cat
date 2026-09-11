@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f0e7">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='8' fill='%2334483d'/%3E%3Ctext x='24' y='34' text-anchor='middle' font-size='31' fill='%23e7ddbd'%3E文%3C/text%3E%3C/svg%3E">
+  <title>文解 — 책을 펼치는 시간</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="study" id="study">
+    <header class="masthead">
+      <a href="./" class="wordmark" aria-label="문해 시안 처음부터"><span>文解</span><small>MUNHAE STUDIO</small></a>
+      <div class="edition"><span class="edition-dot"></span> 책을 펼치는 시간 <span class="edition-number">序</span></div>
+    </header>
+
+    <section class="splash" id="splash" aria-label="문해 시작 화면 미리보기">
+      <div class="scene" id="scene" aria-hidden="true"></div>
+      <div class="fallback-book" id="fallback" hidden aria-hidden="true"><span>文<br>解</span></div>
+      <div class="identity" id="identity">
+        <div class="brand-line"><h1>文解</h1><span class="seal" aria-hidden="true">문<br>해</span></div>
+        <p class="roman">MUNHAE STUDIO</p>
+        <p class="tagline">옛 글을 읽고, 뜻을 잇다.</p>
+      </div>
+      <div class="loading" role="status"><span class="loading-mark" aria-hidden="true"></span><span id="status">문해를 준비하고 있습니다</span></div>
+      <div class="margin-note" aria-hidden="true"><span>읽다</span><i></i><span>이해하다</span><i></i><span>잇다</span></div>
+    </section>
+
+    <section class="welcome" id="welcome" hidden aria-label="시작 화면 전환 시안">
+      <p class="eyebrow">MUNHAE STUDIO</p>
+      <h2>다시, 한 문장부터.</h2>
+      <p class="welcome-description">옛 문장에 담긴 뜻을 천천히 펼쳐 보세요.</p>
+      <div class="sample-project"><span class="project-icon" aria-hidden="true">文</span><div><small>작업 공간 미리보기</small><h3>당신의 다음 문장이 기다립니다.</h3><p>이 화면은 전환 효과를 확인하기 위한 시안입니다.</p></div></div>
+      <button class="back-button" id="back" type="button">시작 장면으로 돌아가기 <span aria-hidden="true">↗</span></button>
+    </section>
+
+    <footer class="preview-controls" aria-label="시안 재생 도구">
+      <div class="controls-heading"><span class="eyebrow">MOTION STUDY</span><span class="study-number">01 / 고서</span></div>
+      <div class="transport">
+        <button class="icon-button" id="replay" type="button" aria-label="처음부터 다시 재생" title="다시 재생"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 10a8 8 0 1 1 1.6 7M4 4v6h6"/></svg></button>
+        <button class="icon-button" id="play" type="button" aria-label="일시정지" title="재생 / 일시정지"><svg id="play-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 6v12M15 6v12"/></svg></button>
+        <label class="sr-only" for="timeline">애니메이션 위치</label><input id="timeline" type="range" min="0" max="10.75" step="0.01" value="0" aria-valuetext="0초">
+        <output id="time" for="timeline" aria-live="off">0.0 / 10.75</output>
+        <label class="sr-only" for="speed">재생 속도</label><select id="speed" aria-label="재생 속도"><option value="1">1×</option><option value="0.5">0.5×</option><option value="1.5">1.5×</option></select>
+      </div>
+      <div class="view-controls"><button class="detail-button" id="detail" type="button" aria-pressed="false">붓글씨 확대</button><button class="transition-button" id="transition" type="button">전환 보기 <span aria-hidden="true">↗</span></button></div>
+    </footer>
+  </main>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

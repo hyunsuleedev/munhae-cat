@@ -1,6 +1,12 @@
+import type { ConcordanceInput, ReviewExportInput } from "../shared/munhae-api";
 import {
   type ArchiveReviewCommentInput,
+  type ReadingAnnotationCasInput,
+  type ReadingCitation,
+  type SaveReadingAnnotationInput,
   type ContextItemCasInput,
+  type SetMaterialPreferenceInput,
+  type ReuseCommentAsMaterialInput,
   type ConfirmPunctuationInput,
   type ConfirmSourceInput,
   type ConfirmTranslationInput,
@@ -35,8 +41,6 @@ import {
   type SetContextItemPriorityInput,
   type UncertaintyAnchorInput,
   type UpsertGlossaryInput,
-  type UpsertPersonInput,
-  type UpsertPlaceInput,
   type UpdateContextItemInput,
   type UpdateReviewCommentInput,
   type UpdateDocumentMetadataInput,
@@ -397,6 +401,80 @@ export function parseArchiveReviewCommentInput(value: unknown): ArchiveReviewCom
   return { id: asNonEmptyString(rec.id, "id", 80), expectedLockVersion };
 }
 
+function assertReadingFields(rec: Record<string, unknown>, fields: readonly string[], field: string): void {
+  if (Object.keys(rec).some((key) => !fields.includes(key))) fail(field);
+}
+
+function parseReadingText(value: unknown, field: string, max: number, required = false): string {
+  const text = asString(value, field, { max });
+  if (/[\u0000\p{Surrogate}]/u.test(text) || (required && !text.trim())) fail(field);
+  return text;
+}
+
+function parseReadingUrl(value: unknown, field: string): string {
+  const text = parseReadingText(value, field, 2_048, true);
+  let url: URL;
+  try { url = new URL(text); } catch { fail(field); }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) fail(field);
+  return text;
+}
+
+function parseReadingCitation(value: unknown): ReadingCitation | null {
+  if (value === null) return null;
+  const rec = asRecord(value, "citation");
+  assertReadingFields(rec, ["source", "sourceLabel", "entryId", "headword", "reading", "sense", "senseLabel", "sourceUrl", "license", "licenseUrl", "attribution"], "citation");
+  const citation: ReadingCitation = {
+    source: parseReadingText(rec.source, "citation.source", 100, true),
+    sourceLabel: parseReadingText(rec.sourceLabel, "citation.sourceLabel", 500, true),
+    entryId: parseReadingText(rec.entryId, "citation.entryId", 500, true),
+    headword: parseReadingText(rec.headword, "citation.headword", 500, true),
+    reading: rec.reading === null ? null : parseReadingText(rec.reading, "citation.reading", 100),
+    sense: parseReadingText(rec.sense, "citation.sense", 20_000, true),
+    ...(rec.senseLabel === undefined ? {} : { senseLabel: parseReadingText(rec.senseLabel, "citation.senseLabel", 500) }),
+    sourceUrl: parseReadingUrl(rec.sourceUrl, "citation.sourceUrl"),
+    license: parseReadingText(rec.license, "citation.license", 1_000, true),
+    licenseUrl: rec.licenseUrl === null ? null : parseReadingUrl(rec.licenseUrl, "citation.licenseUrl"),
+    attribution: parseReadingText(rec.attribution, "citation.attribution", 5_000),
+  };
+  if (JSON.stringify(citation).length > 40_000) fail("citation");
+  return citation;
+}
+
+export function parseSaveReadingAnnotationInput(value: unknown): SaveReadingAnnotationInput {
+  const rec = asRecord(value, "input");
+  assertReadingFields(rec, ["id", "documentNodeId", "sourceVersionId", "codepointFrom", "codepointTo", "quote", "reading", "gloss", "readingOrder", "citation", "expectedLockVersion"], "input");
+  const id = rec.id === undefined ? undefined : asNonEmptyString(rec.id, "id", 80);
+  const expectedLockVersion = asInt(rec.expectedLockVersion, "expectedLockVersion");
+  if (!Number.isSafeInteger(expectedLockVersion) || (id ? expectedLockVersion < 1 : expectedLockVersion !== 0)) fail("expectedLockVersion");
+  const codepointFrom = asInt(rec.codepointFrom, "codepointFrom");
+  const codepointTo = asInt(rec.codepointTo, "codepointTo");
+  const quote = parseReadingText(rec.quote, "quote", 200, true);
+  if (!Number.isSafeInteger(codepointFrom) || !Number.isSafeInteger(codepointTo)
+    || codepointFrom < 0 || codepointTo <= codepointFrom || codepointTo > 20_000_000
+    || codepointTo - codepointFrom > 100) fail("range");
+  if (!quote.trim() || Array.from(quote).length !== codepointTo - codepointFrom) fail("quote");
+  const reading = parseReadingText(rec.reading, "reading", 100).trim();
+  const gloss = parseReadingText(rec.gloss, "gloss", 2_000).trim();
+  const readingOrder = rec.readingOrder === null ? null : asInt(rec.readingOrder, "readingOrder");
+  if (readingOrder !== null && (readingOrder < 1 || readingOrder > 1_000_000)) fail("readingOrder");
+  const citation = parseReadingCitation(rec.citation);
+  if (!reading && !gloss && readingOrder === null && citation === null) fail("annotation");
+  return {
+    ...(id === undefined ? {} : { id }),
+    documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    sourceVersionId: asNonEmptyString(rec.sourceVersionId, "sourceVersionId", 80),
+    codepointFrom, codepointTo, quote, reading, gloss, readingOrder, citation, expectedLockVersion,
+  };
+}
+
+export function parseArchiveReadingAnnotationInput(value: unknown): ReadingAnnotationCasInput {
+  const rec = asRecord(value, "input");
+  assertReadingFields(rec, ["id", "expectedLockVersion"], "input");
+  const expectedLockVersion = parseExpectedLockVersion(rec.expectedLockVersion);
+  if (!Number.isSafeInteger(expectedLockVersion)) fail("expectedLockVersion");
+  return { id: asNonEmptyString(rec.id, "id", 80), expectedLockVersion };
+}
+
 export function parseUpdateReviewCommentInput(value: unknown): UpdateReviewCommentInput {
   const rec = asRecord(value, "input");
   return {
@@ -457,7 +535,15 @@ export function parseContextPreviewInput(value: unknown): ContextPreviewInput {
     documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
     selections,
     ...(rec.revision === undefined ? {} : { revision: parseTranslationRevisionInput(rec.revision) }),
+    ...(rec.referenceCommentIds === undefined ? {} : { referenceCommentIds: parseReferenceCommentIds(rec.referenceCommentIds) }),
   };
+}
+
+function parseReferenceCommentIds(value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 100) fail("referenceCommentIds");
+  const ids = value.map((id, index) => asNonEmptyString(id, `referenceCommentIds[${index}]`, 80));
+  if (new Set(ids).size !== ids.length) fail("referenceCommentIds");
+  return ids;
 }
 
 function parseTranslationRevisionInput(value: unknown): NonNullable<ContextPreviewInput["revision"]> {
@@ -535,40 +621,6 @@ export function parseGlossaryInput(
   };
 }
 
-export function parsePersonInput(value: unknown): UpsertPersonInput {
-  const rec = asRecord(value, "person");
-  const id = asOptionalString(rec.id, "id", 80);
-  return {
-    id,
-    expectedLockVersion: id ? parseExpectedLockVersion(rec.expectedLockVersion) : undefined,
-    preferredName: asNonEmptyString(rec.preferredName, "preferredName", 200),
-    hanjaName: rec.hanjaName === null ? null : asOptionalString(rec.hanjaName, "hanjaName", 200) ?? null,
-    reading: rec.reading === null ? null : asOptionalString(rec.reading, "reading", 200) ?? null,
-    aliases: rec.aliases === undefined ? [] : asStringArray(rec.aliases, "aliases"),
-    descriptionMd:
-      rec.descriptionMd === null ? null : asOptionalString(rec.descriptionMd, "descriptionMd", 20_000) ?? null,
-    dateText: rec.dateText === null ? null : asOptionalString(rec.dateText, "dateText", 200) ?? null,
-  };
-}
-
-export function parsePlaceInput(value: unknown): UpsertPlaceInput {
-  const rec = asRecord(value, "place");
-  const id = asOptionalString(rec.id, "id", 80);
-  return {
-    id,
-    expectedLockVersion: id ? parseExpectedLockVersion(rec.expectedLockVersion) : undefined,
-    preferredName: asNonEmptyString(rec.preferredName, "preferredName", 200),
-    hanjaName: rec.hanjaName === null ? null : asOptionalString(rec.hanjaName, "hanjaName", 200) ?? null,
-    reading: rec.reading === null ? null : asOptionalString(rec.reading, "reading", 200) ?? null,
-    aliases: rec.aliases === undefined ? [] : asStringArray(rec.aliases, "aliases"),
-    placeKind: rec.placeKind === null ? null : asOptionalString(rec.placeKind, "placeKind", 64) ?? null,
-    locationNoteMd:
-      rec.locationNoteMd === null ? null : asOptionalString(rec.locationNoteMd, "locationNoteMd", 20_000) ?? null,
-    descriptionMd:
-      rec.descriptionMd === null ? null : asOptionalString(rec.descriptionMd, "descriptionMd", 20_000) ?? null,
-  };
-}
-
 function nullableString(value: unknown, field: string, max: number): string | null {
   if (value === undefined || value === null) return null;
   const text = asString(value, field, { max }).trim();
@@ -581,7 +633,7 @@ export function parseUpdateDocumentMetadataInput(value: unknown): UpdateDocument
     documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
     title: asNonEmptyString(rec.title, "title", 500),
     originalTitle: nullableString(rec.originalTitle, "originalTitle", 500),
-    authorPersonId: nullableString(rec.authorPersonId, "authorPersonId", 80),
+    authorName: nullableString(rec.authorName, "authorName", 500),
     language: nullableString(rec.language, "language", 80),
     periodText: nullableString(rec.periodText, "periodText", 500),
     dateText: nullableString(rec.dateText, "dateText", 500),
@@ -599,8 +651,32 @@ function parseContextItemBody(value: unknown, field: string): CreateContextItemI
     scopeId: asNonEmptyString(rec.scopeId, `${field}.scopeId`, 80),
     title: asNonEmptyString(rec.title, `${field}.title`, 500),
     contentMd: asNonEmptyString(rec.contentMd, `${field}.contentMd`, 200_000),
+    ...(rec.inheritToChildren === undefined ? {} : { inheritToChildren: asBoolean(rec.inheritToChildren, `${field}.inheritToChildren`) }),
+    ...(rec.conditionMd === undefined ? {} : { conditionMd: asString(rec.conditionMd, `${field}.conditionMd`, { max: 20_000 }) }),
     priority,
     enabled: asBoolean(rec.enabled, `${field}.enabled`),
+  };
+}
+
+export function parseSetMaterialPreferenceInput(value: unknown): SetMaterialPreferenceInput {
+  const rec = asRecord(value, "input");
+  const expectedLockVersion = rec.expectedLockVersion === undefined ? undefined : asInt(rec.expectedLockVersion, "input.expectedLockVersion");
+  if (expectedLockVersion !== undefined && expectedLockVersion < 0) fail("input.expectedLockVersion");
+  return {
+    documentNodeId: parseDocumentNodeId(rec.documentNodeId),
+    source: asOneOf(rec.source, "input.source", ["context_item", "document_description"] as const),
+    sourceId: asNonEmptyString(rec.sourceId, "input.sourceId", 80),
+    mode: asOneOf(rec.mode, "input.mode", ["include", "exclude", "reset"] as const),
+    ...(expectedLockVersion === undefined ? {} : { expectedLockVersion }),
+  };
+}
+
+export function parseReuseCommentAsMaterialInput(value: unknown): ReuseCommentAsMaterialInput {
+  const rec = asRecord(value, "input");
+  return {
+    ...parseContextItemBody(value, "input"),
+    commentId: asNonEmptyString(rec.commentId, "input.commentId", 80),
+    expectedCommentLockVersion: parseExpectedLockVersion(rec.expectedCommentLockVersion, "input.expectedCommentLockVersion"),
   };
 }
 
@@ -731,7 +807,7 @@ export function parseSearchQueryInput(value: unknown): SearchQueryInput {
           entityType: asOneOf(
             filter.entityType,
             "input.entityFilter.entityType",
-            ["glossary", "person", "place"] as const,
+            ["glossary"] as const,
           ),
           entityId: asNonEmptyString(filter.entityId, "input.entityFilter.entityId", 80),
         };
@@ -748,4 +824,21 @@ export function parseSearchQueryInput(value: unknown): SearchQueryInput {
     entityFilter,
     ...(limit === undefined ? {} : { limit }),
   };
+}
+
+export function parseConcordanceInput(value: unknown): ConcordanceInput {
+  const rec = asRecord(value, "input");
+  const limit = asOptionalInt(rec.limit, "input.limit");
+  if (limit !== undefined && (limit < 1 || limit > 200)) fail("input.limit");
+  return { query: asNonEmptyString(rec.query, "input.query", 500),
+    scope: rec.scope === undefined ? "all" : asOneOf(rec.scope, "input.scope", ["all", "source", "translation"] as const),
+    state: rec.state === undefined ? "current" : asOneOf(rec.state, "input.state", ["current", "confirmed"] as const),
+    documentNodeId: nullableString(rec.documentNodeId, "input.documentNodeId", 80), limit };
+}
+export function parseReviewExportInput(value: unknown): ReviewExportInput {
+  const rec = asRecord(value, "input");
+  if (rec.includeComments !== undefined && typeof rec.includeComments !== "boolean") fail("input.includeComments");
+  return { format: asOneOf(rec.format, "input.format", ["html", "markdown"] as const),
+    state: asOneOf(rec.state, "input.state", ["current", "confirmed"] as const),
+    documentNodeId: nullableString(rec.documentNodeId, "input.documentNodeId", 80), includeComments: rec.includeComments as boolean | undefined };
 }

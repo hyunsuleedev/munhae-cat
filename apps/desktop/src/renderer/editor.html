@@ -8,16 +8,16 @@
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
 <link rel="stylesheet" href="./styles/editor.css">
-<script type="module" blocking="render" src="./scripts/editor.ts"></script>
+<script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
 </head>
-<body class="folio-editor">
+<body data-auth-pending class="folio-editor">
 <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
 
 <div class="win" id="win" data-od-id="app-window">
   <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색">
     <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
     <div class="sb-scroll" id="sbTree"></div>
-    <div class="sb-foot"><i class="dot"></i>AI<span class="sp"></span><span class="mono">0.1.0</span></div>
+    <div class="sb-foot"><a class="sb-account" href="settings.html#account" aria-label="계정 설정 열기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></svg><span class="sb-account-label">문해 계정</span></a></div>
   </aside>
 
   <div class="main">
@@ -104,6 +104,7 @@
               <button type="button" data-view="source" aria-pressed="false">원문 전문</button>
               <button type="button" data-view="parallel" aria-pressed="true">문장별 대조</button>
               <button type="button" data-view="full" aria-pressed="false">서책 보기</button>
+              <button type="button" data-view="reading" aria-pressed="false">구절 연구</button>
             </div>
             <label class="check"><input type="checkbox" id="chkStruct"> 구조</label>
             <label class="check"><input type="checkbox" id="chkKeys"> 앵커 ID</label>
@@ -181,7 +182,7 @@
                   </div>
                 </div>
                 <div id="punctuationDraftActions">
-                  <div class="draft-actions"><span class="muted" id="punctuationVersion">—</span><span class="sp"></span><button class="btn" id="btnSavePunctuationDraft" type="button">표점 원문 저장</button><button class="btn btn-primary" id="btnConfirmPunctuation" type="button">표점 원문 확정</button></div>
+                  <div class="draft-actions" role="group" aria-label="표점 저장 및 확정"><span class="muted" id="punctuationVersion">—</span><span class="sp"></span><button class="btn" id="btnSavePunctuationDraft" type="button">저장</button><button class="btn btn-primary" id="btnConfirmPunctuation" type="button">표점 확정</button></div>
                 </div>
               </section>
 
@@ -207,24 +208,61 @@
                   <button class="btn" id="btnResetTranslationDraft" type="button" hidden>현재 원문으로 빈 번역안 만들기</button>
                   <button class="btn btn-primary" id="btnPrepare" type="button" data-od-id="btn-ai-translate">AI 번역… <kbd>⌥⌘K</kbd></button>
                 </div>
-                <div id="textTranslationControls" class="translation-controls" hidden><span id="alignmentStatus" class="muted" role="status"></span><span class="sp"></span><span id="translationSaveStatus" class="muted" role="status" aria-live="polite"></span><button class="btn btn-sm" type="button" id="btnRetryAlignment">원문 연결</button><button class="btn btn-sm" type="button" id="btnSaveFullTranslation">번역 저장</button></div>
-                <p id="translationEditHelp" class="translation-edit-help muted" hidden></p>
-                <div id="reviewCommentToolbar" class="review-toolbar" hidden>
-                  <button class="btn btn-sm" id="btnAddReviewComment" type="button" aria-pressed="false" aria-describedby="reviewSelectionHint" disabled>코멘트 달기</button>
-                  <span id="reviewSelectionHint" class="muted" role="status">‘코멘트 달기’를 누른 뒤 원문이나 번역문의 범위를 선택하세요.</span>
-                  <span class="sp"></span>
-                  <button class="btn btn-sm" id="btnShowReviewComments" type="button">검토 코멘트</button>
-                  <button class="btn btn-sm" id="btnSearchFootnotes" type="button">각주 용례 찾기</button>
-                  <button class="btn btn-sm" id="btnCompareTranslation" type="button">이전 번역과 비교…</button>
+                <div class="editor-commandbar" role="group" aria-label="번역 편집 도구">
+                  <div class="editor-command-group">
+                    <button class="btn btn-ghost btn-sm" type="button" id="btnDocumentFind" title="찾기·바꾸기 (⌘F)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"></circle><path d="m10.5 10.5 3.5 3.5"></path></svg>찾기</button>
+                    <div id="reviewCommentToolbar" class="review-toolbar" hidden>
+                      <button class="btn btn-ghost btn-sm" id="btnAddReviewComment" type="button" aria-pressed="false" aria-describedby="reviewSelectionHint" title="코멘트 달기를 누른 뒤 본문 범위를 선택하세요" disabled><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 10.5a2 2 0 0 1-2 2H6l-3.5 2v-3a2 2 0 0 1-1-1.7V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"></path><path d="M5 6h5M5 9h3"></path></svg>코멘트</button>
+                    </div>
+                  </div>
+                  <div class="editor-command-group editor-menu-group">
+                    <button class="btn btn-ghost btn-sm editor-menu-trigger" id="btnResearchMenu" type="button" popovertarget="researchTools">용어·용례 <span aria-hidden="true">⌄</span></button>
+                    <button class="btn btn-ghost btn-sm editor-menu-trigger" id="btnReviewMenu" type="button" popovertarget="reviewTools">검토 <span aria-hidden="true">⌄</span></button>
+                  </div>
+                  <div class="editor-command-actions" id="translationCommandActions">
+                    <button class="btn btn-sm" type="button" id="btnSaveFullTranslation" title="번역 저장 (⌘S)" hidden>번역 저장</button>
+                  </div>
                 </div>
+                <div class="editor-tool-popover" id="researchTools" popover aria-label="용어·용례 도구">
+                  <span class="editor-menu-label">자료 찾기</span>
+                  <button class="btn" id="btnDictionary" type="button">한자·어휘 사전 <small>한국어 풀이·훈음</small></button>
+                  <button class="btn" id="btnReadingStudy" type="button">구절 연구 <small>글자·어휘별 풀이와 사전 근거</small></button>
+                  <button class="btn" id="btnSearchFootnotes" type="button">각주 용례 찾기 <small>한국고전종합DB</small></button>
+                  <button class="btn" type="button" id="btnConcordance">내 번역 용례</button>
+                  <div class="editor-menu-divider"></div>
+                  <button class="btn" type="button" id="btnQuickTerm">용어 등록</button>
+                </div>
+                <div class="editor-tool-popover" id="reviewTools" popover aria-label="번역 검토 도구">
+                  <span class="editor-menu-label">번역 검토</span>
+                  <button class="btn" type="button" id="btnTranslationChecks">번역 점검</button>
+                  <button class="btn" id="btnShowReviewComments" type="button">검토 코멘트</button>
+                  <button class="btn" id="btnCompareTranslation" type="button">이전 번역과 비교…</button>
+                  <button class="btn" type="button" id="btnRetryAlignment" hidden>원문 연결</button>
+                  <div class="editor-menu-divider"></div>
+                  <button class="btn" type="button" id="btnReviewExport">검토본 출력</button>
+                </div>
+                <div id="textTranslationControls" class="translation-controls" hidden><span id="alignmentStatus" class="muted" role="status"></span><span id="translationSaveStatus" class="muted" role="status" aria-live="polite"></span></div>
+                <p id="translationEditHelp" class="translation-edit-help muted" hidden></p>
+                <span id="reviewSelectionHint" class="editor-selection-hint muted" role="status">‘코멘트’를 누른 뒤 원문이나 번역문의 범위를 선택하세요.</span>
                 <div class="vstrip" id="vstrip" data-od-id="validation-strip"></div>
                 <div class="view" id="viewSource" data-od-id="view-source">
                   <p class="muted" style="font-size:12px;margin-bottom:12px">표점안 · 표시되는 문단·문장·운문 구조는 확정된 구조 범위입니다. 앵커에 마우스를 올리면 연결된 번역 블록이 표시됩니다.</p>
                   <div class="source-text" id="sourceText"></div>
                 </div>
                 <div class="view is-open folio-sheet" id="viewParallel" data-od-id="view-parallel">
-                  <div class="folio-columns"><span>原文 <small>원문 대응 구절</small></span><span>譯文 <small>문장별 번역</small></span></div>
-                  <div class="comparison-tools"><span id="comparisonSummary" role="status"></span><label class="check"><input id="alignmentReviewOnly" type="checkbox">대응 확인 필요만</label><span class="sp"></span><button class="btn btn-ghost btn-sm" id="btnPreviousSentence" type="button" aria-label="이전 번역 문장">↑</button><button class="btn btn-ghost btn-sm" id="btnNextSentence" type="button" aria-label="다음 번역 문장">↓</button></div>
+                  <div class="folio-columns"><span class="parallel-source-heading"><span id="parallelSourceGlyph" aria-hidden="true">原文</span><select id="parallelSource" aria-label="대조할 원문"><option value="source">원문 대응 구절</option><option value="punctuation">표점 대응 구절</option></select><small id="parallelSourceStatus" role="status"></small></span><span>譯文 <small>문장별 번역</small></span></div>
+                  <div class="comparison-tools">
+                    <span id="comparisonSummary" role="status"></span>
+                    <span class="sp"></span>
+                    <input class="input" id="comparisonQuery" type="search" aria-label="대조 문장 필터" placeholder="문장 찾기">
+                    <button class="btn btn-ghost btn-sm editor-menu-trigger" id="btnComparisonFilter" type="button" popovertarget="comparisonFilterTools">필터 <span aria-hidden="true">⌄</span></button>
+                    <div class="comparison-navigation" role="group" aria-label="문장 이동"><button class="btn btn-ghost btn-sm" id="btnPreviousSentence" type="button" aria-label="이전 번역 문장">↑</button><button class="btn btn-ghost btn-sm" id="btnNextSentence" type="button" aria-label="다음 번역 문장">↓</button></div>
+                  </div>
+                  <div class="editor-tool-popover editor-filter-popover" id="comparisonFilterTools" popover aria-label="대조 문장 필터 설정">
+                    <label for="comparisonFilter" class="editor-menu-label">표시할 문장</label>
+                    <select class="select" id="comparisonFilter" aria-label="대조 문장 종류"><option value="all">모든 문장</option><option value="unlinked">원문 미연결</option><option value="comments">코멘트 있음</option></select>
+                    <label class="check"><input id="alignmentReviewOnly" type="checkbox">대응 확인 필요만</label>
+                  </div>
                   <div class="rows" id="rows"></div><p class="comparison-empty" id="comparisonEmpty" hidden>대응을 확인할 문장이 없습니다.</p>
                 </div>
                 <div class="view folio-sheet" id="viewFull" data-od-id="view-full">
@@ -232,6 +270,7 @@
                   <div class="folio-spread"><div class="folio-source hanmun" id="folioSourceText" lang="zh-Hant"></div><div class="folio-translation"><textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" spellcheck="false" hidden></textarea><div class="full-text" id="fullText"></div></div></div>
                   <p class="folio-caption">문단과 줄바꿈을 그대로 보존합니다. 문장별 대조에서도 같은 번역문을 편집합니다.</p>
                 </div>
+                <div class="view" id="viewReading" data-od-id="view-reading"></div>
               </section>
             </div>
           </div>
@@ -242,7 +281,7 @@
           <div class="scope" style="padding:0 8px">
             <div class="seg wide" id="rtabs" role="tablist">
               <button type="button" role="tab" data-tab="chat" aria-selected="true">AI 채팅</button>
-              <button type="button" role="tab" data-tab="context" aria-selected="false">문맥</button>
+              <button type="button" role="tab" data-tab="context" aria-selected="false">참고 자료</button>
               <button type="button" role="tab" data-tab="comments" aria-selected="false">코멘트 <span id="reviewCommentCount">0</span></button>
               <button type="button" role="tab" data-tab="history" aria-selected="false">이력</button>
             </div>
@@ -261,9 +300,9 @@
             </form>
           </div>
           <div class="rpanel" id="rp-context" role="tabpanel"><div class="pane-scroll">
-            <div class="pane-body"><button class="btn btn-sm" id="btnSearchFootnotesContext" type="button">각주 용례 찾기 · 한국고전종합DB</button></div>
+            <section id="documentMaterials" aria-label="문서별 번역 참고 자료" aria-live="polite"></section>
+            <div class="pane-body"><button class="btn btn-sm" id="btnDictionaryContext" type="button">한자·어휘 사전</button><button class="btn btn-sm" id="btnSearchFootnotesContext" type="button">각주 용례 찾기 · 한국고전종합DB</button></div>
             <details class="grp" open><summary>일치한 용어<span class="tail"><a href="knowledge.html">용어집 ›</a></span></summary><div class="grp-b list" id="ctxTerms"></div></details>
-            <details class="grp" open><summary>인물·지명</summary><div class="grp-b list" id="ctxPeople"></div></details>
             <details class="grp" open><summary>열린 불확실성</summary><div class="grp-b list" id="ctxUnc"></div></details>
             <div class="pane-body"><button class="btn btn-sm" id="btnCtxAll" type="button" style="align-self:flex-start">AI에 보낼 자료 설정…</button></div>
           </div></div>
@@ -299,7 +338,7 @@
   <form id="reviewCommentForm">
     <h2 id="reviewCommentHeading">코멘트 달기</h2>
     <blockquote id="reviewCommentQuote"></blockquote>
-    <div class="review-reference-tools"><button class="btn btn-sm" id="btnReviewFootnotes" type="button">이 구절의 각주 용례 찾기</button></div>
+    <div class="review-reference-tools"><button class="btn btn-sm" id="btnReviewDictionary" type="button">한자·어휘 사전</button><button class="btn btn-sm" id="btnReviewFootnotes" type="button">이 구절의 각주 용례 찾기</button></div>
     <label for="reviewCommentBody">해석·수정 의견</label>
     <textarea id="reviewCommentBody" class="textarea" required maxlength="20000" rows="6" placeholder="예: 여기의 巖棲客은 화자를 가리킨다. 뒤 문장의 질문 주체도 이에 맞춰 수정할 것."></textarea>
     <p class="muted">질문이나 아직 확정하지 않은 해석은 그 상태를 함께 적어주세요.</p>
@@ -348,6 +387,7 @@
     <select class="select" id="prepAgent">
       <option value="claude">Claude CLI · model default</option>
       <option value="codex">Codex CLI · model default</option>
+      <option value="antigravity">Antigravity CLI · model default</option>
     </select>
     <span class="sp"></span>
     <span class="ai-run-total" id="prepTotal">전송 자료 계산 전</span>

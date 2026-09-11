@@ -8,7 +8,7 @@ let mainWindow: BrowserWindow | null = null;
 type LeaveCheck = { reason: "project-switch" | "quit"; cancelled: boolean };
 const pendingLeaveChecks = new WeakMap<BrowserWindow, LeaveCheck>();
 
-export type RendererPage = "index.html" | "home.html";
+export type RendererPage = "index.html" | "home.html" | "splash.html";
 
 export function getMainWindow(): BrowserWindow | null {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
@@ -41,6 +41,7 @@ export function createMainWindow(initialPage: RendererPage = "index.html"): Brow
       sandbox: true,
       webSecurity: true,
       navigateOnDragDrop: false,
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 

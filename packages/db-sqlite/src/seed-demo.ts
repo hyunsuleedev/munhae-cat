@@ -11,8 +11,6 @@ import type { BootstrappedProject } from "./bootstrap.ts";
 import {
   contextItemContentHash,
   glossaryContentHash,
-  personContentHash,
-  placeContentHash,
 } from "./knowledge-content.ts";
 import { insertRow } from "./rows.ts";
 import type { SqliteDb } from "./sqlite.ts";
@@ -71,7 +69,7 @@ type NodeSpec = {
   title: string;
   originalTitle: string | null;
   ordinal: number;
-  authorId: string | null;
+  authorText: string | null;
   language: string | null;
   periodText: string | null;
   descriptionMd?: string | null;
@@ -81,7 +79,7 @@ type NodeSpec = {
 export function seedDemoContents(boot: BootstrappedProject): void {
   const { db, projectId, actors, policyVersionId } = boot;
   const t = {
-    person: "2026-08-20T00:00:00.000Z",
+    glossary: "2026-08-20T00:00:00.000Z",
     nodes: "2026-08-21T00:00:00.000Z",
     ye: "2026-08-30T09:00:00.000Z",
     jeong: "2026-08-31T12:00:00.000Z",
@@ -89,84 +87,12 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     v2: "2026-09-01T15:40:00.000Z",
   };
 
-  const sejongId = createId();
-  const jeongId = createId();
-  insertPerson(db, projectId, actors.humanId, t.person, {
-    id: sejongId,
-    preferred: "世宗",
-    hanja: "世宗",
-    reading: "세종",
-    aliases: ["李祹"],
-    dates: "1397–1450",
-    desc: "조선 제4대 왕. 1443년 훈민정음 창제, 1446년 반포. 御製序의 저자.",
-  });
-  insertPerson(db, projectId, actors.humanId, t.person, {
-    id: jeongId,
-    preferred: "鄭麟趾",
-    hanja: "鄭麟趾",
-    reading: "정인지",
-    aliases: ["學易齋"],
-    dates: "1396–1478",
-    desc: "解例本 서문 집필. 집현전 학사.",
-  });
-  for (const p of [
-    {
-      preferred: "申叔舟",
-      hanja: "申叔舟",
-      reading: "신숙주",
-      aliases: [] as string[],
-      dates: "1417–1475",
-      desc: "解例 편찬 참여.",
-    },
-    {
-      preferred: "成三問",
-      hanja: "成三問",
-      reading: "성삼문",
-      aliases: [],
-      dates: "1418–1456",
-      desc: "解例 편찬 참여.",
-    },
-    {
-      preferred: "崔萬理",
-      hanja: "崔萬理",
-      reading: "최만리",
-      aliases: [],
-      dates: "?–1445",
-      desc: "1444년 諺文 창제 반대 상소. 『世宗實錄』 기사에 등장.",
-    },
-  ]) {
-    insertPerson(db, projectId, actors.humanId, t.person, { id: createId(), ...p });
-  }
-
-  const placeId = createId();
-  insertRow(db, "places", {
-    id: placeId,
-    project_id: projectId,
-    preferred_name: "中國",
-    hanja_name: "中國",
-    reading: "중국",
-    aliases_json: JSON.stringify(["명"]),
-    place_kind: "country",
-    location_note_md: "御製序의 中國은 명(明)을 가리킴.",
-    description_md: "용어집 항목과 함께 문맥에 포함.",
-    content_hash: placeContentHash({
-      preferredName: "中國",
-      hanjaName: "中國",
-      reading: "중국",
-      aliases: ["명"],
-      placeKind: "country",
-      locationNoteMd: "御製序의 中國은 명(明)을 가리킴.",
-      descriptionMd: "용어집 항목과 함께 문맥에 포함.",
-    }),
-    lock_version: 1,
-    created_by_actor_id: actors.humanId,
-    updated_by_actor_id: actors.humanId,
-    created_at: t.person,
-    updated_at: t.person,
-    archived_at: null,
-  });
-
   const masterId = createId();
+  insertNode(db, projectId, t.nodes, {
+    id: masterId, parentId: null, role: "container", isMaster: true,
+    title: boot.title, originalTitle: null, ordinal: 0, authorText: null,
+    language: "lzh", periodText: null, sourceReference: null,
+  });
   const w1 = createId();
   const d1 = createId();
   const d2 = createId();
@@ -182,25 +108,12 @@ export function seedDemoContents(boot: BootstrappedProject): void {
 
   const nodes: NodeSpec[] = [
     {
-      id: masterId,
-      parentId: null,
-      role: "container",
-      isMaster: true,
-      title: boot.title,
-      originalTitle: null,
-      ordinal: 0,
-      authorId: null,
-      language: "lzh",
-      periodText: null,
-      sourceReference: null,
-    },
-    {
       id: w1,
       parentId: masterId,
       title: "『訓民正音』 解例本",
       originalTitle: "訓民正音 解例本",
       ordinal: 0,
-      authorId: sejongId,
+      authorText: "世宗",
       language: "lzh",
       periodText: "1446",
       descriptionMd: "훈민정음 해례본 전체에 공통으로 적용할 작품 설명.",
@@ -213,7 +126,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "御製序",
       originalTitle: "御製序",
       ordinal: 0,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       descriptionMd: "어제서 번역에만 적용할 현재 문서 설명.",
@@ -226,7 +139,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "例義",
       originalTitle: "例義",
       ordinal: 1,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -237,7 +150,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "解例",
       originalTitle: "解例",
       ordinal: 2,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -249,7 +162,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "制字解",
       originalTitle: "制字解",
       ordinal: 0,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -261,7 +174,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "初聲解",
       originalTitle: "初聲解",
       ordinal: 1,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -273,7 +186,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "中聲解",
       originalTitle: "中聲解",
       ordinal: 2,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -284,7 +197,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "終聲解",
       originalTitle: "終聲解",
       ordinal: 3,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -295,7 +208,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "合字解",
       originalTitle: "合字解",
       ordinal: 4,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -306,7 +219,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "用字例",
       originalTitle: "用字例",
       ordinal: 5,
-      authorId: null,
+      authorText: null,
       language: null,
       periodText: null,
       sourceReference: null,
@@ -318,7 +231,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "鄭麟趾 序",
       originalTitle: "鄭麟趾 序",
       ordinal: 3,
-      authorId: jeongId,
+      authorText: "鄭麟趾",
       language: null,
       periodText: null,
       descriptionMd: "정인지 서문에만 적용할 설명.",
@@ -331,7 +244,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       title: "『世宗實錄』 卷113",
       originalTitle: "世宗實錄 卷113",
       ordinal: 1,
-      authorId: null,
+      authorText: null,
       language: "lzh",
       periodText: "1446",
       sourceReference: "조선왕조실록",
@@ -591,7 +504,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     created_at: t.v2,
   });
 
-  seedGlossary(db, projectId, actors.humanId, t.person);
+  seedGlossary(db, projectId, actors.humanId, t.glossary);
   seedUncertainties(db, projectId, actors.humanId, eojeseo.anchors, d1, d9, t.v1);
   insertRow(db, "context_items", {
     id: createId(),
@@ -650,47 +563,6 @@ export function seedDemoContents(boot: BootstrappedProject): void {
   void jeong;
 }
 
-function insertPerson(
-  db: SqliteDb,
-  projectId: string,
-  actorId: string,
-  createdAt: string,
-  p: {
-    id: string;
-    preferred: string;
-    hanja: string;
-    reading: string;
-    aliases: string[];
-    dates: string;
-    desc: string;
-  },
-): void {
-  insertRow(db, "persons", {
-    id: p.id,
-    project_id: projectId,
-    preferred_name: p.preferred,
-    hanja_name: p.hanja,
-    reading: p.reading,
-    aliases_json: JSON.stringify(p.aliases),
-    description_md: p.desc,
-    date_text: p.dates,
-    content_hash: personContentHash({
-      preferredName: p.preferred,
-      hanjaName: p.hanja,
-      reading: p.reading,
-      aliases: p.aliases,
-      descriptionMd: p.desc,
-      dateText: p.dates,
-    }),
-    lock_version: 1,
-    created_by_actor_id: actorId,
-    updated_by_actor_id: actorId,
-    created_at: createdAt,
-    updated_at: createdAt,
-    archived_at: null,
-  });
-}
-
 function insertNode(db: SqliteDb, projectId: string, createdAt: string, n: NodeSpec): void {
   insertRow(db, "document_nodes", {
     id: n.id,
@@ -701,7 +573,7 @@ function insertNode(db: SqliteDb, projectId: string, createdAt: string, n: NodeS
     title: n.title,
     original_title: n.originalTitle,
     ordinal: n.ordinal,
-    author_person_id: n.authorId,
+    author_text: n.authorText,
     language: n.language,
     period_text: n.periodText,
     date_text: null,

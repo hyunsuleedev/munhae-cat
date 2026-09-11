@@ -1,12 +1,7 @@
 .context-content { overflow-y: auto; container-type: inline-size; background: var(--bg); }
 .context-page { width: min(100%, 1180px); margin: 0 auto; padding: 32px 44px 56px; }
-.context-heading { padding-bottom: 28px; border-bottom: 1px solid var(--border); margin-bottom: 28px; }
-.context-path { margin: 0 0 20px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.context-title-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.context-eyebrow { display: block; color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .04em; }
-.context-heading h1 { margin: 10px 0 12px; font: 500 29px/1.5 var(--font-hanmun); letter-spacing: -.02em; overflow-wrap: anywhere; }
-.context-heading p:last-child { margin: 0; font-size: 12.5px; line-height: 1.7; }
-.context-mark { display: grid; place-items: center; flex: 0 0 38px; height: 42px; border: 1px solid var(--accent); border-radius: 1px; background: transparent; color: var(--accent); font: 23px var(--font-hanmun); }
+.context-heading { padding-bottom: 16px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.context-path { margin: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
 .context-layout { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 30px; align-items: start; }
 .context-writing, .context-rail { min-width: 0; }
 .context-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -25,6 +20,15 @@
 .context-form .textarea { display: block; width: 100%; min-height: 255px; padding: 10px 0 20px; border: 0; border-radius: 0; box-shadow: none; background: transparent; font: 14px/2 var(--font-hanmun); word-break: keep-all; overflow-wrap: anywhere; resize: vertical; }
 .context-form .textarea::placeholder { color: var(--muted); }
 .context-form .input:focus-visible, .context-form .textarea:focus-visible { outline: none; box-shadow: inset 0 -2px var(--accent); }
+.context-options { margin: 0 22px 16px; font-size: 11px; color: var(--muted); }
+.context-options > summary { cursor: pointer; padding-block: 8px; }
+.context-options > label { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.context-options input[type=checkbox] { accent-color: var(--accent); }
+.context-options .context-condition { min-height: 70px; margin-top: 6px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; font: 12px/1.7 var(--font-ui); }
+.context-origin { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.context-origin p, .context-origin blockquote { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; }
+.context-origin blockquote { margin: 8px 0; padding-left: 10px; border-left: 2px solid var(--border); color: var(--fg); }
+.context-inclusion { margin: 0; padding: 8px 22px 14px; font-size: 11px; line-height: 1.7; color: var(--muted); }
 .context-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); background: var(--surface); }
 .context-actions .check { font-size: 11px; color: var(--muted); gap: 7px; }
 .context-actions input[type=checkbox] { accent-color: var(--accent); }
@@ -37,11 +41,11 @@
 .context-scope h2 { margin: 10px 0 18px; font-size: 16px; font-weight: 600; line-height: 1.6; letter-spacing: -.035em; }
 .context-scope p, .context-help { color: var(--muted); font-size: 11.5px; line-height: 1.8; margin: 14px 0 0; }
 .context-scope-tree { display: grid; gap: 14px; margin: 0 0 18px; font-size: 11px; }
-.context-scope-tree span { display: flex; align-items: center; gap: 8px; }
+.context-scope-tree > span { display: flex; align-items: center; gap: 8px; }
 .context-scope-tree i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-.context-scope-tree span + span { position: relative; margin-left: 22px; color: var(--muted); }
-.context-scope-tree span + span::before { content: ''; position: absolute; left: -20px; top: -12px; width: 12px; height: 19px; border-left: 1px solid var(--ctl-border); border-bottom: 1px solid var(--ctl-border); border-radius: 0 0 0 4px; }
-.context-scope-tree span + span i { background: var(--ctl-border); }
+.context-scope-tree > span + span { position: relative; margin-left: 22px; color: var(--muted); }
+.context-scope-tree > span + span::before { content: ''; position: absolute; left: -20px; top: -12px; width: 12px; height: 19px; border-left: 1px solid var(--ctl-border); border-bottom: 1px solid var(--ctl-border); border-radius: 0 0 0 4px; }
+.context-scope-tree > span + span i { background: var(--ctl-border); }
 .context-reference-section { margin-top: 26px; }
 .context-reference-section h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 600; }
 .context-reference-section h2 span { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 5px; background: var(--fg-soft); color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
@@ -49,6 +53,10 @@
 .context-reference { border-bottom: 1px solid var(--border); font-size: 12px; }
 .context-reference summary { padding: 12px 0; cursor: pointer; overflow-wrap: anywhere; line-height: 1.6; }
 .context-owner { display: block; color: var(--muted); font-size: 10.5px; margin: 5px 0 0; }
+.context-reference-status { display: block; color: var(--accent); font-size: 10.5px; margin-top: 4px; }
+.context-reference.is-excluded .context-reference-status { color: var(--muted); }
+.context-reference-condition { color: var(--muted); font-size: 11px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.context-materials-link .btn { max-width: 100%; }
 .context-reference-body { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 4px 0 16px; }
 .context-reference .btn { margin-bottom: 16px; max-width: 100%; }
 .context-loading { margin: 32px 40px; }
@@ -56,7 +64,7 @@
 .context-empty > span { display: block; font-size: 22px; margin-bottom: 8px; }
 .context-empty b { font-size: 11.5px; font-weight: 500; color: var(--fg); }
 .context-empty p { margin: 6px 0 0; font-size: 11px; line-height: 1.7; }
-.context-content .btn:focus-visible, .context-reference summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.context-content .btn:focus-visible, .context-reference summary:focus-visible, .context-options summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 @media (hover: hover) and (pointer: fine) { .context-add:hover { background: var(--fg-soft); color: var(--fg); border-color: var(--muted); } .context-content .btn:active:not(:disabled) { transform: scale(.98); } }
 @container (max-width: 880px) { .context-page { padding: 28px; } .context-layout { gap: 22px; grid-template-columns: minmax(0, 1fr) 200px; } }
-@container (max-width: 690px) { .context-page { padding: 24px 20px 40px; } .context-layout { grid-template-columns: minmax(0, 1fr); } .context-rail { padding-top: 0; } .context-heading h1 { font-size: 24px; } .context-form .field { padding-inline: 16px; } }
+@container (max-width: 690px) { .context-page { padding: 24px 20px 40px; } .context-layout { grid-template-columns: minmax(0, 1fr); } .context-rail { padding-top: 0; } .context-form .field { padding-inline: 16px; } }

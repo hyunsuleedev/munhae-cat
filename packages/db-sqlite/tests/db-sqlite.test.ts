@@ -23,7 +23,7 @@ import {
 } from "../src/index.ts";
 import { validatePackagedReferenceAsset } from "../src/reference-assets.ts";
 import { validateBlocks } from "../src/translation.ts";
-import { CONTEXT_WITHOUT_KIND_SQL, FULL_TEXT_SQL, PROJECT_INIT_SQL, REVIEW_COMMENTS_SQL } from "../src/embedded-sql.ts";
+import { CONTEXT_WITHOUT_KIND_SQL, FULL_TEXT_SQL, REMOVE_PEOPLE_PLACES_SQL, READING_ANNOTATIONS_SQL, TRANSLATION_MATERIALS_SQL, PROJECT_INIT_SQL, REVIEW_COMMENTS_SQL } from "../src/embedded-sql.ts";
 
 const dirs: string[] = [];
 const repos: ProjectRepo[] = [];
@@ -191,12 +191,12 @@ describe("create / open", () => {
   it("ships the original baseline and a mirrored full-text upgrade", () => {
     const packageMigrations = new URL("../migrations/sqlite/", import.meta.url);
     const infraMigrations = new URL("../../../infra/migrations/sqlite/", import.meta.url);
-    expect(readdirSync(packageMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql"]);
-    expect(readdirSync(infraMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql"]);
+    expect(readdirSync(packageMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql"]);
+    expect(readdirSync(infraMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql"]);
     expect(readFileSync(new URL("001_init.sql", packageMigrations)))
       .toEqual(readFileSync(new URL("001_init.sql", infraMigrations)));
     expect(PROJECT_INIT_SQL).toBe(readFileSync(new URL("001_init.sql", packageMigrations), "utf8"));
-    for (const [name, embedded] of [["002_full_text_translation.sql", FULL_TEXT_SQL], ["003_context_without_kind.sql", CONTEXT_WITHOUT_KIND_SQL], ["004_review_comments.sql", REVIEW_COMMENTS_SQL]]) {
+    for (const [name, embedded] of [["002_full_text_translation.sql", FULL_TEXT_SQL], ["003_context_without_kind.sql", CONTEXT_WITHOUT_KIND_SQL], ["004_review_comments.sql", REVIEW_COMMENTS_SQL], ["005_remove_people_places.sql", REMOVE_PEOPLE_PLACES_SQL], ["006_reading_annotations.sql", READING_ANNOTATIONS_SQL], ["007_translation_materials.sql", TRANSLATION_MATERIALS_SQL]]) {
       const sql = readFileSync(new URL(name!, packageMigrations), "utf8");
       expect(sql).toBe(readFileSync(new URL(name!, infraMigrations), "utf8"));
       expect(embedded).toBe(sql);
@@ -241,7 +241,7 @@ describe("create / open", () => {
          JOIN core_translation_policy_heads head
          JOIN core_translation_policy_versions version ON version.id = head.current_version_id`,
       ).get()).toEqual({
-        schema_version: 4,
+        schema_version: 7,
         style_guide_md: "현재 문서 전체를 빠짐없이 자연스러운 한국어로 번역한다.",
         rules_json: '{"sourceLanguage":"lzh","targetLocale":"ko","audience":"연구자·일반 독자","hanjaPolicy":"중요 용어는 한국어(漢字)로 병기한다.","supplementPolicy":"원문 밖 보충은 별도 표시한다.","uncertaintyPolicy":"textual uncertainty와 interpretive uncertainty를 분리한다."}',
       });
@@ -264,7 +264,7 @@ describe("create / open", () => {
       expect(agentSessionColumns).not.toContain("native_session_id");
       expect(db.prepare(
         "SELECT version, name FROM meta_schema_migrations ORDER BY version",
-      ).all()).toEqual([{ version: 1, name: "001_init.sql" }, { version: 2, name: "002_full_text_translation.sql" }, { version: 3, name: "003_context_without_kind.sql" }, { version: 4, name: "004_review_comments.sql" }]);
+      ).all()).toEqual([{ version: 1, name: "001_init.sql" }, { version: 2, name: "002_full_text_translation.sql" }, { version: 3, name: "003_context_without_kind.sql" }, { version: 4, name: "004_review_comments.sql" }, { version: 5, name: "005_remove_people_places.sql" }, { version: 6, name: "006_reading_annotations.sql" }, { version: 7, name: "007_translation_materials.sql" }]);
       expect(db.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'reflection_%'",
       ).all()).toEqual([]);
@@ -282,11 +282,11 @@ describe("create / open", () => {
 
     const db = openSqlite(dbPath);
     try {
-      db.prepare("UPDATE meta_project_state SET schema_version = 5").run();
+      db.prepare("UPDATE meta_project_state SET schema_version = 8").run();
       const insertMigration = db.prepare(
         "INSERT INTO meta_schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
       );
-      for (const version of [5]) {
+      for (const version of [8]) {
         insertMigration.run(
           version,
           `00${String(version)}_legacy.sql`,
@@ -313,10 +313,10 @@ describe("create / open", () => {
       ).toEqual({ id: projectId });
       expect(
         db.prepare("SELECT schema_version FROM meta_project_state").get(),
-      ).toEqual({ schema_version: 5 });
+      ).toEqual({ schema_version: 8 });
       expect(
         db.prepare("SELECT COUNT(*) AS count FROM meta_schema_migrations").get(),
-      ).toEqual({ count: 5 });
+      ).toEqual({ count: 8 });
     } finally {
       db.close();
     }
@@ -1395,13 +1395,14 @@ describe("seed demo", () => {
 });
 
 describe("app db + knowledge", () => {
-  it("upserts glossary/person/place and previews context", async () => {
+  it("loads glossary and general knowledge context in both translation flows", async () => {
     const { openAppDatabase } = await import("../src/index.ts");
     const repo = track(seedDemoProject(tempDir()));
     const knowledge = repo.getKnowledge();
     expect(knowledge.glossary.some((g) => g.sourceTerm === "文字")).toBe(true);
-    expect(knowledge.persons.some((p) => p.preferredName === "世宗")).toBe(true);
-    expect(knowledge.places.some((p) => p.preferredName === "中國")).toBe(true);
+    expect(knowledge).not.toHaveProperty("persons");
+    expect(knowledge).not.toHaveProperty("places");
+    expect(knowledge.contextItems.some((item) => /^(인물|지명) · /u.test(item.title))).toBe(false);
     const master = repo.getHome().documents.find((document) => document.isMaster)!;
     expect(
       knowledge.contextItems.some(
@@ -1411,7 +1412,12 @@ describe("app db + knowledge", () => {
     expect(knowledge.contextItems.some((item) => item.title === "어제서 번역 지침" && item.scopeKind === "document_node")).toBe(true);
     expect(knowledge.contextItems.some((item) => item.source === "document_description")).toBe(true);
     const id = repo.getHome().documents.find((d) => d.originalTitle === "御製序")!.id;
+    const currentPreview = repo.previewContext({ documentNodeId: id });
+    expect(currentPreview.requestText).toContain("창제·반포 배경");
+    expect(currentPreview.requestText).toContain("어제서 번역 지침");
+    expect(currentPreview.auxiliary.some((item) => item.kind === "person" || item.kind === "place")).toBe(false);
     const preview = repo.previewLegacyContext({ documentNodeId: id });
+    expect(preview.auxiliary.some((item) => item.kind === "person" || item.kind === "place")).toBe(false);
     const metadata = JSON.parse(preview.auxiliary.find((item) => item.kind === "document_metadata")!.content);
     expect(metadata).not.toHaveProperty("structuralKind");
     expect(metadata).not.toHaveProperty("genre");

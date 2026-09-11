@@ -172,34 +172,34 @@ describe("rebuildable exact and FTS search", () => {
     expect(confirmedOnly.results).toEqual([]);
 
     const knowledge = repo.getKnowledge();
-    const place = knowledge.places.find((entry) => entry.preferredName === "中國")!;
+    const term = knowledge.glossary.find((entry) => entry.sourceTerm === "文字")!;
     const entityFiltered = searchProject(db, repo.projectId, {
       query: "國之語",
       scope: "source",
       state: "current",
-      entityFilter: { entityType: "place", entityId: place.id },
+      entityFilter: { entityType: "glossary", entityId: term.id },
     });
     expect(entityFiltered.entityFilter).toMatchObject({
-      entityType: "place",
-      entityId: place.id,
-      label: "中國",
-      terms: expect.arrayContaining(["中國", "중국", "명"]),
+      entityType: "glossary",
+      entityId: term.id,
+      label: `${term.sourceTerm} → ${term.targetTerm}`,
+      terms: expect.arrayContaining([term.sourceTerm, term.targetTerm]),
     });
     expect(entityFiltered.results).toEqual([
       expect.objectContaining({ resultKind: "source", documentNodeId }),
     ]);
 
-    const unrelatedPerson = knowledge.persons.find((entry) => entry.preferredName === "申叔舟")!;
+    const unrelatedTerm = knowledge.glossary.find((entry) => entry.sourceTerm === "集賢殿")!;
     const excludedByEntity = searchProject(db, repo.projectId, {
       query: "國之語",
       scope: "source",
       state: "current",
-      entityFilter: { entityType: "person", entityId: unrelatedPerson.id },
+      entityFilter: { entityType: "glossary", entityId: unrelatedTerm.id },
     });
     expect(excludedByEntity.results).toEqual([]);
     expect(() => searchProject(db, repo.projectId, {
       query: "國之語",
-      entityFilter: { entityType: "person", entityId: place.id },
+      entityFilter: { entityType: "person" as never, entityId: term.id },
     })).toThrowError(MunhaeError);
 
     const shortHan = searchProject(db, repo.projectId, {
@@ -216,12 +216,10 @@ describe("rebuildable exact and FTS search", () => {
 });
 
 describe("knowledge entity hashes and optimistic locks", () => {
-  it("hashes every persisted content field and rejects stale glossary/person/place updates", () => {
+  it("hashes every persisted glossary content field and rejects stale updates", () => {
     const { repo } = setup();
     const initial = repo.getKnowledge();
     const glossary = initial.glossary[0]!;
-    const person = initial.persons[0]!;
-    const place = initial.places[0]!;
 
     expect(glossary.contentHash).toBe(canonicalJsonHash({
       sourceTerm: glossary.sourceTerm,
@@ -232,24 +230,6 @@ describe("knowledge entity hashes and optimistic locks", () => {
       noteMd: glossary.noteMd,
       usageStatus: glossary.usageStatus,
     }));
-    expect(person.contentHash).toBe(canonicalJsonHash({
-      preferredName: person.preferredName,
-      hanjaName: person.hanjaName,
-      reading: person.reading,
-      aliases: person.aliases,
-      descriptionMd: person.descriptionMd,
-      dateText: person.dateText,
-    }));
-    expect(place.contentHash).toBe(canonicalJsonHash({
-      preferredName: place.preferredName,
-      hanjaName: place.hanjaName,
-      reading: place.reading,
-      aliases: place.aliases,
-      placeKind: place.placeKind,
-      locationNoteMd: place.locationNoteMd,
-      descriptionMd: place.descriptionMd,
-    }));
-
     const glossaryUpdated = repo.upsertGlossary({
       id: glossary.id,
       expectedLockVersion: glossary.lockVersion,
@@ -275,52 +255,5 @@ describe("knowledge entity hashes and optimistic locks", () => {
       usageStatus: glossary.usageStatus,
     })).toThrowError(MunhaeError);
 
-    const personUpdated = repo.upsertPerson({
-      id: person.id,
-      expectedLockVersion: person.lockVersion,
-      preferredName: person.preferredName,
-      hanjaName: person.hanjaName,
-      reading: person.reading,
-      aliases: [...person.aliases, "새 별칭"],
-      descriptionMd: person.descriptionMd,
-      dateText: person.dateText,
-    });
-    expect(personUpdated).toMatchObject({ lockVersion: person.lockVersion + 1 });
-    expect(personUpdated.contentHash).not.toBe(person.contentHash);
-    expect(() => repo.upsertPerson({
-      id: person.id,
-      expectedLockVersion: person.lockVersion,
-      preferredName: person.preferredName,
-      hanjaName: person.hanjaName,
-      reading: person.reading,
-      aliases: person.aliases,
-      descriptionMd: person.descriptionMd,
-      dateText: person.dateText,
-    })).toThrowError(MunhaeError);
-
-    const placeUpdated = repo.upsertPlace({
-      id: place.id,
-      expectedLockVersion: place.lockVersion,
-      preferredName: place.preferredName,
-      hanjaName: place.hanjaName,
-      reading: place.reading,
-      aliases: place.aliases,
-      placeKind: place.placeKind,
-      locationNoteMd: `${place.locationNoteMd ?? ""} 변경`,
-      descriptionMd: place.descriptionMd,
-    });
-    expect(placeUpdated).toMatchObject({ lockVersion: place.lockVersion + 1 });
-    expect(placeUpdated.contentHash).not.toBe(place.contentHash);
-    expect(() => repo.upsertPlace({
-      id: place.id,
-      expectedLockVersion: place.lockVersion,
-      preferredName: place.preferredName,
-      hanjaName: place.hanjaName,
-      reading: place.reading,
-      aliases: place.aliases,
-      placeKind: place.placeKind,
-      locationNoteMd: place.locationNoteMd,
-      descriptionMd: place.descriptionMd,
-    })).toThrowError(MunhaeError);
   });
 });

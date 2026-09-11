@@ -7,16 +7,18 @@
 <title>설정 — 문해 Munhae Studio</title>
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
+<link rel="stylesheet" href="./styles/account.css">
 <link rel="stylesheet" href="./styles/settings.css">
+<script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
 </head>
-<body>
+<body data-auth-pending>
 <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
 
 <div class="win" id="win" data-od-id="app-window">
   <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색">
     <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
     <div class="sb-scroll" id="sbTree"></div>
-    <div class="sb-foot"><i class="dot"></i>AI<span class="sp"></span><span class="mono">0.1.0</span></div>
+    <div class="sb-foot"><a class="sb-account" href="settings.html#account" aria-label="계정 설정 열기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></svg><span class="sb-account-label">문해 계정</span></a></div>
   </aside>
 
   <div class="main settings-window">
@@ -30,6 +32,10 @@
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="설정 섹션">
         <div class="settings-nav-label">설정</div>
+        <button class="settings-nav-item" type="button" data-settings-section="account">
+          <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5" r="2.5"></circle><path d="M3 13c0-2.8 2-4.3 5-4.3s5 1.5 5 4.3"></path></svg>
+          <span>계정</span>
+        </button>
         <button class="settings-nav-item is-current" type="button" data-settings-section="models" aria-current="page">
           <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"></path><circle cx="6" cy="4.5" r="1.7"></circle><circle cx="10.5" cy="8" r="1.7"></circle><circle cx="5" cy="11.5" r="1.7"></circle></svg>
           <span>모델 및 제공업체</span>
@@ -45,6 +51,9 @@
       </nav>
 
       <main class="settings-content">
+        <section class="settings-page settings-account" id="settingsAccount" aria-labelledby="accountTitle" hidden>
+          <div class="account-card" id="accountContent"></div>
+        </section>
         <section class="settings-page is-open" id="settingsModels" aria-labelledby="settingsModelsTitle">
           <header class="settings-page-head">
             <div>
@@ -90,9 +99,24 @@
             <div>
               <p class="settings-eyebrow">앱</p>
               <h1 id="settingsGeneralTitle">일반</h1>
-              <p>Munhae Studio의 시작 동작을 설정합니다.</p>
+              <p>Munhae Studio의 시작 동작과 소리를 설정합니다.</p>
             </div>
           </header>
+          <section class="settings-card general-card">
+            <div><b>배경음악</b><p>중광지곡 · 상령산 1-2를 잔잔하게 반복 재생합니다.</p><p>한국저작권위원회 · 공유마당 · CC BY 4.0<br>원본 음원 사용 · 재생 음량 조절 및 반복 재생</p><p><a href="https://gongu.copyright.or.kr/gongu/wrt/wrt/view.do?menuNo=200020&amp;wrtSn=13263764" target="_blank" rel="noopener noreferrer">음원 출처</a> · <a href="https://creativecommons.org/licenses/by/4.0/deed.ko" target="_blank" rel="noopener noreferrer">이용허락 조건</a></p><p id="backgroundMusicStatus" role="status"></p>
+              <div class="music-volume"><label for="backgroundMusicVolume">음량</label><input type="range" id="backgroundMusicVolume" min="0" max="100" step="1" value="18" disabled><output id="backgroundMusicVolumeValue" for="backgroundMusicVolume">18%</output></div>
+            </div>
+            <label class="switch"><input type="checkbox" id="backgroundMusic" disabled><span aria-hidden="true"></span><span class="sr-only">배경음악 켜기</span></label>
+          </section>
+          <section class="settings-card general-card">
+            <div><b>AI 완료 알림음</b><p>답변 완료는 가야금 한 음, 번역·원문 연결·표점 단계 완료는 두 음으로 알려줍니다.</p>
+              <div class="music-volume"><label for="notificationVolume">알림 음량</label><input type="range" id="notificationVolume" min="0" max="100" step="1" value="35" disabled><output id="notificationVolumeValue" for="notificationVolume">35%</output></div>
+              <p><button class="btn btn-sm" id="previewChatSound" type="button" disabled>답변 알림 듣기</button> <button class="btn btn-sm" id="previewStageSound" type="button" disabled>단계 완료 알림 듣기</button></p>
+              <p>국립국악원 · 가야금 단음 G4 (2022) · 공공누리 제1유형<br>짧은음 발췌·페이드·모노 변환</p>
+              <p><a href="https://www.kogl.or.kr/recommend/recommendDivView.do?division=audio&amp;recommendIdx=51591" target="_blank" rel="noopener noreferrer">음원 출처 및 이용 조건</a></p><p id="notificationSoundStatus" role="status"></p>
+            </div>
+            <label class="switch"><input type="checkbox" id="notificationSound" disabled><span aria-hidden="true"></span><span class="sr-only">AI 완료 알림음 켜기</span></label>
+          </section>
           <section class="settings-card general-card">
             <div><b>시작 화면</b><p>앱을 실행할 때 최근 프로젝트 대신 시작 화면을 표시합니다.</p></div>
             <label class="switch"><input type="checkbox" id="showWelcome"><span aria-hidden="true"></span><span class="sr-only">실행할 때 시작 화면 표시</span></label>
@@ -115,6 +139,5 @@
   <input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색">
   <div class="pl-list" id="palList"></div>
 </dialog>
-<script type="module" src="./scripts/settings.ts"></script>
 </body>
 </html>

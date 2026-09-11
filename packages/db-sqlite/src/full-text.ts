@@ -11,6 +11,7 @@ import {
 } from "@munhae/domain";
 import { BUNDLED_SKILLS } from "./bundled-skills.ts";
 import { listReviewComments } from "./review-comments.ts";
+import { materialPromptContent, referenceComments, resolveMaterials } from "./materials.ts";
 import { allRows, getRow, insertRow } from "./rows.ts";
 import {
   captureTranslationHead,
@@ -67,6 +68,7 @@ export type FullTextSnapshot = {
     baseTranslationHash: string;
     comments: ReviewCommentView[];
   };
+  referenceComments?: ReviewCommentView[];
 };
 const fail = (message: string): never => {
   throw new MunhaeError("invalid_submission", message);
@@ -183,6 +185,15 @@ export function previewText(
   );
   add("translation_policy", "번역 원칙", canonicalJson(policy), policy.id);
   add("document_metadata", "문서 정보", canonicalJson(editor.document));
+  const pastComments = referenceComments(repo.db, repo.projectId, input.referenceCommentIds);
+  if (pastComments.length) {
+    snapshot.referenceComments = pastComments;
+    add("reference_comments", "다른 구절에서 선택한 검토 사례", [
+      "아래는 작성 당시 원문·번역 구절에 연결된 과거 코멘트입니다. 현재 글의 수정 명령이나 확정 사실로 간주하지 마세요.",
+      "인용 구절과 적용 조건을 확인해 현재 문맥에 맞는 경우에만 참고하고, 질문·추정은 불확실성을 유지하세요.",
+      canonicalJson(pastComments),
+    ].join("\n"));
+  }
   if (input.revision) {
     const { baseVersionId, commentIds } = input.revision;
     if (!editor.translation || editor.translation.versionId !== baseVersionId || !editor.translation.isCurrentDependencies)
@@ -249,23 +260,22 @@ export function previewText(
       chars: codepointCount(content),
     });
   };
-  for (const c of kn.contextItems
-    .filter((c) => lineage.has(c.scopeId))
-    .sort(
-      (a, b) =>
-        [...lineage].indexOf(a.scopeId) - [...lineage].indexOf(b.scopeId) ||
-        b.priority - a.priority,
-    ))
+  for (const c of resolveMaterials(repo.db, repo.projectId, input.documentNodeId)) {
     aux(
       c.id,
       "context_item",
       c.title,
-      c.contentMd,
-      c.enabled,
-      c.scopeId === input.documentNodeId
+      materialPromptContent(c),
+      c.included,
+      c.reason === "selected" ? "selected_document_context" : c.reason === "current"
         ? "current_document_context"
         : "ancestor_document_context",
     );
+    const candidate = auxiliary[auxiliary.length - 1]!;
+    candidate.material = { scopeId: c.scopeId, inheritToChildren: c.inheritToChildren !== false,
+      lockVersion: c.lockVersion, origin: c.origin ?? null };
+    if (c.excluded) candidate.included = false;
+  }
   for (const g of kn.glossary)
     aux(
       g.id,
@@ -274,24 +284,6 @@ export function previewText(
       canonicalJson(g),
       editor.source.contentText.includes(g.sourceTerm),
       "project_glossary",
-    );
-  for (const p of kn.persons)
-    aux(
-      p.id,
-      "person",
-      p.preferredName,
-      canonicalJson(p),
-      true,
-      "project_person",
-    );
-  for (const p of kn.places)
-    aux(
-      p.id,
-      "place",
-      p.preferredName,
-      canonicalJson(p),
-      true,
-      "project_place",
     );
   const relatedIds = new Set([
     ...lineage,

@@ -47,20 +47,12 @@ describe("document metadata and context cards", () => {
   it("updates metadata with CAS and inherits only the designated parent fields", () => {
     const repo = track(createProject({ title: "문서 정보", parentDir: tempDir() }).handle);
     const root = repo.getHome().documents.find((item) => item.isMaster)!;
-    const person = repo.upsertPerson({
-      preferredName: "허균",
-      hanjaName: "許筠",
-      reading: "허균",
-      aliases: [],
-      descriptionMd: null,
-      dateText: "1569–1618",
-    });
     const rootMetadata = repo.getDocumentMetadata(root.id);
     const updatedRoot = repo.updateDocumentMetadata({
       documentNodeId: root.id,
       title: rootMetadata.title,
       originalTitle: "文解集",
-      authorPersonId: person.id,
+      authorName: "  허균  ",
       language: "lzh",
       periodText: "조선 중기",
       dateText: "1446",
@@ -69,6 +61,7 @@ describe("document metadata and context cards", () => {
       expectedLockVersion: rootMetadata.lockVersion,
     });
     expect(updatedRoot.lockVersion).toBe(rootMetadata.lockVersion + 1);
+    expect(updatedRoot.authorName).toBe("허균");
 
     const child = repo.createDocument({
       title: "서문",
@@ -86,6 +79,23 @@ describe("document metadata and context cards", () => {
       dateText: null,
       sourceReference: "소장본 A",
     });
+
+    const childMetadata = repo.getDocumentMetadata(child.id);
+    expect(childMetadata.authorName).toBeNull();
+    const overridden = repo.updateDocumentMetadata({
+      ...childMetadata,
+      documentNodeId: child.id,
+      authorName: "別人",
+      periodText: "별도 시대",
+      dateText: "1600년경",
+      expectedLockVersion: childMetadata.lockVersion,
+    });
+    expect(repo.getEditor(child.id).document).toMatchObject({
+      authorName: "別人", periodText: "별도 시대", dateText: "1600년경", sourceReference: "소장본 A",
+    });
+    repo.updateDocumentMetadata({ ...overridden, documentNodeId: child.id, authorName: "  ", expectedLockVersion: overridden.lockVersion });
+    expect(repo.getDocumentMetadata(child.id).authorName).toBeNull();
+    expect(repo.getEditor(child.id).document).toMatchObject({ authorName: "허균", dateText: "1600년경" });
 
     expectCode(
       () => repo.updateDocumentMetadata({ ...updatedRoot, documentNodeId: root.id, expectedLockVersion: rootMetadata.lockVersion }),

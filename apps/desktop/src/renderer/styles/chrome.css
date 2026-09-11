@@ -36,6 +36,10 @@ p {
   margin: 0;
   text-wrap: pretty;
 }
+body[data-auth-pending] > :not(.auth-gate) { display: none !important; }
+.auth-gate { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: var(--bg); color: var(--muted); font-size: 13px; }
+.auth-gate > strong { color: var(--fg); font-size: 32px; font-weight: 400; letter-spacing: .12em; }
+.auth-gate > p { margin: 0; max-width: 420px; padding: 0 24px; text-align: center; line-height: 1.8; }
 [hidden] {
   display: none !important;
 }
@@ -355,10 +359,21 @@ html[data-platform="mac"] .sb-top {
 .sb-row .sb-item {
   flex: 1;
 }
+.sb-create-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding-right: 2px;
+}
+.sb-h-row .sb-create-actions { padding-top: 11px; }
 .sb-add {
-  width: 22px;
-  height: 22px;
-  margin: 0 4px 0 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -367,6 +382,10 @@ html[data-platform="mac"] .sb-top {
   line-height: 1;
   flex: 0 0 auto;
   -webkit-app-region: no-drag;
+}
+.sb-add:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .sb-add:hover {
   background: var(--fg-soft);
@@ -429,7 +448,6 @@ html[data-platform="mac"] .sb-top {
 }
 .sb-foot {
   flex: 0 0 auto;
-  padding: 12px 16px;
   border-top: 1px solid var(--border);
   font-size: 10.5px;
   color: var(--muted);
@@ -437,6 +455,35 @@ html[data-platform="mac"] .sb-top {
   align-items: center;
   gap: 7px;
   -webkit-app-region: no-drag;
+}
+.sb-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+.sb-account:hover {
+  color: var(--fg);
+  background: var(--fg-soft);
+}
+.sb-account:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.sb-account svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.sb-account-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .main {
   grid-row: 1;
@@ -1092,21 +1139,23 @@ dialog::backdrop {
   }
 }
 
-/* Keep the outgoing document visible until the next page has rendered.
-   Shared chrome switches without a cross-fade or geometry animation. */
+/* One browser-owned snapshot preserves the whole outgoing work screen while
+   auth + page data initialize. page-transition.ts releases it to the live DOM;
+   the initially hidden incoming snapshot must never replace it prematurely. */
 @view-transition { navigation: auto; }
-#sidebar { view-transition-name: munhae-sidebar; }
-#menubar { view-transition-name: munhae-menubar; }
-.statusbar { view-transition-name: munhae-statusbar; }
-::view-transition-group(*) { animation-duration: 0s; }
-::view-transition-old(*),
-::view-transition-new(*) { animation: none; mix-blend-mode: normal; }
-::view-transition-old(*) { opacity: 0; }
-::view-transition-new(*) { opacity: 1; }
+::view-transition-group(root) { animation: none; }
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html[data-page-transition-pending]::view-transition-old(root) {
+  animation: munhae-hold-page 1s linear both paused;
+  opacity: 1;
+}
+html[data-page-transition-pending]::view-transition-new(root) { opacity: 0; }
+@keyframes munhae-hold-page { from, to { opacity: 1; } }
 
 /* One quiet toolbar spans both navigation and the document workspace. */
 .win.unified-titlebar { grid-template-rows: 52px minmax(0, 1fr) 24px; }
-.unified-titlebar > .titlebar { grid-row: 1; grid-column: 1 / -1; gap: 0; padding: 0 14px 0 0; background: var(--surface); view-transition-name: munhae-titlebar; }
+.unified-titlebar > .titlebar { grid-row: 1; grid-column: 1 / -1; gap: 0; padding: 0 14px 0 0; background: var(--surface); }
 .unified-titlebar > .sidebar { grid-row: 2; }
 .unified-titlebar > .sidebar .sb-top { display: none; }
 .unified-titlebar > .sidebar .sb-scroll { padding-top: 12px; }
@@ -1142,3 +1191,20 @@ html[data-platform="mac"] .win.unified-titlebar.sb-hidden > .titlebar { padding-
   .btn:active:not(:disabled),
   .tb:active:not(:disabled) { transform: none; }
 }
+
+/* New document: one primary input flow, with optional metadata disclosed. */
+#dlgNew { width: min(560px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); margin: auto; }
+#dlgNew .dl-b { gap: 18px; }
+#dlgNew .input { font-size: 14px; }
+#dlgNew .nd-kind { display: flex; gap: 4px; padding: 3px; margin: 0; border: 0; border-radius: 7px; background: var(--chrome); align-self: flex-start; }
+#dlgNew .nd-kind label { position: relative; cursor: pointer; }
+#dlgNew .nd-kind input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+#dlgNew .nd-kind span { display: block; padding: 6px 22px; border: 1px solid transparent; border-radius: 5px; font-size: 13px; color: var(--muted); }
+#dlgNew .nd-kind input:checked + span { background: var(--surface); border-color: var(--border); color: var(--fg); }
+#dlgNew .nd-kind input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+#dlgNew .nd-source-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#dlgNew #ndText { height: 170px; min-height: 120px; resize: vertical; font-size: 16px; line-height: 1.8; }
+#dlgNew .nd-options { border-top: 1px solid var(--border); padding-top: 14px; }
+#dlgNew .nd-options summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+#dlgNew #ndParentSummary { margin-left: 10px; display: inline-block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+#dlgNew .nd-options-fields { display: grid; gap: 12px; margin-top: 14px; }

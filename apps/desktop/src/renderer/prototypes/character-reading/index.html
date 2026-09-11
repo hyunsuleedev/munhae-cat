@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>구절 연구 · 문해 시안</title>
+  <link rel="stylesheet" href="./reading.css">
+</head>
+<body>
+  <header class="appbar">
+    <a class="brand" href="/editor.html" aria-label="문해 편집기로"><span>文解</span><small>MUNHAE STUDIO</small></a>
+    <span class="bar-divider"></span><span class="bar-title">소학 <span>/</span> 구절 연구</span>
+    <span class="prototype-label">인터랙티브 시안</span>
+    <button class="button" id="exportNotes" type="button">주석 내려받기 <span aria-hidden="true">↗</span></button>
+  </header>
+  <main class="workspace">
+    <article class="document" aria-labelledby="documentTitle">
+      <div class="document-heading"><div><p class="eyebrow">小學 · 예시 문장 243</p><h1 id="documentTitle">한 구절을 깊이 읽다</h1></div><span class="folio-number" aria-hidden="true">句</span></div>
+      <section class="sentence" aria-label="원문과 번역">
+        <div class="section-label"><span>原文</span><span>원문</span><small>글자를 선택해 살펴보세요</small></div>
+        <p class="source-line" id="sourceLine"></p>
+        <div class="translation"><span class="translation-label">譯</span><p>비유하면, 벼리가 들어올려지면 그물눈이 펴지고 뿌리가 북돋아지면 가지가 발달하는 것과 같다.</p></div>
+      </section>
+      <section class="analysis" aria-labelledby="analysisTitle">
+        <div class="analysis-head"><div class="section-label"><span>逐字</span><h2 id="analysisTitle">글자별 풀이</h2></div><div class="segmented" role="group" aria-label="글자 표시 순서"><button type="button" id="sourceOrder" aria-pressed="true">원문 순서</button><button type="button" id="readingOrder" aria-pressed="false">풀이 순서</button></div></div>
+        <div class="token-grid" id="tokenGrid" aria-label="문장 속 글자"></div>
+        <div class="reading-help"><span><i class="selected-key"></i>선택한 글자</span><span>숫자는 풀이 순서입니다</span><span class="keyboard-help"><kbd>←</kbd><kbd>→</kbd> 글자 이동</span></div>
+      </section>
+      <section class="construction" aria-labelledby="constructionTitle">
+        <div class="section-label"><span>句法</span><h2 id="constructionTitle">문장 구조</h2></div>
+        <div class="construction-grid"><button type="button" data-group="comparison"><span class="pattern hanmun">譬如 <em>A</em></span><span>비유하자면 A와 같다</span><span class="group-arrow">↗</span></button><button type="button" data-group="condition"><span class="pattern hanmun"><em>A</em> 則 <em>B</em></span><span>A이면 B이다</span><span class="group-arrow">↗</span></button></div>
+        <p id="constructionStatus" class="small-note" role="status">문형을 누르면 원문의 해당 글자를 함께 표시합니다.</p>
+      </section>
+      <section class="annotation" aria-labelledby="annotationTitle">
+        <div class="section-label"><span>私註</span><h2 id="annotationTitle">이 문장의 풀이</h2><span class="annotation-character hanmun" id="annotationCharacter">綱</span><small id="annotationPosition"></small></div>
+        <label class="sr-only" for="contextGloss">선택한 글자의 문맥 풀이</label><div class="annotation-field"><textarea id="contextGloss" rows="2" maxlength="500" placeholder="이 문맥에서 어떻게 읽을지 적어 주세요."></textarea><button class="button primary" id="applyGloss" type="button">풀이 반영</button></div>
+        <div class="annotation-meta"><span id="annotationOrigin">첨부 화면의 예시 풀이</span><span id="savedState" role="status">이 브라우저에만 저장</span></div>
+      </section>
+      <footer class="document-footer"><p>첨부 화면의 원문·번역을 사용한 예시입니다. 사전은 문해의 실제 내장 자료를 조회합니다.</p><button type="button" id="resetNotes">예시로 되돌리기</button></footer>
+    </article>
+    <aside class="dictionary" aria-labelledby="dictionaryTitle">
+      <div class="dictionary-heading"><h2 id="dictionaryTitle">자의와 어휘</h2><span class="local-label"><i></i>내장 사전</span></div>
+      <div class="character-heading"><span class="hero-character hanmun" id="heroCharacter">綱</span><div><p class="character-reading" id="characterReading">사전 조회 중…</p><p class="character-meta" id="characterMeta"></p><p class="character-code" id="characterCode">U+7DB1</p></div></div>
+      <div class="dictionary-tabs" role="tablist" aria-label="사전 정보"><button type="button" role="tab" id="sensesTab" aria-controls="sensesPanel" aria-selected="true">뜻풀이 <span id="senseCount"></span></button><button type="button" role="tab" id="characterTab" aria-controls="characterPanel" aria-selected="false" tabindex="-1">문자 정보</button></div>
+      <p class="lookup-state" id="lookupState" role="status"></p>
+      <div id="sensesPanel" role="tabpanel" aria-labelledby="sensesTab"><div id="senseEntries"></div></div>
+      <div id="characterPanel" role="tabpanel" aria-labelledby="characterTab" hidden><div id="characterDetails"></div></div>
+      <div class="dictionary-footer"><p>사전의 뜻과 이 문장의 풀이는 따로 보관합니다. 문맥에 맞는 뜻을 골라 적용하세요.</p><a id="externalLookup" href="https://hanja.dict.naver.com/#/search?query=%E7%B6%B1" target="_blank" rel="noreferrer">다른 사전에서 대조 <span aria-hidden="true">↗</span></a></div>
+    </aside>
+  </main>
+  <div id="toast" role="status" hidden></div>
+  <script type="module" src="./reading.ts"></script>
+</body>
+</html>

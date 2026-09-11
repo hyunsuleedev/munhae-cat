@@ -2,8 +2,14 @@
 
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC_CHANNELS, type MunhaeApi } from "../shared/munhae-api";
+import { STARTUP_CHANNELS, type StartupApi } from "../shared/startup-api";
 
 const api = {
+  dictionary: {
+    search: (input) => ipcRenderer.invoke(IPC_CHANNELS.dictionarySearch, input),
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.dictionaryGetStatus),
+    setKey: (input) => ipcRenderer.invoke(IPC_CHANNELS.dictionarySetKey, input),
+  },
   auth: {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.authGetState),
     signUp: (input) => ipcRenderer.invoke(IPC_CHANNELS.authSignUp, input),
@@ -28,6 +34,7 @@ const api = {
     probeAgents: () => ipcRenderer.invoke(IPC_CHANNELS.appProbeAgents),
     getLoginInstruction: (agentId) => ipcRenderer.invoke(IPC_CHANNELS.appGetLoginInstruction, agentId),
     quit: () => ipcRenderer.invoke(IPC_CHANNELS.appQuit),
+    checkUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.appCheckUpdates),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternal, url),
     onCommand: (handler) => {
       const listen = (_event: unknown, id: unknown) => {
@@ -46,6 +53,8 @@ const api = {
     getCurrent: () => ipcRenderer.invoke(IPC_CHANNELS.projectGetCurrent),
     listRecent: () => ipcRenderer.invoke(IPC_CHANNELS.projectListRecent),
     backup: () => ipcRenderer.invoke(IPC_CHANNELS.projectBackup),
+    concordance: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectConcordance, input),
+    exportReview: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectExportReview, input),
     exportConfirmed: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectExportConfirmed, input),
     search: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectSearch, input),
     createFromPaste: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectCreateFromPaste, input),
@@ -89,6 +98,9 @@ const api = {
     saveSentenceLink: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorSaveSentenceLink, input),
     updateReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorUpdateReviewComment, input),
     archiveReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorArchiveReviewComment, input),
+    listReadingAnnotations: (documentNodeId) => ipcRenderer.invoke(IPC_CHANNELS.editorListReadingAnnotations, documentNodeId),
+    saveReadingAnnotation: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorSaveReadingAnnotation, input),
+    archiveReadingAnnotation: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorArchiveReadingAnnotation, input),
     attachReference: (documentNodeId) =>
       ipcRenderer.invoke(IPC_CHANNELS.editorAttachReference, documentNodeId),
     readReference: (documentNodeId, assetId) =>
@@ -98,12 +110,16 @@ const api = {
   },
   research: {
     searchFootnotes: (input) => ipcRenderer.invoke(IPC_CHANNELS.researchSearchFootnotes, input),
+    startFootnoteAnalysis: (input) => ipcRenderer.invoke(IPC_CHANNELS.researchStartFootnoteAnalysis, input),
+    getFootnoteAnalysis: (id) => ipcRenderer.invoke(IPC_CHANNELS.researchGetFootnoteAnalysis, id),
+    cancelFootnoteAnalysis: (id) => ipcRenderer.invoke(IPC_CHANNELS.researchCancelFootnoteAnalysis, id),
   },
   knowledge: {
+    getMaterials: (documentNodeId) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeGetMaterials, documentNodeId),
+    setMaterialPreference: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetMaterialPreference, input),
+    reuseCommentAsMaterial: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeReuseCommentAsMaterial, input),
     get: () => ipcRenderer.invoke(IPC_CHANNELS.knowledgeGet),
     upsertGlossary: (entry) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpsertGlossary, entry),
-    upsertPerson: (person) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpsertPerson, person),
-    upsertPlace: (place) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpsertPlace, place),
     createContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeCreateContext, input),
     updateContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpdateContext, input),
     setContextEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetContextEnabled, input),
@@ -140,3 +156,7 @@ const api = {
 } satisfies MunhaeApi;
 
 contextBridge.exposeInMainWorld("munhae", api);
+contextBridge.exposeInMainWorld("munhaeStartup", {
+  wait: () => ipcRenderer.invoke(STARTUP_CHANNELS.wait),
+  enter: () => ipcRenderer.invoke(STARTUP_CHANNELS.enter),
+} satisfies StartupApi);

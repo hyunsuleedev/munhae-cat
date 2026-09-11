@@ -92,7 +92,8 @@ function serviceFixture(active: Session | null = session) {
   let listener: (event: string, data: Session | null) => void = () => undefined;
   const auth = {
     onAuthStateChange: vi.fn((callback) => { listener = callback; return { data: { subscription: { unsubscribe: vi.fn() } } }; }),
-    getSession: vi.fn(async () => ({ data: { session: active }, error: null })),
+    getSession: vi.fn(async () => ({ data: { session: active }, error: null as { code: string } | null })),
+    getUser: vi.fn(async () => ({ data: { user: active?.user ?? null }, error: null as { status?: number; name?: string } | null })),
     signInWithPassword: vi.fn(async () => ({ data: { session }, error: null })),
     setSession: vi.fn(async () => ({ data: { session }, error: null })),
     signUp: vi.fn(async () => ({ data: { session: null, user: session.user }, error: null })),
@@ -109,6 +110,37 @@ function serviceFixture(active: Session | null = session) {
 }
 
 describe("official account flow", () => {
+  it("verifies restored sessions against the server and shares concurrent startup checks", async () => {
+    const { service, auth } = serviceFixture();
+    const results = await Promise.all([service.getState(), service.getState()]);
+    expect(results.every((state) => state.status === "signed_in")).toBe(true);
+    expect(auth.getUser).toHaveBeenCalledExactlyOnceWith(session.access_token);
+  });
+  it("does not call the server when there is no stored session", async () => {
+    const { service, auth } = serviceFixture(null);
+    expect((await service.getState()).status).toBe("signed_out");
+    expect(auth.getUser).not.toHaveBeenCalled();
+  });
+  it("returns to sign-in when restoring an expired session cannot refresh it", async () => {
+    const { service, auth } = serviceFixture();
+    auth.getSession.mockResolvedValue({ data: { session: null }, error: { code: "refresh_token_not_found" } });
+    expect((await service.getState()).status).toBe("signed_out");
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(auth.getUser).not.toHaveBeenCalled();
+  });
+  it("rejects a restored session whose account was removed or disabled", async () => {
+    const { service, auth } = serviceFixture();
+    auth.getUser.mockResolvedValue({ data: { user: null }, error: { status: 401 } });
+    expect((await service.getState()).status).toBe("signed_out");
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+  });
+  it("keeps persisted credentials on a network failure and allows a retry", async () => {
+    const { service, auth } = serviceFixture();
+    auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: { name: "AuthRetryableFetchError" } });
+    await expect(service.getState()).rejects.toMatchObject({ code: "auth_network_error" });
+    expect(auth.signOut).not.toHaveBeenCalled();
+    expect((await service.getState()).status).toBe("signed_in");
+  });
   it("exposes only a user summary to IPC, never access/refresh tokens or arbitrary metadata", async () => {
     const { service } = serviceFixture();
     const state = await service.getState();

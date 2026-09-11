@@ -37,26 +37,31 @@ function stateLabel(entry: VersionHistoryEntry): string {
   return "작업안";
 }
 
-function shortId(value: string | null): string {
-  return value ? value.slice(0, 12) : "—";
+function when(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
+function validationLabel(value: VersionHistoryEntry["validationState"]): string {
+  return value === "valid" ? "형식 검사 통과" : value === "needs_review" ? "형식 확인 필요" : "";
 }
 
 function metadataRows(entry: VersionHistoryEntry): string {
   if (!deps) return "";
   const rows: Array<[string, string | null]> = [
-    ["version ID", entry.versionId],
-    ["parent version", entry.parentVersionId],
-    ["content SHA-256", entry.contentHash],
+    ["버전 식별자", entry.versionId],
+    ["이전 버전 식별자", entry.parentVersionId],
+    ["내용 해시", entry.contentHash],
     ["작성자", entry.createdBy],
     ["생성 시각", entry.createdAt],
-    ["origin", entry.originKind],
+    ["생성 방식", entry.originKind],
   ];
   if (entry.changeSummary) rows.push(["변경 요약", entry.changeSummary]);
-  if (entry.validationState) rows.push(["검증", entry.validationState]);
-  if (entry.sourceTextVersionId) rows.push(["원문 version", `${entry.sourceTextVersionId} · ${entry.sourceTextHash ?? "hash 없음"}`]);
-  if (entry.punctuationVersionId) rows.push(["표점 version", `${entry.punctuationVersionId} · ${entry.punctuationHash ?? "hash 없음"}`]);
-  if (entry.anchorSetId) rows.push(["앵커 집합", `${entry.anchorSetId} · ${entry.anchorSetHash ?? "hash 없음"}`]);
-  if (entry.translationPolicyVersionId) rows.push(["번역 원칙", `${entry.translationPolicyVersionId} · ${entry.translationPolicyHash ?? "hash 없음"}`]);
+  if (entry.validationState) rows.push(["형식 검사", validationLabel(entry.validationState)]);
+  if (entry.sourceTextVersionId) rows.push(["원문 버전", `${entry.sourceTextVersionId} · ${entry.sourceTextHash ?? "해시 없음"}`]);
+  if (entry.punctuationVersionId) rows.push(["표점 버전", `${entry.punctuationVersionId} · ${entry.punctuationHash ?? "해시 없음"}`]);
+  if (entry.anchorSetId) rows.push(["원문 연결 집합", `${entry.anchorSetId} · ${entry.anchorSetHash ?? "해시 없음"}`]);
+  if (entry.translationPolicyVersionId) rows.push(["번역 원칙", `${entry.translationPolicyVersionId} · ${entry.translationPolicyHash ?? "해시 없음"}`]);
   if (entry.kind === "punctuation") rows.push(["구조 범위", `${entry.structureSpanCount}개`]);
   return rows.map(([key, value]) => `<dt>${deps!.escape(key)}</dt><dd class="mono" style="overflow-wrap:anywhere">${deps!.escape(value ?? "—")}</dd>`).join("");
 }
@@ -80,7 +85,7 @@ function render(): void {
   const root = document.querySelector("#histList");
   if (!root || !deps) return;
   if (loadingDocumentId && (!history || history.documentNodeId !== loadingDocumentId)) {
-    root.innerHTML = '<p class="muted" style="font-size:12px">정확한 version 이력을 불러오는 중입니다…</p>';
+    root.innerHTML = '<p class="muted" style="font-size:12px">저장된 이력을 불러오는 중입니다…</p>';
     return;
   }
   if (!history) {
@@ -99,23 +104,22 @@ function render(): void {
       <select class="select" data-history-kind aria-label="이력 종류">
         ${(["source", "punctuation", "translation"] as const).map((kind) => `<option value="${kind}"${kind === selectedKind ? " selected" : ""}>${kindLabel(kind)}</option>`).join("")}
       </select>
-      <button class="btn btn-sm" type="button" data-history-compare${entries.length < 2 ? " disabled" : ""}>두 version 비교…</button>
+      <button class="btn btn-sm" type="button" data-history-compare${entries.length < 2 ? " disabled" : ""}>이전 내용과 비교…</button>
     </div>
-    <p class="muted" style="font-size:11.5px;margin-bottom:8px">같은 계보 안에서만 비교합니다. head는 포인터이며 version 행은 변경하지 않습니다.</p>
+    <p class="muted" style="font-size:11.5px;margin-bottom:8px">저장할 때마다 남긴 내용을 확인하고, 두 버전의 변경 부분을 비교하세요.</p>
     ${entries.length ? entries.map((entry) => {
       const tagClass = entry.isConfirmed ? "tag-ok" : entry.validationState === "needs_review" ? "tag-warn" : entry.isCurrent ? "tag-draft" : "tag-plain";
       return `<details class="hist-item" data-history-version="${deps!.escape(entry.versionId)}">
         <summary style="display:grid;grid-template-columns:36px 1fr;gap:7px;cursor:pointer;list-style:none">
           <span class="v">v${entry.versionNo}</span>
-          <span><span class="row" style="gap:5px;flex-wrap:wrap"><span class="tag ${tagClass}">${stateLabel(entry)}</span>${entry.validationState ? `<span class="tag ${entry.validationState === "valid" ? "tag-plain" : "tag-warn"}">${entry.validationState}</span>` : ""}</span><span class="when">${deps!.escape(entry.createdAt)} · ${deps!.escape(entry.createdBy)}</span><span class="mono muted" style="font-size:10px">${deps!.escape(shortId(entry.contentHash))}</span></span>
+          <span><span class="row" style="gap:5px;flex-wrap:wrap"><span class="tag ${tagClass}">${stateLabel(entry)}</span></span><span class="when">${deps!.escape(when(entry.createdAt))} · ${deps!.escape(entry.createdBy)}</span>${entry.changeSummary ? `<span style="display:block;font-size:12px;margin-top:4px">${deps!.escape(entry.changeSummary)}</span>` : ""}</span>
         </summary>
         <div style="grid-column:1/-1;padding:8px 0 2px;display:grid;gap:8px">
-          <dl class="kv">${metadataRows(entry)}</dl>
-          <details><summary>이 version의 전체 내용</summary><pre class="source-reference" style="margin-top:8px;max-height:240px;overflow:auto;white-space:pre-wrap">${deps!.escape(entry.contentText)}</pre></details>
-          ${blocksHtml(entry)}
+          <pre class="source-reference" aria-label="이 버전의 전체 내용" style="margin:0;max-height:300px;overflow:auto;white-space:pre-wrap">${deps!.escape(entry.contentText)}</pre>
+          <details><summary>원문·생성 기록 자세히</summary><dl class="kv" style="margin-top:8px">${metadataRows(entry)}</dl>${blocksHtml(entry)}</details>
         </div>
       </details>`;
-    }).join("") : '<p class="muted" style="font-size:12px">선택한 종류의 version이 없습니다.</p>'}`;
+    }).join("") : '<p class="muted" style="font-size:12px">선택한 종류의 저장 이력이 없습니다.</p>'}`;
 }
 
 function entriesForDiff(kind: VersionHistoryKind, stage: string | null): VersionHistoryEntry[] {
@@ -144,7 +148,7 @@ function renderDiffControls(kind: VersionHistoryKind, stage: string | null): voi
       <div class="field"><label for="diffTarget">변경 후</label><select class="select" id="diffTarget">${entries.map(option).join("")}</select></div>
       <div class="row" style="grid-column:1/-1;justify-content:flex-end"><span class="muted" style="font-size:11.5px;margin-right:auto">비교할 두 버전을 선택하세요. 달라진 부분을 표시합니다.</span><button class="btn btn-primary" id="diffRun" type="button"${entries.length < 2 ? " disabled" : ""}>비교</button></div>
     </div>
-    <div id="diffOutput" style="grid-column:1/-1" class="muted">${entries.length < 2 ? "같은 계보에서 비교할 두 version이 없습니다." : "두 version을 선택하고 비교를 누르세요."}</div>`;
+    <div id="diffOutput" style="grid-column:1/-1" class="muted">${entries.length < 2 ? "비교할 이전 버전이 아직 없습니다." : "두 버전을 선택하고 비교를 누르세요."}</div>`;
   const baseSelect = must<HTMLSelectElement>("#diffBase");
   const targetSelect = must<HTMLSelectElement>("#diffTarget");
   if (base) baseSelect.value = base.versionId;
@@ -246,11 +250,11 @@ export function renderVersionHistory(preferredKind?: VersionHistoryKind, preferr
 
 export function openVersionDiff(kind: VersionHistoryKind, stage?: string | null, compareImmediately = false): void {
   if (loadingDocumentId && history?.documentNodeId !== loadingDocumentId) {
-    deps?.notify("version 이력을 불러오는 중입니다", "변경 비교");
+    deps?.notify("저장 이력을 불러오는 중입니다", "변경 비교");
     return;
   }
   if (!history || history.entries.length < 2) {
-    deps?.notify("비교할 version 이력이 없습니다", "변경 비교");
+    deps?.notify("비교할 저장 이력이 없습니다", "변경 비교");
     return;
   }
   renderDiffControls(kind, stage ?? null);

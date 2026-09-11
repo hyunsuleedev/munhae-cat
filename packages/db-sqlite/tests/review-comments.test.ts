@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { sha256Hex } from "@munhae/domain";
 import { createProject, openProject, openSqlite, sqlitePath, type ProjectRepo } from "../src/index.ts";
+import { restoreV4KnowledgeFixture } from "./legacy-knowledge-fixture.ts";
 
 const clean: Array<() => void> = [];
 afterEach(() => { while (clean.length) clean.pop()!(); });
@@ -148,6 +149,7 @@ it("upgrades v3 with a backup and no changes to existing translation history or 
   const path = repo.packagePath, history = repo.getDocumentHistory(id);
   repo.close();
   const db = openSqlite(sqlitePath(path));
+  restoreV4KnowledgeFixture(db);
   const requests = db.prepare("SELECT * FROM chat_messages ORDER BY id").all();
   db.exec("DROP TABLE review_comments; DELETE FROM meta_schema_migrations WHERE version=4; UPDATE meta_project_state SET schema_version=3;");
   db.close();
@@ -159,7 +161,7 @@ it("upgrades v3 with a backup and no changes to existing translation history or 
   expect(backups).toHaveLength(1);
   const check = openSqlite(sqlitePath(path));
   try {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 4 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 7 });
     expect(check.prepare("SELECT * FROM chat_messages ORDER BY id").all()).toEqual(requests);
     expect(check.pragma("foreign_key_check")).toEqual([]);
     expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);

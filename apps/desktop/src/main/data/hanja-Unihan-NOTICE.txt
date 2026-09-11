@@ -1,0 +1,65 @@
+Munhae Unicode Unihan character-property subset
+
+Unicode version: 17.0.0; source retrieval: 2026-09-08.
+Source: https://www.unicode.org/Public/17.0.0/ucd/Unihan.zip
+SHA-256: f7a48b2b545acfaa77b2d607ae28747404ce02baefee16396c5d2d7a8ef34b5e
+Radical mapping: https://www.unicode.org/Public/17.0.0/ucd/CJKRadicals.txt
+SHA-256: 826f83be25cd18fb8a5015a514704504e1982e840ea14d058bf583e1cc620c83
+License source: https://www.unicode.org/license.txt
+SHA-256: e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96
+Attribution: Unicode, Inc. and contributors; CJKRadicals source credits Richard Cook,
+Ken Whistler and Laurentiu Iancu. No endorsement is implied.
+Properties retained: kHangul, kRSUnicode, kSemanticVariant, kSimplifiedVariant, kSpecializedSemanticVariant, kTotalStrokes, kTraditionalVariant, kZVariant.
+Changes: only these properties are retained, in compact rows. Korean reading source codes
+are removed from display readings. Original radical-stroke and variant values are preserved;
+radical glyphs use the official CJKRadicals unified-ideograph mapping. kDefinition, definitions,
+examples and dictionary quotations are not included. No Han character normalization or
+automatic variant substitution is performed. Default total strokes remain separate from
+radical residual strokes; Unicode 17 kTotalStrokes is a single default count.
+
+Regenerate from the repository root:
+python3 scripts/build-unihan-dictionary.py --unihan PATH/Unihan-17.0.0.zip --radicals PATH/CJKRadicals-17.0.0.txt --license PATH/Unicode-License-v3-20260908.txt
+The script verifies source hashes and performs no download or crawling.
+
+The following complete notice is distributed with the derived data:
+
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2026 Unicode, Inc.
+
+NOTICE TO USER: Carefully read the following legal agreement. BY
+DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of data files and any associated documentation (the "Data Files") or
+software and any associated documentation (the "Software") to deal in the
+Data Files or Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, and/or sell
+copies of the Data Files or Software, and to permit persons to whom the
+Data Files or Software are furnished to do so, provided that either (a)
+this copyright and permission notice appear with all copies of the Data
+Files or Software, or (b) this copyright and permission notice appear in
+associated Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder shall
+not be used in advertising or otherwise to promote the sale, use or other
+dealings in these Data Files or Software without prior written
+authorization of the copyright holder.
+

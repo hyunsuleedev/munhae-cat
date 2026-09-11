@@ -1,5 +1,5 @@
 import "../styles/review-marks.css";
-import { textareaOffset } from "./review-selection";
+import { textareaOffset, sourceDisplayFromElement, displayRangeFromSource } from "./review-selection";
 
 export type ReviewMarkRange = {
   targetKind: "source" | "translation";
@@ -117,8 +117,12 @@ export function configureReviewMarks(rows: HTMLElement) {
     const sourceRanges = ranges.filter((range) => range.targetKind === "source");
     for (const source of rows.querySelectorAll<HTMLElement>("[data-review-source-from][data-review-source-to]")) {
       const text = source.textContent ?? "";
-      const start = Number(source.dataset.reviewSourceFrom);
-      const intervals = localIntervals(text, start, sourceRanges).map((range) => ({
+      const display = sourceDisplayFromElement(source);
+      const mapped = display ? sourceRanges.flatMap(range => {
+        const interval = displayRangeFromSource(display, range.codepointFrom, range.codepointTo, range.quote);
+        return interval ? [{ ...interval, emphasized: range.emphasized }] : [];
+      }) : [];
+      const intervals = mapped.map((range) => ({
         ...range,
         from: Array.from(text).slice(0, range.from).join("").length,
         to: Array.from(text).slice(0, range.to).join("").length,

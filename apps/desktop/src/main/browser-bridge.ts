@@ -1,8 +1,13 @@
+import { MATERIAL_CHANNELS, dispatchMaterial } from "./translation-materials";
+import { parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
+import { exportReviewTranslations } from "./session";
 import { app } from "electron";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
 import { probeAgentsCached } from "./agents";
 import { searchItkcFootnotes } from "./itkc-footnotes";
+import { dictionarySearch, dictionaryGetStatus, dictionarySetKey } from "./dictionary";
+import { startFootnoteAnalysis, getFootnoteAnalysis, cancelFootnoteAnalysis } from "./footnote-analysis";
 import { errorCode } from "./errors";
 import {
   parseArchiveReviewCommentInput,
@@ -29,8 +34,6 @@ import {
   parseMergeBlocksInput,
   parseMessageId,
   parseOptionalPath,
-  parsePersonInput,
-  parsePlaceInput,
   parseResolveUncertaintyInput,
   parseResetTranslationDraftInput,
   parseReviseTranslationInput,
@@ -81,6 +84,9 @@ import {
 } from "./ai-runs";
 import { getAgentLoginInstruction } from "./agent-runtime-client";
 import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
+import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
+import { subscribeAccountState, withAccount } from "./auth";
+import { serveBrowserAuthEvents } from "./browser-auth-events";
 
 const runtimeSessionStore = {
   get: getRuntimeSessionRef,
@@ -91,7 +97,12 @@ const runtimeSessionStore = {
 export const BROWSER_BRIDGE_PORT = 17321;
 const BODY_LIMIT = 22_000_000;
 const ALLOWED_CHANNELS = new Set<IpcChannel>([
+  IPC_CHANNELS.dictionarySearch,
+  IPC_CHANNELS.dictionaryGetStatus,
+  IPC_CHANNELS.dictionarySetKey,
   ...ACCOUNT_CHANNELS,
+  ...READING_ANNOTATION_CHANNELS,
+  ...MATERIAL_CHANNELS,
   IPC_CHANNELS.appGetVersion,
   IPC_CHANNELS.appGetConfig,
   IPC_CHANNELS.appSetConfig,
@@ -106,6 +117,8 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.projectListRecent,
   IPC_CHANNELS.projectBackup,
   IPC_CHANNELS.projectExportConfirmed,
+  IPC_CHANNELS.projectConcordance,
+  IPC_CHANNELS.projectExportReview,
   IPC_CHANNELS.projectSearch,
   IPC_CHANNELS.projectCreateFromPaste,
   IPC_CHANNELS.projectSeedDemo,
@@ -139,8 +152,6 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.editorOpenReference,
   IPC_CHANNELS.knowledgeGet,
   IPC_CHANNELS.knowledgeUpsertGlossary,
-  IPC_CHANNELS.knowledgeUpsertPerson,
-  IPC_CHANNELS.knowledgeUpsertPlace,
   IPC_CHANNELS.knowledgeCreateContext,
   IPC_CHANNELS.knowledgeUpdateContext,
   IPC_CHANNELS.knowledgeSetContextEnabled,
@@ -151,6 +162,9 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.knowledgeResolveUncertainty,
   IPC_CHANNELS.contextPreview,
   IPC_CHANNELS.researchSearchFootnotes,
+  IPC_CHANNELS.researchStartFootnoteAnalysis,
+  IPC_CHANNELS.researchGetFootnoteAnalysis,
+  IPC_CHANNELS.researchCancelFootnoteAnalysis,
   IPC_CHANNELS.aiStartTranslation,
   IPC_CHANNELS.aiStartChat,
   IPC_CHANNELS.aiStartPunctuation,
@@ -162,6 +176,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
 ]);
 
 let server: Server | null = null;
+const accountStreams = new Set<() => void>();
 
 function rendererOrigin(): string | null {
   const value = process.env.ELECTRON_RENDERER_URL;
@@ -193,21 +208,29 @@ function toResultError(error: unknown): IpcResult<never> {
   return { ok: false, error: { code: errorCode(error), message: safeMessage(error) } };
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, limit = BODY_LIMIT): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     size += bytes.length;
-    if (size > BODY_LIMIT) throw new Error("요청 본문이 너무 큽니다.");
+    if (size > limit) throw new Error("요청 본문이 너무 큽니다.");
     chunks.push(bytes);
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
 async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> {
+  if (READING_ANNOTATION_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnnotation(channel, args[0]));
+  if (channel === IPC_CHANNELS.dictionarySearch) return wrap(() => dictionarySearch(args[0]));
+  if (channel === IPC_CHANNELS.dictionaryGetStatus) return wrap(() => dictionaryGetStatus());
+  if (channel === IPC_CHANNELS.dictionarySetKey) return wrap(() => dictionarySetKey(args[0]));
   if (channel === IPC_CHANNELS.researchSearchFootnotes) return wrap(() => searchItkcFootnotes(args[0]));
+  if (channel === IPC_CHANNELS.researchStartFootnoteAnalysis) return wrap(() => startFootnoteAnalysis(requireRepo(), getAppConfig(), args[0]));
+  if (channel === IPC_CHANNELS.researchGetFootnoteAnalysis) return wrap(() => getFootnoteAnalysis(requireRepo(), parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.researchCancelFootnoteAnalysis) return wrap(() => cancelFootnoteAnalysis(requireRepo(), parseMessageId(args[0])));
   if (ACCOUNT_CHANNELS.includes(channel)) return wrap(() => dispatchAccount(channel, args[0]));
+  if (MATERIAL_CHANNELS.includes(channel)) return wrap(() => dispatchMaterial(channel, args[0]));
   switch (channel) {
     case IPC_CHANNELS.appGetVersion: return app.getVersion();
     case IPC_CHANNELS.appGetConfig: return getAppConfig();
@@ -226,6 +249,10 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
     case IPC_CHANNELS.projectOpen: return wrap(() => openProjectInteractive(parseOptionalPath(args[0])));
     case IPC_CHANNELS.projectClose: return wrap(() => closeProject());
     case IPC_CHANNELS.projectBackup: return wrap(() => backupProject());
+    case IPC_CHANNELS.projectConcordance:
+      return wrap(() => requireRepo().concordance(parseConcordanceInput(args[0])));
+    case IPC_CHANNELS.projectExportReview:
+      return wrap(() => exportReviewTranslations(parseReviewExportInput(args[0])));
     case IPC_CHANNELS.projectExportConfirmed:
       return wrap(() => exportConfirmedTranslations(parseConfirmedExportInput(args[0])));
     case IPC_CHANNELS.projectSearch:
@@ -283,10 +310,6 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
     case IPC_CHANNELS.knowledgeGet: return wrap(() => requireRepo().getKnowledge());
     case IPC_CHANNELS.knowledgeUpsertGlossary:
       return wrap(() => requireRepo().upsertGlossary(parseGlossaryInput(args[0])));
-    case IPC_CHANNELS.knowledgeUpsertPerson:
-      return wrap(() => requireRepo().upsertPerson(parsePersonInput(args[0])));
-    case IPC_CHANNELS.knowledgeUpsertPlace:
-      return wrap(() => requireRepo().upsertPlace(parsePlaceInput(args[0])));
     case IPC_CHANNELS.knowledgeCreateContext:
       return wrap(() => requireRepo().createContextItem(parseCreateContextItemInput(args[0])));
     case IPC_CHANNELS.knowledgeUpdateContext:
@@ -366,11 +389,26 @@ async function handle(req: IncomingMessage, res: ServerResponse, origin: string)
     res.end();
     return;
   }
-  if (req.method !== "POST" || req.url !== "/api") {
+  if (req.method !== "POST" || (req.url !== "/api" && req.url !== "/auth-events")) {
     writeJson(res, 404, { error: "not_found" }, origin);
     return;
   }
   try {
+    if (req.url === "/auth-events") {
+      await readBody(req, 1_024);
+      if (accountStreams.size >= 64) {
+        writeJson(res, 503, { error: "too_many_subscriptions" }, origin);
+        return;
+      }
+      let closed = false;
+      let close = () => undefined as void;
+      close = serveBrowserAuthEvents(res, origin, {
+        subscribe: subscribeAccountState,
+        getState: () => withAccount((account) => account.getState()),
+      }, () => { closed = true; accountStreams.delete(close); });
+      if (!closed) accountStreams.add(close);
+      return;
+    }
     const body = await readBody(req) as { channel?: unknown; args?: unknown };
     if (typeof body.channel !== "string" || !ALLOWED_CHANNELS.has(body.channel as IpcChannel)) {
       throw new Error("허용되지 않은 호출입니다.");
@@ -396,6 +434,7 @@ export function startBrowserBridge(): void {
 }
 
 export function stopBrowserBridge(): void {
+  for (const close of [...accountStreams]) close();
   const active = server;
   server = null;
   active?.close();

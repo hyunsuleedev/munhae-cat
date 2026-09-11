@@ -61,9 +61,13 @@
 .folio-columns > span { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .folio-columns > span:last-child { padding-left: 25px; }
 .folio-columns small { font: 10px var(--font-ui); color: var(--muted); }
+.folio-columns .parallel-source-heading { flex-wrap: wrap; gap: 6px 10px; padding-right: 8px; }
+#parallelSource { max-width: 100%; padding: 3px 20px 3px 5px; color: var(--fg); border: 1px solid var(--border); border-radius: 4px; background-color: var(--surface); font: 11px var(--font-ui); cursor: pointer; }
+#parallelSource:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+#parallelSourceStatus { white-space: nowrap; }
 .comparison-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 10px; }
 .comparison-tools label { font-size: 10px; }
-.comparison-tools input { width: 12px; height: 12px; }
+.comparison-tools input[type="checkbox"] { width: 12px; height: 12px; }
 .comparison-empty { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .folio-editor .rows { border-top: 0; }
 .folio-editor .brow { grid-template-columns: 41% minmax(0, 1fr); position: relative; transition: none; }
@@ -82,7 +86,9 @@
 .sentence-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; font: 10px/1.5 var(--font-ui); color: var(--muted); }
 .sentence-actions .btn { font-size: 10px; min-height: 25px; padding: 3px 6px; }
 .folio-editor .sentence-edit { margin-top: 26px; line-height: 2; }
-.folio-editor .sentence-edit:focus { outline: 1px solid color-mix(in srgb, var(--accent-ink) 40%, transparent); outline-offset: 5px; background: transparent; }
+.folio-editor .sentence-edit:not(:read-only):focus { outline: none; border-radius: 0; box-shadow: inset 0 -1px color-mix(in srgb, var(--accent-ink) 60%, transparent); background: transparent; }
+.folio-editor .sentence-edit:read-only:focus { outline: none; background: transparent; }
+.sentence-actions .sentence-state { margin-right: auto; }
 .folio-editor .sentence-edit:not(:read-only):hover { background: transparent; }
 .folio-spread { display: grid; grid-template-columns: 41% minmax(0, 1fr); }
 .folio-source { padding: 25px 24px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--source-size); line-height: 2.15; letter-spacing: .025em; border-right: 1px solid var(--border); }
@@ -460,15 +466,17 @@
   grid-template-columns: minmax(140px, 0.35fr) minmax(240px, 1fr);
   gap: 12px;
 }
-.draft-actions {
+#punctuationDraftActions {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  margin: 18px -22px -80px;
-  padding: 12px 22px;
+  margin-top: 20px;
+  background: var(--bg);
+}
+.draft-actions {
+  min-height: 52px;
+  padding: 10px 0;
   border-top: 1px solid var(--border);
-  background: color-mix(in oklch, var(--surface) 92%, transparent);
-  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1615,4 +1623,51 @@ details > summary.prep-sec-h {
   .ai-run-total {
     display: none;
   }
+}
+
+/* A quiet command bar above the manuscript, with secondary tools on demand. */
+.folio-editor .editor-commandbar { display: flex; align-items: center; gap: 10px; min-height: 40px; margin: -4px 0 0; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+.editor-command-group, .editor-command-actions { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.editor-command-actions { margin-left: auto; gap: 8px; }
+.editor-menu-group { border-left: 1px solid var(--border); padding-left: 10px; }
+.folio-editor .editor-commandbar .btn { min-height: 30px; white-space: nowrap; padding: 4px 8px; font-size: 11px; }
+.folio-editor .editor-commandbar .review-toolbar { margin: 0; padding: 0; }
+.editor-menu-trigger > span { margin-left: 4px; color: var(--muted); }
+#btnResearchMenu { anchor-name: --research-tools; }
+#btnReviewMenu { anchor-name: --review-tools; }
+#btnComparisonFilter { anchor-name: --comparison-filters; }
+.editor-tool-popover { position: fixed; inset: auto; top: anchor(bottom); left: anchor(left); position-try-fallbacks: flip-inline, flip-block; margin: 6px 0 0; width: 232px; max-width: calc(100vw - 24px); max-height: calc(100vh - 32px); overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: 8px; color: var(--fg); background: var(--surface); box-shadow: 0 8px 28px #292b271a, 0 2px 5px #292b270a; }
+#researchTools { position-anchor: --research-tools; }
+#reviewTools { position-anchor: --review-tools; }
+#comparisonFilterTools { position-anchor: --comparison-filters; }
+.editor-tool-popover .btn { display: flex; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 4px; box-shadow: none; text-align: left; font-size: 12px; background: transparent; }
+.editor-tool-popover .btn small { margin-left: auto; font-size: 10px; color: var(--muted); }
+.editor-tool-popover .btn:not(:disabled):hover { background: var(--fg-softer); }
+.editor-tool-popover .btn:focus-visible, .editor-commandbar .btn:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+.editor-menu-label { display: block; padding: 6px 10px; color: var(--muted); font-size: 10px; font-weight: 500; }
+.editor-menu-divider { height: 1px; margin: 5px 4px; background: var(--border); }
+.folio-editor .translation-controls { gap: 12px; padding: 8px 0 10px; font-size: 10px; }
+.folio-editor .translation-controls #alignmentStatus { flex: 1; min-width: 0; }
+.folio-editor .translation-controls #translationSaveStatus { flex-shrink: 0; color: var(--accent-ink); }
+.folio-editor .editor-selection-hint { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.folio-editor:has(#btnAddReviewComment[aria-pressed="true"]) .editor-selection-hint { display: block; position: static; width: auto; height: auto; margin: 0 0 12px; padding: 8px 12px; clip-path: none; white-space: normal; color: var(--accent-ink); background: var(--fg-softer); border-left: 2px solid var(--accent-ink); font-size: 11px; }
+.folio-editor .comparison-tools { gap: 8px; padding: 9px 16px; }
+.folio-editor .comparison-tools #comparisonSummary { flex: 1 1 180px; min-width: 0; font-size: 10px; line-height: 1.5; }
+.folio-editor .comparison-tools > .sp { display: none; }
+.folio-editor .comparison-tools .input { width: 130px; min-width: 90px; }
+.comparison-navigation { display: flex; align-items: center; gap: 2px; border-left: 1px solid var(--border); padding-left: 6px; }
+.editor-filter-popover { padding: 8px 12px 12px; }
+.editor-filter-popover .editor-menu-label { padding-inline: 0; }
+.editor-filter-popover .select { width: 100%; margin-bottom: 12px; }
+.editor-filter-popover .check { font-size: 12px; }
+#btnComparisonFilter.is-filtered { background: var(--accent-soft); color: var(--accent-ink); }
+#btnComparisonFilter.is-filtered::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+@container (max-width: 580px) {
+  .folio-editor .editor-commandbar { gap: 5px; flex-wrap: wrap; }
+  .editor-menu-group { padding-left: 5px; }
+  .editor-command-actions { gap: 4px; }
+  .editor-command-actions kbd { display: none; }
+  .folio-editor .editor-commandbar .btn { padding-inline: 6px; }
+  .folio-editor .comparison-tools #comparisonSummary { flex-basis: 100%; }
+  .folio-editor .comparison-tools .input { flex: 1; }
 }

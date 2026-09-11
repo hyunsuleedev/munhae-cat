@@ -27,6 +27,13 @@
 .account-profile { display: grid; justify-items: center; gap: 12px; }
 .account-profile[hidden] { display: none; }
 .account-avatar { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); font-size: 23px; }
+.account-identity { display: grid; justify-items: center; gap: 12px; min-width: 0; }
+.account-identity-copy { display: grid; gap: 5px; min-width: 0; }
+.account-setting-row { width: 100%; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border); }
+.account-setting-row h2 { font-size: 13px; font-weight: 550; margin: 0; }
+.account-setting-row p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.account-setting-row > div { flex: 1 1 180px; }
+.account-setting-row > button { flex: 0 0 auto; }
 #accountUserEmail { color: var(--muted); overflow-wrap: anywhere; max-width: 100%; }
 .account-profile > .btn { width: 100%; min-height: 36px; }
 .account-google { display: grid; gap: 12px; }

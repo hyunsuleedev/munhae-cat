@@ -1,0 +1,7 @@
+.review-export-dialog { width: min(540px, calc(100vw - 32px)); max-height: calc(100vh - 32px); }
+.review-export-fields { display: grid; gap: 16px; }
+.review-export-intro { margin: 0; line-height: 1.7; }
+.review-export-options { display: grid; grid-template-columns: 1fr 1.25fr; gap: 14px; }
+.review-export-help { margin: 0; font-size: 12px; line-height: 1.65; }
+.review-export-error { margin: 0; color: var(--danger, #9c3e32); font-size: 12px; }
+@media (max-width: 480px) { .review-export-options { grid-template-columns: 1fr; } }

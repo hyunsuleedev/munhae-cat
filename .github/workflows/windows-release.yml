@@ -1,0 +1,80 @@
+name: Windows x64 release
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the build to R2 (otherwise build artifacts only)'
+        type: boolean
+        default: false
+      unsigned_preview:
+        description: 'Publish without code signing as an explicitly labeled preview'
+        type: boolean
+        default: true
+      windows10_verified:
+        description: 'This revision passed fresh install and upgrade on Windows 10 x64'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: windows-stable-release
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    environment: windows-release
+    env:
+      MUNHAE_UPDATE_URL: ${{ vars.MUNHAE_UPDATE_URL }}
+      MUNHAE_REQUIRE_SIGNING: ${{ inputs.publish && !inputs.unsigned_preview }}
+      CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Require installation QA for publication
+        if: inputs.publish && !inputs.unsigned_preview && !inputs.windows10_verified
+        run: throw 'Verify this revision on Windows 10 before public release.'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @munhae/desktop typecheck
+      - run: pnpm --filter @munhae/desktop exec vitest run tests/update-controller.test.ts tests/update-logging.test.ts tests/quit-lifecycle.test.ts
+      - run: node --test scripts/release/release-utils.test.mjs
+      - run: pnpm --filter @munhae/agent-runtime exec vitest run tests/process-launch.test.ts
+      - run: node scripts/release/build-windows.mjs
+      - name: Install and launch packaged preview
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem apps/desktop/release/*-x64-setup.exe).FullName
+          $destination = Join-Path $env:RUNNER_TEMP 'MunhaeSmoke'
+          $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$destination") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed: $($install.ExitCode)" }
+          node scripts/release/smoke-packaged.mjs "$destination/Munhae Studio.exe"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged startup smoke failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: munhae-windows-x64-${{ github.run_number }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.blockmap
+            apps/desktop/release/latest.yml
+            apps/desktop/release/SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish to R2
+        if: inputs.publish
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ vars.R2_BUCKET }}
+          R2_PREFIX: ${{ vars.R2_PREFIX }}
+        shell: pwsh
+        run: |
+          if ('${{ inputs.unsigned_preview }}' -eq 'true') {
+            node scripts/release/publish-r2.mjs --publish --allow-unsigned
+          } else {
+            node scripts/release/publish-r2.mjs --publish
+          }

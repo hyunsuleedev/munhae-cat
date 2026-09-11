@@ -85,8 +85,10 @@ export function openProjectDb(packagePath: string): BootstrappedProject {
     assertProjectDbBaseline(dbPath);
     db = openSqlite(dbPath);
     const schema = db.prepare("SELECT max(version) AS version FROM meta_schema_migrations").get() as {version:number};
-    if (schema.version < PROJECT_SCHEMA_VERSION) {
-      const upgrade = schema.version === 1 ? "full-text" : schema.version === 2 ? "context-without-kind" : "review-comments";
+    // Retain backups for older translation/schema upgrades. The v4 knowledge
+    // removal intentionally discards person/place data without an archive.
+    const upgrade = schema.version === 1 ? "full-text" : schema.version === 2 ? "context-without-kind" : schema.version === 3 ? "review-comments" : schema.version === 5 ? "reading-annotations" : schema.version === 6 ? "translation-materials" : null;
+    if (schema.version < PROJECT_SCHEMA_VERSION && upgrade) {
       const backupPath = `${dbPath}.before-${upgrade}-${Date.now()}.bak`;
       db.exec(`VACUUM INTO '${backupPath.replaceAll("'", "''")}'`);
     }

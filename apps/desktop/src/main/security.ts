@@ -20,6 +20,25 @@ const EXTERNAL_HOST_ALLOWLIST = new Set([
   "support.anthropic.com",
   "console.anthropic.com",
   "claude.ai",
+  "hanja.dict.naver.com",
+  "dic.daum.net",
+  "oriental-dic.dankook.ac.kr",
+  "ko.wiktionary.org",
+  "zonmal.cafe24.com",
+  "kostma.aks.ac.kr",
+  "encykorea.aks.ac.kr",
+  "opendict.korean.go.kr",
+  "stdict.korean.go.kr",
+  "db.itkc.or.kr",
+  "kaikki.org",
+  "github.com",
+  "opensource.org",
+  "creativecommons.org",
+  "foundation.wikimedia.org",
+  "gongu.copyright.or.kr",
+  "www.kogl.or.kr",
+  "unicode.org",
+  "www.unicode.org",
 ]);
 
 export function isAllowedExternalUrl(urlString: string): boolean {
@@ -47,7 +66,7 @@ export function assertAllowedExternalUrl(urlString: string): URL {
     || url.password
     || !EXTERNAL_HOST_ALLOWLIST.has(url.hostname.toLowerCase())
   ) {
-    throw new AppError("invalid_url", "허용된 Codex·Claude 공식 문서 주소만 열 수 있습니다.");
+    throw new AppError("invalid_url", "등록된 사전·자료 출처와 공식 도움말 주소만 열 수 있습니다.");
   }
   return url;
 }

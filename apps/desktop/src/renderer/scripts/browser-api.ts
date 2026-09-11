@@ -1,6 +1,8 @@
 import { IPC_CHANNELS, type IpcChannel, type MunhaeApi } from "../../shared/munhae-api";
+import { createBrowserAccountEvents } from "./browser-auth-events";
 
 const BRIDGE_URL = "/__munhae/api";
+const accountEvents = createBrowserAccountEvents();
 
 async function invoke<T>(channel: IpcChannel, ...args: unknown[]): Promise<T> {
   const response = await fetch(BRIDGE_URL, {
@@ -15,6 +17,11 @@ async function invoke<T>(channel: IpcChannel, ...args: unknown[]): Promise<T> {
 
 export function createBrowserApi(): MunhaeApi {
   return {
+    dictionary: {
+      search: (input) => invoke(IPC_CHANNELS.dictionarySearch, input),
+      getStatus: () => invoke(IPC_CHANNELS.dictionaryGetStatus),
+      setKey: (input) => invoke(IPC_CHANNELS.dictionarySetKey, input),
+    },
     auth: {
       getState: () => invoke(IPC_CHANNELS.authGetState),
       signUp: (input) => invoke(IPC_CHANNELS.authSignUp, input),
@@ -26,12 +33,7 @@ export function createBrowserApi(): MunhaeApi {
       resendConfirmation: (email) => invoke(IPC_CHANNELS.authResendConfirmation, email),
       requestPasswordReset: (email) => invoke(IPC_CHANNELS.authRequestPasswordReset, email),
       updatePassword: (input) => invoke(IPC_CHANNELS.authUpdatePassword, input),
-      // The development browser shares Electron's account; refresh on focus.
-      onStateChanged: (handler) => {
-        const refresh = () => { void invoke<Awaited<ReturnType<MunhaeApi["auth"]["getState"]>>>(IPC_CHANNELS.authGetState).then((result) => { if (result.ok) handler(result.data); }).catch(() => undefined); };
-        window.addEventListener("focus", refresh);
-        return () => window.removeEventListener("focus", refresh);
-      },
+      onStateChanged: accountEvents.subscribe,
     },
     app: {
       getVersion: () => invoke(IPC_CHANNELS.appGetVersion),
@@ -40,6 +42,7 @@ export function createBrowserApi(): MunhaeApi {
       probeAgents: () => invoke(IPC_CHANNELS.appProbeAgents),
       getLoginInstruction: (agentId) => invoke(IPC_CHANNELS.appGetLoginInstruction, agentId),
       quit: () => invoke(IPC_CHANNELS.appQuit),
+      checkUpdates: async () => { throw new Error("업데이트 확인은 문해 데스크톱 앱에서 사용할 수 있습니다."); },
       openExternal: (url) => invoke(IPC_CHANNELS.appOpenExternal, url),
       onCommand: () => () => undefined,
     },
@@ -50,7 +53,9 @@ export function createBrowserApi(): MunhaeApi {
       getCurrent: () => invoke(IPC_CHANNELS.projectGetCurrent),
       listRecent: () => invoke(IPC_CHANNELS.projectListRecent),
       backup: () => invoke(IPC_CHANNELS.projectBackup),
-      exportConfirmed: (input) => invoke(IPC_CHANNELS.projectExportConfirmed, input),
+      concordance: (input) => invoke(IPC_CHANNELS.projectConcordance, input),
+    exportReview: (input) => invoke(IPC_CHANNELS.projectExportReview, input),
+    exportConfirmed: (input) => invoke(IPC_CHANNELS.projectExportConfirmed, input),
       search: (input) => invoke(IPC_CHANNELS.projectSearch, input),
       createFromPaste: (input) => invoke(IPC_CHANNELS.projectCreateFromPaste, input),
       seedDemo: () => invoke(IPC_CHANNELS.projectSeedDemo),
@@ -83,6 +88,9 @@ export function createBrowserApi(): MunhaeApi {
       createReviewComment: (input) => invoke(IPC_CHANNELS.editorCreateReviewComment, input),
       updateReviewComment: (input) => invoke(IPC_CHANNELS.editorUpdateReviewComment, input),
       archiveReviewComment: (input) => invoke(IPC_CHANNELS.editorArchiveReviewComment, input),
+      listReadingAnnotations: (documentNodeId) => invoke(IPC_CHANNELS.editorListReadingAnnotations, documentNodeId),
+      saveReadingAnnotation: (input) => invoke(IPC_CHANNELS.editorSaveReadingAnnotation, input),
+      archiveReadingAnnotation: (input) => invoke(IPC_CHANNELS.editorArchiveReadingAnnotation, input),
       attachReference: (documentNodeId) => invoke(IPC_CHANNELS.editorAttachReference, documentNodeId),
       readReference: (documentNodeId, assetId) =>
         invoke(IPC_CHANNELS.editorReadReference, documentNodeId, assetId),
@@ -91,12 +99,16 @@ export function createBrowserApi(): MunhaeApi {
     },
     research: {
       searchFootnotes: (input) => invoke(IPC_CHANNELS.researchSearchFootnotes, input),
+      startFootnoteAnalysis: (input) => invoke(IPC_CHANNELS.researchStartFootnoteAnalysis, input),
+      getFootnoteAnalysis: (id) => invoke(IPC_CHANNELS.researchGetFootnoteAnalysis, id),
+      cancelFootnoteAnalysis: (id) => invoke(IPC_CHANNELS.researchCancelFootnoteAnalysis, id),
     },
     knowledge: {
+    getMaterials: (documentNodeId) => invoke(IPC_CHANNELS.knowledgeGetMaterials, documentNodeId),
+    setMaterialPreference: (input) => invoke(IPC_CHANNELS.knowledgeSetMaterialPreference, input),
+    reuseCommentAsMaterial: (input) => invoke(IPC_CHANNELS.knowledgeReuseCommentAsMaterial, input),
       get: () => invoke(IPC_CHANNELS.knowledgeGet),
       upsertGlossary: (entry) => invoke(IPC_CHANNELS.knowledgeUpsertGlossary, entry),
-      upsertPerson: (person) => invoke(IPC_CHANNELS.knowledgeUpsertPerson, person),
-      upsertPlace: (place) => invoke(IPC_CHANNELS.knowledgeUpsertPlace, place),
       createContext: (input) => invoke(IPC_CHANNELS.knowledgeCreateContext, input),
       updateContext: (input) => invoke(IPC_CHANNELS.knowledgeUpdateContext, input),
       setContextEnabled: (input) => invoke(IPC_CHANNELS.knowledgeSetContextEnabled, input),

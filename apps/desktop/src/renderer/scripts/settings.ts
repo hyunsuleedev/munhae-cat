@@ -1,4 +1,6 @@
+import { previewNotificationSound } from "./notification-sounds";
 import { BUNDLED_SKILLS } from "@munhae/db-sqlite/bundled-skills";
+import { mountAccount } from "./account-ui";
 import type { AgentProbe, AppConfig, DocumentListItem, HomeView } from "../../shared/munhae-api";
 import {
   bindSidebar,
@@ -13,13 +15,18 @@ import {
 } from "./shared";
 
 type AgentId = AppConfig["agentId"];
-type SectionId = "models" | "skills" | "general";
+type SectionId = "account" | "models" | "skills" | "general";
 
 const shell = initShell({ page: "settings", selfTitle: "설정" });
 const api = shell.api;
+let accountPanel: ReturnType<typeof mountAccount> | undefined;
+let activeSection: SectionId | undefined;
 
 let config: AppConfig | null = null;
 let agents: AgentProbe[] = [];
+let agentProbePending = false;
+let agentProbeFailed = false;
+let hasFreshAgentProbes = false;
 let docs: DocumentListItem[] = [];
 let saveRevision = 0;
 let saveChain: Promise<void> = Promise.resolve();
@@ -47,14 +54,15 @@ function agentMark(agentId: AgentId): string {
 }
 
 function statusMeta(probe: AgentProbe | undefined): { label: string; cls: string } {
-  if (!probe?.installed) return { label: "미설치", cls: "warn" };
+  if (!probe) return { label: agentProbePending ? "확인 중" : "확인 불가", cls: "" };
+  if (!probe.installed) return { label: "미설치", cls: "warn" };
   if (probe.loggedIn === true) return { label: "로그인됨", cls: "ok" };
   if (probe.loggedIn === false) return { label: "로그인 필요", cls: "warn" };
   return { label: "설치됨", cls: "" };
 }
 
 function agentDescription(probe: AgentProbe | undefined): string {
-  if (!probe) return "CLI 설치 상태를 확인하지 못했습니다.";
+  if (!probe) return agentProbePending ? "AI 연결 상태를 확인하고 있습니다." : "CLI 설치 상태를 확인하지 못했습니다.";
   if (!probe.installed) return "이 기기의 PATH에서 실행 파일을 찾지 못했습니다.";
   if (probe.agentId === "antigravity" && probe.modelSource !== "live") return "agy에서 로그인하고 모델을 선택하세요. 실행할 때 연결 상태를 확인합니다.";
   if (probe.modelSource === "live") return "사용 가능한 모델과 실행 옵션을 CLI에서 확인했습니다.";
@@ -148,9 +156,13 @@ function renderAgentCard(agentId: AgentId): string {
 
 function renderAgents(): void {
   if (!config) return;
-  must("#cliList").innerHTML = (["claude", "codex", "antigravity"] as const).map(renderAgentCard).join("");
+  must("#cliList").innerHTML = agentProbePending && !agents.length
+    ? '<p class="empty" role="status">AI 연결 상태를 확인하고 있습니다.</p>'
+    : (["claude", "codex", "antigravity"] as const).map(renderAgentCard).join("");
   const installed = agents.filter((agent) => agent.installed).length;
-  must("#installedCount").textContent = agents.length ? `${installed}개 설치됨` : "상태 확인 불가";
+  must("#installedCount").textContent = agentProbePending
+    ? agents.length ? `${installed}개 설치됨 · 확인 중` : "확인 중"
+    : agentProbeFailed ? "확인 실패" : agents.length ? `${installed}개 설치됨` : "상태 확인 불가";
   const selected = agents.find((agent) => agent.agentId === config?.agentId);
   const selectedStatus = statusMeta(selected);
   must("#settingsAgent").innerHTML = `<i class="dot ${selectedStatus.cls}"></i>${esc(agentName(config.agentId))} · ${esc(selectedStatus.label)}`;
@@ -169,7 +181,7 @@ function scheduleSave(): void {
   const revision = ++saveRevision;
   setSaveState("저장 중…");
   saveChain = saveChain.then(async () => {
-    if (!config) return;
+    if (!config || revision !== saveRevision) return;
     const snapshot: AppConfig = {
       agentId: config.agentId,
       agentModels: {
@@ -178,6 +190,10 @@ function scheduleSave(): void {
         antigravity: { ...config.agentModels.antigravity },
       },
       showWelcomeOnLaunch: config.showWelcomeOnLaunch,
+      backgroundMusicEnabled: config.backgroundMusicEnabled,
+      backgroundMusicVolume: config.backgroundMusicVolume,
+      notificationSoundEnabled: config.notificationSoundEnabled,
+      notificationSoundVolume: config.notificationSoundVolume,
     };
     try {
       const saved = await api.app.setConfig(snapshot);
@@ -221,42 +237,51 @@ function renderSkills(): void {
 }
 
 function setSection(section: SectionId): void {
+  if (activeSection === "account" && section !== "account") accountPanel?.deactivate();
+  activeSection = section;
+  if (section === "account" && !accountPanel) accountPanel = mountAccount(api, { embedded: true });
   document.querySelectorAll<HTMLElement>("[data-settings-section]").forEach((button) => {
     const current = button.dataset.settingsSection === section;
     button.classList.toggle("is-current", current);
     if (current) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
-  const pages: Record<SectionId, string> = { models: "#settingsModels", skills: "#settingsSkills", general: "#settingsGeneral" };
+  const pages: Record<SectionId, string> = { account: "#settingsAccount", models: "#settingsModels", skills: "#settingsSkills", general: "#settingsGeneral" };
   for (const [id, selector] of Object.entries(pages)) {
     const page = must(selector);
     page.classList.toggle("is-open", section === id);
     page.hidden = section !== id;
   }
   history.replaceState(null, "", section === "models" ? "settings.html" : `settings.html#${section}`);
+  must("#saveState").hidden = section === "account";
+  must("#settingsPath").textContent = section === "account" ? "문해 계정" : "앱 설정 · 프로젝트 밖에 저장";
 }
 
 function sectionFromHash(): SectionId {
-  return location.hash === "#skills" ? "skills" : location.hash === "#general" ? "general" : "models";
+  return location.hash === "#account" ? "account" : location.hash === "#skills" ? "skills" : location.hash === "#general" ? "general" : "models";
 }
 
 window.addEventListener("hashchange", () => setSection(sectionFromHash()));
 
-async function rescanAgents(): Promise<void> {
+async function rescanAgents(showFailure = true): Promise<void> {
+  if (agentProbePending) return;
+  agentProbePending = true;
+  agentProbeFailed = false;
   const button = must<HTMLButtonElement>("#btnRescan");
   button.disabled = true;
   button.textContent = "확인 중…";
-  must("#installedCount").textContent = "확인 중";
+  renderAgents();
   try {
     agents = await api.app.probeAgents();
-    setAgentChrome(agents, undefined, config?.agentId);
-    renderAgents();
+    hasFreshAgentProbes = true;
   } catch (error) {
-    notify(error instanceof Error ? error.message : "CLI 상태를 확인하지 못했습니다.", "로컬 CLI");
-    must("#installedCount").textContent = "확인 실패";
+    agentProbeFailed = true;
+    if (showFailure) notify(error instanceof Error ? error.message : "CLI 상태를 확인하지 못했습니다.", "로컬 CLI");
   } finally {
+    agentProbePending = false;
     button.disabled = false;
     button.textContent = "다시 확인";
+    renderAgents();
   }
 }
 
@@ -329,21 +354,65 @@ must<HTMLInputElement>("#showWelcome").addEventListener("change", (event) => {
   scheduleSave();
 });
 
+must<HTMLInputElement>("#backgroundMusicVolume").addEventListener("input", (event) => {
+  if (!config) return;
+  config.backgroundMusicVolume = Number((event.currentTarget as HTMLInputElement).value);
+  must<HTMLOutputElement>("#backgroundMusicVolumeValue").value = `${config.backgroundMusicVolume}%`;
+  window.dispatchEvent(new CustomEvent<AppConfig>("munhae:config-changed", { detail: config }));
+  scheduleSave();
+});
+
+must<HTMLInputElement>("#backgroundMusic").addEventListener("change", (event) => {
+  if (!config) return;
+  config.backgroundMusicEnabled = (event.currentTarget as HTMLInputElement).checked;
+  window.dispatchEvent(new CustomEvent<AppConfig>("munhae:config-changed", { detail: config }));
+  scheduleSave();
+});
+
+must<HTMLInputElement>("#notificationSound").addEventListener("change", event => {
+  if (!config) return;
+  config.notificationSoundEnabled = (event.currentTarget as HTMLInputElement).checked;
+  window.dispatchEvent(new CustomEvent<AppConfig>("munhae:config-changed", { detail: config }));
+  scheduleSave();
+});
+must<HTMLInputElement>("#notificationVolume").addEventListener("input", event => {
+  if (!config) return;
+  config.notificationSoundVolume = Number((event.currentTarget as HTMLInputElement).value);
+  must<HTMLOutputElement>("#notificationVolumeValue").value = `${config.notificationSoundVolume}%`;
+  window.dispatchEvent(new CustomEvent<AppConfig>("munhae:config-changed", { detail: config }));
+  scheduleSave();
+});
+must("#previewChatSound").addEventListener("click", () => previewNotificationSound("chat"));
+must("#previewStageSound").addEventListener("click", () => previewNotificationSound("stage"));
+
 must("#btnRescan").addEventListener("click", () => void rescanAgents());
 
 async function load(): Promise<void> {
-  const [loadedConfig, loadedAgents, project] = await Promise.all([
+  // CLI probing can take seconds. Show local settings and cached results first.
+  void rescanAgents(false);
+  const [loadedConfig, project] = await Promise.all([
     api.app.getConfig(),
-    api.app.probeAgents().catch(() => []),
     api.project.getCurrent().catch(() => null),
   ]);
   config = loadedConfig;
-  agents = loadedAgents;
+  must<HTMLInputElement>("#notificationSound").checked = config.notificationSoundEnabled;
+  must<HTMLInputElement>("#notificationVolume").value = String(config.notificationSoundVolume);
+  must<HTMLOutputElement>("#notificationVolumeValue").value = `${config.notificationSoundVolume}%`;
+  for (const id of ["#notificationSound", "#notificationVolume", "#previewChatSound", "#previewStageSound"]) must<HTMLInputElement>(id).disabled = false;
+  must<HTMLInputElement>("#backgroundMusicVolume").value = String(config.backgroundMusicVolume);
+  must<HTMLInputElement>("#backgroundMusicVolume").disabled = false;
+  must<HTMLOutputElement>("#backgroundMusicVolumeValue").value = `${config.backgroundMusicVolume}%`;
+  must<HTMLInputElement>("#backgroundMusic").checked = config.backgroundMusicEnabled;
+  must<HTMLInputElement>("#backgroundMusic").disabled = false;
   must<HTMLInputElement>("#showWelcome").checked = config.showWelcomeOnLaunch;
   if (project) {
     document.querySelector(".titlebar .tb-c small")!.textContent = `${project.title} · 앱 전체`;
     const home = await api.home.get();
-    if (home.ok) docs = home.data.documents;
+    if (home.ok) {
+      docs = home.data.documents;
+      // A fast live result must not be overwritten by an older home snapshot.
+      if (!hasFreshAgentProbes) agents = home.data.agents;
+    }
   }
   setAgentChrome(agents, undefined, config.agentId);
   renderSidebar(tree());

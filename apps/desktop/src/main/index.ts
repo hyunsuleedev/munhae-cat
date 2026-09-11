@@ -1,7 +1,9 @@
 /// <reference types="electron-vite/node" />
 
 import { resolve } from "node:path";
-import { app } from "electron";
+import { app, dialog } from "electron";
+import { initAppUpdates, canQuitForUpdate, cancelUpdateInstall, finishUpdateQuit, stopAppUpdateChecks } from "./app-updates";
+import { initFileLogging } from "./log";
 import { startBrowserBridge, stopBrowserBridge } from "./browser-bridge";
 import { log } from "./log";
 import { installApplicationMenu } from "./menu";
@@ -20,6 +22,7 @@ import {
   createMainWindow,
   focusMainWindow,
   getMainWindow,
+  loadRenderer,
   prepareMainWindowForProjectSwitch,
   prepareMainWindowForQuit,
   showProjectHome,
@@ -29,6 +32,7 @@ import { shutdownAgentRuntime } from "./agent-runtime-client";
 import { stopAgentToolBridge } from "./agent-tool-bridge";
 import { initAccount, shutdownAccount } from "./auth";
 import { createQuitHandler } from "./quit-lifecycle";
+import { installStartup } from "./startup";
 
 app.setName("Munhae Studio");
 
@@ -43,9 +47,20 @@ function boot(): void {
   let queuedOpen: string | null = projectPathFromArgv(process.argv);
   let readyForExternalOpen = false;
   let openQueue = Promise.resolve();
+  let startup: ReturnType<typeof installStartup> | null = null;
+  let stopping = false;
 
   const enqueueExternalOpen = (filePath: string): void => {
     openQueue = openQueue.then(() => openFromOs(filePath));
+  };
+  const acceptExternalOpens = (): void => {
+    if (stopping) return;
+    readyForExternalOpen = true;
+    if (queuedOpen) {
+      const path = queuedOpen;
+      queuedOpen = null;
+      enqueueExternalOpen(path);
+    }
   };
 
   registerAppSecurity();
@@ -70,11 +85,31 @@ function boot(): void {
   });
 
   app.whenReady().then(async () => {
+    initFileLogging(app.getPath("logs"));
+    log.info("startup", { version: app.getVersion(), platform: process.platform, arch: process.arch, electron: process.versions.electron });
+    let startupPrepared = false;
+    startup = installStartup({
+      getWindow: getMainWindow,
+      enter: async (page) => {
+        const win = getMainWindow();
+        if (!win || stopping) return;
+        await loadRenderer(win, page);
+        acceptExternalOpens();
+      },
+    });
+    const startupWindow = createMainWindow("splash.html");
+    startupWindow.once("closed", () => {
+      startup?.dispose();
+      // macOS can reopen the app after its first window is closed mid-transition.
+      if (startupPrepared) acceptExternalOpens();
+    });
     installApplicationMenu();
     initSession(app.getPath("userData"));
     await initAccount();
+    if (stopping) return;
     startBrowserBridge();
     registerIpcHandlers();
+    initAppUpdates();
 
     let initialPage: "index.html" | "home.html" = "index.html";
     const launchPath = queuedOpen
@@ -92,19 +127,25 @@ function boot(): void {
         });
       }
     }
-    createMainWindow(initialPage);
-    readyForExternalOpen = true;
-
-    if (queuedOpen) {
-      const path = queuedOpen;
-      queuedOpen = null;
-      enqueueExternalOpen(path);
+    if (stopping) return;
+    startupPrepared = true;
+    if (startupWindow.isDestroyed()) {
+      acceptExternalOpens();
+      return;
     }
+    startup.ready(initialPage);
   }).catch((error: unknown) => {
-    log.error("app ready failed", { name: error instanceof Error ? error.name : "unknown" });
+    startup?.fail();
+    log.error("app ready failed", error);
+    dialog.showErrorBox("문해 시작 오류", `문해를 시작하지 못했습니다. 진단 로그를 확인해 주세요.\n${app.getPath("logs")}`);
   });
 
   app.on("activate", () => {
+    if (!readyForExternalOpen) {
+      const win = getMainWindow();
+      if (win) { win.show(); win.focus(); }
+      return;
+    }
     if (!getMainWindow()) createMainWindow(getCurrentSummary() ? "home.html" : "index.html");
     else focusMainWindow();
   });
@@ -114,8 +155,21 @@ function boot(): void {
   });
 
   const handleQuit = createQuitHandler({
-    prepare: prepareMainWindowForQuit,
+    prepare: async () => {
+      if (!canQuitForUpdate()) {
+        cancelUpdateInstall();
+        focusMainWindow();
+        await dialog.showMessageBox({ message: "AI 작업이 끝난 뒤 업데이트를 설치해 주세요." });
+        return false;
+      }
+      const accepted = await prepareMainWindowForQuit();
+      if (!accepted) cancelUpdateInstall();
+      return accepted;
+    },
     shutdown: async () => {
+      stopping = true;
+      stopAppUpdateChecks();
+      startup?.dispose();
       stopBrowserBridge();
       await cancelAllAiRuns();
       await shutdownAgentRuntime();
@@ -123,8 +177,9 @@ function boot(): void {
       shutdownSession();
       shutdownAccount();
     },
-    quit: () => app.quit(),
+    quit: () => { if (!finishUpdateQuit()) app.quit(); },
     onError: (error) => {
+      cancelUpdateInstall();
       log.error("app shutdown failed", { name: error instanceof Error ? error.name : "unknown" });
       focusMainWindow();
     },

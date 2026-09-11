@@ -73,6 +73,13 @@ export function parseAppConfig(value: unknown): AppConfig {
     agentId,
     agentModels: { codex, claude, antigravity },
     showWelcomeOnLaunch,
+    backgroundMusicVolume: typeof rec.backgroundMusicVolume === "number" && Number.isFinite(rec.backgroundMusicVolume)
+      ? Math.round(Math.min(100, Math.max(0, rec.backgroundMusicVolume)))
+      : DEFAULT_APP_CONFIG.backgroundMusicVolume,
+    notificationSoundEnabled: typeof rec.notificationSoundEnabled === "boolean" ? rec.notificationSoundEnabled : true,
+    notificationSoundVolume: typeof rec.notificationSoundVolume === "number" && Number.isFinite(rec.notificationSoundVolume)
+      ? Math.round(Math.min(100, Math.max(0, rec.notificationSoundVolume))) : 35,
+    backgroundMusicEnabled: typeof rec.backgroundMusicEnabled === "boolean" ? rec.backgroundMusicEnabled : true,
   };
 }
 
@@ -85,7 +92,7 @@ export function parseConfigPatch(value: unknown): Partial<AppConfig> {
       throw new AppError("invalid_payload", "설정에 비밀 값을 저장할 수 없습니다.");
     }
   }
-  const allowed = new Set(["agentId", "agentModels", "showWelcomeOnLaunch"]);
+  const allowed = new Set(["agentId", "agentModels", "showWelcomeOnLaunch", "backgroundMusicEnabled", "backgroundMusicVolume", "notificationSoundEnabled", "notificationSoundVolume"]);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) {
       throw new AppError("invalid_payload", "알 수 없는 설정 항목입니다.");
@@ -96,6 +103,10 @@ export function parseConfigPatch(value: unknown): Partial<AppConfig> {
   if ("agentId" in value) patch.agentId = parsed.agentId;
   if ("agentModels" in value) patch.agentModels = parsed.agentModels;
   if ("showWelcomeOnLaunch" in value) patch.showWelcomeOnLaunch = parsed.showWelcomeOnLaunch;
+  if ("backgroundMusicEnabled" in value) patch.backgroundMusicEnabled = parsed.backgroundMusicEnabled;
+  if ("backgroundMusicVolume" in value) patch.backgroundMusicVolume = parsed.backgroundMusicVolume;
+  if ("notificationSoundEnabled" in value) patch.notificationSoundEnabled = parsed.notificationSoundEnabled;
+  if ("notificationSoundVolume" in value) patch.notificationSoundVolume = parsed.notificationSoundVolume;
   return patch;
 }
 

@@ -6,7 +6,7 @@ import {
   sha256Hex,
   sliceCodepoints,
 } from "@munhae/domain";
-import { contextItemContentHash } from "./knowledge-content.ts";
+import { contextItemContentHash, materialOriginFromJson } from "./knowledge-content.ts";
 import type { ProjectActors } from "./bootstrap.ts";
 import { allRows, getRow, insertRow } from "./rows.ts";
 import type { SqliteDb } from "./sqlite.ts";
@@ -59,7 +59,6 @@ export function getDocumentMetadata(
     is_master: number;
     title: string;
     original_title: string | null;
-    author_person_id: string | null;
     author_name: string | null;
     language: string | null;
     period_text: string | null;
@@ -72,11 +71,10 @@ export function getDocumentMetadata(
     db,
     `SELECT node.id, node.parent_node_id, node.node_role, node.is_master,
             node.title, node.original_title,
-            node.author_person_id, person.preferred_name AS author_name,
+            node.author_text AS author_name,
             node.language, node.period_text, node.date_text, node.description_md,
             node.source_reference, node.lock_version, node.updated_at
      FROM document_nodes node
-     LEFT JOIN persons person ON person.id = node.author_person_id
      WHERE node.id = ? AND node.project_id = ? AND node.archived_at IS NULL`,
     documentNodeId,
     projectId,
@@ -89,7 +87,6 @@ export function getDocumentMetadata(
     isMaster: row.is_master === 1,
     title: row.title,
     originalTitle: row.original_title,
-    authorPersonId: row.author_person_id,
     authorName: row.author_name,
     language: row.language,
     periodText: row.period_text,
@@ -112,19 +109,10 @@ export function updateDocumentMetadata(
     if (current.isMaster && input.title.trim() !== current.title) {
       throw new MunhaeError("immutable_master", "프로젝트 마스터 제목은 프로젝트 설정에서만 바꿀 수 있습니다");
     }
-    if (input.authorPersonId) {
-      const author = getRow<{ id: string }>(
-        db,
-        `SELECT id FROM persons WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-        input.authorPersonId,
-        projectId,
-      );
-      if (!author) throw new MunhaeError("invalid_author", "같은 프로젝트의 활성 인물만 저자로 지정할 수 있습니다");
-    }
     const info = db.prepare(
       `UPDATE document_nodes
        SET title = @title, original_title = @originalTitle,
-           author_person_id = @authorPersonId, language = @language,
+           author_text = @authorName, language = @language,
            period_text = @periodText, date_text = @dateText,
            description_md = @descriptionMd, source_reference = @sourceReference,
            lock_version = lock_version + 1, updated_at = @now
@@ -135,7 +123,7 @@ export function updateDocumentMetadata(
       projectId,
       title: input.title.trim(),
       originalTitle: nullable(input.originalTitle),
-      authorPersonId: input.authorPersonId,
+      authorName: nullable(input.authorName),
       language: nullable(input.language),
       periodText: nullable(input.periodText),
       dateText: nullable(input.dateText),
@@ -156,9 +144,13 @@ function validateContextInput(input: CreateContextItemInput): void {
   if (!Number.isInteger(input.priority) || Math.abs(input.priority) > 1_000_000) {
     throw new MunhaeError("invalid_input", "문맥 카드 우선순위가 올바르지 않습니다");
   }
+  if (input.inheritToChildren !== undefined && typeof input.inheritToChildren !== "boolean")
+    throw new MunhaeError("invalid_input", "하위 문서 적용 여부가 올바르지 않습니다");
+  if (input.conditionMd !== undefined && (typeof input.conditionMd !== "string" || input.conditionMd.length > 20_000))
+    throw new MunhaeError("invalid_input", "적용 조건이 올바르지 않습니다");
 }
 
-function loadContextItem(db: SqliteDb, projectId: string, id: string): NodeContextView {
+export function loadContextItem(db: SqliteDb, projectId: string, id: string): NodeContextView {
   const row = getRow<{
     id: string;
     scope_id: string;
@@ -168,12 +160,15 @@ function loadContextItem(db: SqliteDb, projectId: string, id: string): NodeConte
     enabled: number;
     lock_version: number;
     updated_at: string;
+    inherit_to_children: number;
+    condition_md: string;
+    origin_json: string | null;
   }>(
     db,
-    `SELECT id, scope_id, title, content_md, priority, enabled,
-            lock_version, updated_at
-     FROM context_items
-     WHERE id = ? AND project_id = ? AND archived_at IS NULL
+    `SELECT item.id, scope_id, title, content_md, priority, enabled,
+            lock_version, updated_at, inherit_to_children, condition_md, artifact.payload_json AS origin_json
+     FROM context_items item LEFT JOIN provenance_artifacts artifact ON artifact.id = item.origin_artifact_id
+     WHERE item.id = ? AND item.project_id = ? AND item.archived_at IS NULL
        AND scope_kind = 'document_node'`,
     id,
     projectId,
@@ -190,6 +185,9 @@ function loadContextItem(db: SqliteDb, projectId: string, id: string): NodeConte
     enabled: row.enabled === 1,
     lockVersion: row.lock_version,
     updatedAt: row.updated_at,
+    inheritToChildren: row.inherit_to_children === 1,
+    conditionMd: row.condition_md,
+    origin: materialOriginFromJson(row.origin_json),
   };
 }
 
@@ -212,6 +210,8 @@ export function createContextItem(
       content_md: input.contentMd,
       priority: input.priority,
       enabled: input.enabled ? 1 : 0,
+      inherit_to_children: input.inheritToChildren === false ? 0 : 1,
+      condition_md: input.conditionMd?.trim() ?? "",
       content_hash: contextItemContentHash(input),
       lock_version: 1,
       created_at: now,
@@ -241,12 +241,15 @@ export function updateContextItem(
   const { db, projectId } = context;
   return db.transaction(() => {
     validateContextInput(input);
-    requireContextCas(db, projectId, input);
+    const current = requireContextCas(db, projectId, input);
+    input = { ...input, inheritToChildren: input.inheritToChildren ?? current.inheritToChildren ?? true,
+      conditionMd: input.conditionMd ?? current.conditionMd ?? "" };
     requireActiveNode(db, projectId, input.scopeId);
     const info = db.prepare(
       `UPDATE context_items
        SET scope_id = @scopeId, title = @title,
            content_md = @contentMd, priority = @priority, enabled = @enabled,
+           inherit_to_children = @inheritToChildren, condition_md = @conditionMd,
            content_hash = @hash, lock_version = lock_version + 1, updated_at = @now
        WHERE id = @id AND project_id = @projectId AND archived_at IS NULL
          AND lock_version = @expectedLockVersion`,
@@ -258,6 +261,8 @@ export function updateContextItem(
       contentMd: input.contentMd,
       priority: input.priority,
       enabled: input.enabled ? 1 : 0,
+      inheritToChildren: input.inheritToChildren === false ? 0 : 1,
+      conditionMd: input.conditionMd?.trim() ?? "",
       hash: contextItemContentHash(input),
       expectedLockVersion: input.expectedLockVersion,
       now: nowIso(),
@@ -309,6 +314,8 @@ export function archiveContextItem(context: MutableKnowledgeContext, input: Cont
         contentMd: current.contentMd,
         priority: current.priority,
         enabled: false,
+        inheritToChildren: current.inheritToChildren,
+        conditionMd: current.conditionMd,
       }),
       now,
       input.id,

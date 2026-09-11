@@ -1,20 +1,29 @@
 import type { CreateReviewCommentInput, EditorView, MunhaeApi, ReviewCommentView } from "../../shared/munhae-api";
-import { textareaRange } from "./review-selection";
+import { textareaRange, sourceDisplayFromElement, sourceRangeFromDisplay } from "./review-selection";
 import { configureReviewMarks, type ReviewMarkRange } from "./review-marks";
 import { configureFootnoteSearch } from "./footnote-search-ui";
 import { appendFootnoteCitation } from "./footnote-citation";
+import { appendFootnoteRecommendation } from "./footnote-analysis-citation";
+import { appendDictionaryCitation } from "./dictionary-citation";
+import type { DictionaryContext } from "./dictionary-ui";
+import { configureReviewContextMenu, sourceSnapshotIsCurrent, type ReviewSourceSnapshot, type ReviewSourceState } from "./review-context-menu";
+import "../styles/review-context-menu.css";
 
 type Revision = { baseVersionId: string; commentIds: string[] };
 type Deps = {
   api: MunhaeApi;
   view(): EditorView | null;
   hasUnsavedChanges(): boolean;
-  canEditTranslation(): boolean;
+  hasUnsavedTextChanges?(): boolean;
+  canEditTranslation(sentenceId: string): boolean;
   escape(value: unknown): string;
   notify(message: string, title?: string): void;
-  showComments(): void;
+  showComments(layout?: "parallel" | "full"): void;
   retranslate(revision: Revision): void;
   compare(): Promise<void>;
+  reuseComment?(comment: ReviewCommentView): void;
+  openDictionary?(context: DictionaryContext): void;
+  changed?(): void;
 };
 type SelectionTarget = Omit<CreateReviewCommentInput, "bodyMd">;
 
@@ -38,8 +47,128 @@ export function configureReviewComments(deps: Deps) {
   let versionKey = "";
   const included = new Set<string>();
   const dialog = el<HTMLDialogElement>("#dlgReviewComment");
-  const marks = configureReviewMarks(el("#rows"));
-  const footnotes = configureFootnoteSearch(deps.api, esc);
+  const marks = configureReviewMarks(el("#translationWorkspace"));
+  const footnotes = configureFootnoteSearch(deps.api, esc, { view: deps.view, hasUnsavedChanges: deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges });
+  const contextMenu = configureReviewContextMenu(el("#translationWorkspace"), captureContextSelection);
+
+  function sourceState(): ReviewSourceState | null {
+    const v = deps.view();
+    return v ? {
+      documentNodeId: v.document.id,
+      sourceVersionId: v.source.versionId,
+      punctuationVersionId: v.punctuation?.versionId ?? null,
+      translationVersionId: v.translation?.versionId ?? null,
+      sourceText: v.source.contentText,
+    } : null;
+  }
+
+  function captureContextSelection(invocation: { target: EventTarget | null; keyboard: boolean }) {
+    if (dialog.open || document.querySelector("dialog[open]") || loading || saving) return null;
+    const state = sourceState();
+    const selection = window.getSelection();
+    if (!state || !selection || selection.isCollapsed || selection.rangeCount !== 1) return null;
+    const range = selection.getRangeAt(0);
+    const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement;
+    const source = start?.closest<HTMLElement>("[data-review-source-from]");
+    if (!source || !el("#translationWorkspace").contains(source) || !source.contains(range.endContainer)
+      || !invocation.keyboard && (!(invocation.target instanceof Node) || !source.contains(invocation.target))) return null;
+    const display = sourceDisplayFromElement(source);
+    if (!display || Array.from(state.sourceText).slice(display.sourceFrom, display.sourceFrom + Array.from(display.sourceText).length).join("") !== display.sourceText) return null;
+    const before = document.createRange();
+    before.selectNodeContents(source);
+    before.setEnd(range.startContainer, range.startOffset);
+    const from = Array.from(before.toString()).length;
+    const mapped = sourceRangeFromDisplay(display, from, from + Array.from(range.toString()).length);
+    if (!mapped) return null;
+    const snapshot: ReviewSourceSnapshot = {
+      documentNodeId: state.documentNodeId,
+      sourceVersionId: state.sourceVersionId,
+      punctuationVersionId: state.punctuationVersionId,
+      translationVersionId: state.translationVersionId,
+      ...mapped,
+    };
+    const stillCurrent = () => {
+      if (sourceSnapshotIsCurrent(snapshot, sourceState()) && !loading && !saving && !document.querySelector("dialog[open]")) return true;
+      deps.notify("문서나 원문이 바뀌었습니다. 구절을 다시 선택해 주세요.", "선택 구절");
+      return false;
+    };
+    const canSearch = Array.from(snapshot.quote.trim()).length <= 100;
+    return {
+      quote: snapshot.quote,
+      rects: [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
+      actions: [
+        {
+          id: "comment", label: "코멘트 달기", enabled: selectionReady(),
+          description: selectionReady() ? undefined : "현재 번역의 편집 내용을 저장한 뒤 코멘트를 남길 수 있습니다.",
+          run: () => {
+            if (!stillCurrent() || !selectionReady() || !snapshot.translationVersionId) return;
+            selected = {
+              documentNodeId: snapshot.documentNodeId,
+              translationVersionId: snapshot.translationVersionId,
+              targetKind: "source",
+              targetVersionId: snapshot.sourceVersionId,
+              codepointFrom: snapshot.from,
+              codepointTo: snapshot.to,
+              quote: snapshot.quote,
+            };
+            openComment();
+          },
+        },
+        {
+          id: "dictionary", label: "한자·어휘 사전", enabled: canSearch && !!deps.openDictionary,
+          description: "선택한 한자나 어휘의 한국어 뜻을 찾습니다.",
+          run: () => {
+            if (!stillCurrent()) return;
+            cancelSelection();
+            clearNativeSelection();
+            deps.openDictionary?.({
+              query: snapshot.quote, quote: snapshot.quote,
+              isCurrent: () => sourceSnapshotIsCurrent(snapshot, sourceState()),
+              insert: selectionReady() && snapshot.translationVersionId ? citation => {
+                if (!sourceSnapshotIsCurrent(snapshot, sourceState()) || !selectionReady() || !snapshot.translationVersionId) {
+                  throw new Error("문서나 번역이 바뀌었습니다. 현재 구절을 다시 선택해 주세요.");
+                }
+                selected = {
+                  documentNodeId: snapshot.documentNodeId, translationVersionId: snapshot.translationVersionId,
+                  targetKind: "source", targetVersionId: snapshot.sourceVersionId,
+                  codepointFrom: snapshot.from, codepointTo: snapshot.to, quote: snapshot.quote,
+                };
+                openComment();
+                el<HTMLTextAreaElement>("#reviewCommentBody").value = citation;
+              } : undefined,
+            });
+          },
+        },
+        {
+          id: "footnote", label: "각주 검색", enabled: canSearch,
+          description: canSearch ? "선택한 구절로 한국고전종합DB의 각주 용례를 검색합니다." : "각주 검색은 100자 이하의 구절을 선택하세요.",
+          run: () => {
+            if (!stillCurrent()) return;
+            cancelSelection();
+            clearNativeSelection();
+            footnotes.openAndSearch({ query: snapshot.quote, quote: snapshot.quote,
+              selection: { targetKind: "source", from: snapshot.from, to: snapshot.to, quote: snapshot.quote },
+              isCurrent: () => sourceSnapshotIsCurrent(snapshot, sourceState()),
+            });
+          },
+        },
+        {
+          id: "footnote-ai", label: "AI 각주 추천", enabled: canSearch && !(deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()
+            && (!deps.view()?.translation || !!deps.view()?.translation?.isCurrentDependencies),
+          description: "선택한 구절의 문맥과 각주 자료를 AI가 대조해 추립니다.",
+          run: () => {
+            if (!stillCurrent() || (deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()) return;
+            cancelSelection();
+            clearNativeSelection();
+            footnotes.openAndAnalyze({ query: snapshot.quote, quote: snapshot.quote,
+              selection: { targetKind: "source", from: snapshot.from, to: snapshot.to, quote: snapshot.quote },
+              isCurrent: () => sourceSnapshotIsCurrent(snapshot, sourceState()),
+            });
+          },
+        },
+      ],
+    };
+  }
 
   function eligible(comment: ReviewCommentView): boolean {
     const v = deps.view();
@@ -67,16 +196,17 @@ export function configureReviewComments(deps: Deps) {
     button.title = selecting ? "코멘트 선택 모드 끄기 (Esc)" : "코멘트 선택 모드 켜기";
     el("#rows").classList.toggle("is-comment-selecting", selecting);
     for (const textarea of el("#rows").querySelectorAll<HTMLTextAreaElement>(".sentence-edit")) {
-      textarea.readOnly = selecting || !deps.canEditTranslation();
+      textarea.readOnly = selecting || !deps.canEditTranslation(textarea.dataset.sentenceEdit ?? "");
     }
     el("#reviewSelectionHint").textContent = selecting
       ? "코멘트를 남길 원문이나 번역문 범위를 선택하세요. Esc로 취소합니다."
       : deps.hasUnsavedChanges()
         ? "편집한 내용을 저장하고 AI 작업을 마친 뒤 코멘트를 남길 수 있습니다."
-        : "‘코멘트 달기’를 누른 뒤 원문이나 번역문의 범위를 선택하세요.";
+        : "‘코멘트 달기’를 누르고 범위를 선택하거나, 원문 구절을 선택한 뒤 우클릭하세요.";
   }
 
   function cancelSelection(): void {
+    contextMenu.close();
     selecting = false;
     pointerTarget = null;
     selected = null;
@@ -112,6 +242,8 @@ export function configureReviewComments(deps: Deps) {
   }
 
   function render(): void {
+    contextMenu.close();
+    footnotes.refreshContext();
     renderSelection();
     const current = comments.filter(eligible);
     const prior = comments.filter(comment => !eligible(comment));
@@ -133,12 +265,13 @@ export function configureReviewComments(deps: Deps) {
       <div class="review-comment-meta"><span>${comment.targetKind === "source" ? "원문" : "번역문"}</span>${old ? '<span class="tag tag-plain">이전 버전</span>' : `<label><input type="checkbox" data-review-include="${esc(comment.id)}"${included.has(comment.id) ? " checked" : ""}> 재번역에 포함</label>`}</div>
       <button class="review-quote" type="button" data-review-locate="${esc(comment.id)}"${old ? " disabled" : ""}>${esc(comment.quote)}</button>
       <p class="review-comment-body">${esc(comment.bodyMd)}</p>
-      <div class="review-comment-actions"><button class="btn btn-sm" type="button" data-review-edit="${esc(comment.id)}">수정</button><button class="btn btn-sm" type="button" data-review-archive="${esc(comment.id)}">제외</button></div>
+      <div class="review-comment-actions"><button class="btn btn-sm" type="button" data-review-edit="${esc(comment.id)}">수정</button>${deps.reuseComment ? `<button class="btn btn-sm" type="button" data-review-reuse="${esc(comment.id)}">참고 자료로 재사용</button>` : ""}<button class="btn btn-sm" type="button" data-review-archive="${esc(comment.id)}">제외</button></div>
     </article>`;
     el("#reviewCommentsList").innerHTML = loading
       ? '<p class="muted">코멘트를 불러오는 중입니다.</p>'
       : `${current.length ? current.map(comment => card(comment, false)).join("") : '<p class="review-empty muted">아직 이 번역의 코멘트가 없습니다. ‘코멘트 달기’를 누른 뒤 문장별 대조에서 범위를 선택하세요.</p>'}${prior.length ? `<details class="review-prior"><summary>이전 버전의 코멘트 ${prior.length}개</summary><p class="muted">작성 당시의 번역에 연결된 기록입니다. 현재 재번역에는 포함되지 않습니다.</p>${prior.map(comment => card(comment, true)).join("")}</details>` : ""}`;
     renderMarks();
+    deps.changed?.();
   }
 
   async function load(): Promise<void> {
@@ -208,17 +341,19 @@ export function configureReviewComments(deps: Deps) {
           const before = document.createRange();
           before.selectNodeContents(source);
           before.setEnd(range.startContainer, range.startOffset);
-          const quote = range.toString();
-          const from = Number(source.dataset.reviewSourceFrom) + Array.from(before.toString()).length;
-          if (quote.trim()) selected = {
+          const display = sourceDisplayFromElement(source);
+          const localFrom = Array.from(before.toString()).length;
+          const mapped = display ? sourceRangeFromDisplay(display, localFrom, localFrom + Array.from(range.toString()).length) : null;
+          if (mapped) selected = {
             documentNodeId: v.document.id,
             translationVersionId: translation.versionId,
             targetKind: "source",
             targetVersionId: v.source.versionId,
-            codepointFrom: from,
-            codepointTo: from + Array.from(quote).length,
-            quote,
+            codepointFrom: mapped.from,
+            codepointTo: mapped.to,
+            quote: mapped.quote,
           };
+          else if (range.toString().trim() && source.dataset.reviewSourceMap) el("#reviewSelectionHint").textContent = "표점 부호만 선택한 경우에는 앞뒤 원문 글자도 함께 선택하세요.";
         }
       }
     }
@@ -248,6 +383,7 @@ export function configureReviewComments(deps: Deps) {
     el<HTMLButtonElement>("#reviewCommentSave").disabled = true;
     el<HTMLButtonElement>("#reviewCommentCancel").disabled = true;
     el<HTMLButtonElement>("#btnReviewFootnotes").disabled = true;
+    el<HTMLButtonElement>("#btnReviewDictionary").disabled = true;
     try {
       const result = editing
         ? await deps.api.editor.updateReviewComment({ id: editing.id, expectedLockVersion: editing.lockVersion, bodyMd })
@@ -264,6 +400,7 @@ export function configureReviewComments(deps: Deps) {
       el<HTMLButtonElement>("#reviewCommentSave").disabled = false;
       el<HTMLButtonElement>("#reviewCommentCancel").disabled = false;
       el<HTMLButtonElement>("#btnReviewFootnotes").disabled = false;
+      el<HTMLButtonElement>("#btnReviewDictionary").disabled = false;
       renderSelection();
       render();
     }
@@ -301,15 +438,19 @@ export function configureReviewComments(deps: Deps) {
         target = textarea;
       }
     } else {
-      target = [...document.querySelectorAll<HTMLElement>("[data-review-source-from]")].find(e => {
+      target = [...document.querySelectorAll<HTMLElement>("#rows [data-review-source-from]")].find(e => {
         const from = Number(e.dataset.reviewSourceFrom);
-        return from <= comment.codepointFrom && from + Array.from(e.textContent ?? "").length >= comment.codepointTo;
+        return from <= comment.codepointFrom && Number(e.dataset.reviewSourceTo) >= comment.codepointTo;
       });
+      if (!target) {
+        deps.showComments("full");
+        target = el("#folioSourceText");
+      }
     }
     if (!target) return;
     activeCommentId = comment.id;
     renderMarks();
-    target.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+    (target.querySelector<HTMLElement>(".review-range-mark.is-emphasized") ?? target).scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   }
 
   el("#rows").addEventListener("pointerdown", event => {
@@ -355,13 +496,47 @@ export function configureReviewComments(deps: Deps) {
   el("#btnReviewFootnotes").addEventListener("click", () => {
     const target = draftTarget;
     if (!target || saving || !dialog.open) return;
+    const currentTarget = () => {
+      const v = deps.view();
+      return !!v && target.documentNodeId === v.document.id && target.translationVersionId === v.translation?.versionId
+        && target.targetVersionId === (target.targetKind === "source" ? v.source.versionId : v.translation?.versionId)
+        && draftTarget === target && dialog.open && !saving;
+    };
     footnotes.open({
       query: target.quote,
       quote: target.quote,
+      selection: { targetKind: target.targetKind, from: target.codepointFrom, to: target.codepointTo, quote: target.quote },
+      isCurrent: currentTarget,
+      insertAnalysis: recommendation => {
+        if (!currentTarget() || (deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()) throw new Error("문서나 작성 중인 코멘트가 바뀌었습니다. 현재 구절에서 다시 추천받으세요.");
+        const body = el<HTMLTextAreaElement>("#reviewCommentBody");
+        body.value = appendFootnoteRecommendation(body.value, recommendation, body.maxLength);
+        body.dispatchEvent(new Event("input", { bubbles: true }));
+        queueMicrotask(() => { body.focus(); body.setSelectionRange(body.value.length, body.value.length); });
+      },
       insert: note => {
         if (!dialog.open || saving || draftTarget !== target) throw new Error("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요.");
         const body = el<HTMLTextAreaElement>("#reviewCommentBody");
         body.value = appendFootnoteCitation(body.value, note, body.maxLength);
+        body.dispatchEvent(new Event("input", { bubbles: true }));
+        queueMicrotask(() => { body.focus(); body.setSelectionRange(body.value.length, body.value.length); });
+      },
+    });
+  });
+  el("#btnReviewDictionary").addEventListener("click", () => {
+    const target = draftTarget;
+    if (!target || saving || !dialog.open) return;
+    const current = () => {
+      const v = deps.view();
+      return !!v && v.document.id === target.documentNodeId && v.translation?.versionId === target.translationVersionId
+        && target.targetVersionId === (target.targetKind === "source" ? v.source.versionId : v.translation?.versionId)
+        && draftTarget === target && dialog.open && !saving;
+    };
+    deps.openDictionary?.({ query: target.quote, quote: target.quote, isCurrent: current,
+      insert: citation => {
+        if (!current()) throw new Error("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요.");
+        const body = el<HTMLTextAreaElement>("#reviewCommentBody");
+        body.value = appendDictionaryCitation(body.value, citation, body.maxLength);
         body.dispatchEvent(new Event("input", { bubbles: true }));
         queueMicrotask(() => { body.focus(); body.setSelectionRange(body.value.length, body.value.length); });
       },
@@ -378,7 +553,7 @@ export function configureReviewComments(deps: Deps) {
     renderSelection();
     renderMarks();
   });
-  el("#btnShowReviewComments").addEventListener("click", deps.showComments);
+  el("#btnShowReviewComments").addEventListener("click", () => deps.showComments());
   el("#btnCompareTranslation").addEventListener("click", () => { void deps.compare().catch(error => deps.notify(String(error), "번역 비교")); });
   el("#btnRetranslateComments").addEventListener("click", () => {
     const v = deps.view();
@@ -396,11 +571,12 @@ export function configureReviewComments(deps: Deps) {
     const target = event.target as HTMLElement;
     if (target.closest("input, label, summary")) return;
     const button = target.closest<HTMLButtonElement>("button");
-    const id = button?.dataset.reviewEdit ?? button?.dataset.reviewArchive ?? button?.dataset.reviewLocate
+    const id = button?.dataset.reviewEdit ?? button?.dataset.reviewArchive ?? button?.dataset.reviewReuse ?? button?.dataset.reviewLocate
       ?? target.closest<HTMLElement>("[data-review-card]")?.dataset.reviewCard;
     const comment = comments.find(comment => comment.id === id);
     if (!comment) return;
     if (button?.dataset.reviewEdit) openComment(comment);
+    else if (button?.dataset.reviewReuse) deps.reuseComment?.(comment);
     else if (button?.dataset.reviewArchive) void archive(comment);
     else locate(comment);
   });
@@ -410,6 +586,8 @@ export function configureReviewComments(deps: Deps) {
     refresh: render,
     cancelSelection,
     isSelecting: () => selecting,
+    current: () => comments.filter(eligible),
+    locateById: (id: string) => { const comment = comments.find(item => item.id === id); if (comment) locate(comment); },
     hasUnsavedDraft: () => dialog.open && el<HTMLTextAreaElement>("#reviewCommentBody").value !== (editing?.bodyMd ?? ""),
   };
 }

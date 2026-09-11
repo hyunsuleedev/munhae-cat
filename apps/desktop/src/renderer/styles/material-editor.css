@@ -1,0 +1,24 @@
+.material-editor-dialog { width: min(720px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 0; color: var(--fg); }
+.material-editor-dialog form { display: flex; flex-direction: column; max-height: calc(100vh - 36px); }
+.material-editor-heading { padding: 22px 24px 18px; border-bottom: 1px solid var(--border); }
+.material-editor-heading h2 { margin: 0 0 8px; font-size: 18px; }
+.material-editor-heading p,.material-editor-help { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.material-editor-body { overflow: auto; padding: 20px 24px; display: grid; gap: 18px; min-height: 0; }
+.material-editor-body .field { min-width: 0; }
+.material-editor-body select { width: 100%; }
+.material-editor-body .check { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.material-editor-origin { padding: 14px 16px; border: 1px solid var(--border); background: var(--bg); border-radius: 7px; font-size: 12px; line-height: 1.75; overflow-wrap: anywhere; }
+.material-editor-origin p { margin: 6px 0; }
+.material-editor-origin blockquote { font-family: var(--font-hanmun, serif); font-size: 17px; margin: 12px 0; border-left: 2px solid var(--border); padding-left: 12px; }
+.material-preserve { white-space: pre-wrap; overflow-wrap: anywhere; }
+.material-scope-preview { border: 1px solid var(--border); border-radius: 7px; background: var(--bg); padding: 13px; font-size: 12px; }
+.material-scope-preview > p { margin: 0 0 10px; color: var(--muted); }
+.material-node-chain { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.material-node-chain li { display: flex; gap: 12px; justify-content: space-between; margin-left: calc(var(--material-depth, 0) * 12px); padding: 7px 9px; border-left: 1px solid var(--border); min-width: 0; }
+.material-node-chain li > span { overflow-wrap: anywhere; }
+.material-node-chain small { color: var(--muted); white-space: nowrap; font-size: 11px; }
+.material-scope-descendants { display: grid; gap: 6px; padding-left: 18px; max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
+.material-editor-footer { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 24px; border-top: 1px solid var(--border); }
+.material-editor-error { margin: 0; color: var(--danger); font-size: 12px; line-height: 1.6; }
+.material-editor-error:empty { display: none; }
+@media (max-width: 560px) { .material-editor-body,.material-editor-heading,.material-editor-footer { padding-left: 16px; padding-right: 16px; } }

@@ -1,3 +1,4 @@
+import { checkAppUpdates } from "./app-updates";
 import { Menu, app, type MenuItemConstructorOptions } from "electron";
 import { IPC_CHANNELS } from "../shared/munhae-api";
 import { getMainWindow } from "./window";
@@ -18,6 +19,7 @@ function accelerator(kbd: string): string | undefined {
 
 function dispatch(id: string): void {
   const win = getMainWindow();
+  if (id === "updates") { void checkAppUpdates(); return; }
   if (id === "quit") {
     app.quit();
     return;
@@ -111,7 +113,7 @@ export function installApplicationMenu(): void {
       submenu: [
         item("사이드바 보기/가리기", "⌃⌘S", "sidebar"),
         item("참고 자료 패널", "⌥⌘R", "refpane"),
-        item("문맥·AI 패널", "⌥⌘I", "ctxpane"),
+        item("참고 자료·AI 패널", "⌥⌘I", "ctxpane"),
         { type: "separator" },
         item("표점 전문", "⌘1", "v-source"),
         item("대조", "⌘2", "v-parallel"),
@@ -139,7 +141,7 @@ export function installApplicationMenu(): void {
       submenu: [
         item("프로젝트 홈", "⇧⌘1", "home"),
         item("편집", "⇧⌘2", "editor"),
-        item("공통 지식", "⇧⌘3", "knowledge"),
+        item("번역 자료", "⇧⌘3", "knowledge"),
         { type: "separator" },
         item("명령 검색…", "⌘K", "palette"),
       ],
@@ -152,6 +154,7 @@ export function installApplicationMenu(): void {
       label: "도움말",
       submenu: [
         item("문해 도움말", "", "help"),
+        item("업데이트 확인…", "", "updates"),
         item("plan.md 보기", "", "plan"),
         item("schema.md 보기", "", "schema"),
       ],

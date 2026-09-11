@@ -69,6 +69,21 @@ export type RuntimeSessionStore = {
 const runs = new Map<string, AiRunView>();
 const active = new Map<string, ActiveRun>();
 
+type ExternalAiActivity = { id: string; projectId: string; cancel(): void | Promise<void>; completion: Promise<void> };
+const externalActivities = new Map<string, ExternalAiActivity>();
+
+/** Reserve before the first await so collection and inference share app lifecycle guards. */
+export function registerExternalAiActivity(activity: ExternalAiActivity): void {
+  if (hasActiveAiRuns(activity.projectId) || externalActivities.has(activity.id)) {
+    throw new AppError("thread_busy", "AI 작업이 진행 중입니다");
+  }
+  externalActivities.set(activity.id, activity);
+  void activity.completion.then(
+    () => { if (externalActivities.get(activity.id) === activity) externalActivities.delete(activity.id); },
+    () => { if (externalActivities.get(activity.id) === activity) externalActivities.delete(activity.id); },
+  );
+}
+
 function readRuntimeSessionRef(
   sessionStore: RuntimeSessionStore,
   key: Parameters<RuntimeSessionStore["get"]>[0],
@@ -92,10 +107,10 @@ function cloneRun(run: AiRunView): AiRunView {
   };
 }
 
-function publish(run: AiRunView): void {
+function publish(run: AiRunView, completionStage?: AiRunView["completionStage"]): void {
   runs.set(run.messageId, run);
   const win = getMainWindow();
-  if (win && !win.isDestroyed()) win.webContents.send(IPC_CHANNELS.aiRunEvent, cloneRun(run));
+  if (win && !win.isDestroyed()) win.webContents.send(IPC_CHANNELS.aiRunEvent, { ...cloneRun(run), completionStage });
 }
 
 function appendEvent(entry: ActiveRun, event: AgentRunEvent): void {
@@ -178,6 +193,7 @@ const PUBLIC_RUN_ERROR_MESSAGES: Readonly<Record<string, string>> = {
   canceled: "AI 실행을 취소했습니다.",
   timeout: "AI 실행 시간이 초과되었습니다.",
   invalid_stream: "AI 응답 스트림을 처리하지 못했습니다.",
+  tool_permission_required: "AI가 요청한 도구의 실행 권한이 없어 중단됐습니다. 터미널에서 해당 CLI의 도구 권한을 설정한 뒤 다시 시도하세요.",
   provider_failed: "AI CLI 실행에 실패했습니다.",
   event_log_unavailable: "AI 실행 기록을 안전하게 만들 수 없습니다.",
   runtime_transport_failed: "AI 실행 프로세스와 통신하지 못했습니다.",
@@ -217,7 +233,13 @@ export function publicRunError(error: { code: string; message: string }): { code
 export function updateFromEvent(view: AiRunView, event: AgentRunEvent): void {
   if (event.type === "status") {
     view.phase = event.phase;
-    view.detail = "응답 처리 중…";
+    view.detail = {
+      starting: "AI 실행을 준비하고 있습니다…",
+      initializing: "AI 연결을 준비하고 있습니다…",
+      thinking: "AI 응답을 기다리고 있습니다. 긴 작업은 시간이 더 걸릴 수 있습니다.",
+      streaming: "AI 응답을 받고 있습니다…",
+      stopping: "AI 실행을 취소하고 있습니다…",
+    }[event.phase];
   } else if (event.type === "text_delta") {
     view.phase = "streaming";
     if (view.taskKind !== "chat") {
@@ -267,6 +289,9 @@ async function executeProjectTask(
   sessionStore: RuntimeSessionStore,
 ): Promise<void> {
   const request = requestFromPreferences(prepared.messageId, prepared.requestText, config, view.agentId);
+  if (view.agentId === "antigravity" && view.taskKind === "punctuation_suggest") {
+    request.antigravitySkipPermissions = true;
+  }
   const sessionKey = {
     providerKind: view.agentId,
     projectId: entry.projectId,
@@ -371,7 +396,7 @@ async function executeProjectTask(
     view.state = "completed";
     view.phase = view.validationState === "invalid_unapplied" ? "validation_failed" : "completed";
     view.completedAt = result.completedAt;
-    publish(view);
+    publish(view, view.phase === "completed" ? (view.taskKind === "chat" ? "chat" : "punctuation") : undefined);
   } catch (error) {
     const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
       ? error.code
@@ -586,7 +611,7 @@ async function executePrepared(
         : `응답 구조 오류 ${completed.fatalFindings + completed.recoverableFindings}건으로 번역은 적용하지 않고 제출 응답만 보존했습니다.`;
       view.validationState = completed.validationState;
       view.completedAt = result.completedAt;
-      publish(view);
+      publish(view, completed.validationState === "valid" ? "translation" : undefined);
       return;
     }
 
@@ -774,7 +799,7 @@ async function executeFullText(
       view.phase="translation_saved";
       view.detail="번역 전문을 저장했습니다. 원문 연결을 준비합니다.";
       view.validationState="valid";
-      publish(view);
+      publish(view, "translation");
     });
     if(!versionId) throw new AppError("app_submission_missing","번역 전문을 제출하지 않았습니다");
     view.phase="aligning";view.detail="번역을 저장했습니다. 문장별 원문을 연결하고 있습니다.";publish(view);
@@ -785,7 +810,7 @@ async function executeFullText(
     const meta=firstResult??alignmentResult;
     if(savedResponse) entry.repo.finishFullTextRun({messageId:prepared.messageId,rawResponse:savedResponse,eventsJsonl:collectedEvents(entry),usage:meta.usage,resolvedModel:meta.model,runtimeVersion:meta.cliVersion});
     view.state="completed";view.phase="completed";view.detail="번역과 문장별 원문 연결을 저장했습니다. 대응 내용을 검토하세요.";
-    view.completedAt=new Date().toISOString();publish(view);
+    view.completedAt=new Date().toISOString();publish(view, "alignment");
   } catch(error) {
     const message=publicRunError({code: error instanceof AppError ? error.code : "provider_failed", message:""}).message;
     if(versionId) {
@@ -1034,15 +1059,19 @@ export function hasActiveAiRuns(projectId?: string): boolean {
   for (const entry of active.values()) {
     if (!projectId || entry.projectId === projectId) return true;
   }
+  for (const entry of externalActivities.values()) {
+    if (!projectId || entry.projectId === projectId) return true;
+  }
   return false;
 }
 
 export async function cancelAllAiRuns(): Promise<void> {
   const entries = [...active.entries()];
+  const external = [...externalActivities.values()];
   for (const [, entry] of entries) {
     entry.cancelRequested = true;
     entry.translationToolGrant?.revoke();
   }
-  await Promise.allSettled(entries.map(([messageId]) => cancelAgentRuntime(messageId)));
-  await Promise.allSettled(entries.map(([, entry]) => entry.completion));
+  await Promise.allSettled([...entries.map(([messageId]) => cancelAgentRuntime(messageId)), ...external.map(entry => Promise.resolve().then(() => entry.cancel()))]);
+  await Promise.allSettled([...entries.map(([, entry]) => entry.completion), ...external.map(entry => entry.completion)]);
 }

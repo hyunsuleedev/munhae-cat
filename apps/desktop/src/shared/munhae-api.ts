@@ -2,6 +2,12 @@
  * Renderer ↔ preload ↔ main typed IPC contract.
  * Keep this file free of Node/Electron imports so the renderer can import types.
  */
+import type { DictionarySearchInput, DictionarySearchResult, DictionarySetKeyInput, DictionaryStatus } from "./dictionary-types";
+import type { ReadingAnnotationCasInput, ReadingAnnotationView, SaveReadingAnnotationInput } from "@munhae/db-sqlite";
+export type { ReadingAnnotationCasInput, ReadingAnnotationView, ReadingCitation, SaveReadingAnnotationInput } from "@munhae/db-sqlite";
+
+import type { MaterialOrigin, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
+export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
 
 export const IPC_CHANNELS = {
   appGetVersion: "munhae:app:getVersion",
@@ -10,6 +16,7 @@ export const IPC_CHANNELS = {
   appProbeAgents: "munhae:app:probeAgents",
   appGetLoginInstruction: "munhae:app:getLoginInstruction",
   appQuit: "munhae:app:quit",
+  appCheckUpdates: "munhae:app:checkUpdates",
   appShowAbout: "munhae:app:showAbout",
   appOpenExternal: "munhae:app:openExternal",
   appOpenPath: "munhae:app:openPath",
@@ -35,6 +42,8 @@ export const IPC_CHANNELS = {
   projectBackup: "munhae:project:backup",
   projectExportConfirmed: "munhae:project:exportConfirmed",
   projectSearch: "munhae:project:search",
+  projectConcordance: "munhae:project:concordance",
+  projectExportReview: "munhae:project:exportReview",
   projectCreateFromPaste: "munhae:project:createFromPaste",
   projectSeedDemo: "munhae:project:seedDemo",
 
@@ -64,14 +73,18 @@ export const IPC_CHANNELS = {
   editorCreateReviewComment: "munhae:editor:createReviewComment",
   editorUpdateReviewComment: "munhae:editor:updateReviewComment",
   editorArchiveReviewComment: "munhae:editor:archiveReviewComment",
+  editorListReadingAnnotations: "munhae:editor:listReadingAnnotations",
+  editorSaveReadingAnnotation: "munhae:editor:saveReadingAnnotation",
+  editorArchiveReadingAnnotation: "munhae:editor:archiveReadingAnnotation",
   editorAttachReference: "munhae:editor:attachReference",
   editorReadReference: "munhae:editor:readReference",
   editorOpenReference: "munhae:editor:openReference",
 
   knowledgeGet: "munhae:knowledge:get",
+  knowledgeGetMaterials: "munhae:knowledge:getMaterials",
+  knowledgeSetMaterialPreference: "munhae:knowledge:setMaterialPreference",
+  knowledgeReuseCommentAsMaterial: "munhae:knowledge:reuseCommentAsMaterial",
   knowledgeUpsertGlossary: "munhae:knowledge:upsertGlossary",
-  knowledgeUpsertPerson: "munhae:knowledge:upsertPerson",
-  knowledgeUpsertPlace: "munhae:knowledge:upsertPlace",
   knowledgeCreateContext: "munhae:knowledge:createContext",
   knowledgeUpdateContext: "munhae:knowledge:updateContext",
   knowledgeSetContextEnabled: "munhae:knowledge:setContextEnabled",
@@ -83,6 +96,13 @@ export const IPC_CHANNELS = {
 
   contextPreview: "munhae:context:preview",
   researchSearchFootnotes: "munhae:research:searchFootnotes",
+  researchStartFootnoteAnalysis: "munhae:research:startFootnoteAnalysis",
+  researchGetFootnoteAnalysis: "munhae:research:getFootnoteAnalysis",
+  researchCancelFootnoteAnalysis: "munhae:research:cancelFootnoteAnalysis",
+
+  dictionarySearch: "munhae:dictionary:search",
+  dictionaryGetStatus: "munhae:dictionary:getStatus",
+  dictionarySetKey: "munhae:dictionary:setKey",
 
   aiStartTranslation: "munhae:ai:startTranslation",
   aiStartChat: "munhae:ai:startChat",
@@ -105,6 +125,10 @@ export type AppConfig = {
     claude: { model: string; reasoning: string | null; serviceTier: string | null };
   };
   showWelcomeOnLaunch: boolean;
+  backgroundMusicEnabled: boolean;
+  backgroundMusicVolume: number;
+  notificationSoundEnabled: boolean;
+  notificationSoundVolume: number;
 };
 
 export type AgentProbe = {
@@ -229,7 +253,6 @@ export type DocumentMetadataView = {
   isMaster: boolean;
   title: string;
   originalTitle: string | null;
-  authorPersonId: string | null;
   authorName: string | null;
   language: string | null;
   periodText: string | null;
@@ -244,7 +267,7 @@ export type UpdateDocumentMetadataInput = {
   documentNodeId: string;
   title: string;
   originalTitle: string | null;
-  authorPersonId: string | null;
+  authorName: string | null;
   language: string | null;
   periodText: string | null;
   dateText: string | null;
@@ -314,6 +337,12 @@ export type StructureSpanView = {
   quote: string;
   label: string | null;
 };
+
+export type ConcordanceInput = { query: string; scope?: "all" | "source" | "translation"; state?: "current" | "confirmed"; limit?: number; documentNodeId?: string | null };
+export type ConcordanceResult = { id: string; documentNodeId: string; documentTitle: string; sourceVersionId: string; sourceVersionNo: number; translationVersionId: string | null; translationVersionNo: number | null; translationState: string | null; isCurrent: boolean; isConfirmed: boolean; sourceIsCurrent: boolean; contextKind: "sentence" | "document"; alignment: "human" | "auto" | "unlinked"; needsReview: boolean; sentenceId: string | null; sourceText: string; translationText: string | null; matchedIn: Array<"source" | "translation"> };
+export type ConcordanceView = { query: string; scope: "all" | "source" | "translation"; state: "current" | "confirmed"; results: ConcordanceResult[]; hasMore: boolean };
+export type ReviewExportInput = { format: "html" | "markdown"; state: "current" | "confirmed"; documentNodeId?: string | null; includeComments?: boolean };
+export type ReviewExportSaveResult = { filePath: string; format: "html" | "markdown"; documentCount: number };
 
 export type EditorView = {
   project: ProjectSummary;
@@ -497,42 +526,7 @@ export type GlossaryEntryView = {
   usageStatus: "preferred" | "allowed" | "forbidden";
 };
 
-export type PersonView = {
-  id: string;
-  contentHash: string;
-  lockVersion: number;
-  preferredName: string;
-  hanjaName: string | null;
-  reading: string | null;
-  aliases: string[];
-  descriptionMd: string | null;
-  dateText: string | null;
-};
-
-export type PlaceView = {
-  id: string;
-  contentHash: string;
-  lockVersion: number;
-  preferredName: string;
-  hanjaName: string | null;
-  reading: string | null;
-  aliases: string[];
-  placeKind: string | null;
-  locationNoteMd: string | null;
-  descriptionMd: string | null;
-};
-
 export type UpsertGlossaryInput = Omit<GlossaryEntryView, "id" | "contentHash" | "lockVersion"> & {
-  id?: string;
-  expectedLockVersion?: number;
-};
-
-export type UpsertPersonInput = Omit<PersonView, "id" | "contentHash" | "lockVersion"> & {
-  id?: string;
-  expectedLockVersion?: number;
-};
-
-export type UpsertPlaceInput = Omit<PlaceView, "id" | "contentHash" | "lockVersion"> & {
   id?: string;
   expectedLockVersion?: number;
 };
@@ -595,6 +589,9 @@ export type CreateUncertaintyVersionInput = CreateUncertaintyInput & {
 export type ResolveUncertaintyInput = { uncertaintyId: string; expectedVersionId: string };
 
 export type NodeContextView = {
+  inheritToChildren?: boolean;
+  conditionMd?: string;
+  origin?: MaterialOrigin | null;
   id: string;
   source: "context_item" | "document_description";
   scopeKind: "document_node";
@@ -608,6 +605,8 @@ export type NodeContextView = {
 };
 
 export type CreateContextItemInput = {
+  inheritToChildren?: boolean;
+  conditionMd?: string;
   scopeId: string;
   title: string;
   contentMd: string;
@@ -622,8 +621,6 @@ export type SetContextItemPriorityInput = ContextItemCasInput & { priority: numb
 
 export type KnowledgeView = {
   glossary: GlossaryEntryView[];
-  persons: PersonView[];
-  places: PlaceView[];
   uncertainties: UncertaintyView[];
   contextItems: NodeContextView[];
 };
@@ -668,6 +665,7 @@ export type ContextPreviewInput = {
   documentNodeId: string;
   selections?: Array<{ id: string; mode: "auto" | "pin" | "exclude" }>;
   revision?: TranslationRevisionInput;
+  referenceCommentIds?: string[];
 };
 
 export type StartTranslationInput = {
@@ -675,6 +673,7 @@ export type StartTranslationInput = {
   documentNodeId: string;
   selections?: Array<{ id: string; mode: "auto" | "pin" | "exclude" }>;
   revision?: TranslationRevisionInput;
+  referenceCommentIds?: string[];
   agentId: AgentProbe["agentId"];
 };
 
@@ -713,7 +712,11 @@ export type PunctuationSuggestionApplyResult = Pick<
   "messageId" | "validationState" | "applied" | "punctuationVersionId" | "anchorSetId"
 >;
 
+export type AiCompletionStage = "chat" | "translation" | "alignment" | "punctuation";
+
 export type AiRunView = {
+  /** Ephemeral successful-stage signal; never persisted or returned by polling. */
+  completionStage?: AiCompletionStage;
   messageId: string;
   documentNodeId: string;
   chatScopeKind?: ChatScopeKind;
@@ -822,7 +825,7 @@ export type ExportSaveResult = {
   manifestHash: string;
 };
 
-export type SearchEntityType = "glossary" | "person" | "place";
+export type SearchEntityType = "glossary";
 export type SearchEntityFilterInput = {
   entityType: SearchEntityType;
   entityId: string;
@@ -892,6 +895,52 @@ export type ItkcFootnoteSearchInput = {
   start?: number;
 };
 
+export type FootnoteAnalysisInput = {
+  documentNodeId: string;
+  expectedSourceVersionId: string;
+  expectedTranslationVersionId: string | null;
+  query: string;
+  mode: "target" | "content";
+  selection?: { targetKind: "source" | "translation"; from: number; to: number; quote: string };
+};
+
+export type FootnoteRecommendation = {
+  note: ItkcFootnote;
+  relevance: "direct" | "contextual";
+  reason: string;
+  translationAdvice: string;
+  caution: string;
+  evidenceQuote: string;
+};
+
+export type FootnoteAnalysisResult = {
+  summary: string;
+  recommendations: FootnoteRecommendation[];
+  analyzedCount: number;
+  total: number;
+  omittedCount: number;
+  excerptedCount: number;
+  sourceContext: string;
+  translationContext: string;
+  limitations: string[];
+};
+
+export type FootnoteAnalysisRun = {
+  id: string;
+  documentNodeId: string;
+  sourceVersionId: string;
+  translationVersionId: string | null;
+  agentId: AppConfig["agentId"];
+  query: string;
+  mode: "target" | "content";
+  state: "collecting" | "analyzing" | "completed" | "failed" | "canceled";
+  detail: string;
+  collectedCount: number;
+  total: number | null;
+  result: FootnoteAnalysisResult | null;
+  error: { code: string; message: string } | null;
+};
+
 export type ItkcFootnote = {
   id: string;
   annotatedText: string;
@@ -916,6 +965,11 @@ export type ItkcFootnoteSearchResult = {
 };
 
 export type MunhaeApi = {
+  dictionary: {
+    search(input: DictionarySearchInput): Promise<IpcResult<DictionarySearchResult>>;
+    getStatus(): Promise<IpcResult<DictionaryStatus>>;
+    setKey(input: DictionarySetKeyInput): Promise<IpcResult<DictionaryStatus>>;
+  };
   auth: {
     getState(): Promise<IpcResult<AccountState>>;
     signUp(input: AccountSignUpInput): Promise<IpcResult<{ state: AccountState; confirmationRequired: boolean }>>;
@@ -936,6 +990,7 @@ export type MunhaeApi = {
     probeAgents(): Promise<AgentProbe[]>;
     getLoginInstruction(agentId: AgentProbe["agentId"]): Promise<AgentLoginInstruction>;
     quit(): Promise<void>;
+    checkUpdates(): Promise<void>;
     openExternal(url: string): Promise<void>;
     onCommand(handler: (id: string) => void): () => void;
   };
@@ -946,6 +1001,8 @@ export type MunhaeApi = {
     getCurrent(): Promise<ProjectSummary | null>;
     listRecent(): Promise<RecentProject[]>;
     backup(): Promise<IpcResult<string | null>>;
+    concordance(input: ConcordanceInput): Promise<IpcResult<ConcordanceView>>;
+    exportReview(input: ReviewExportInput): Promise<IpcResult<ReviewExportSaveResult | null>>;
     exportConfirmed(input: ConfirmedExportInput): Promise<IpcResult<ExportSaveResult | null>>;
     search(input: SearchQueryInput): Promise<IpcResult<SearchView>>;
     createFromPaste(input: CreateFromPasteInput): Promise<IpcResult<ProjectSummary>>;
@@ -979,15 +1036,19 @@ export type MunhaeApi = {
     createReviewComment(input: CreateReviewCommentInput): Promise<IpcResult<ReviewCommentView>>;
     updateReviewComment(input: UpdateReviewCommentInput): Promise<IpcResult<ReviewCommentView>>;
     archiveReviewComment(input: ArchiveReviewCommentInput): Promise<IpcResult<void>>;
+    listReadingAnnotations(documentNodeId: string): Promise<IpcResult<ReadingAnnotationView[]>>;
+    saveReadingAnnotation(input: SaveReadingAnnotationInput): Promise<IpcResult<ReadingAnnotationView>>;
+    archiveReadingAnnotation(input: ReadingAnnotationCasInput): Promise<IpcResult<void>>;
     attachReference(documentNodeId: string): Promise<IpcResult<EditorView | null>>;
     readReference(documentNodeId: string, assetId: string): Promise<IpcResult<ReferenceAssetContent>>;
     openReference(documentNodeId: string, assetId: string): Promise<IpcResult<void>>;
   };
   knowledge: {
+    getMaterials(documentNodeId?: string): Promise<IpcResult<MaterialsView>>;
+    setMaterialPreference(input: SetMaterialPreferenceInput): Promise<IpcResult<void>>;
+    reuseCommentAsMaterial(input: ReuseCommentAsMaterialInput): Promise<IpcResult<NodeContextView>>;
     get(): Promise<IpcResult<KnowledgeView>>;
     upsertGlossary(entry: UpsertGlossaryInput): Promise<IpcResult<GlossaryEntryView>>;
-    upsertPerson(person: UpsertPersonInput): Promise<IpcResult<PersonView>>;
-    upsertPlace(place: UpsertPlaceInput): Promise<IpcResult<PlaceView>>;
     createContext(input: CreateContextItemInput): Promise<IpcResult<NodeContextView>>;
     updateContext(input: UpdateContextItemInput): Promise<IpcResult<NodeContextView>>;
     setContextEnabled(input: SetContextItemEnabledInput): Promise<IpcResult<NodeContextView>>;
@@ -1002,6 +1063,9 @@ export type MunhaeApi = {
   };
   research: {
     searchFootnotes(input: ItkcFootnoteSearchInput): Promise<IpcResult<ItkcFootnoteSearchResult>>;
+    startFootnoteAnalysis(input: FootnoteAnalysisInput): Promise<IpcResult<FootnoteAnalysisRun>>;
+    getFootnoteAnalysis(id: string): Promise<IpcResult<FootnoteAnalysisRun>>;
+    cancelFootnoteAnalysis(id: string): Promise<IpcResult<FootnoteAnalysisRun>>;
   };
   ai: {
     startTranslation(input: StartTranslationInput): Promise<IpcResult<AiRunView>>;
@@ -1024,4 +1088,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     claude: { model: "default", reasoning: null, serviceTier: null },
   },
   showWelcomeOnLaunch: true,
+  backgroundMusicEnabled: true,
+  backgroundMusicVolume: 18,
+  notificationSoundEnabled: true,
+  notificationSoundVolume: 35,
 };

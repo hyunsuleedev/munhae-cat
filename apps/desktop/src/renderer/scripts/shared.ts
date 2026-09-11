@@ -1,7 +1,11 @@
+import { initNotificationSounds } from "./notification-sounds";
+import { initBackgroundMusic } from "./background-music";
 import type {
+  AccountState,
   AgentProbe,
   AppConfig,
   DocumentListItem,
+  DocumentNodeRole,
   IpcResult,
   MunhaeApi,
   ProjectSummary,
@@ -71,7 +75,7 @@ export const SCREEN_FILES: Record<ScreenId, string> = {
   knowledge: "knowledge.html",
   context: "context.html",
   settings: "settings.html",
-  account: "account.html",
+  account: "settings.html#account",
 };
 
 export const ICONS: Record<IconName, string> = {
@@ -91,6 +95,7 @@ export const ICONS: Record<IconName, string> = {
 
 const GLOBAL_ENABLED = [
   "about",
+  "updates",
   "prefs",
   "ai",
   "quit",
@@ -232,7 +237,7 @@ export function go(k: ScreenId, docId?: string): void {
   if (k === "context" && currentPage === "context" && docId === new URLSearchParams(location.search).get("node")) return;
   if (beforeNavigate && !beforeNavigate()) return;
   if (k === "context") {
-    location.href = docId ? `${SCREEN_FILES[k]}?node=${encodeURIComponent(docId)}` : SCREEN_FILES[k];
+    location.href = docId ? `context.html?node=${encodeURIComponent(docId)}` : "context.html";
     return;
   }
   const doc = docId ?? (k === "editor" ? currentDocId() : null);
@@ -384,10 +389,6 @@ export function setAgentChrome(
   if (mb) {
     mb.innerHTML = `<i class="dot ${sum.cls}"></i>${esc(sum.text)}`;
   }
-  const foot = $(".sb-foot");
-  if (foot) {
-    foot.innerHTML = `<i class="dot ${sum.cls}"></i>${esc(sum.text)}${sum.cls === "ok" ? " · 로그인됨" : ""}<span class="sp"></span><span class="mono">${esc(appVersion)}</span>`;
-  }
   $$(".statusbar .dot").forEach((dot) => {
     const span = dot.parentElement;
     if (!span || span.id) return;
@@ -446,7 +447,7 @@ function menus(): MenuGroup[] {
       [
         ["사이드바 보기/가리기", "⌃⌘S", "sidebar"],
         ["참고 자료 패널", "⌥⌘R", "refpane"],
-        [currentPage === "editor" ? "문맥·AI 패널" : "검사기 패널", "⌥⌘I", "ctxpane"],
+        [currentPage === "editor" ? "참고 자료·AI 패널" : "검사기 패널", "⌥⌘I", "ctxpane"],
         null,
         ["표점 전문", "⌘1", "v-source"],
         ["대조", "⌘2", "v-parallel"],
@@ -474,7 +475,7 @@ function menus(): MenuGroup[] {
       [
         ["프로젝트 홈", "⇧⌘1", "home"],
         ["편집", "⇧⌘2", "editor"],
-        ["공통 지식", "⇧⌘3", "knowledge"],
+        ["번역 자료", "⇧⌘3", "knowledge"],
         null,
         ["명령 검색…", "⌘K", "palette"],
       ],
@@ -492,6 +493,7 @@ function menus(): MenuGroup[] {
       "도움말",
       [
         ["문해 도움말", "", "help"],
+        ["업데이트 확인…", "", "updates"],
         ["plan.md 보기", "", "plan"],
         ["schema.md 보기", "", "schema"],
       ],
@@ -683,14 +685,22 @@ export function toggleInsp(): void {
   btn?.classList.toggle("is-on", !s.classList.contains("no-insp"));
 }
 
+function sidebarCreateActions(parentId: string | null): string {
+  const parent = esc(parentId ?? "");
+  return `<div class="sb-create-actions" role="group" aria-label="항목 추가">
+    <button class="sb-add" type="button" data-new-parent="${parent}" data-new-role="source_unit" title="문서 추가" aria-label="문서 추가"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 14H3V2h6l3 3v3M9 2v3h3M11.5 9v6M8.5 12h6"/></svg></button>
+    <button class="sb-add" type="button" data-new-parent="${parent}" data-new-role="container" title="폴더 추가" aria-label="폴더 추가"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 13H2V3h4.5L8 5h6v3M2 6h12M11.5 9v6M8.5 12h6"/></svg></button>
+  </div>`;
+}
+
 function sbNode(n: SbNode, d: number): string {
   if (n.h === "문서") {
-    return `<div class="sb-h-row"><div class="sb-h">문서</div><button class="sb-add" type="button" data-new-parent="" title="새 문서 node">+</button></div>`;
+    return `<div class="sb-h-row"><div class="sb-h">문서</div>${sidebarCreateActions(null)}</div>`;
   }
   if (n.h) return `<div class="sb-h">${esc(n.h)}</div>`;
   const kids = !!n.kids?.length;
   const cur = n.contextFor
-    ? (currentPage === "context" || (currentPage === "knowledge" && sidebarTab === "context")) && n.contextFor === sidebarCurrentDoc
+    ? currentPage === "context" && n.contextFor === sidebarCurrentDoc
     : n.tab
     ? n.tab === sidebarTab
     : n.k
@@ -714,11 +724,6 @@ function sbNode(n: SbNode, d: number): string {
   if (n.cnt) parts.push(`<span class="cnt">${n.cnt}</span>`);
   if (n.dot) parts.push(`<i class="dot ${n.dot}"></i>`);
   parts.push("</button>");
-  if (n.docId && n.canHaveChildren) {
-    parts.push(
-      `<button class="sb-add" type="button" data-new-parent="${esc(n.docId)}" title="하위 문서 만들기">+</button>`,
-    );
-  }
   parts.push("</div>");
   if (kids && exp && n.kids) parts.push(n.kids.map((k) => sbNode(k, d + 1)).join(""));
   return parts.join("");
@@ -762,7 +767,7 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
             lbl: "문맥",
             ic: "sliders",
             cnt: d.contextCount || undefined,
-            t: `${d.originalTitle || d.title} · 직접 문맥과 상속 문맥 ${d.contextCount}개`,
+            t: `${d.originalTitle || d.title} · 직접 작성한 문맥과 상위에서 이어받은 문맥`,
           },
           ...documentKids,
         ],
@@ -779,8 +784,8 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
 export function defaultSidebarTree(docs: DocumentListItem[], opts?: { knowledgeKids?: SbNode[] }): SbNode[] {
   const docTree = docsToTree(docs);
   const kn: SbNode = opts?.knowledgeKids
-    ? { id: "kn", ic: "book", lbl: "공통 지식", k: "knowledge", kids: opts.knowledgeKids }
-    : { k: "knowledge", ic: "book", lbl: "공통 지식" };
+    ? { id: "kn", ic: "book", lbl: "번역 자료", k: "knowledge", kids: opts.knowledgeKids }
+    : { k: "knowledge", ic: "book", lbl: "번역 자료" };
   if (opts?.knowledgeKids && !expanded.has("kn")) expanded.set("kn", true);
   return [
     { h: "프로젝트" },
@@ -790,7 +795,6 @@ export function defaultSidebarTree(docs: DocumentListItem[], opts?: { knowledgeK
     { h: "프로젝트 공통" },
     kn,
     { h: "앱" },
-    { k: "account", ic: "home", lbl: "문해 계정" },
     { k: "settings", ic: "gear", lbl: "설정" },
   ];
 }
@@ -817,25 +821,25 @@ export function revealSidebarNode(docs: DocumentListItem[], nodeId: string): voi
   }
 }
 
-let sidebarOnNew: ((parentId: string | null) => void) | null = null;
+let sidebarOnNew: ((parentId: string | null, role: DocumentNodeRole) => void) | null = null;
 
-export async function openDocumentDialog(parentId: string | null = null, importText = false): Promise<void> {
+export async function openDocumentDialog(parentId: string | null = null, importText = false, role: DocumentNodeRole = "source_unit"): Promise<void> {
   const { openNewDocument } = await import("./new-document-dialog");
-  await openNewDocument(parentId, "source_unit", importText);
+  await openNewDocument(parentId, role, importText);
 }
 
 export function bindSidebar(
   onDoc?: (id: string, label: string) => void,
   onTab?: (tab: string) => void,
   treeFn?: () => SbNode[],
-  onNew?: (parentId: string | null) => void,
+  onNew?: (parentId: string | null, role: DocumentNodeRole) => void,
   options?: { selectExpandable?: boolean },
 ): void {
   sidebarOnDoc = onDoc ?? null;
   sidebarOnTab = onTab ?? null;
   sidebarOnNew =
     onNew ??
-    ((parentId) => { void openDocumentDialog(parentId); });
+    ((parentId, role) => { void openDocumentDialog(parentId, false, role); });
   const root = $("#sbTree");
   if (!root || root.dataset.bound === "1") return;
   root.dataset.bound = "1";
@@ -846,7 +850,8 @@ export function bindSidebar(
       e.preventDefault();
       e.stopPropagation();
       const raw = add.getAttribute("data-new-parent") ?? "";
-      sidebarOnNew?.(raw === "" ? null : raw);
+      const role = add.getAttribute("data-new-role") === "container" ? "container" : "source_unit";
+      sidebarOnNew?.(raw === "" ? null : raw, role);
       return;
     }
     const exp = target.closest("[data-exp]");
@@ -1175,6 +1180,8 @@ async function openPrefs(): Promise<void> {
 }
 
 export async function cmd(id: string): Promise<void> {
+  if ((currentPage === "account" || document.body.hasAttribute("data-auth-pending"))
+    && !["quit", "min", "zoom", "c", "v", "x", "undo", "redo"].includes(id)) return;
   if (pageCmd && (await pageCmd(id))) return;
   if (id === "home" || id === "editor" || id === "knowledge" || id === "settings") {
     go(id);
@@ -1185,7 +1192,7 @@ export async function cmd(id: string): Promise<void> {
     go("editor");
     return;
   }
-  const api = window.munhae;
+  const api = requireApi();
   switch (id) {
     case "palette":
       openPalette();
@@ -1213,6 +1220,10 @@ export async function cmd(id: string): Promise<void> {
       notify(`${formatAgentDetail(agents)}. 토큰은 CLI가 보관합니다`, "AI 연결 상태");
       return;
     }
+    case "updates":
+      try { await api?.app.checkUpdates(); }
+      catch { notify("업데이트 확인은 문해 데스크톱 앱에서 사용할 수 있습니다.", "업데이트"); }
+      return;
     case "quit":
       await api?.app.quit();
       return;
@@ -1503,8 +1514,37 @@ function initTitlebar(): void {
   win.prepend(bar);
 }
 
+function initSidebarAccount(api: MunhaeApi): void {
+  const link = $<HTMLAnchorElement>(".sb-account");
+  const label = $(".sb-account-label");
+  if (!link || !label) return;
+  link.href = SCREEN_FILES.account;
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    go("account");
+  });
+  const render = (state: AccountState) => {
+    const user = state.status === "signed_in" ? state.user : null;
+    const name = user?.displayName.trim() || user?.email || "문해 계정";
+    label.textContent = name;
+    link.title = user ? [user.displayName, user.email].filter(Boolean).join(" · ") : "문해 계정";
+    link.setAttribute("aria-label", `${name} · 계정 설정 열기`);
+  };
+  let revision = 0;
+  const unsubscribe = api.auth.onStateChanged((state) => {
+    revision += 1;
+    render(state);
+  });
+  window.addEventListener("pagehide", unsubscribe, { once: true });
+  void api.auth.getState().then((result) => {
+    if (result.ok && revision === 0) render(result.data);
+  }).catch(() => undefined);
+}
+
 export function initShell(opts: ShellOptions): Shell {
   const api = requireApi();
+  initBackgroundMusic(api);
+  initNotificationSounds(api);
   configureProjectTools({
     api,
     escape: esc,
@@ -1523,6 +1563,7 @@ export function initShell(opts: ShellOptions): Shell {
   pageKeys = opts.pageKeys;
   extraPalette = opts.extraPalette ?? [];
   enabled = new Set<string>([...GLOBAL_ENABLED, ...(opts.extraEnabled ?? [])]);
+  if (opts.page === "account") enabled = new Set(["quit", "min", "zoom", "c", "v", "x", "undo", "redo"]);
   if (opts.page === "welcome") {
     enabled.delete("close");
     enabled.delete("newdoc");
@@ -1537,7 +1578,7 @@ export function initShell(opts: ShellOptions): Shell {
       welcome: "시작 화면",
       home: "프로젝트 홈",
       editor: "편집",
-      knowledge: "공통 지식",
+      knowledge: "번역 자료",
       context: "문맥 편집",
       settings: "설정",
       account: "문해 계정",
@@ -1559,6 +1600,7 @@ export function initShell(opts: ShellOptions): Shell {
   }
   renderMenubar();
   bindShellEvents();
+  initSidebarAccount(api);
   tick();
   window.setInterval(tick, 30000);
   if (store.get(SB_KEY) === "0") toggleSidebar(true);
@@ -1570,7 +1612,7 @@ export function initShell(opts: ShellOptions): Shell {
       setAgentChrome(lastAgents, v);
     })
     .catch(() => undefined);
-  void Promise.all([api.app.probeAgents(), api.app.getConfig()])
+  if (opts.page !== "account") void Promise.all([api.app.probeAgents(), api.app.getConfig()])
     .then(([agents, config]) => setAgentChrome(agents, appVersion, config.agentId))
     .catch(() => undefined);
   return { cmd, toggleSidebar, toggleInsp, openPalette, setSelfTitle, api };

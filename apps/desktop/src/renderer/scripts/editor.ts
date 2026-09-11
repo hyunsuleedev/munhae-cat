@@ -1,7 +1,18 @@
+import { configureConcordance } from "./concordance-ui";
+import { configureQuickTerm } from "./quick-term-ui";
+import { USAGE_LABELS } from "./knowledge-model";
+import { configureDictionary } from "./dictionary-ui";
+import { configureReadingStudy } from "./reading-study-ui";
+import { configureReviewExport } from "./review-export-ui";
+import { configureTranslationChecks } from "./translation-checks-ui";
+import { configureDocumentFind } from "./document-find-ui";
+import type { CheckInput, TranslationCheck } from "./translation-checks";
 import { matchUnchangedTextSentences, replaceTextSentence, textSentences, type TextSentence } from "@munhae/domain/text-sentences";
 import { configureSentenceLinkUi } from "./sentence-link-ui";
 import { termMarkup } from "./term-markup";
 import { configureReviewComments } from "./review-comments-ui";
+import { configureDocumentMaterials } from "./document-materials-ui";
+import { createPunctuationProjection, projectSourceRange, type PunctuationProjection } from "./punctuation-projection";
 import type {
   AgentProbe,
   AiRunView,
@@ -10,6 +21,7 @@ import type {
   ContextPreview,
   DocumentListItem,
   EditorView,
+  GlossaryEntryView,
   HomeView,
   KnowledgeView,
   PunctuationSuggestionView,
@@ -48,7 +60,7 @@ import {
 const project = await requireProject();
 if (!project) throw new Error("redirect");
 
-type Layout = "source" | "parallel" | "full";
+type Layout = "source" | "parallel" | "full" | "reading";
 type Workspace = "source" | "punctuation" | "segmentation" | "translation";
 type Block = {
   key: string;
@@ -58,7 +70,7 @@ type Block = {
   kind: string;
 };
 
-type TermInfo = { target: string; kind: string; status: string; note: string };
+type TermInfo = { target: string; kind: string; status: GlossaryEntryView["usageStatus"]; note: string };
 
 const api = initShell({
   page: "editor",
@@ -96,6 +108,9 @@ configureVersionHistoryUi({ api, escape: esc, notify });
 
 let docs: DocumentListItem[] = [];
 let view: EditorView | null = null;
+let punctuationProjection: PunctuationProjection | null = null;
+let sourceCodepoints: string[] = [];
+let parallelSource: "source" | "punctuation" = store.get("munhae.parallel-source") === "source" ? "source" : "punctuation";
 let layout: Layout = "parallel";
 let workspace: Workspace = "source";
 let blocks: Block[] = [];
@@ -109,6 +124,7 @@ let editorEditSerial = 0;
 let translationDraftText = "";
 let selectedSentenceId: string | null = null;
 let sentenceDrafts: TextSentence[] = [];
+let editingSentenceId: string | null = null;
 let sentenceLinks: NonNullable<NonNullable<EditorView["translation"]>["textLayout"]>["links"] = [];
 const pendingTranslationEdits = new Set<string>();
 let blockOrderSaving = false;
@@ -138,7 +154,6 @@ let aiStarting = false;
 let aiCanceling = false;
 let aiActionError: { code: string; message: string } | null = null;
 let aiPollTimer: number | null = null;
-const translationShown = new Set<string>();
 const handledAiTerminals = new Set<string>();
 const finalizingAiTerminals = new Set<string>();
 type AuxiliaryTaskKind = "chat" | "punctuation_suggest";
@@ -169,17 +184,45 @@ let referenceLoadSerial = 0;
 
 const reviewComments = configureReviewComments({
   api,
+  openDictionary: context => dictionary.open(context),
   view: () => view,
   hasUnsavedChanges: () => hasUnsavedChanges() || aiStarting || aiRun?.state === "running",
-  canEditTranslation: () => editing() && !editorMutationBusy(),
+  hasUnsavedTextChanges: () => dirty || sourceDirty || punctuationDirty || translationSaving || workspaceSaving
+    || aiStarting || aiRun?.state === "running" || auxiliaryStarting !== null || auxiliaryRun?.state === "running",
+  canEditTranslation: (sentenceId) => editing() && !editorMutationBusy() && sentenceId === editingSentenceId,
   escape: esc,
   notify,
-  showComments: () => { setWorkspace("translation"); setView("parallel"); setTab("comments"); },
+  showComments: (next = "parallel") => {
+    must<HTMLInputElement>("#alignmentReviewOnly").checked = false;
+    must<HTMLInputElement>("#comparisonQuery").value = "";
+    must<HTMLSelectElement>("#comparisonFilter").value = "all";
+    setWorkspace("translation"); setView(next); setTab("comments");
+  },
   retranslate: revision => { prepRevision = revision; openPreparationDialog(); },
+  reuseComment: comment => documentMaterials.reuseComment(comment),
+  changed: () => { renderComparisonState(); resizeSentenceEditors(); },
   compare: async () => {
     if (!view) return;
     await loadVersionHistory(view.document.id, "translation", "translation");
     openVersionDiff("translation", "translation", true);
+  },
+});
+
+const documentMaterials = configureDocumentMaterials({
+  api, documents: () => docs, view: () => view, escape: esc, notify,
+  canChange: () => !aiStarting && aiRun?.state !== "running" && !auxiliaryStarting && auxiliaryRun?.state !== "running",
+  openPreparation,
+  openDocument: async id => { if (canLeaveEditor()) { clearUnsavedChanges(); await loadEditor(id); } },
+  openMaterials: id => {
+    if (!canLeaveEditor()) return;
+    clearUnsavedChanges();
+    location.href = `knowledge.html${id ? `?material=${encodeURIComponent(id)}` : ""}#context`;
+  },
+  changed: () => {
+    prepRequest += 1;
+    prepPreview = null;
+    prepAuxMode.clear();
+    if (must<HTMLDialogElement>("#dlgPrepare").open) void loadPreparation(true);
   },
 });
 
@@ -191,6 +234,154 @@ const sentenceLinkUi = configureSentenceLinkUi({
   },
   escape: esc, notify,
 });
+
+const translationChecks = configureTranslationChecks({ snapshot: checkSnapshot, escape: esc, locate: locateCheck });
+const documentFind = configureDocumentFind({ host: must("#translationWorkspace"), trigger: must("#btnDocumentFind"),
+  source: () => view?.source.contentText ?? "", translation: () => view?.translation?.textLayout ? translationDraftText : joinBlocks(blocks),
+  editable: () => !!view?.translation?.textLayout && editing() && !editorMutationBusy() && !reviewComments.isSelecting(),
+  apply: applyFullTranslationText, locate: locateTextRange,
+});
+const concordance = configureConcordance({ api, escape: esc, notify, currentDocumentId: () => view?.document.id ?? null,
+  openDocument: async (id, sentenceId, versionId) => {
+    if (hasUnsavedChanges()) { notify("편집한 내용을 저장한 뒤 다른 용례 위치로 이동하세요.", "내 번역 용례"); return; }
+    if (view?.document.id !== id) await loadEditor(id);
+    if (view?.document.id !== id) return;
+    if (sentenceId && view.translation?.versionId === versionId) {
+      document.querySelector<HTMLDialogElement>("#dlgConcordance")?.close();
+      locateSentence(sentenceId);
+    }
+  },
+});
+const quickTerm = configureQuickTerm({ api, escape: esc, notify, getKnowledge: () => knowledge,
+  onSaved: (entry) => {
+    if (knowledge) knowledge.glossary.push(entry);
+    const previous = terms[entry.sourceTerm];
+    if (!previous || entry.usageStatus === "preferred") terms[entry.sourceTerm] = { target: entry.targetTerm, kind: entry.termKind, status: entry.usageStatus, note: entry.noteMd ?? "" };
+    renderTerms(); renderSource();
+  },
+});
+const dictionary = configureDictionary({ api, escape: esc, notify,
+  register: (entry, citation) => quickTerm.open(entry.headword, { targetTerm: entry.reading ?? "", noteMd: citation }),
+});
+const readingStudy = configureReadingStudy({ api, host: must("#viewReading"), escape: esc, notify,
+  canEdit: () => !!view && !sourceDirty && !punctuationDirty && !dirty && !translationSaving && !workspaceSaving && !workspaceSwitching && activeMutations.size === 0 && !sentenceLinkUi.isBusy(),
+  changed: () => renderSaveState(),
+  edited: () => { editorEditSerial += 1; },
+});
+const reviewExport = configureReviewExport({ api, currentDocumentId: () => view?.document.id ?? null, notify,
+  beforeExport: () => {
+    if (hasUnsavedChanges() || editorMutationBusy()) { notify("편집한 내용을 먼저 저장한 뒤 검토본을 출력하세요.", "검토본 출력"); return false; }
+    return true;
+  },
+});
+
+function checkSnapshot(): CheckInput | null {
+  if (!view) return null;
+  return { identity: `${view.document.id}:${view.translation?.versionId ?? ""}`, source: view.source.contentText, translation: view.translation?.textLayout ? translationDraftText : joinBlocks(blocks),
+    sentences: sentenceDrafts, links: sentenceLinks, glossary: knowledge?.glossary ?? [], comments: reviewComments.current(),
+    currentDependencies: view.translation?.isCurrentDependencies ?? true, dirty, hasLayout: !!view.translation?.textLayout };
+}
+function selectedPhrase(): string {
+  const selection = window.getSelection();
+  if (selection?.anchorNode && !selection.isCollapsed && must("#translationWorkspace").contains(selection.anchorNode)) return Array.from(selection.toString()).slice(0, 200).join("");
+  const focused = document.activeElement;
+  if (focused instanceof HTMLTextAreaElement && focused.selectionStart !== focused.selectionEnd) return Array.from(focused.value.slice(focused.selectionStart, focused.selectionEnd)).slice(0, 200).join("");
+  const field = lastSelectedTranslation;
+  return field?.isConnected && field.getClientRects().length && field.selectionStart !== field.selectionEnd ? Array.from(field.value.slice(field.selectionStart, field.selectionEnd)).slice(0, 200).join("") : "";
+}
+let lastSelectedTranslation: HTMLTextAreaElement | null = null;
+document.addEventListener("selectionchange", () => {
+  const focused = document.activeElement;
+  if (focused instanceof HTMLTextAreaElement && must("#translationWorkspace").contains(focused)) lastSelectedTranslation = focused;
+});
+function scrollToTextRect(rect: DOMRect): void {
+  const pane = must(".pane-center .pane-scroll");
+  const bounds = pane.getBoundingClientRect();
+  pane.scrollTop += rect.top - bounds.top - bounds.height / 3;
+}
+function scrollTextareaSelection(field: HTMLTextAreaElement, at: number): void {
+  const mirror = document.createElement("div");
+  const style = getComputedStyle(field);
+  mirror.style.cssText = "position:fixed;left:-10000px;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;";
+  for (const property of ["font", "line-height", "letter-spacing", "padding", "border", "box-sizing", "text-indent", "tab-size"]) mirror.style.setProperty(property, style.getPropertyValue(property));
+  mirror.style.width = `${field.getBoundingClientRect().width}px`;
+  mirror.textContent = field.value.slice(0, at);
+  const marker = document.createElement("span"); marker.textContent = field.value.slice(at, at + 2) || " "; mirror.append(marker);
+  document.body.append(mirror);
+  const fieldRect = field.getBoundingClientRect();
+  const top = marker.getBoundingClientRect().top - mirror.getBoundingClientRect().top;
+  if (field.scrollHeight > field.clientHeight + 2) field.scrollTop = Math.max(0, top - field.clientHeight / 3);
+  scrollToTextRect(new DOMRect(fieldRect.x, fieldRect.y + top - field.scrollTop, 1, 20));
+  mirror.remove();
+}
+function locateSentence(id: string): void {
+  must<HTMLInputElement>("#alignmentReviewOnly").checked = false;
+  must<HTMLInputElement>("#comparisonQuery").value = "";
+  must<HTMLSelectElement>("#comparisonFilter").value = "all";
+  selectedSentenceId = id;
+  setWorkspace("translation"); setView("parallel"); renderComparisonState(); resizeSentenceEditors();
+  const row = $$("#rows [data-review-sentence]").find(item => item.dataset.reviewSentence === id);
+  row?.scrollIntoView({ block: "center" });
+  row?.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
+}
+function locateTextRange(target: "source" | "translation", from: number, to: number): void {
+  if (!view) return;
+  reviewComments.cancelSelection(); setWorkspace("translation"); setView("full");
+  if (target === "translation" && view.translation?.textLayout) {
+    const field = must<HTMLTextAreaElement>("#fullTranslationInput");
+    const normalizedFrom = translationDraftText.slice(0, from).replace(/\r\n?/g, "\n").length;
+    const normalizedTo = translationDraftText.slice(0, to).replace(/\r\n?/g, "\n").length;
+    field.focus(); field.setSelectionRange(normalizedFrom, normalizedTo); scrollTextareaSelection(field, normalizedFrom);
+  } else if (target === "translation") {
+    const root = must("#fullText");
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const range = document.createRange(); let offset = 0; let started = false; let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const length = node.textContent?.length ?? 0;
+      if (!started && from <= offset + length) { range.setStart(node, Math.max(0, from - offset)); started = true; }
+      if (started && to <= offset + length) { range.setEnd(node, Math.max(0, to - offset)); break; }
+      offset += length;
+    }
+    if (started) { const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range); scrollToTextRect(range.getBoundingClientRect()); }
+  } else {
+    const container = must("#folioSourceText");
+    // Display exact source for offset navigation; normal view rendering restores punctuation.
+    container.textContent = view.source.contentText;
+    container.dataset.reviewSourceFrom = "0";
+    container.dataset.reviewSourceTo = String(sourceCodepoints.length);
+    container.dataset.reviewSourceQuote = view.source.contentText;
+    delete container.dataset.reviewSourceMap;
+    const node = container.firstChild;
+    if (!node) return;
+    const range = document.createRange(); range.setStart(node, Math.min(from, node.textContent?.length ?? 0)); range.setEnd(node, Math.min(to, node.textContent?.length ?? 0));
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+    scrollToTextRect(range.getBoundingClientRect()); must("#folioSourceLabel").textContent = "원문 · 선택 위치";
+  }
+}
+function locateCheck(issue: TranslationCheck): void {
+  if (issue.commentId) { must<HTMLInputElement>("#alignmentReviewOnly").checked = false; must<HTMLInputElement>("#comparisonQuery").value = ""; must<HTMLSelectElement>("#comparisonFilter").value = "all"; renderComparisonState(); reviewComments.locateById(issue.commentId); return; }
+  if (issue.target && issue.from !== undefined && issue.to !== undefined) {
+    const text = issue.target === "source" ? view?.source.contentText ?? "" : view?.translation?.textLayout ? translationDraftText : joinBlocks(blocks);
+    locateTextRange(issue.target, Array.from(text).slice(0, issue.from).join("").length, Array.from(text).slice(0, issue.to).join("").length);
+  } else if (issue.sentenceId) locateSentence(issue.sentenceId);
+}
+function comparisonSentences() {
+  const only = must<HTMLInputElement>("#alignmentReviewOnly").checked;
+  const query = must<HTMLInputElement>("#comparisonQuery").value.trim();
+  let filter = must<HTMLSelectElement>("#comparisonFilter").value;
+  if (dirty && filter === "comments") { filter = "all"; must<HTMLSelectElement>("#comparisonFilter").value = "all"; }
+  const comments = reviewComments.current();
+  return sentenceDrafts.filter(sentence => {
+    if (dirty && sentence.id === selectedSentenceId) return true;
+    const link = sentenceLinks.find(item => item.sentenceId === sentence.id);
+    if (only && !sentenceNeedsReview(sentence.id)) return false;
+    if (filter === "unlinked" && link?.spans.length) return false;
+    if (filter === "comments" && (dirty || !comments.some(comment => comment.targetKind === "translation"
+      ? comment.codepointFrom < sentence.to && comment.codepointTo > sentence.from
+      : link?.spans.some(span => span.from < comment.codepointTo && span.to > comment.codepointFrom)))) return false;
+    return !query || sentence.text.includes(query) || link?.spans.some(span => span.quote.includes(query) || displayedSource(span).text.includes(query));
+  });
+}
 
 const VERSION_STATE_LABELS: Record<EditorView["source"]["state"], string> = {
   draft: "작성 중",
@@ -242,8 +433,6 @@ function prepReasonLabel(reason: string): string {
     related_uncertainty: "현재 문서 앵커",
     project_uncertainty: "다른 문서의 불확실성",
     project_glossary: "공통 용어집",
-    project_person: "공통 인물",
-    project_place: "공통 지명",
   };
   return labels[reason] ?? reason;
 }
@@ -337,6 +526,8 @@ function phaseLabel(phase: string): string {
     validating: "응답 형식 확인",
     validation_failed: "응답 형식 확인 실패",
     applying: "번역안 저장",
+    translation_saved: "문장을 연결하는 중",
+    aligning: "문장을 연결하는 중",
     stopping: "실행 중지",
     completed: "번역 완료",
     failed: "실행 실패",
@@ -374,7 +565,7 @@ function renderAiRunPanel(): void {
 
   const state: AiRunView["state"] = aiStarting ? "running" : (aiRun?.state ?? "failed");
   const labels: Record<AiRunView["state"], string> = {
-    running: aiCanceling ? "취소 요청 중" : "실행 중",
+    running: aiCanceling ? "취소 요청 중" : ["translation_saved", "aligning"].includes(aiRun?.phase ?? "") ? "문장을 연결하는 중" : "실행 중",
     completed: aiRun?.validationState === "invalid_unapplied"
       ? "완료 · 미적용"
       : aiRun?.validationState === "needs_review"
@@ -399,7 +590,7 @@ function renderAiRunPanel(): void {
   meter.setAttribute("aria-valuetext", labels[state]);
   meter.setAttribute("aria-busy", String(state === "running"));
 
-  const validation = validationLabel(aiRun?.validationState ?? null);
+  const validation = state === "running" ? null : validationLabel(aiRun?.validationState ?? null);
   must("#prepRunPhase").textContent = aiStarting
     ? "로컬 에이전트에 실행을 요청하는 중입니다."
     : [phaseLabel(aiRun?.phase ?? state), validation].filter(Boolean).join(" · ");
@@ -708,6 +899,7 @@ async function loadPreparation(preserveSelections = false): Promise<void> {
     result = await api.context.preview({
       documentNodeId,
       revision: prepRevision,
+      referenceCommentIds: documentMaterials.referenceCommentIds(),
       selections: [...prepAuxMode].map(([id, mode]) => ({ id, mode })),
     });
   } catch (error) {
@@ -803,10 +995,6 @@ function receiveAiRun(next: AiRunView): void {
   aiCanceling = next.state === "running" && next.phase === "stopping";
   aiActionError = null;
   renderPreparationControls();
-  if (next.state === "running" && ["translation_saved", "aligning"].includes(next.phase) && !translationShown.has(next.messageId) && !hasUnsavedChanges()) {
-    translationShown.add(next.messageId);
-    void loadEditor(next.documentNodeId).then(()=>{setWorkspace("translation");setView("full");must<HTMLDialogElement>("#dlgPrepare").close();});
-  }
   if (next.state === "running") {
     scheduleAiPoll(next.messageId);
     return;
@@ -902,10 +1090,13 @@ async function startAiTranslation(): Promise<void> {
   aiActionError = null;
   aiStarting = true;
   renderPreparationControls();
+  const launchDocumentId = view.document.id;
+  const referenceCommentIds = documentMaterials.referenceCommentIds();
   try {
     const result = await api.ai.startTranslation({
-      documentNodeId: view.document.id,
+      documentNodeId: launchDocumentId,
       revision: prepRevision,
+      referenceCommentIds,
       selections: [...prepAuxMode].map(([id, mode]) => ({ id, mode })),
       agentId: selectedPrepAgent(),
     });
@@ -916,6 +1107,7 @@ async function startAiTranslation(): Promise<void> {
       notify(actionableAiError(result.error), "AI 번역을 시작하지 못했습니다");
       return;
     }
+    documentMaterials.clearLaunchedComments(launchDocumentId, referenceCommentIds);
     receiveAiRun(result.data);
   } catch (error) {
     aiStarting = false;
@@ -1439,7 +1631,7 @@ function editing(): boolean {
 }
 
 function editorMutationBusy(): boolean {
-  return workspaceSaving || translationSaving || activeMutations.size > 0 || sentenceLinkUi.isBusy();
+  return workspaceSaving || translationSaving || activeMutations.size > 0 || sentenceLinkUi.isBusy() || readingStudy.isBusy() || documentMaterials.isBusy();
 }
 
 function renderEditingLocks(): void {
@@ -1454,7 +1646,12 @@ function renderEditingLocks(): void {
   must<HTMLSelectElement>("#punctuationMode").disabled = busy || punctuationLocked;
   must<HTMLInputElement>("#punctuationChangeSummary").disabled = busy || punctuationLocked;
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly = busy || !editing();
-  $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach((el) => { el.readOnly = busy || !editing() || reviewComments.isSelecting(); });
+  $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach((el) => { el.readOnly = busy || !editing() || reviewComments.isSelecting() || el.dataset.sentenceEdit !== editingSentenceId; });
+  $$<HTMLButtonElement>("#rows [data-edit-sentence]").forEach((button) => {
+    button.disabled = busy || !editing() || reviewComments.isSelecting();
+    button.textContent = button.dataset.editSentence === editingSentenceId ? "편집 마침" : "편집";
+    button.setAttribute("aria-pressed", String(button.dataset.editSentence === editingSentenceId));
+  });
   $$("#rows .tgt-edit").forEach((el) => { el.contentEditable = String(!busy && editing()); });
 }
 
@@ -1498,6 +1695,50 @@ function quoteFor(key: string): string {
       .join("");
   }
   return "";
+}
+
+function showsPunctuation(): boolean {
+  return parallelSource === "punctuation" && !!punctuationProjection;
+}
+
+function displayedSource(span: { from: number; to: number; quote: string }) {
+  if (showsPunctuation() && sourceCodepoints.slice(span.from, span.to).join("") === span.quote) {
+    const projected = projectSourceRange(punctuationProjection!, span.from, span.to);
+    if (projected) return projected;
+  }
+  return { text: span.quote, boundaries: null };
+}
+
+function renderParallelSourceHeading(): void {
+  const select = must<HTMLSelectElement>("#parallelSource");
+  const legacyFallback = !!view?.translation && !view.translation.textLayout && !punctuationProjection;
+  select.value = showsPunctuation() ? "punctuation" : "source";
+  select.disabled = legacyFallback;
+  if (legacyFallback) select.value = "punctuation";
+  select.options[1]!.disabled = !punctuationProjection;
+  must("#parallelSourceGlyph").textContent = showsPunctuation() || legacyFallback ? "標點" : "原文";
+  const status = must("#parallelSourceStatus");
+  status.textContent = legacyFallback ? "번역 당시 표점 구절" : showsPunctuation()
+    ? `P${view!.punctuation!.versionNo} · ${VERSION_STATE_LABELS[view!.punctuation!.state]}`
+    : !view?.punctuation ? "표점 저장 후 전환 가능" : !punctuationProjection ? "현재 원문에 맞는 표점 필요" : "";
+  status.hidden = !status.textContent;
+  select.title = showsPunctuation() ? "저장된 표점문에서 연결 구절을 표시합니다." : "연결된 원문 구절을 표시합니다.";
+}
+
+function sourceSpanMarkup(span: { from: number; to: number; quote: string }): string {
+  const display = displayedSource(span);
+  const escapeText = (text: string) => esc(text).replaceAll("\r", "&#13;");
+  const mapping = display.boundaries ? ` data-review-source-map="${escapeText(JSON.stringify(display.boundaries))}"` : "";
+  return `<span data-review-source-from="${span.from}" data-review-source-to="${span.to}" data-review-source-quote="${escapeText(span.quote)}"${mapping}>${escapeText(display.text)}</span>`;
+}
+
+function parallelAnchor(key: string): string {
+  const anchor = view?.anchors.find(item => item.anchorKey === key);
+  if (!anchor || !punctuationProjection) return quoteFor(key);
+  const boundaries = punctuationProjection.sourceBoundaryByPunctuationBoundary;
+  const from = boundaries[anchor.punctuationFrom], to = boundaries[anchor.punctuationTo];
+  if (from === undefined || to === undefined) return quoteFor(key);
+  return showsPunctuation() ? quoteFor(key) : sourceCodepoints.slice(from, to).join("");
 }
 
 function renderSource(): void {
@@ -1544,16 +1785,17 @@ function renderSource(): void {
 }
 
 function renderRows(): void {
+  renderParallelSourceHeading();
   const textLayout=view?.translation?.textLayout;
   if(textLayout) {
     const signature = (spans: typeof sentenceLinks[number]["spans"]) => spans.map((span) => `${span.from}:${span.to}`).join(",");
     must("#rows").innerHTML = sentenceDrafts.map((sentence, index) => {
       const link = sentenceLinks.find((item) => item.sentenceId === sentence.id);
-      const source = link?.spans.map(span => `<span data-review-source-from="${span.from}" data-review-source-to="${span.to}">${esc(span.quote).replaceAll("\r", "&#13;")}</span>`).join('<span class="review-source-gap"> … </span>') || '<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>';
+      const source = link?.spans.map(sourceSpanMarkup).join('<span class="review-source-gap"> … </span>') || '<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>';
       const relatedCount = link?.spans.length ? sentenceLinks.filter((item) => signature(item.spans) === signature(link.spans)).length : 0;
       const relation = relatedCount > 1 ? `같은 원문 · 번역 ${relatedCount}문장` : link?.spans.length ? `연결 구절 ${link.spans.length}개` : "미연결";
       const canLink = !!view?.translation?.isCurrentDependencies && !dirty && !translationSaving && textLayout.state !== "running";
-      return `<article class="brow" data-review-sentence="${esc(sentence.id)}" aria-label="번역 ${index + 1} 대조"><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span><span data-review-row-count></span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || translationSaving || reviewComments.isSelecting() ? " readonly" : ""}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state">${!link?.spans.length || link.needsReview ? "대응 확인 필요" : link.reviewedBy === "human" ? "대응 확인됨" : "자동 연결"}</span><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(sentence.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? "대응 확인·수정" : "원문 연결"}</button></div></div></article>`;
+      return `<article class="brow" data-review-sentence="${esc(sentence.id)}" aria-label="번역 ${index + 1} 대조"><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span><span data-review-row-count></span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || editorMutationBusy() || reviewComments.isSelecting() || editingSentenceId !== sentence.id ? " readonly" : ""}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state">${!link?.spans.length || link.needsReview ? "대응 확인 필요" : link.reviewedBy === "human" ? "대응 확인됨" : "자동 연결"}</span><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence="${esc(sentence.id)}" aria-pressed="${editingSentenceId === sentence.id}"${!editing() || editorMutationBusy() || reviewComments.isSelecting() ? " disabled" : ""}>${editingSentenceId === sentence.id ? "편집 마침" : "편집"}</button><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(sentence.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? "대응 확인·수정" : "원문 연결"}</button></div></div></article>`;
     }).join("");
     renderComparisonState();
     must("#blockCount").textContent=String(sentenceDrafts.length);
@@ -1568,7 +1810,7 @@ function renderRows(): void {
   rows.innerHTML = bs
     .map((b, i) => {
       const isHot = b.anchors.some((k) => hot.includes(k));
-      const src = b.anchors.map((k) => quoteFor(k)).join("");
+      const src = b.anchors.map(parallelAnchor).join("");
       const orderDisabled = !can || blockOrderSaving;
       const upDisabled = orderDisabled || i === 0;
       const downDisabled = orderDisabled || i === bs.length - 1;
@@ -1592,7 +1834,8 @@ function renderComparisonState(): void {
   must("#viewParallel .comparison-tools").hidden = !whole;
   if (!whole) { must("#comparisonEmpty").hidden = true; return; }
   const only = must<HTMLInputElement>("#alignmentReviewOnly").checked;
-  const visible = sentenceDrafts.filter((sentence) => !only || sentenceNeedsReview(sentence.id));
+  const visible = comparisonSentences();
+  renderComparisonFilterButton();
   if (!visible.some((sentence) => sentence.id === selectedSentenceId)) selectedSentenceId = visible[0]?.id ?? null;
   const selected = sentenceLinks.find((link) => link.sentenceId === selectedSentenceId);
   const sameSource = (id: string) => {
@@ -1601,7 +1844,7 @@ function renderComparisonState(): void {
   };
   $$("#rows [data-review-sentence]").forEach((row) => {
     const id = row.dataset.reviewSentence!;
-    row.hidden = only && !sentenceNeedsReview(id);
+    row.hidden = !visible.some(sentence => sentence.id === id);
     row.classList.toggle("is-active", id === selectedSentenceId);
     row.classList.toggle("is-related", id !== selectedSentenceId && sameSource(id));
     const label = row.querySelector<HTMLElement>("[data-sentence-review]");
@@ -1615,7 +1858,7 @@ function renderComparisonState(): void {
     ? `번역 ${sentenceDrafts.length}문장 · 대응 확인 필요 ${pending}`
     : `번역 문장 연결 ${sentenceDrafts.length}/${sentenceDrafts.length}${view?.translation?.textLayout?.error ? " · 원문 전체 범위는 별도 확인" : ""}`;
   must("#comparisonEmpty").hidden = visible.length > 0;
-  must("#comparisonEmpty").textContent = sentenceDrafts.length ? "대응을 확인할 문장이 없습니다." : "서책 보기에서 번역을 입력하면 문장별로 대조할 수 있습니다.";
+  must("#comparisonEmpty").textContent = sentenceDrafts.length ? "검색·필터 조건에 맞는 문장이 없습니다." : "서책 보기에서 번역을 입력하면 문장별로 대조할 수 있습니다.";
   const index = visible.findIndex((sentence) => sentence.id === selectedSentenceId);
   must<HTMLButtonElement>("#btnPreviousSentence").disabled = index <= 0;
   must<HTMLButtonElement>("#btnNextSentence").disabled = index < 0 || index >= visible.length - 1;
@@ -1623,7 +1866,7 @@ function renderComparisonState(): void {
 
 function moveSentence(direction: -1 | 1): void {
   const only = must<HTMLInputElement>("#alignmentReviewOnly").checked;
-  const visible = sentenceDrafts.filter((sentence) => !only || sentenceNeedsReview(sentence.id));
+  const visible = comparisonSentences();
   const index = visible.findIndex((sentence) => sentence.id === selectedSentenceId);
   selectedSentenceId = visible[index + direction]?.id ?? selectedSentenceId;
   renderComparisonState();
@@ -1643,6 +1886,7 @@ function resizeSentenceEditors(): void {
 }
 
 function renderFull(): void {
+  documentFind.refresh();
   const whole=!!view?.translation?.textLayout;
   renderSaveState();
   renderComparisonState();
@@ -1650,14 +1894,15 @@ function renderFull(): void {
   must("#reviewCommentToolbar").hidden = !whole;
   must("#fullTranslationInput").hidden=!whole;
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly=!editing() || translationSaving;
-  $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach((editor) => { editor.readOnly = !editing() || translationSaving || reviewComments.isSelecting(); });
   renderEditingLocks();
   must("#translationEditHelp").hidden=!whole;
   must("#translationEditHelp").textContent=editing()
-    ? "번역문을 클릭해 수정하세요. 번역 저장 또는 ⌘S로 저장합니다."
+    ? "문장별 ‘편집’을 눌러 수정하세요. 번역 저장 또는 ⌘S로 저장합니다."
     : "읽기 전용 번역입니다. 확정본은 ‘새 번역안으로 수정’을 눌러 편집하세요.";
   must("#fullText").hidden=whole;
   must("#textTranslationControls").hidden=!whole;
+  must("#btnSaveFullTranslation").hidden = !whole;
+  must("#btnRetryAlignment").hidden = !whole;
   must<HTMLInputElement>("#chkStruct").closest("label")!.hidden=whole;
   must<HTMLInputElement>("#chkKeys").closest("label")!.hidden=whole;
   must("#legacyTranslationCounts").hidden=whole;
@@ -1784,22 +2029,9 @@ function renderChat(): void {
 }
 
 function renderTerms(): void {
-  const entries = Object.entries(terms);
-  must("#ctxTerms").innerHTML = entries.length
-    ? entries
-        .map(([k, t]) => {
-          const a = view?.anchors.find((x) => (x.punctuatedQuote || "").includes(k));
-          const cls = t.status === "preferred" ? "tag-ok" : "tag-plain";
-          return `<div class="li"><span><b class="hanmun">${esc(k)}</b> → ${esc(t.target)}</span><span class="row" style="gap:6px"><span class="tag ${cls}">${esc(t.status)}</span><span class="mono muted">${a ? esc(a.anchorKey) : "—"}</span></span></div>`;
-        })
-        .join("")
-    : '<p class="muted" style="font-size:12px">일치한 용어가 없습니다.</p>';
-  const people = knowledge?.persons ?? [];
-  const places = knowledge?.places ?? [];
-  must("#ctxPeople").innerHTML =
-    [...people.map((p) => `<div class="li"><span><b class="hanmun">${esc(p.hanjaName || p.preferredName)}</b> ${esc(p.reading ?? p.preferredName)} <span class="muted">· 인물</span></span><span class="muted">${esc(p.dateText ?? "")}</span></div>`),
-      ...places.map((p) => `<div class="li"><span><b class="hanmun">${esc(p.hanjaName || p.preferredName)}</b> ${esc(p.reading ?? "")} <span class="muted">· 지명</span></span></div>`)].join("") ||
-    '<p class="muted" style="font-size:12px">인물·지명이 없습니다.</p>';
+  const source = view?.source.contentText ?? "";
+  const entries = (knowledge?.glossary ?? []).filter(entry => source.includes(entry.sourceTerm));
+  must("#ctxTerms").innerHTML = entries.length ? entries.map(entry => `<div class="li" style="display:grid;gap:5px"><span><b class="hanmun">${esc(entry.sourceTerm)}</b> → ${esc(entry.targetTerm)}</span><span class="tag ${entry.usageStatus === "preferred" ? "tag-ok" : "tag-plain"}">${USAGE_LABELS[entry.usageStatus]}</span>${entry.noteMd ? `<p class="muted" style="white-space:pre-wrap;margin:0">${esc(entry.noteMd)}</p>` : ""}</div>`).join("") : '<p class="muted" style="font-size:12px">원문에 일치하는 등록 용어가 없습니다. 확인한 표현은 ‘용어 등록’에서 남길 수 있습니다.</p>';
   const unc = knowledge?.uncertainties.filter((u) => u.state === "open") ?? [];
   must("#ctxUnc").innerHTML = unc.length
     ? unc
@@ -1918,7 +2150,7 @@ function renderDraftWorkspaces(): void {
   punctuationBadge.textContent = punctuationEditable ? VERSION_STATE_LABELS[punctuation.state] : "미생성";
   const punctuationMessage = must("#punctuationMessage");
   const sourceConfirmed = view.source.state === "confirmed";
-  punctuationMessage.className = `workflow-notice${!sourceConfirmed || punctuationDirty || (!preview && punctuationNeedsCreation) ? " is-warn" : !preview && punctuation?.state === "confirmed" ? " is-ok" : ""}`;
+  punctuationMessage.className = `workflow-notice${!sourceConfirmed || punctuationDirty || (!preview && punctuationNeedsCreation) ? " is-warn" : ""}`;
   punctuationMessage.textContent = preview
     ? "AI 제안을 원문과 대조하고 있습니다. 제안을 적용하면 같은 입력란에서 표점과 구조를 편집할 수 있습니다."
     : !sourceConfirmed
@@ -1930,8 +2162,9 @@ function renderDraftWorkspaces(): void {
     : punctuationDirty
       ? "저장하지 않은 표점 원문 변경이 있습니다. 구조 범위가 표점 원문과 맞는지 확인하세요."
       : punctuation?.state === "confirmed"
-        ? `표점 원문이 확정되어 분절 앵커 ${view.anchors.length}개가 생성되었습니다.`
-        : "표점 원문과 구조 범위를 저장한 뒤 확정하세요. 앵커는 확정할 때 생성됩니다.";
+        ? ""
+        : "표점 원문과 구조 범위를 저장한 뒤 확정하세요.";
+  punctuationMessage.hidden = !punctuationMessage.textContent;
   const createActions = must<HTMLElement>("#punctuationCreateActions");
   createActions.hidden = !!preview || !sourceConfirmed || !punctuationNeedsCreation;
   const createCopy = createActions.querySelector("span");
@@ -2031,7 +2264,11 @@ function renderWorkflow(): void {
   must<HTMLElement>("#translationStale").hidden = !staleTranslation;
   must<HTMLElement>("#manualDraftControls").hidden = !!view.translation;
   must<HTMLButtonElement>("#btnResetTranslationDraft").hidden = !staleTranslation;
-  must<HTMLElement>("#translationToolbar").hidden = !translation || !hasTranslation;
+  // Saved source supports source reading and study before a translation exists.
+  // Keep view navigation available so those views always have an exit.
+  must<HTMLElement>("#translationToolbar").hidden = !translation || !ready;
+  must<HTMLElement>("#stateBadge").hidden = !hasTranslation;
+  must<HTMLElement>("#validBadge").hidden = !hasTranslation;
   must<HTMLButtonElement>("#btnPrepare").hidden = !translation;
   must<HTMLButtonElement>("#btnDiff").hidden = false;
   if (translation && hasTranslation) {
@@ -2055,6 +2292,10 @@ function renderWorkflow(): void {
 }
 
 function setWorkspace(next: Workspace, committedMutation = false): void {
+  if (next !== workspace && readingStudy.hasUnsavedDraft()) {
+    void readingStudy.save().then(saved => { if (saved) setWorkspace(next, committedMutation); });
+    return;
+  }
   if (!committedMutation && next !== workspace && (editorMutationBusy() || workspaceSwitching)) return;
   if (next !== workspace && (sourceDirty || punctuationDirty || dirty)) {
     void saveBeforeWorkspaceSwitch(next);
@@ -2074,7 +2315,10 @@ function setWorkspace(next: Workspace, committedMutation = false): void {
     notify("원문을 먼저 저장하세요", "번역");
     return;
   }
+  $$(".editor-tool-popover:popover-open").forEach((popover) => popover.hidePopover());
   workspace = next;
+  must("#ws").classList.toggle("reading-layout", next === "translation" && layout === "reading");
+  readingStudy.setVisible(next === "translation" && layout === "reading");
   renderWorkflow();
   if (next === "source") must<HTMLTextAreaElement>("#sourceDraftText").focus();
   if (next === "punctuation") {
@@ -2114,14 +2358,22 @@ function renderFolioDocument(): void {
   if (!view) return;
   const d = view.document;
   must("#titleDoc").textContent = d.originalTitle || d.title;
-  const punctuation = view.punctuation?.state === "confirmed" ? view.punctuation : null;
+  const projection = view.punctuation?.state === "confirmed"
+    ? createPunctuationProjection(view.source.contentText, view.punctuation.punctuatedText) : null;
+  const punctuation = projection ? view.punctuation : null;
   must("#folioSourceLabel").textContent = punctuation ? "확정 표점 원문" : "원문";
   const source = punctuation?.punctuatedText ?? view.source.contentText;
-  must("#folioSourceText").textContent = source;
+  const sourceElement = must("#folioSourceText");
+  sourceElement.textContent = source;
+  sourceElement.dataset.reviewSourceFrom = "0";
+  sourceElement.dataset.reviewSourceTo = String(sourceCodepoints.length);
+  sourceElement.dataset.reviewSourceQuote = view.source.contentText;
+  if (projection) sourceElement.dataset.reviewSourceMap = JSON.stringify(projection.sourceBoundaryByPunctuationBoundary);
+  else delete sourceElement.dataset.reviewSourceMap;
   must("#translationWorkspace").classList.toggle("full-text-document", !!view.translation?.textLayout);
   const aiButton = must("#btnPrepare");
   const actions = must("#translationWorkspace > .segmentation-actions");
-  (view.translation?.textLayout ? must("#textTranslationControls") : actions).append(aiButton);
+  (view.translation?.isCurrentDependencies ? must("#translationCommandActions") : actions).append(aiButton);
   actions.classList.toggle("has-translation", !!view.translation?.isCurrentDependencies);
   renderSaveState();
 }
@@ -2265,12 +2517,25 @@ function setHot(keys: string[]): void {
 }
 
 function setView(v: Layout): void {
+  if (v !== layout && readingStudy.isBusy()) return;
+  if (v !== "reading" && layout === "reading" && readingStudy.hasUnsavedDraft()) {
+    void readingStudy.save().then(saved => { if (saved) setView(v); });
+    return;
+  }
+  if (v === "reading" && (sourceDirty || punctuationDirty || dirty)) {
+    void (sourceDirty ? saveSourceDraft() : punctuationDirty ? savePunctuationDraft() : saveDraft()).then(saved => { if (saved) setView(v); });
+    return;
+  }
   if (v !== "parallel") reviewComments.cancelSelection();
+  const enteringReading = v === "reading" && layout !== "reading";
   layout = v;
+  must("#ws").classList.toggle("reading-layout", workspace === "translation" && v === "reading");
   $$("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
   $$(".view").forEach((el) => el.classList.toggle("is-open", el.id === `view${v[0]?.toUpperCase()}${v.slice(1)}`));
   if (v === "parallel") resizeSentenceEditors();
   renderComparisonState();
+  readingStudy.setVisible(workspace === "translation" && v === "reading", v === "reading" ? selectedSentenceId : null);
+  if (enteringReading) must("#viewReading").closest(".pane-scroll")?.scrollTo({ top: 0 });
 }
 
 function setTab(t: string): void {
@@ -2285,6 +2550,10 @@ function selectRow(key: string): void {
 }
 
 function togglePane(which: "ref" | "ctx", force?: boolean): void {
+  if (layout === "reading") {
+    if (readingStudy.isBusy() || readingStudy.hasUnsavedDraft()) { notify("풀이를 저장한 뒤 다른 패널을 여세요.", "구절 연구"); return; }
+    setView("parallel");
+  }
   const ws = must("#ws");
   const cls = which === "ref" ? "no-ref" : "no-ctx";
   const hide = force !== undefined ? force : !ws.classList.contains(cls);
@@ -2298,6 +2567,9 @@ function applyView(v: EditorView): void {
   if (documentChanged) {
     selectedSentenceId = null;
     must<HTMLInputElement>("#alignmentReviewOnly").checked = false;
+    must<HTMLInputElement>("#comparisonQuery").value = "";
+    must<HTMLSelectElement>("#comparisonFilter").value = "all";
+    documentFind.reset();
     chatLoadSerial += 1;
     prepRequest += 1;
     prepPreview = null;
@@ -2309,6 +2581,10 @@ function applyView(v: EditorView): void {
     clearReferencePreview();
   }
   view = v;
+  sourceCodepoints = Array.from(v.source.contentText);
+  punctuationProjection = v.punctuation && ["draft", "confirmed"].includes(v.punctuation.state)
+    && (!v.translation?.textLayout || v.translation.isCurrentDependencies)
+    ? createPunctuationProjection(v.source.contentText, v.punctuation.punctuatedText) : null;
   blocks = v.translation ? blocksFrom(v.translation) : [];
   dirty = false;
   pendingTranslationEdits.clear();
@@ -2331,17 +2607,20 @@ function applyView(v: EditorView): void {
   if (documentChanged) workspace = v.source.contentText.trim() ? "translation" : "source";
   if (workspace === "segmentation") workspace = "translation";
   if (v.translation?.textLayout) {
+    editingSentenceId = null;
     sentenceDrafts = v.translation.textLayout.sentences.map((sentence) => ({ ...sentence }));
     sentenceLinks = v.translation.textLayout.links.map((link) => ({ ...link }));
     translationDraftText = v.translation.textContent;
     must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
     if (documentChanged) layout = "parallel";
-  }
+  } else { sentenceDrafts = []; sentenceLinks = []; translationDraftText = ""; }
 
   active = null;
   renderAll();
+  readingStudy.setDocument(v);
   setView(layout);
   void reviewComments.load();
+  documentMaterials.setDocument(v);
   void loadVersionHistory(v.document.id, historyKind(), historyKind() === "translation" ? "translation" : null);
   setSelfTitle(`${v.document.originalTitle || v.document.title} — ${v.project.title}`);
 }
@@ -2564,6 +2843,8 @@ function openConfirm(): void {
   }
   must("#confirmText").textContent = `번역안 v${translation.versionNo}을 확정합니다. 확정은 내용 승인이며 공유와는 별개입니다.`;
   must("#confirmKv").innerHTML = `<dt>참조</dt><dd class="mono">원문 V${view.source.versionNo}${view.punctuation ? ` · 표점 P${view.punctuation.versionNo}` : ""}</dd><dt>저장 검사</dt><dd>${validate(blocks).length ? "needs_review" : "valid"}</dd><dt>원문 대응</dt><dd>사용자 검토 대상</dd><dt>공유</dt><dd class="muted">확정과 별개 — 이 로컬 프로젝트는 공유하지 않습니다</dd>`;
+  const checks = translationChecks.summary();
+  must("#confirmKv").insertAdjacentHTML("beforeend", `<dt>내용 점검</dt><dd>${checks.length}개 확인 항목 · 번역 점검에서 위치를 볼 수 있습니다.</dd>`);
   (must("#dlgConfirm") as HTMLDialogElement).showModal();
 }
 
@@ -2624,6 +2905,7 @@ function showWorkflowError(target: "source" | "punctuation", message: string): v
   const notice = must(`#${target}Message`);
   notice.className = "workflow-notice is-error";
   notice.textContent = message;
+  notice.hidden = false;
   notify(message, target === "source" ? "원문" : "표점 원문");
 }
 
@@ -2855,7 +3137,6 @@ async function confirmPunctuation(): Promise<void> {
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
     if (translationReady()) setWorkspace("translation", true);
-    notify(`표점 원문을 확정하고 분절 앵커 ${result.data.anchors.length}개를 만들었습니다`, "표점 원문 확정");
   } catch (error) {
     showWorkflowError("punctuation", error instanceof Error ? error.message : "표점 원문을 확정하지 못했습니다.");
   } finally {
@@ -3058,16 +3339,21 @@ function pageCmd(id: string): boolean {
       else openLink(i);
       return true;
     case "find":
-      return false;
+      if (workspace !== "translation") return false;
+      documentFind.open(selectedPhrase()); return true;
+    case "export":
+      reviewExport.open(); return true;
   }
   return false;
 }
 
 function pageKeys(e: KeyboardEvent, m: boolean): void {
+  if (m && e.shiftKey && !e.altKey && e.code === "KeyF") { e.preventDefault(); concordance.open(selectedPhrase()); return; }
   const typing = (e.target as HTMLElement).matches("textarea,input,[contenteditable=true]");
   if (m && !e.shiftKey && !e.altKey && e.code === "KeyS") {
     e.preventDefault();
-    if (workspace === "source" && sourceDirty) void saveSourceDraft();
+    if (workspace === "translation" && layout === "reading") void readingStudy.save();
+    else if (workspace === "source" && sourceDirty) void saveSourceDraft();
     else if (workspace === "punctuation" && punctuationDirty) void savePunctuationDraft();
     else if (workspace === "translation" && dirty && !translationSaving) void saveDraft();
     return;
@@ -3277,6 +3563,34 @@ if (store.get("munhae.reading-size") === "large") {
   must("#btnReadingSize").setAttribute("aria-pressed", "true");
 }
 must("#alignmentReviewOnly").addEventListener("change", () => { renderComparisonState(); resizeSentenceEditors(); });
+must("#parallelSource").addEventListener("change", () => {
+  parallelSource = must<HTMLSelectElement>("#parallelSource").value === "punctuation" ? "punctuation" : "source";
+  store.set("munhae.parallel-source", parallelSource);
+  reviewComments.cancelSelection();
+  renderRows();
+  renderEditingLocks();
+});
+must("#comparisonQuery").addEventListener("input", () => { renderComparisonState(); resizeSentenceEditors(); });
+must("#comparisonFilter").addEventListener("change", () => { renderComparisonState(); resizeSentenceEditors(); });
+$$(".editor-tool-popover").forEach((popover) => {
+  popover.addEventListener("click", (event) => {
+    if ((event.target as HTMLElement).closest("button") && popover.matches(":popover-open")) popover.hidePopover();
+  }, { capture: true });
+});
+function renderComparisonFilterButton(): void {
+  const active = must<HTMLSelectElement>("#comparisonFilter").value !== "all" || must<HTMLInputElement>("#alignmentReviewOnly").checked;
+  const button = must("#btnComparisonFilter");
+  button.classList.toggle("is-filtered", active);
+  button.setAttribute("aria-label", active ? "대조 문장 필터 · 적용 중" : "대조 문장 필터");
+}
+must("#btnDocumentFind").addEventListener("click", () => documentFind.open(selectedPhrase()));
+must("#btnConcordance").addEventListener("click", () => concordance.open(selectedPhrase()));
+must("#btnQuickTerm").addEventListener("click", () => quickTerm.open(selectedPhrase()));
+must("#btnDictionary").addEventListener("click", () => dictionary.open({ query: selectedPhrase() }));
+must("#btnReadingStudy").addEventListener("click", () => { must("#researchTools").hidePopover(); setView("reading"); });
+must("#btnDictionaryContext").addEventListener("click", () => dictionary.open({ query: selectedPhrase() }));
+must("#btnTranslationChecks").addEventListener("click", () => translationChecks.open());
+must("#btnReviewExport").addEventListener("click", () => reviewExport.open());
 must("#btnPreviousSentence").addEventListener("click", () => moveSentence(-1));
 must("#btnNextSentence").addEventListener("click", () => moveSentence(1));
 const rows = must("#rows");
@@ -3287,6 +3601,13 @@ rows.addEventListener("focusin", (event) => {
 rows.addEventListener("click", (event) => {
   const row = (event.target as HTMLElement).closest<HTMLElement>("[data-review-sentence]");
   if (row) { selectedSentenceId = row.dataset.reviewSentence!; renderComparisonState(); }
+  const editButton = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-edit-sentence]");
+  if (editButton && !editButton.disabled && editing() && !editorMutationBusy() && !reviewComments.isSelecting()) {
+    editingSentenceId = editingSentenceId === editButton.dataset.editSentence ? null : editButton.dataset.editSentence!;
+    renderEditingLocks();
+    if (editingSentenceId) row?.querySelector<HTMLTextAreaElement>(".sentence-edit")?.focus({ preventScroll: true });
+    return;
+  }
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-edit-sentence-link]");
   if (button && !button.disabled) sentenceLinkUi.open(button.dataset.editSentenceLink!);
 });
@@ -3338,7 +3659,7 @@ rows.addEventListener("input", (e) => {
   if (editorMutationBusy()) return;
   editorEditSerial += 1;
   const sentenceEditor = (e.target as HTMLElement).closest<HTMLTextAreaElement>(".sentence-edit");
-  if (sentenceEditor && editing() && !translationSaving) {
+  if (sentenceEditor && !sentenceEditor.readOnly && sentenceEditor.dataset.sentenceEdit === editingSentenceId && editing() && !translationSaving) {
     const full = must<HTMLTextAreaElement>("#fullTranslationInput");
     const id = sentenceEditor.dataset.sentenceEdit!;
     const updated = updateSentenceDraft(id, sentenceEditor.value);
@@ -3553,7 +3874,7 @@ document.addEventListener("mouseover", (e) => {
   }
   const d = terms[t.dataset.term ?? ""];
   if (!d) return;
-  tc.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:5px"><b class="hanmun" style="font-size:15px">${esc(t.dataset.term ?? "")}</b><span class="tag ${d.status === "preferred" ? "tag-ok" : "tag-plain"}">${esc(d.status)}</span></div><div><b>${esc(d.target)}</b> <span class="muted">· ${esc(d.kind)}</span></div><p class="muted" style="margin-top:5px">${esc(d.note)}</p>`;
+  tc.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:5px"><b class="hanmun" style="font-size:15px">${esc(t.dataset.term ?? "")}</b><span class="tag ${d.status === "preferred" ? "tag-ok" : "tag-plain"}">${USAGE_LABELS[d.status]}</span></div><div><b>${esc(d.target)}</b> <span class="muted">· ${esc(d.kind)}</span></div><p class="muted" style="margin-top:5px">${esc(d.note)}</p>`;
   const r = t.getBoundingClientRect();
   const x = Math.min(r.left, innerWidth - 296);
   const y = r.bottom + 8 > innerHeight - 160 ? r.top - 160 : r.bottom + 8;
@@ -3563,7 +3884,7 @@ document.addEventListener("mouseover", (e) => {
 });
 
 function hasUnsavedChanges(): boolean {
-  return sourceDirty || punctuationDirty || dirty || reviewComments.hasUnsavedDraft();
+  return sourceDirty || punctuationDirty || dirty || reviewComments.hasUnsavedDraft() || readingStudy.hasUnsavedDraft() || documentMaterials.hasUnsavedDraft();
 }
 
 function canLeaveEditor(): boolean {
@@ -3580,6 +3901,8 @@ function clearUnsavedChanges(): void {
   punctuationDirty = false;
   dirty = false;
   pendingTranslationEdits.clear();
+  readingStudy.discard();
+  documentMaterials.discard();
 }
 
 window.addEventListener("beforeunload", (event) => {
@@ -3691,10 +4014,10 @@ window.addEventListener("pagehide", () => {
 
 await boot();
 
-must("#fullTranslationInput").addEventListener("input",()=>{
-  if (!editing() || editorMutationBusy()) return;
+function applyFullTranslationText(text: string): void {
+  if (!editing() || editorMutationBusy() || !view?.translation?.textLayout) return;
   editorEditSerial += 1;
-  const text = must<HTMLTextAreaElement>("#fullTranslationInput").value;
+  must<HTMLTextAreaElement>("#fullTranslationInput").value = text;
   translationDraftText = text;
   dirty=text !== view?.translation?.textContent;
   sentenceDrafts=textSentences(text);
@@ -3707,7 +4030,8 @@ must("#fullTranslationInput").addEventListener("input",()=>{
   renderRows();
   renderFull();
   renderStrip();
-});
+}
+must("#fullTranslationInput").addEventListener("input", () => applyFullTranslationText(must<HTMLTextAreaElement>("#fullTranslationInput").value));
 must("#btnSaveFullTranslation").addEventListener("click",()=>void saveDraft());
 
 must("#btnRetryAlignment").addEventListener("click",()=>void (async()=>{

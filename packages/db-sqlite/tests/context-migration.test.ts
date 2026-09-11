@@ -5,6 +5,8 @@ import { expect, it } from "vitest";
 import { canonicalJsonHash } from "@munhae/domain";
 import { openProject, openSqlite, seedDemoProject } from "../src/index.ts";
 import { contextItemContentHash } from "../src/knowledge-content.ts";
+import { restoreV4KnowledgeFixture } from "./legacy-knowledge-fixture.ts";
+import { withMaterialDefaults } from "./legacy-materials-fixture.ts";
 
 it("upgrades v2 context without classifications, preserving text, scopes, settings and historical requests", () => {
   const parent = mkdtempSync(join(tmpdir(), "munhae-context-upgrade-"));
@@ -17,6 +19,7 @@ it("upgrades v2 context without classifications, preserving text, scopes, settin
   const dbPath = join(path, "project.sqlite3");
   const db = openSqlite(dbPath);
   try {
+    restoreV4KnowledgeFixture(db);
     // Restore the previous column and migration state to exercise the real upgrade path.
     db.exec(`ALTER TABLE context_items ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'external_evidence';
       DROP TABLE review_comments;
@@ -48,7 +51,7 @@ it("upgrades v2 context without classifications, preserving text, scopes, settin
       expect(check.pragma("table_info(context_items)")).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "item_kind" })]));
       const after = check.prepare("SELECT * FROM context_items ORDER BY id").all();
       expect(after).toEqual(before.map(({ item_kind: _kind, content_hash: _hash, ...row }) => ({
-        ...row,
+        ...withMaterialDefaults(row),
         content_hash: contextItemContentHash({
           scopeId: row.scope_id as string, title: row.title as string, contentMd: row.content_md as string,
           priority: row.priority as number, enabled: row.enabled === 1,
@@ -58,7 +61,7 @@ it("upgrades v2 context without classifications, preserving text, scopes, settin
       expect(check.prepare("SELECT * FROM provenance_artifacts ORDER BY id").all()).toEqual(artifacts);
       expect(check.pragma("foreign_key_check")).toEqual([]);
       expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
-      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 4 });
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 7 });
       const backups = readdirSync(path).filter((name) => name.includes(".before-context-without-kind-"));
       expect(backups).toHaveLength(1);
       const backup = openSqlite(join(path, backups[0]!));
