@@ -166,7 +166,6 @@
 .review-comment-dialog p { font-size: 12px; margin-top: 8px; }
 .review-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .review-error { color: var(--danger, #b42318); }
-.review-source-gap { color: var(--muted); user-select: none; }
 
 .ws {
   flex: 1;

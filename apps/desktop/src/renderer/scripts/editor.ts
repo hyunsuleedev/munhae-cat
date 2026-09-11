@@ -1791,7 +1791,7 @@ function renderRows(): void {
     const signature = (spans: typeof sentenceLinks[number]["spans"]) => spans.map((span) => `${span.from}:${span.to}`).join(",");
     must("#rows").innerHTML = sentenceDrafts.map((sentence, index) => {
       const link = sentenceLinks.find((item) => item.sentenceId === sentence.id);
-      const source = link?.spans.map(sourceSpanMarkup).join('<span class="review-source-gap"> … </span>') || '<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>';
+      const source = link?.spans.map(sourceSpanMarkup).join(" ") || '<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>';
       const relatedCount = link?.spans.length ? sentenceLinks.filter((item) => signature(item.spans) === signature(link.spans)).length : 0;
       const relation = relatedCount > 1 ? `같은 원문 · 번역 ${relatedCount}문장` : link?.spans.length ? `연결 구절 ${link.spans.length}개` : "미연결";
       const canLink = !!view?.translation?.isCurrentDependencies && !dirty && !translationSaving && textLayout.state !== "running";
