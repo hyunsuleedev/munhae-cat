@@ -11,14 +11,14 @@ import {
 } from "../src/project-repo.ts";
 import { openSqlite } from "../src/sqlite.ts";
 import { textSentences } from "../src/full-text.ts";
-import { replaceTextSentence } from "@munhae/domain/text-sentences";
+import { groupedTextSentences, replaceTextSentence } from "@munhae/domain/text-sentences";
 import { BUNDLED_SKILLS } from "../src/bundled-skills.ts";
 import { restoreV4KnowledgeFixture } from "./legacy-knowledge-fixture.ts";
 const clean: Array<() => void> = [];
 afterEach(() => {
   while (clean.length) clean.pop()!();
 });
-function setup() {
+function setup(sourceText = "學而時習之不亦說乎有朋自遠方來不亦樂乎") {
   const parentDir = mkdtempSync(join(tmpdir(), "munhae-fulltext-"));
   clean.push(() => rmSync(parentDir, { recursive: true, force: true }));
   const repo = createProject({ title: "전문 번역", parentDir }).handle;
@@ -26,7 +26,7 @@ function setup() {
   const doc = repo.createDocument({
     title: "무표점",
     nodeRole: "source_unit",
-    sourceText: "學而時習之不亦說乎有朋自遠方來不亦樂乎",
+    sourceText,
     originKind: "paste",
     parentId: null,
   });
@@ -63,7 +63,7 @@ it("bundles both skills verbatim and versions them", () => {
         "utf8",
       ),
     ).toBe(text);
-    expect(text).toContain("version: 1.0.0");
+    expect(text).toContain(name === "align-translation" ? "version: 1.3.0" : "version: 1.0.0");
   }
 });
 it("saves consecutive sentence edits as one exact translation and preserves the previous version", () => {
@@ -288,7 +288,7 @@ it("upgrades an actual v1 table without losing legacy history and creates a pre-
     expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
     expect(
       check.prepare("SELECT schema_version FROM meta_project_state").get(),
-    ).toEqual({ schema_version: 7 });
+    ).toEqual({ schema_version: 10 });
   } finally {
     check.close();
   }
@@ -493,4 +493,260 @@ it("carries human correspondence confirmation only while the matched translation
   expect(carried.textLayout?.links[2]).toMatchObject({ sentenceId: "T3", reviewedBy: "human", needsReview: false });
   repo.saveTranslationDraft({ documentNodeId: id, textContent: "새 문장.\n첫 문장.\n고친 둘째 문장.", blocks: [], expectedLockVersion: carried.lockVersion });
   expect(repo.getEditor(id).translation!.textLayout!.links[2]).toEqual({ sentenceId: "T3", spans: [], needsReview: true });
+});
+
+it("keeps Korean and English translation heads separate and requests the selected target", () => {
+  const { repo, id } = setup();
+  const korean = translate(repo, id);
+  const koreanVersion = repo.getEditor(id).translation!.versionId;
+  repo.setTranslationLanguage("en");
+  expect(repo.getEditor(id).translation).toBeNull();
+  const english = translate(repo, id, "Is it not a pleasure to learn and practice?\n\nIs it not a joy to welcome friends from afar?");
+  const englishVersion = repo.getEditor(id).translation!.versionId;
+  expect(englishVersion).not.toBe(koreanVersion);
+  expect(repo.getEditor(id).translation!.textContent).toBe(english.text);
+  expect(JSON.stringify(english.run)).toContain("English");
+  repo.setTranslationLanguage("ko");
+  expect(repo.getEditor(id).translation!.versionId).toBe(koreanVersion);
+  expect(repo.getEditor(id).translation!.textContent).toBe(korean.text);
+  repo.setTranslationLanguage("en");
+  expect(repo.getEditor(id).translation!.versionId).toBe(englishVersion);
+  expect(() => repo.setTranslationLanguage("fr" as "en")).toThrow();
+  const path = repo.packagePath;
+  repo.close();
+  const reopened = openProject(path);
+  clean.push(() => reopened.close());
+  reopened.setTranslationLanguage("en");
+  expect(reopened.getEditor(id).translation!.versionId).toBe(englishVersion);
+  reopened.setTranslationLanguage("ko");
+  expect(reopened.getEditor(id).translation!.versionId).toBe(koreanVersion);
+});
+
+function punctuatedTranslation(source?: string, punctuation = "學而時習之，不亦說乎。有朋自遠方來，不亦樂乎。") {
+  const { repo, id } = setup(source);
+  let editor = repo.getEditor(id);
+  editor = repo.confirmSource({ documentNodeId: id, expectedLockVersion: editor.source.lockVersion });
+  editor = repo.createPunctuationDraftFromConfirmedSource({ documentNodeId: id, structureMode: "prose", expectedSourceLockVersion: editor.source.lockVersion });
+  editor = repo.savePunctuationDraft({ documentNodeId: id, punctuatedText: punctuation, structureMode: "prose", expectedLockVersion: editor.punctuation!.lockVersion });
+  editor = repo.confirmPunctuation({ documentNodeId: id, expectedLockVersion: editor.punctuation!.lockVersion });
+  const { result } = translate(repo, id, "첫 번역. 둘째 번역. 셋째 번역.");
+  const versionId = result.version.versionId;
+  return { repo, id, versionId, punctuationVersionId: editor.punctuation!.versionId };
+}
+it("groups target lines without sharing source across groups and leaves translation unchanged", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  const before = repo.getEditor(id).translation!.textContent;
+  const prompt = repo.prepareAlignment(versionId);
+  expect(prompt).toContain("[a1]學而時習之，不亦說乎。[a2]有朋自遠方來，不亦樂乎。[a3]");
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [
+    { sentenceIds: ["T1", "T2"], ranges: [{ start: "a1", end: "a2" }], needsReview: false },
+    { sentenceIds: ["T3"], ranges: [{ start: "a2", end: "a3" }], needsReview: false },
+  ] }));
+  const editor = repo.getEditor(id);
+  expect(editor.translation!.textContent).toBe(before);
+  expect(editor.translation!.textLayout!.links.map(l => l.spans[0]?.quote)).toEqual([
+    "學而時習之不亦說乎", "學而時習之不亦說乎", "有朋自遠方來不亦樂乎",
+  ]);
+  expect(editor.translation!.textLayout!.state).toBe("ready");
+});
+it.each([{ start: "a0", end: "a2" }, { start: "a2", end: "a1" }, { start: "a2", end: "a2" }])("rejects invalid boundary ranges atomically: %j", range => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  expect(() => repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [
+    { sentenceIds: ["T1"], ranges: [range], needsReview: false },
+  ] }))).toThrow();
+  expect(repo.getEditor(id).translation!.textLayout!.links).toEqual([]);
+});
+it("rejects stale punctuation and quote-mode responses for a boundary request", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  expect(() => repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 1, versionId, links: [] }))).toThrow();
+  const editor = repo.getEditor(id);
+  repo.savePunctuationDraft({ documentNodeId: id, punctuatedText: "學而時習之不亦說乎，有朋自遠方來不亦樂乎。", structureMode: "prose", expectedLockVersion: editor.punctuation!.lockVersion });
+  expect(() => repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [] }))).toThrow(/표점/);
+});
+it("keeps exact-quote alignment when no confirmed punctuation was used", () => {
+  const { repo, id } = setup();
+  const { result } = translate(repo, id);
+  const prompt = repo.prepareAlignment(result.version.versionId);
+  expect(prompt).toContain("exact quotes must come from this text");
+  expect(prompt).not.toContain("## Alignment mode\nboundary-groups.v3");
+});
+
+it("maps supplementary characters, existing punctuation and reflowed whitespace back to exact source ranges", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation("𠀀甲。\n乙丙丁  ", "𠀀甲。乙丙。丁。");
+  expect(repo.prepareAlignment(versionId)).toContain("[a1]𠀀甲。[a2]乙丙。[a3]丁。[a4]");
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [
+    { sentenceIds: ["T1"], ranges: [{ start: "a1", end: "a2" }, { start: "a3", end: "a4" }], needsReview: false },
+    { sentenceIds: ["T2"], ranges: [{ start: "a2", end: "a3" }], needsReview: false },
+    { sentenceIds: ["T3"], ranges: [], needsReview: true },
+  ] }));
+  const layout = repo.getEditor(id).translation!.textLayout!;
+  expect(layout.links[0]!.spans).toEqual([{ from: 0, to: 3, quote: "𠀀甲。" }, { from: 6, to: 9, quote: "丁  " }]);
+  expect(layout.links[1]!.spans).toEqual([{ from: 3, to: 6, quote: "\n乙丙" }]);
+  expect(layout.state).toBe("needs_review");
+});
+it("uses the source end as a final boundary even without a terminal full stop", () => {
+  const { repo, versionId } = punctuatedTranslation("甲乙丙", "甲。乙丙");
+  expect(repo.prepareAlignment(versionId)).toContain("[a1]甲。[a2]乙丙[a3]");
+});
+it("does not use an unconfirmed punctuation draft for boundary alignment", () => {
+  const { repo, id } = setup();
+  let editor = repo.getEditor(id);
+  editor = repo.confirmSource({ documentNodeId: id, expectedLockVersion: editor.source.lockVersion });
+  repo.createPunctuationDraftFromConfirmedSource({ documentNodeId: id, structureMode: "prose", expectedSourceLockVersion: editor.source.lockVersion });
+  const { result } = translate(repo, id);
+  expect(repo.prepareAlignment(result.version.versionId)).not.toContain("## Alignment mode\nboundary-groups.v3");
+});
+
+it.each([
+  [{ sentenceIds: ["T1", "T2"], ranges: [{ start: "a1", end: "a3" }], needsReview: false }, { sentenceIds: ["T3"], ranges: [{ start: "a2", end: "a3" }], needsReview: false }],
+  [{ sentenceIds: ["T1", "T1", "T2", "T3"], ranges: [{ start: "a1", end: "a3" }], needsReview: false }],
+  [{ sentenceIds: ["T1", "T2", "T3"], ranges: [{ start: "a1", end: "a3" }, { start: "a1", end: "a2" }], needsReview: false }],
+])("rejects duplicate target ownership and overlapping source ownership: %j", (...items) => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  expect(() => repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: items }))).toThrow();
+  expect(repo.getEditor(id).translation!.textLayout!.links).toEqual([]);
+});
+it("edits a whole group, rejects manual cross-group overlaps and invalidates groups changed by text edits", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [
+    { sentenceIds: ["T1", "T2"], ranges: [{ start: "a1", end: "a2" }], needsReview: false },
+    { sentenceIds: ["T3"], ranges: [{ start: "a2", end: "a3" }], needsReview: false },
+  ] }));
+  let t = repo.getEditor(id).translation!;
+  expect(t.textLayout!.links[0]!.groupId).toBe(t.textLayout!.links[1]!.groupId);
+  expect(t.textLayout!.links[0]!.groupId).not.toBe(t.textLayout!.links[2]!.groupId);
+  expect(() => repo.saveSentenceLink({ documentNodeId: id, versionId, sentenceId: "T1", expectedLockVersion: t.lockVersion, spans: t.textLayout!.links[2]!.spans })).toThrow(/중복/);
+  repo.saveSentenceLink({ documentNodeId: id, versionId, sentenceId: "T1", expectedLockVersion: t.lockVersion, spans: t.textLayout!.links[0]!.spans });
+  t = repo.getEditor(id).translation!;
+  expect(t.textLayout!.links.slice(0, 2).map(l => l.reviewedBy)).toEqual(["human", "human"]);
+  repo.saveTranslationDraft({ documentNodeId: id, textContent: "바뀐 번역. 둘째 번역. 셋째 번역.", blocks: [], expectedLockVersion: t.lockVersion });
+  const links = repo.getEditor(id).translation!.textLayout!.links;
+  expect(links[0]!.spans).toEqual([]);
+  expect(links[1]!.spans).toEqual([]);
+  expect(links.every(link => !!link.groupId)).toBe(true);
+  expect(links[2]!.spans.length).toBe(1);
+});
+
+it("keeps editing group identity and source through multiline edits, save, and reopen", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [
+    { sentenceIds: ["T1", "T2"], ranges: [{ start: "a1", end: "a2" }], needsReview: false },
+    { sentenceIds: ["T3"], ranges: [{ start: "a2", end: "a3" }], needsReview: false },
+  ] }));
+  const before = repo.getEditor(id).translation!;
+  const links = before.textLayout!.links;
+  const groups = [
+    { id: links[0]!.groupId!, text: "수정한 𠮷 번역.\n새 문장!\n\n", spans: links[0]!.spans },
+    { id: links[2]!.groupId!, text: before.textLayout!.sentences[2]!.text, spans: links[2]!.spans },
+  ];
+  const saved = repo.saveTranslationDraft({ documentNodeId: id, textContent: groups.map(g => g.text).join(""), textGroups: groups, blocks: [], expectedLockVersion: before.lockVersion }).translation!;
+  expect(saved.textLayout!.sentences.map(s => s.text)).toEqual(groups.map(g => g.text));
+  expect(saved.textLayout!.links.map(l => l.groupId)).toEqual(groups.map(g => g.id));
+  expect(saved.textLayout!.links.map(l => l.spans)).toEqual(groups.map(g => g.spans));
+  expect(saved.textLayout!.links.map(l => l.needsReview)).toEqual([true, false]);
+  const unchanged = repo.saveTranslationDraft({ documentNodeId: id, textContent: saved.textContent, blocks: [], expectedLockVersion: saved.lockVersion }).translation!;
+  expect(unchanged.textLayout!.sentences).toEqual(saved.textLayout!.sentences);
+  expect(repo.getDocumentHistory(id).entries.find(e => e.versionId === versionId)?.contentText).toBe(before.textContent);
+  expect(() => repo.saveTranslationDraft({ documentNodeId: id, textContent: groups.map(g => g.text).join(""), textGroups: [groups[0]!, { ...groups[1]!, spans: groups[0]!.spans }], blocks: [], expectedLockVersion: unchanged.lockVersion })).toThrow();
+  expect(repo.getEditor(id).translation!.versionId).toBe(unchanged.versionId);
+});
+
+it("persists explicit merge and split with exclusive source ranges and unchanged translation text", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  repo.completeAlignment(versionId, JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links: [
+    { sentenceIds: ["T1", "T2"], ranges: [{ start: "a1", end: "a2" }], needsReview: false },
+    { sentenceIds: ["T3"], ranges: [{ start: "a2", end: "a3" }], needsReview: false },
+  ] }));
+  const before = repo.getEditor(id).translation!;
+  const links = before.textLayout!.links;
+  const merged = [{ id: links[0]!.groupId!, text: before.textContent, spans: [links[0]!.spans[0]!, links[2]!.spans[0]!] }];
+  const saved = repo.saveTranslationDraft({ documentNodeId: id, textContent: before.textContent, textGroups: merged, blocks: [], expectedLockVersion: before.lockVersion }).translation!;
+  expect(saved.textLayout!.sentences).toHaveLength(1);
+  expect(saved.textLayout!.links[0]!.needsReview).toBe(true);
+  const cut = before.textLayout!.sentences[2]!.from;
+  const points = Array.from(before.textContent);
+  const split = [
+    { id: merged[0]!.id, text: points.slice(0, cut).join(""), spans: links[0]!.spans },
+    { id: "new-stable-group", text: points.slice(cut).join(""), spans: links[2]!.spans },
+  ];
+  const resplit = repo.saveTranslationDraft({ documentNodeId: id, textContent: before.textContent, textGroups: split, blocks: [], expectedLockVersion: saved.lockVersion }).translation!;
+  expect(resplit.textContent).toBe(before.textContent);
+  expect(resplit.textLayout!.sentences).toHaveLength(2);
+  expect(resplit.textLayout!.links.map(l => l.groupId)).toEqual(split.map(g => g.id));
+});
+
+it("collapses old group members without losing whitespace or supplementary characters", () => {
+  const text = "  첫 𠮷 문장.\n\n둘째 문장!  셋째 문장.\n";
+  const sentences = textSentences(text);
+  const links = sentences.map((sentence, i) => ({ sentenceId: sentence.id, groupId: i < 2 ? "group-one" : "group-two" }));
+  const groups = groupedTextSentences(text, sentences, links);
+  expect(groups).toHaveLength(2);
+  expect(groups.map(group => group.text).join("")).toBe(text);
+  expect(groups[0]!.to).toBe(groups[1]!.from);
+  expect(groups[1]!.to).toBe(Array.from(text).length);
+});
+
+it("partially repairs shifted correspondence without replacing unaffected links", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  const input = (links: unknown[]) => JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links });
+  const group = (sentenceIds: string[], start: string, end: string) => ({ sentenceIds, ranges: [{ start, end }], needsReview: false });
+  repo.submitAlignment(versionId, input([group(["T1"], "a1", "a2"), group(["T2"], "a2", "a3")]));
+  const report = repo.checkAlignment(versionId);
+  expect(report.issues.map(issue => issue.id)).toEqual(["target:T3"]);
+  expect(report.warnings).toHaveLength(1);
+  expect(repo.getEditor(id).translation!.textLayout!.state).toBe("running");
+  expect(() => repo.finishAlignment(versionId, { revision: report.revision, outcome: "complete" })).toThrow(/미해결/);
+  const before = repo.getEditor(id).translation!.textLayout!.links;
+  expect(() => repo.submitAlignment(versionId, input([group(["T3"], "a2", "a3")]))).toThrow(/중복/);
+  expect(repo.getEditor(id).translation!.textLayout!.links).toEqual(before);
+  repo.submitAlignment(versionId, input([group(["T1", "T2"], "a1", "a2"), group(["T3"], "a2", "a3")]));
+  expect(() => repo.finishAlignment(versionId, { revision: report.revision, outcome: "complete" })).toThrow(/변경/);
+  const fixed = repo.checkAlignment(versionId);
+  expect(fixed.issues).toEqual([]);
+  expect(repo.finishAlignment(versionId, { revision: fixed.revision, outcome: "complete" }).state).toBe("ready");
+  const stable = repo.getEditor(id).translation!.textLayout!.links;
+  expect(() => repo.submitAlignment(versionId, input([group(["T2"], "a1", "a2")]))).toThrow(/T1/);
+  expect(repo.getEditor(id).translation!.textLayout!.links).toEqual(stable);
+  repo.submitAlignment(versionId, input([{ ...group(["T3"], "a2", "a3"), needsReview: true }]));
+  expect(repo.getEditor(id).translation!.textLayout!.links.slice(0, 2)).toEqual(stable.slice(0, 2));
+  const pending = repo.checkAlignment(versionId);
+  expect(() => repo.finishAlignment(versionId, { revision: pending.revision, outcome: "needs_review", unresolved: [] })).toThrow(/사유/);
+  repo.finishAlignment(versionId, { revision: pending.revision, outcome: "needs_review", unresolved: [{ issueId: "target:T3", reason: "의미 대응이 불확실함" }] });
+  expect(repo.getEditor(id).translation!.textLayout!.error).toContain("의미 대응이 불확실함");
+});
+
+it("rejects checks and finalization after the source dependency changes", () => {
+  const { repo, id, versionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  const report = repo.checkAlignment(versionId);
+  const editor = repo.getEditor(id);
+  repo.savePunctuationDraft({ documentNodeId: id, punctuatedText: "學而時習之。不亦說乎。有朋自遠方來，不亦樂乎。", structureMode: "prose", expectedLockVersion: editor.punctuation!.lockVersion });
+  expect(() => repo.checkAlignment(versionId)).toThrow(/표점/);
+  expect(() => repo.finishAlignment(versionId, { revision: report.revision, outcome: "needs_review" })).toThrow(/표점/);
+});
+
+it("protects human-reviewed groups while allowing partial updates elsewhere", () => {
+  const { repo, id, versionId, punctuationVersionId } = punctuatedTranslation();
+  repo.prepareAlignment(versionId);
+  const groups = [
+    { sentenceIds: ["T1", "T2"], ranges: [{ start: "a1", end: "a2" }], needsReview: false },
+    { sentenceIds: ["T3"], ranges: [{ start: "a2", end: "a3" }], needsReview: false },
+  ];
+  const input = (links: unknown[]) => JSON.stringify({ schemaVersion: 3, versionId, punctuationVersionId, links });
+  repo.completeAlignment(versionId, input(groups));
+  const t = repo.getEditor(id).translation!;
+  repo.saveSentenceLink({ documentNodeId: id, versionId, sentenceId: "T1", expectedLockVersion: t.lockVersion, spans: t.textLayout!.links[0]!.spans });
+  repo.prepareAlignment(versionId);
+  const before = repo.getEditor(id).translation!.textLayout!.links;
+  expect(() => repo.submitAlignment(versionId, input(groups))).toThrow(/사람/);
+  expect(repo.getEditor(id).translation!.textLayout!.links).toEqual(before);
+  repo.submitAlignment(versionId, input([groups[1]]));
+  expect(repo.getEditor(id).translation!.textLayout!.links.slice(0, 2)).toEqual(before.slice(0, 2));
 });

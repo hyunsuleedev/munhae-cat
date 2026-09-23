@@ -5,7 +5,7 @@ import {
   type ProjectTransitionKind,
 } from "../src/renderer/scripts/project-transition";
 
-const KINDS: ProjectTransitionKind[] = ["create", "open", "seed", "close"];
+const KINDS: ProjectTransitionKind[] = ["create", "open", "seed", "close", "organize"];
 
 describe("renderer project transition boundary", () => {
   it.each(KINDS)("does not start %s when the editor vetoes leaving", async (kind) => {

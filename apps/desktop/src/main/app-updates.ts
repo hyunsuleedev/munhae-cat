@@ -1,3 +1,5 @@
+import { translateUi } from "../shared/ui-translations";
+import { getAppConfig } from "./session";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { app, dialog, Menu, shell, type MessageBoxOptions } from "electron";
@@ -12,14 +14,17 @@ let dialogBusy = false;
 let startupTimer: ReturnType<typeof setTimeout> | undefined;
 function message(options: MessageBoxOptions) {
   const win = getMainWindow();
-  const opts = { title: "문해 업데이트", noLink: true, ...options };
+  const t = (text: string) => translateUi(text, getAppConfig().language);
+  const opts = { title: t("문해 업데이트"), noLink: true, ...options,
+    message: t(options.message), detail: options.detail ? t(options.detail) : undefined,
+    buttons: options.buttons?.map(t) };
   return win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts);
 }
 function changed(state: UpdateState) {
   const label = state.phase === "downloading" ? `업데이트 다운로드 중 (${Math.floor(state.percent ?? 0)}%)…`
     : state.phase === "downloaded" ? "다운로드한 업데이트 설치…" : "업데이트 확인…";
   const item = Menu.getApplicationMenu()?.getMenuItemById("updates");
-  if (item) item.label = label;
+  if (item) item.label = translateUi(label, getAppConfig().language);
   getMainWindow()?.setProgressBar(state.phase === "downloading" ? (state.percent ?? 0) / 100 : -1);
   if (state.phase !== "downloading") log.info("updater state", state);
 }

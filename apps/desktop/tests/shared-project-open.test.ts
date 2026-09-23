@@ -64,7 +64,7 @@ describe("project Open from the shared command", () => {
     const f = await fixture("native", { ok: true, data: project });
     await f.cmd("open");
 
-    expect(f.nativeOpen).toHaveBeenCalledExactlyOnceWith();
+    expect(f.nativeOpen).toHaveBeenCalledExactlyOnceWith(undefined);
     expect(f.fetcher).not.toHaveBeenCalled();
     expect(f.location.href).toBe("home.html");
   });

@@ -25,9 +25,11 @@
     "@xmldom/xmldom": "^0.8.15",
     "better-sqlite3": "^11.10.0",
     "electron-updater": "6.6.2",
+    "markdown-it": "14.1.0",
     "three": "0.185.1"
   },
   "devDependencies": {
+    "@types/markdown-it": "14.1.2",
     "@types/node": "^22.15.0",
     "@types/three": "0.185.4",
     "electron": "38.8.6",

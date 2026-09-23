@@ -1,5 +1,9 @@
+import { t } from "./i18n";
 import { IPC_CHANNELS, type IpcChannel, type MunhaeApi } from "../../shared/munhae-api";
 import { createBrowserAccountEvents } from "./browser-auth-events";
+
+import { createBrowserProjectEvents } from "./browser-project-events";
+const projectEvents = createBrowserProjectEvents();
 
 const BRIDGE_URL = "/__munhae/api";
 const accountEvents = createBrowserAccountEvents();
@@ -11,12 +15,17 @@ async function invoke<T>(channel: IpcChannel, ...args: unknown[]): Promise<T> {
     body: JSON.stringify({ channel, args }),
   });
   const payload = await response.json() as { value?: T; error?: string };
-  if (!response.ok) throw new Error(payload.error ?? "Electron 브리지에 연결할 수 없습니다.");
+  if (!response.ok) throw new Error(payload.error ?? t("Electron 브리지에 연결할 수 없습니다."));
   return payload.value as T;
 }
 
 export function createBrowserApi(): MunhaeApi {
   return {
+    billing: {
+      getStatus: () => invoke(IPC_CHANNELS.billingGetStatus),
+      openCheckout: () => invoke(IPC_CHANNELS.billingOpenCheckout),
+      openPortal: () => invoke(IPC_CHANNELS.billingOpenPortal),
+    },
     dictionary: {
       search: (input) => invoke(IPC_CHANNELS.dictionarySearch, input),
       getStatus: () => invoke(IPC_CHANNELS.dictionaryGetStatus),
@@ -42,11 +51,29 @@ export function createBrowserApi(): MunhaeApi {
       probeAgents: () => invoke(IPC_CHANNELS.appProbeAgents),
       getLoginInstruction: (agentId) => invoke(IPC_CHANNELS.appGetLoginInstruction, agentId),
       quit: () => invoke(IPC_CHANNELS.appQuit),
-      checkUpdates: async () => { throw new Error("업데이트 확인은 문해 데스크톱 앱에서 사용할 수 있습니다."); },
+      checkUpdates: async () => { throw new Error(t("업데이트 확인은 문해 데스크톱 앱에서 사용할 수 있습니다.")); },
       openExternal: (url) => invoke(IPC_CHANNELS.appOpenExternal, url),
+      copyText: (text) => navigator.clipboard.writeText(text),
+      openChatSource: (url) => invoke(IPC_CHANNELS.appOpenChatSource, url),
       onCommand: () => () => undefined,
     },
+    onlineProjects: {
+      sharing: (input) => invoke(IPC_CHANNELS.onlineProjectsSharing, input),
+      invitations: () => invoke(IPC_CHANNELS.onlineProjectsInvitations),
+      invite: (input) => invoke(IPC_CHANNELS.onlineProjectsInvite, input),
+      respond: (input) => invoke(IPC_CHANNELS.onlineProjectsRespond, input),
+      cancelInvitation: (input) => invoke(IPC_CHANNELS.onlineProjectsCancelInvitation, input),
+      updateMember: (input) => invoke(IPC_CHANNELS.onlineProjectsUpdateMember, input),
+      open: (input) => invoke(IPC_CHANNELS.onlineProjectsOpen, input),
+      status: () => invoke(IPC_CHANNELS.onlineProjectsStatus),
+      sync: () => invoke(IPC_CHANNELS.onlineProjectsSync),
+      exportRecovery: (id) => invoke(IPC_CHANNELS.onlineProjectsExportRecovery, id),
+      create: (input) => invoke(IPC_CHANNELS.onlineProjectsCreate, input),
+      list: () => invoke(IPC_CHANNELS.onlineProjectsList),
+      get: (id) => invoke(IPC_CHANNELS.onlineProjectsGet, id),
+    },
     project: {
+      onChanged: projectEvents.subscribe,
       create: (input) => invoke(IPC_CHANNELS.projectCreate, input),
       open: (packagePath) => invoke(IPC_CHANNELS.projectOpen, packagePath),
       close: () => invoke(IPC_CHANNELS.projectClose),
@@ -65,6 +92,7 @@ export function createBrowserApi(): MunhaeApi {
       createDocument: (input) => invoke(IPC_CHANNELS.documentCreate, input),
       pickTextFile: () => invoke(IPC_CHANNELS.documentPickText),
       getDocumentMetadata: (documentNodeId) => invoke(IPC_CHANNELS.documentGetMetadata, documentNodeId),
+      moveDocument: (input) => invoke(IPC_CHANNELS.documentMove, input),
       updateDocumentMetadata: (input) => invoke(IPC_CHANNELS.documentUpdateMetadata, input),
     },
     editor: {
@@ -98,12 +126,30 @@ export function createBrowserApi(): MunhaeApi {
         invoke(IPC_CHANNELS.editorOpenReference, documentNodeId, assetId),
     },
     research: {
+    startReadingAnalysis: input => invoke(IPC_CHANNELS.researchStartReadingAnalysis, input),
+    getReadingAnalysis: id => invoke(IPC_CHANNELS.researchGetReadingAnalysis, id),
+    latestReadingAnalysis: input => invoke(IPC_CHANNELS.researchLatestReadingAnalysis, input),
+    cancelReadingAnalysis: id => invoke(IPC_CHANNELS.researchCancelReadingAnalysis, id),
+    applyReadingAnalysis: input => invoke(IPC_CHANNELS.researchApplyReadingAnalysis, input),
+      startMaterialRefinement: input => invoke(IPC_CHANNELS.researchStartMaterialRefinement, input),
+      getMaterialRefinement: id => invoke(IPC_CHANNELS.researchGetMaterialRefinement, id),
+      cancelMaterialRefinement: id => invoke(IPC_CHANNELS.researchCancelMaterialRefinement, id),
       searchFootnotes: (input) => invoke(IPC_CHANNELS.researchSearchFootnotes, input),
       startFootnoteAnalysis: (input) => invoke(IPC_CHANNELS.researchStartFootnoteAnalysis, input),
       getFootnoteAnalysis: (id) => invoke(IPC_CHANNELS.researchGetFootnoteAnalysis, id),
       cancelFootnoteAnalysis: (id) => invoke(IPC_CHANNELS.researchCancelFootnoteAnalysis, id),
     },
-    knowledge: {
+    terms: {
+    list: documentId => invoke(IPC_CHANNELS.termsList, documentId),
+    delete: input => invoke(IPC_CHANNELS.termsDelete, input),
+    save: input => invoke(IPC_CHANNELS.termsSave, input),
+    promote: input => invoke(IPC_CHANNELS.termsPromote, input),
+    start: (documentId, excludedMaterialIds, glossarySelection) => invoke(IPC_CHANNELS.termsStart, documentId, excludedMaterialIds, glossarySelection),
+    getRun: id => invoke(IPC_CHANNELS.termsGetRun, id),
+    latestRun: id => invoke(IPC_CHANNELS.termsLatestRun, id),
+    cancel: id => invoke(IPC_CHANNELS.termsCancel, id),
+  },
+  knowledge: {
     getMaterials: (documentNodeId) => invoke(IPC_CHANNELS.knowledgeGetMaterials, documentNodeId),
     setMaterialPreference: (input) => invoke(IPC_CHANNELS.knowledgeSetMaterialPreference, input),
     reuseCommentAsMaterial: (input) => invoke(IPC_CHANNELS.knowledgeReuseCommentAsMaterial, input),
@@ -113,7 +159,7 @@ export function createBrowserApi(): MunhaeApi {
       updateContext: (input) => invoke(IPC_CHANNELS.knowledgeUpdateContext, input),
       setContextEnabled: (input) => invoke(IPC_CHANNELS.knowledgeSetContextEnabled, input),
       setContextPriority: (input) => invoke(IPC_CHANNELS.knowledgeSetContextPriority, input),
-      archiveContext: (input) => invoke(IPC_CHANNELS.knowledgeArchiveContext, input),
+      deleteContext: (input) => invoke(IPC_CHANNELS.knowledgeDeleteContext, input),
       createUncertainty: (input) => invoke(IPC_CHANNELS.knowledgeCreateUncertainty, input),
       versionUncertainty: (input) => invoke(IPC_CHANNELS.knowledgeVersionUncertainty, input),
       resolveUncertainty: (input) => invoke(IPC_CHANNELS.knowledgeResolveUncertainty, input),

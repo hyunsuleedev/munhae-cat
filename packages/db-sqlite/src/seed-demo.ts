@@ -12,7 +12,9 @@ import {
   contextItemContentHash,
   glossaryContentHash,
 } from "./knowledge-content.ts";
-import { insertRow } from "./rows.ts";
+import { and, eq } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type { BlockDraft } from "./translation.ts";
 
@@ -252,14 +254,14 @@ export function seedDemoContents(boot: BootstrappedProject): void {
   ];
   for (const n of nodes) insertNode(db, projectId, t.nodes, n);
 
-  insertRow(db, "core_project_settings", {
+  orm(db).insert(schema.core_project_settings).values({
     project_id: projectId,
     active_document_node_id: d1,
     autosave_interval_ms: 3000,
     ai_data_policy_json: JSON.stringify({ storePrompts: false }),
     settings_json: JSON.stringify({ demo: true }),
     lock_version: 1,
-  });
+  }).run();
 
   const eojeseo = seedSourcePunctuationAnchors({
     db,
@@ -366,7 +368,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
   const threadId = createId();
   const userMsgId = createId();
   const asstMsgId = createId();
-  insertRow(db, "chat_threads", {
+  orm(db).insert(schema.chat_threads).values({
     id: threadId,
     project_id: projectId,
     title: "御製序 번역",
@@ -374,8 +376,8 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     scope_id: d1,
     created_by_actor_id: actors.humanId,
     created_at: t.v1,
-  });
-  insertRow(db, "chat_messages", {
+  }).run();
+  orm(db).insert(schema.chat_messages).values({
     id: userMsgId,
     project_id: projectId,
     thread_id: threadId,
@@ -387,8 +389,8 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     task_kind: "chat",
     output_validation_state: "not_applicable",
     created_at: t.v1,
-  });
-  insertRow(db, "chat_message_parts", {
+  }).run();
+  orm(db).insert(schema.chat_message_parts).values({
     id: createId(),
     project_id: projectId,
     message_id: userMsgId,
@@ -397,8 +399,8 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     text_content: "御製序의 완성 번역을 만들어 주세요.",
     structured_json: null,
     artifact_id: null,
-  });
-  insertRow(db, "chat_messages", {
+  }).run();
+  orm(db).insert(schema.chat_messages).values({
     id: asstMsgId,
     project_id: projectId,
     thread_id: threadId,
@@ -413,8 +415,8 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     output_contract: "translation-envelope.v2",
     output_validation_state: "valid",
     created_at: t.v1,
-  });
-  insertRow(db, "chat_message_parts", {
+  }).run();
+  orm(db).insert(schema.chat_message_parts).values({
     id: createId(),
     project_id: projectId,
     message_id: asstMsgId,
@@ -423,10 +425,10 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     text_content: "완성 번역을 제출했습니다. 일반 채팅은 번역 데이터를 변경하지 않습니다.",
     structured_json: null,
     artifact_id: null,
-  });
+  }).run();
 
   const translationId = createId();
-  insertRow(db, "document_translations", {
+  orm(db).insert(schema.document_translations).values({
     id: translationId,
     project_id: projectId,
     document_node_id: d1,
@@ -434,7 +436,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     target_locale: "ko",
     created_at: t.v1,
     tombstoned_at: null,
-  });
+  }).run();
   const v1Id = createId();
   insertTranslationVersion(db, {
     id: v1Id,
@@ -484,15 +486,15 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     blocks: TRANSLATION_V2_BLOCKS,
     anchors: eojeseo.anchors,
   });
-  insertRow(db, "document_translation_heads", {
+  orm(db).insert(schema.document_translation_heads).values({
     project_id: projectId,
     document_translation_id: translationId,
     current_version_id: v2Id,
     confirmed_version_id: null,
     lock_version: 2,
     updated_at: t.v2,
-  });
-  insertRow(db, "user_edits", {
+  }).run();
+  orm(db).insert(schema.user_edits).values({
     id: createId(),
     project_id: projectId,
     document_translation_id: translationId,
@@ -502,11 +504,11 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     reason: "b1 어순 정리, b3 ‘글자’→‘자’",
     actor_id: actors.humanId,
     created_at: t.v2,
-  });
+  }).run();
 
   seedGlossary(db, projectId, actors.humanId, t.glossary);
   seedUncertainties(db, projectId, actors.humanId, eojeseo.anchors, d1, d9, t.v1);
-  insertRow(db, "context_items", {
+  orm(db).insert(schema.context_items).values({
     id: createId(),
     project_id: projectId,
     scope_kind: "document_node",
@@ -519,7 +521,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     created_at: t.nodes,
     updated_at: t.nodes,
     archived_at: null,
-  });
+  }).run();
   for (const item of [
     {
       id: createId(),
@@ -543,7 +545,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       priority: 99,
     },
   ]) {
-    insertRow(db, "context_items", {
+    orm(db).insert(schema.context_items).values({
       id: item.id,
       project_id: projectId,
       scope_kind: "document_node",
@@ -556,7 +558,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
       created_at: t.nodes,
       updated_at: t.nodes,
       archived_at: null,
-    });
+    }).run();
   }
 
   void yeui;
@@ -564,7 +566,7 @@ export function seedDemoContents(boot: BootstrappedProject): void {
 }
 
 function insertNode(db: SqliteDb, projectId: string, createdAt: string, n: NodeSpec): void {
-  insertRow(db, "document_nodes", {
+  orm(db).insert(schema.document_nodes).values({
     id: n.id,
     project_id: projectId,
     parent_node_id: n.parentId,
@@ -582,7 +584,7 @@ function insertNode(db: SqliteDb, projectId: string, createdAt: string, n: NodeS
     created_at: createdAt,
     updated_at: createdAt,
     archived_at: null,
-  });
+  }).run();
 }
 
 function seedSourceOnly(
@@ -597,7 +599,7 @@ function seedSourceOnly(
 ): void {
   const sourceTextId = createId();
   const versionId = createId();
-  insertRow(db, "src_texts", {
+  orm(db).insert(schema.src_texts).values({
     id: sourceTextId,
     project_id: projectId,
     document_node_id: nodeId,
@@ -605,8 +607,8 @@ function seedSourceOnly(
     status: "active",
     created_at: createdAt,
     tombstoned_at: null,
-  });
-  insertRow(db, "src_text_versions", {
+  }).run();
+  orm(db).insert(schema.src_text_versions).values({
     id: versionId,
     project_id: projectId,
     source_text_id: sourceTextId,
@@ -615,20 +617,19 @@ function seedSourceOnly(
     content_text: source,
     origin_kind: "paste",
     source_asset_id: null,
-    change_summary: null,
     state: confirmed ? "confirmed" : "draft",
     content_hash: sha256Hex(source),
     created_by_actor_id: actors.humanId,
     created_at: createdAt,
-  });
-  insertRow(db, "src_text_heads", {
+  }).run();
+  orm(db).insert(schema.src_text_heads).values({
     project_id: projectId,
     source_text_id: sourceTextId,
     current_version_id: versionId,
     confirmed_version_id: confirmed ? versionId : null,
     lock_version: 1,
     updated_at: createdAt,
-  });
+  }).run();
 }
 
 type AnchorRec = { id: string; key: string; ordinal: number; required: number };
@@ -656,7 +657,7 @@ function seedSourcePunctuationAnchors(opts: {
   const { db, projectId, actors } = opts;
   const sourceTextId = createId();
   const sourceVersionId = createId();
-  insertRow(db, "src_texts", {
+  orm(db).insert(schema.src_texts).values({
     id: sourceTextId,
     project_id: projectId,
     document_node_id: opts.nodeId,
@@ -664,8 +665,8 @@ function seedSourcePunctuationAnchors(opts: {
     status: "active",
     created_at: opts.createdAt,
     tombstoned_at: null,
-  });
-  insertRow(db, "src_text_versions", {
+  }).run();
+  orm(db).insert(schema.src_text_versions).values({
     id: sourceVersionId,
     project_id: projectId,
     source_text_id: sourceTextId,
@@ -674,20 +675,19 @@ function seedSourcePunctuationAnchors(opts: {
     content_text: opts.source,
     origin_kind: opts.origin,
     source_asset_id: null,
-    change_summary: null,
     state: opts.confirmed ? "confirmed" : "draft",
     content_hash: sha256Hex(opts.source),
     created_by_actor_id: actors.humanId,
     created_at: opts.createdAt,
-  });
-  insertRow(db, "src_text_heads", {
+  }).run();
+  orm(db).insert(schema.src_text_heads).values({
     project_id: projectId,
     source_text_id: sourceTextId,
     current_version_id: sourceVersionId,
     confirmed_version_id: opts.confirmed ? sourceVersionId : null,
     lock_version: 1,
     updated_at: opts.createdAt,
-  });
+  }).run();
 
   const setId = createId();
   const puncVersionId = createId();
@@ -697,7 +697,7 @@ function seedSourcePunctuationAnchors(opts: {
     quote: a.text,
   }));
   const puncHash = canonicalJsonHash({ punctuatedText: opts.punctuated, spans: spanManifest });
-  insertRow(db, "punctuation_sets", {
+  orm(db).insert(schema.punctuation_sets).values({
     id: setId,
     project_id: projectId,
     source_text_id: sourceTextId,
@@ -705,8 +705,8 @@ function seedSourcePunctuationAnchors(opts: {
     policy_version_id: opts.policyVersionId,
     status: "active",
     created_at: opts.createdAt,
-  });
-  insertRow(db, "punctuation_versions", {
+  }).run();
+  orm(db).insert(schema.punctuation_versions).values({
     id: puncVersionId,
     project_id: projectId,
     punctuation_set_id: setId,
@@ -715,20 +715,19 @@ function seedSourcePunctuationAnchors(opts: {
     version_no: 1,
     punctuated_text: opts.punctuated,
     structure_json: JSON.stringify({ kind: "prose" }),
-    change_summary: null,
     state: opts.confirmed ? "confirmed" : "draft",
     content_hash: puncHash,
     created_by_actor_id: actors.humanId,
     created_at: opts.createdAt,
-  });
-  insertRow(db, "punctuation_heads", {
+  }).run();
+  orm(db).insert(schema.punctuation_heads).values({
     project_id: projectId,
     punctuation_set_id: setId,
     current_version_id: puncVersionId,
     confirmed_version_id: opts.confirmed ? puncVersionId : null,
     lock_version: 1,
     updated_at: opts.createdAt,
-  });
+  }).run();
 
   const paraId = createId();
   const fullLen = codepointCount(opts.punctuated);
@@ -789,7 +788,7 @@ function seedSourcePunctuationAnchors(opts: {
       sourceQuoteHash: sha256Hex(a.sourceQuote),
     })),
   });
-  insertRow(db, "translation_anchor_sets", {
+  orm(db).insert(schema.translation_anchor_sets).values({
     id: anchorSetId,
     project_id: projectId,
     document_node_id: opts.nodeId,
@@ -801,11 +800,11 @@ function seedSourcePunctuationAnchors(opts: {
     anchor_set_hash: hash,
     created_by_actor_id: actors.systemId,
     created_at: opts.createdAt,
-  });
+  }).run();
   const recs: AnchorRec[] = [];
   for (const a of mapped) {
     const id = createId();
-    insertRow(db, "translation_anchors", {
+    orm(db).insert(schema.translation_anchors).values({
       id,
       project_id: projectId,
       anchor_set_id: anchorSetId,
@@ -825,15 +824,16 @@ function seedSourcePunctuationAnchors(opts: {
       display_label: a.key,
       required: 1,
       created_at: opts.createdAt,
-    });
+    }).run();
     recs.push({ id, key: a.key, ordinal: a.ordinal, required: 1 });
     const sentId = sentIds[a.sent];
-    let exactSpanId = db.prepare(
-      `SELECT id FROM punctuation_structure_spans
-       WHERE punctuation_version_id = ? AND span_kind = ?
-         AND codepoint_from = ? AND codepoint_to = ?
-       ORDER BY ordinal LIMIT 1`,
-    ).get(puncVersionId, a.kind, a.pFrom, a.pTo) as { id: string } | undefined;
+    const spans = schema.punctuation_structure_spans;
+    let exactSpanId = orm(db).select({ id: spans.id }).from(spans).where(and(
+      eq(spans.punctuation_version_id, puncVersionId),
+      eq(spans.span_kind, a.kind),
+      eq(spans.codepoint_from, a.pFrom),
+      eq(spans.codepoint_to, a.pTo),
+    )).orderBy(spans.ordinal).limit(1).get();
     if (!exactSpanId) {
       exactSpanId = { id: createId() };
       insertSpan(db, projectId, puncVersionId, actors.humanId, opts.createdAt, {
@@ -846,27 +846,27 @@ function seedSourcePunctuationAnchors(opts: {
         quote: a.text,
       });
     }
-    insertRow(db, "translation_anchor_structure_spans", {
+    orm(db).insert(schema.translation_anchor_structure_spans).values({
       project_id: projectId,
       anchor_id: id,
       punctuation_structure_span_id: exactSpanId.id,
       ordinal: 1,
-    });
+    }).run();
     if (sentId && sentId !== exactSpanId.id) {
-      insertRow(db, "translation_anchor_structure_spans", {
+      orm(db).insert(schema.translation_anchor_structure_spans).values({
         project_id: projectId,
         anchor_id: id,
         punctuation_structure_span_id: sentId,
         ordinal: 2,
-      });
+      }).run();
     }
     if (paraId !== exactSpanId.id) {
-      insertRow(db, "translation_anchor_structure_spans", {
+      orm(db).insert(schema.translation_anchor_structure_spans).values({
         project_id: projectId,
         anchor_id: id,
         punctuation_structure_span_id: paraId,
         ordinal: sentId && sentId !== exactSpanId.id ? 3 : 2,
-      });
+      }).run();
     }
   }
 
@@ -909,17 +909,15 @@ function seedSimpleDocument(opts: {
     anchors: [{ key: "A001", text: opts.punctuated, kind: "sentence", sent: 1 }],
   });
   if (!opts.confirmedPunc) {
-    opts.db
-      .prepare(`UPDATE punctuation_versions SET state = 'draft' WHERE id = ?`)
-      .run(chain.puncVersionId);
-    opts.db
-      .prepare(`UPDATE punctuation_heads SET confirmed_version_id = NULL WHERE current_version_id = ?`)
-      .run(chain.puncVersionId);
+    orm(opts.db).update(schema.punctuation_versions).set({ state: "draft" })
+      .where(eq(schema.punctuation_versions.id, chain.puncVersionId)).run();
+    orm(opts.db).update(schema.punctuation_heads).set({ confirmed_version_id: null })
+      .where(eq(schema.punctuation_heads.current_version_id, chain.puncVersionId)).run();
   }
   if (opts.translation) {
     const trId = createId();
     const vid = createId();
-    insertRow(opts.db, "document_translations", {
+    orm(opts.db).insert(schema.document_translations).values({
       id: trId,
       project_id: opts.projectId,
       document_node_id: opts.nodeId,
@@ -927,7 +925,7 @@ function seedSimpleDocument(opts: {
       target_locale: "ko",
       created_at: opts.createdAt,
       tombstoned_at: null,
-    });
+    }).run();
     insertTranslationVersion(opts.db, {
       id: vid,
       projectId: opts.projectId,
@@ -948,14 +946,14 @@ function seedSimpleDocument(opts: {
       blocks: opts.translation.blocks,
       anchors: chain.anchors,
     });
-    insertRow(opts.db, "document_translation_heads", {
+    orm(opts.db).insert(schema.document_translation_heads).values({
       project_id: opts.projectId,
       document_translation_id: trId,
       current_version_id: vid,
       confirmed_version_id: opts.translation.confirmed ? vid : null,
       lock_version: 1,
       updated_at: opts.createdAt,
-    });
+    }).run();
   }
   return { sourceTextId: chain.sourceTextId, anchors: chain.anchors };
 }
@@ -968,7 +966,7 @@ function insertSpan(
   createdAt: string,
   s: { id: string; kind: string; parent: string | null; ordinal: number; from: number; to: number; quote: string },
 ): void {
-  insertRow(db, "punctuation_structure_spans", {
+  orm(db).insert(schema.punctuation_structure_spans).values({
     id: s.id,
     project_id: projectId,
     punctuation_version_id: puncVersionId,
@@ -984,7 +982,7 @@ function insertSpan(
     label: s.kind,
     created_by_actor_id: actorId,
     created_at: createdAt,
-  });
+  }).run();
 }
 
 function mapAnchors(
@@ -1067,7 +1065,7 @@ function insertTranslationVersion(
     origin: string;
     messageId: string | null;
     validationState: "valid" | "needs_review";
-    state: string;
+    state: typeof schema.document_translation_versions.$inferInsert["state"];
     actorId: string;
     createdAt: string;
     blocks: BlockDraft[];
@@ -1076,7 +1074,7 @@ function insertTranslationVersion(
 ): void {
   const translations = opts.blocks.map((b) => b.translation);
   const text = translations.length ? joinBlockTranslations(translations) : opts.text;
-  insertRow(db, "document_translation_versions", {
+  orm(db).insert(schema.document_translation_versions).values({
     id: opts.id,
     project_id: opts.projectId,
     document_translation_id: opts.translationId,
@@ -1095,14 +1093,14 @@ function insertTranslationVersion(
     content_hash: sha256Hex(text),
     created_by_actor_id: opts.actorId,
     created_at: opts.createdAt,
-  });
+  }).run();
   const ranges = blockTargetRanges(translations);
   const byKey = new Map(opts.anchors.map((a) => [a.key, a]));
   for (let i = 0; i < opts.blocks.length; i += 1) {
     const b = opts.blocks[i]!;
     const range = ranges[i] ?? { from: 0, to: codepointCount(text) };
     const blockId = createId();
-    insertRow(db, "translation_blocks", {
+    orm(db).insert(schema.translation_blocks).values({
       id: blockId,
       project_id: opts.projectId,
       document_translation_version_id: opts.id,
@@ -1113,19 +1111,19 @@ function insertTranslationVersion(
       target_codepoint_to: range.to,
       target_hash: sha256Hex(sliceCodepoints(text, range.from, range.to)),
       validation_state: opts.validationState,
-    });
+    }).run();
     let ord = 1;
     for (const key of b.sourceAnchorIds) {
       const a = byKey.get(key);
       if (!a) continue;
-      insertRow(db, "translation_block_anchors", {
+      orm(db).insert(schema.translation_block_anchors).values({
         project_id: opts.projectId,
         translation_block_id: blockId,
         translation_anchor_id: a.id,
         ordinal: ord,
         relation_kind: "full",
         confidence: null,
-      });
+      }).run();
       ord += 1;
     }
   }
@@ -1135,7 +1133,7 @@ function seedGlossary(db: SqliteDb, projectId: string, actorId: string, createdA
   const rows: Array<{
     src: string;
     tgt: string;
-    kind: string;
+    kind: typeof schema.glossary_entries.$inferInsert["term_kind"];
     read: string;
     st: "preferred" | "allowed" | "forbidden";
     note: string;
@@ -1217,7 +1215,7 @@ function seedGlossary(db: SqliteDb, projectId: string, actorId: string, createdA
     },
   ];
   for (const r of rows) {
-    insertRow(db, "glossary_entries", {
+    orm(db).insert(schema.glossary_entries).values({
       id: createId(),
       project_id: projectId,
       source_term: r.src,
@@ -1242,7 +1240,7 @@ function seedGlossary(db: SqliteDb, projectId: string, actorId: string, createdA
       created_at: createdAt,
       updated_at: createdAt,
       archived_at: null,
-    });
+    }).run();
   }
 }
 
@@ -1312,7 +1310,7 @@ function seedUncertainties(
   for (const u of items) {
     const uid = createId();
     const vid = createId();
-    insertRow(db, "uncertainties", {
+    orm(db).insert(schema.uncertainties).values({
       id: uid,
       project_id: projectId,
       category: u.cat,
@@ -1320,8 +1318,8 @@ function seedUncertainties(
       blocking: 0,
       state: u.state,
       created_at: createdAt,
-    });
-    insertRow(db, "uncertainty_versions", {
+    }).run();
+    orm(db).insert(schema.uncertainty_versions).values({
       id: vid,
       project_id: projectId,
       uncertainty_id: uid,
@@ -1333,18 +1331,18 @@ function seedUncertainties(
       content_hash: sha256Hex(u.stmt),
       created_by_actor_id: actorId,
       created_at: createdAt,
-    });
+    }).run();
     u.opts.forEach((label, i) => {
-      insertRow(db, "uncertainty_options", {
+      orm(db).insert(schema.uncertainty_options).values({
         id: createId(),
         project_id: projectId,
         uncertainty_version_id: vid,
         label,
         interpretation_md: null,
         ordinal: i + 1,
-      });
+      }).run();
     });
-    insertRow(db, "uncertainty_anchors", {
+    orm(db).insert(schema.uncertainty_anchors).values({
       id: createId(),
       project_id: projectId,
       uncertainty_version_id: vid,
@@ -1354,6 +1352,6 @@ function seedUncertainties(
       codepoint_to: null,
       quote: u.quote,
       quote_hash: sha256Hex(u.quote),
-    });
+    }).run();
   }
 }

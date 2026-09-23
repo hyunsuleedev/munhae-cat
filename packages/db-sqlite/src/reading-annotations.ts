@@ -1,5 +1,8 @@
 import { canonicalJson, canonicalJsonHash, codepointCount, createId, MunhaeError, nowIso, sha256Hex, sliceCodepoints } from "@munhae/domain";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { ProjectActors } from "./bootstrap.ts";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import { allRows, getRow, insertRow } from "./rows.ts";
 import type { SqliteDb } from "./sqlite.ts";
 
@@ -80,12 +83,21 @@ function activeDocument(repo: Context, id: string): void {
 }
 function currentSource(repo: Context, documentNodeId: string): Source {
   activeDocument(repo, documentNodeId);
-  const source = getRow<Source>(repo.db, `SELECT version.id AS sourceVersionId, version.content_text AS contentText,
-    version.content_hash AS contentHash FROM src_texts source
-    JOIN src_text_heads head ON head.source_text_id=source.id
-    JOIN src_text_versions version ON version.id=head.current_version_id AND version.source_text_id=source.id
-    WHERE source.document_node_id=? AND source.project_id=? AND version.project_id=?
-      AND source.tombstoned_at IS NULL AND version.state IN ('draft','confirmed')`, documentNodeId, repo.projectId, repo.projectId);
+  const sources = schema.src_texts, heads = schema.src_text_heads, versions = schema.src_text_versions;
+  const source = orm(repo.db).select({
+    sourceVersionId: versions.id,
+    contentText: versions.content_text,
+    contentHash: versions.content_hash,
+  }).from(sources)
+    .innerJoin(heads, eq(heads.source_text_id, sources.id))
+    .innerJoin(versions, and(eq(versions.id, heads.current_version_id), eq(versions.source_text_id, sources.id)))
+    .where(and(
+      eq(sources.document_node_id, documentNodeId),
+      eq(sources.project_id, repo.projectId),
+      eq(versions.project_id, repo.projectId),
+      isNull(sources.tombstoned_at),
+      inArray(versions.state, ["draft", "confirmed"]),
+    )).get();
   if (!source) throw new MunhaeError("not_ready", "저장된 원문이 없습니다");
   if (sha256Hex(source.contentText) !== source.contentHash) throw new MunhaeError("stale_request", "원문 내용이 변경되었습니다. 원문을 다시 저장하고 주석을 확인해 주세요");
   return source;

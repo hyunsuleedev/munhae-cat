@@ -3,7 +3,7 @@ import type { ProjectRepo } from "@munhae/db-sqlite";
 import type { AgentProbe, AgentRunEvent, AgentRunRequest, AgentRunResult } from "@munhae/agent-runtime";
 import type { AppConfig, EditorView, FootnoteAnalysisInput, FootnoteAnalysisResult, FootnoteAnalysisRun, FootnoteRecommendation, ItkcFootnote, ItkcFootnoteSearchInput, ItkcFootnoteSearchResult } from "../shared/munhae-api";
 import { AppError } from "./errors";
-import { publicRunError, registerExternalAiActivity, requestFromPreferences } from "./ai-runs";
+import { publicRunError, registerExternalAiActivity, requestFromPreferences, persistAiBeforeLaunch } from "./ai-runs";
 import { cancelAgentRuntime, probeAgentRuntime, runAgentRuntime } from "./agent-runtime-client";
 import { parseItkcFootnoteSearchInput, searchItkcFootnotes } from "./itkc-footnotes";
 
@@ -13,6 +13,7 @@ type Dependencies = {
   probe(agentId: AppConfig["agentId"]): Promise<AgentProbe>;
   run(agentId: AppConfig["agentId"], request: AgentRunRequest, sink: (event: AgentRunEvent) => void): Promise<AgentRunResult>;
   cancel(runId: string): Promise<void>;
+  persist(projectId: string): Promise<void>;
   register(activity: { id: string; projectId: string; cancel(): void | Promise<void>; completion: Promise<void> }): void;
   collectionTimeoutMs: number;
   analysisTimeoutMs: number;
@@ -189,7 +190,7 @@ export class FootnoteAnalysisService {
   private readonly entries = new Map<string, Entry>();
   constructor(deps: Partial<Dependencies> = {}) {
     this.deps = { search: searchItkcFootnotes, probe: probeAgentRuntime, run: runAgentRuntime, cancel: cancelAgentRuntime,
-      register: registerExternalAiActivity, collectionTimeoutMs: 60_000, analysisTimeoutMs: 180_000, ...deps };
+      register: registerExternalAiActivity, persist: persistAiBeforeLaunch, collectionTimeoutMs: 60_000, analysisTimeoutMs: 180_000, ...deps };
   }
   start(repo: Repo, config: AppConfig, value: unknown): FootnoteAnalysisRun {
     const input = inputFrom(value);
@@ -287,6 +288,7 @@ export class FootnoteAnalysisService {
         outputContract: CONTRACT, timeoutMs: this.deps.analysisTimeoutMs, inactivityTimeoutMs: 60_000,
         ...(probe.capabilities.structuredOutput ? { outputSchema: outputSchema(prepared.analyzed.map(candidate => candidate.note.id)) } : {}) };
       entry.view.state = "analyzing"; entry.view.detail = `각주 ${prepared.analyzed.length}건을 현재 구절과 대조하고 있습니다.`;
+      await this.deps.persist(entry.projectId);
       this.assertCurrent(entry); entry.runtimeStarted = true;
       entry.runtimeCompletion = this.deps.run(config.agentId, request, () => { /* Raw provider prose and tool activity are not recommendations. */ });
       const result = await interruptible(entry.runtimeCompletion, signal, this.deps.analysisTimeoutMs);

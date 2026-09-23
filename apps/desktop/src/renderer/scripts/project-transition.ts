@@ -1,4 +1,4 @@
-export type ProjectTransitionKind = "create" | "open" | "seed" | "close";
+export type ProjectTransitionKind = "create" | "open" | "seed" | "close" | "organize";
 
 export type ProjectTransitionHooks = {
   before?: (kind: ProjectTransitionKind) => boolean | Promise<boolean>;

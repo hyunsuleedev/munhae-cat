@@ -27,7 +27,7 @@ export function createMainWindow(initialPage: RendererPage = "index.html"): Brow
     show: false,
     title: "Munhae Studio",
     backgroundColor: "#f6f5f0",
-    autoHideMenuBar: process.platform === "darwin",
+    autoHideMenuBar: true,
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -45,6 +45,7 @@ export function createMainWindow(initialPage: RendererPage = "index.html"): Brow
     },
   });
 
+  win.setMenuBarVisibility(false);
   mainWindow = win;
   lockSession(win.webContents.session);
 

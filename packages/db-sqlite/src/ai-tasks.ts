@@ -7,7 +7,9 @@ import {
   utf8ByteLength,
 } from "@munhae/domain";
 import type { ProjectActors } from "./bootstrap.ts";
-import { allRows, getRow, insertRow } from "./rows.ts";
+import { and, asc, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import {
   insertPunctuationVersionWithAnchors,
   prepareStructureSpans,
@@ -15,6 +17,26 @@ import {
 } from "./source-layer.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type { DocumentNodeRole, PunctuationStructureMode, VersionUiState } from "./views.ts";
+
+const {
+  provenance_artifacts: artifacts,
+  chat_threads: threads,
+  chat_messages: messages,
+  chat_message_parts: parts,
+  chat_agent_sessions: sessions,
+  src_texts: sources,
+  src_text_heads: sourceHeads,
+  src_text_versions: sourceVersions,
+  punctuation_sets: punctuationSets,
+  punctuation_heads: punctuationHeads,
+  punctuation_versions: punctuationVersions,
+  document_translations: translations,
+  document_translation_versions: translationVersions,
+  translation_staleness: staleness,
+  core_translation_policies: policies,
+  core_translation_policy_heads: policyHeads,
+  core_translation_policy_versions: policyVersions,
+} = schema;
 
 export const PROJECT_CHAT_PROMPT_CONTRACT_VERSION = "munhae.project-chat.v3";
 export const PUNCTUATION_SUGGEST_PROMPT_CONTRACT_VERSION = "munhae.punctuation-suggest.v4";
@@ -223,6 +245,7 @@ export type ProjectOverviewChatSnapshot = {
     punctuationState: VersionUiState;
     translationState: VersionUiState;
   }>;
+  referenceComments?: Array<{ referenceId: string; title: string; content: string; contentHash: string; priority: number }>;
   enabledProjectContext: Array<{
     contextItemId: string;
     title: string;
@@ -306,17 +329,12 @@ function insertArtifact(
   payloadText: string,
 ): { id: string; rawHash: string } {
   const rawHash = sha256Hex(payloadText);
-  const existing = getRow<{ id: string }>(
-    db,
-    `SELECT id FROM provenance_artifacts
-     WHERE project_id = ? AND artifact_kind = ? AND canonical_sha256 = ?`,
-    projectId,
-    kind,
-    rawHash,
-  );
+  const existing = orm(db).select({ id: artifacts.id }).from(artifacts).where(and(
+    eq(artifacts.project_id, projectId), eq(artifacts.artifact_kind, kind), eq(artifacts.canonical_sha256, rawHash),
+  )).get();
   if (existing) return { id: existing.id, rawHash };
   const id = createId();
-  insertRow(db, "provenance_artifacts", {
+  orm(db).insert(schema.provenance_artifacts).values({
     id,
     project_id: projectId,
     artifact_kind: kind,
@@ -333,7 +351,7 @@ function insertArtifact(
     retention_class: "project_history",
     redaction_state: "not_required",
     created_at: nowIso(),
-  });
+  }).run();
   return { id, rawHash };
 }
 
@@ -387,19 +405,12 @@ function findOrCreateProjectTaskThread(
     : scopeKind === "project"
       ? PROJECT_CHAT_THREAD_TITLE
       : DOCUMENT_CHAT_THREAD_TITLE;
-  const existing = getRow<{ id: string }>(
-    db,
-    `SELECT id FROM chat_threads
-     WHERE project_id = ? AND scope_kind = ? AND scope_id = ? AND title = ?
-     ORDER BY created_at LIMIT 1`,
-    projectId,
-    scopeKind,
-    scopeId,
-    title,
-  );
+  const existing = orm(db).select({ id: threads.id }).from(threads).where(and(
+    eq(threads.project_id, projectId), eq(threads.scope_kind, scopeKind), eq(threads.scope_id, scopeId), eq(threads.title, title),
+  )).orderBy(asc(threads.created_at)).limit(1).get();
   if (existing) return existing.id;
   const id = createId();
-  insertRow(db, "chat_threads", {
+  orm(db).insert(schema.chat_threads).values({
     id,
     project_id: projectId,
     title,
@@ -407,7 +418,7 @@ function findOrCreateProjectTaskThread(
     scope_id: scopeId,
     created_by_actor_id: humanActorId,
     created_at: nowIso(),
-  });
+  }).run();
   return id;
 }
 
@@ -417,7 +428,7 @@ export function reserveProjectTaskRun(
   actors: ProjectActors,
   input: ReserveProjectTaskInput,
 ): ReservedProjectTaskRun {
-  return db.transaction((): ReservedProjectTaskRun => {
+  return orm(db).transaction((): ReservedProjectTaskRun => {
     const manifest = requireCanonicalManifest(input);
     const threadId = findOrCreateProjectTaskThread(
       db,
@@ -427,37 +438,18 @@ export function reserveProjectTaskRun(
       input.taskKind,
       actors.humanId,
     );
-    const busy = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM chat_messages
-       WHERE thread_id = ? AND role = 'assistant' AND state IN ('queued', 'running', 'validating')
-       LIMIT 1`,
-      threadId,
-    );
+    const busy = orm(db).select({ id: messages.id }).from(messages).where(and(
+      eq(messages.thread_id, threadId), eq(messages.role, "assistant"), inArray(messages.state, ["queued", "running", "validating"]),
+    )).limit(1).get();
     if (busy) throw new MunhaeError("thread_busy", "이 대화 범위의 AI 실행이 이미 진행 중입니다");
 
-    const previous = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM chat_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-      threadId,
-    );
+    const previous = orm(db).select({ id: messages.id }).from(messages).where(eq(messages.thread_id, threadId))
+      .orderBy(desc(messages.created_at), sql`rowid DESC`).limit(1).get();
     let resumeCompatible = false;
     if (input.taskKind === "chat" && previous) {
-      const session = getRow<{
-        model: string | null;
-        cwd_hash: string | null;
-        last_message_id: string | null;
-        stable_prompt_hash: string | null;
-        state: string | null;
-      }>(
-        db,
-        `SELECT model, cwd_hash, last_message_id, stable_prompt_hash, state
-         FROM chat_agent_sessions
-         WHERE project_id = ? AND thread_id = ? AND agent_id = ?`,
-        projectId,
-        threadId,
-        input.agentId,
-      );
+      const session = orm(db).select().from(sessions).where(and(
+        eq(sessions.project_id, projectId), eq(sessions.thread_id, threadId), eq(sessions.agent_id, input.agentId),
+      )).get();
       if (
         session?.state === "active"
         && session.model === input.requestedModel
@@ -472,7 +464,7 @@ export function reserveProjectTaskRun(
     const requestArtifact = insertArtifact(db, projectId, "exact_llm_request", input.requestText);
     const now = nowIso();
     const userMessageId = createId();
-    insertRow(db, "chat_messages", {
+    orm(db).insert(schema.chat_messages).values({
       id: userMessageId,
       project_id: projectId,
       thread_id: threadId,
@@ -500,8 +492,8 @@ export function reserveProjectTaskRun(
       started_at: now,
       completed_at: now,
       created_at: now,
-    });
-    insertRow(db, "chat_message_parts", {
+    }).run();
+    orm(db).insert(schema.chat_message_parts).values({
       id: createId(),
       project_id: projectId,
       message_id: userMessageId,
@@ -510,10 +502,10 @@ export function reserveProjectTaskRun(
       text_content: input.userText,
       structured_json: null,
       artifact_id: null,
-    });
+    }).run();
 
     const messageId = createId();
-    insertRow(db, "chat_messages", {
+    orm(db).insert(schema.chat_messages).values({
       id: messageId,
       project_id: projectId,
       thread_id: threadId,
@@ -541,7 +533,7 @@ export function reserveProjectTaskRun(
       started_at: now,
       completed_at: null,
       created_at: now,
-    });
+    }).run();
     return {
       messageId,
       threadId,
@@ -549,7 +541,7 @@ export function reserveProjectTaskRun(
       requestHash: requestArtifact.rawHash,
       resumeCompatible,
     };
-  })();
+  });
 }
 
 export function storeProjectTaskResponse(
@@ -557,24 +549,13 @@ export function storeProjectTaskResponse(
   projectId: string,
   input: StoreProjectTaskResponseInput,
 ): { responseArtifactId: string; eventsArtifactId: string | null } {
-  return db.transaction(() => {
-    const message = getRow<{
-      role: string;
-      task_kind: string | null;
-      state: string | null;
-      response_artifact_id: string | null;
-      events_artifact_id: string | null;
-      response_hash: string | null;
-    }>(
-      db,
-      `SELECT m.role, m.task_kind, m.state, m.response_artifact_id, m.events_artifact_id,
-              response.raw_sha256 AS response_hash
-       FROM chat_messages m
-       LEFT JOIN provenance_artifacts response ON response.id = m.response_artifact_id
-       WHERE m.id = ? AND m.project_id = ?`,
-      input.messageId,
-      projectId,
-    );
+  return orm(db).transaction(() => {
+    const message = orm(db).select({
+      role: messages.role, task_kind: messages.task_kind, state: messages.state,
+      response_artifact_id: messages.response_artifact_id, events_artifact_id: messages.events_artifact_id,
+      response_hash: artifacts.raw_sha256,
+    }).from(messages).leftJoin(artifacts, eq(artifacts.id, messages.response_artifact_id))
+      .where(and(eq(messages.id, input.messageId), eq(messages.project_id, projectId))).get();
     if (!message || message.role !== "assistant" || !["chat", "punctuation_suggest"].includes(message.task_kind ?? "")) {
       throw new MunhaeError("invalid_message", "AI task assistant message not found");
     }
@@ -592,26 +573,19 @@ export function storeProjectTaskResponse(
     }
     const response = insertArtifact(db, projectId, "llm_response", input.rawResponse);
     const events = input.eventsJsonl ? insertArtifact(db, projectId, "agent_events", input.eventsJsonl) : null;
-    const updated = db.prepare(
-      `UPDATE chat_messages
-       SET state = 'validating', response_artifact_id = ?, events_artifact_id = ?, usage_json = ?,
-           resolved_model = COALESCE(?, resolved_model), runtime_version = COALESCE(?, runtime_version),
-           error_json = NULL
-       WHERE id = ? AND project_id = ? AND state IN ('running', 'validating')`,
-    ).run(
-      response.id,
-      events?.id ?? null,
-      input.usage === null || input.usage === undefined ? null : canonicalJson(input.usage),
-      input.resolvedModel,
-      input.runtimeVersion,
-      input.messageId,
-      projectId,
-    );
+    const updated = orm(db).update(messages).set({
+      state: "validating", response_artifact_id: response.id, events_artifact_id: events?.id ?? null,
+      usage_json: input.usage === null || input.usage === undefined ? null : canonicalJson(input.usage),
+      resolved_model: sql`coalesce(${input.resolvedModel}, ${messages.resolved_model})`,
+      runtime_version: sql`coalesce(${input.runtimeVersion}, ${messages.runtime_version})`,
+      error_json: null,
+    }).where(and(eq(messages.id, input.messageId), eq(messages.project_id, projectId),
+      inArray(messages.state, ["running", "validating"]))).run();
     if (updated.changes !== 1) {
       throw new MunhaeError("invalid_message_state", "AI execution state changed while storing its response");
     }
     return { responseArtifactId: response.id, eventsArtifactId: events?.id ?? null };
-  })();
+  });
 }
 
 function insertResponsePart(
@@ -622,13 +596,10 @@ function insertResponsePart(
   artifactId: string,
   structured: unknown = null,
 ): void {
-  const existing = getRow<{ id: string }>(
-    db,
-    `SELECT id FROM chat_message_parts WHERE message_id = ? AND ordinal = 1`,
-    messageId,
-  );
+  const existing = orm(db).select({ id: parts.id }).from(parts)
+    .where(and(eq(parts.message_id, messageId), eq(parts.ordinal, 1))).get();
   if (existing) return;
-  insertRow(db, "chat_message_parts", {
+  orm(db).insert(schema.chat_message_parts).values({
     id: createId(),
     project_id: projectId,
     message_id: messageId,
@@ -637,7 +608,7 @@ function insertResponsePart(
     text_content: text,
     structured_json: structured === null ? null : canonicalJson(structured),
     artifact_id: artifactId,
-  });
+  }).run();
 }
 
 export function completeProjectChat(
@@ -646,18 +617,10 @@ export function completeProjectChat(
   messageId: string,
   responseText: string,
 ): void {
-  db.transaction(() => {
-    const message = getRow<{
-      state: string | null;
-      task_kind: string | null;
-      response_artifact_id: string | null;
-    }>(
-      db,
-      `SELECT state, task_kind, response_artifact_id FROM chat_messages
-       WHERE id = ? AND project_id = ? AND role = 'assistant'`,
-      messageId,
-      projectId,
-    );
+  orm(db).transaction(() => {
+    const message = orm(db).select().from(messages).where(and(
+      eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.role, "assistant"),
+    )).get();
     if (!message || message.task_kind !== "chat" || !message.response_artifact_id) {
       throw new MunhaeError("invalid_message", "stored project chat response not found");
     }
@@ -666,12 +629,10 @@ export function completeProjectChat(
       throw new MunhaeError("invalid_message_state", "project chat response is not ready to complete");
     }
     insertResponsePart(db, projectId, messageId, responseText, message.response_artifact_id);
-    db.prepare(
-      `UPDATE chat_messages
-       SET state = 'completed', output_validation_state = 'not_applicable', error_json = NULL, completed_at = ?
-       WHERE id = ? AND project_id = ? AND state = 'validating'`,
-    ).run(nowIso(), messageId, projectId);
-  })();
+    orm(db).update(messages).set({
+      state: "completed", output_validation_state: "not_applicable", error_json: null, completed_at: nowIso(),
+    }).where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.state, "validating"))).run();
+  });
 }
 
 function parsePunctuationManifest(value: string): PunctuationSuggestionSnapshot {
@@ -721,28 +682,18 @@ function recordPunctuationStaleness(
   documentNodeId: string,
   punctuationVersionId: string,
 ): void {
-  const versions = allRows<{ id: string; old_dependency_id: string }>(
-    db,
-    `SELECT v.id, v.punctuation_version_id AS old_dependency_id
-     FROM document_translation_versions v
-     JOIN document_translations t ON t.id = v.document_translation_id
-     WHERE t.document_node_id = ? AND t.project_id = ? AND v.punctuation_version_id <> ?`,
-    documentNodeId,
-    projectId,
-    punctuationVersionId,
-  );
+  const versions = orm(db).select({ id: translationVersions.id, old_dependency_id: translationVersions.punctuation_version_id })
+    .from(translationVersions).innerJoin(translations, eq(translations.id, translationVersions.document_translation_id))
+    .where(and(eq(translations.document_node_id, documentNodeId), eq(translations.project_id, projectId),
+      ne(translationVersions.punctuation_version_id, punctuationVersionId))).all();
   const detectedAt = nowIso();
   for (const version of versions) {
-    const existing = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM translation_staleness
-       WHERE document_translation_version_id = ? AND cause_kind = 'punctuation_changed'
-         AND new_dependency_id = ? AND resolved_by_document_translation_version_id IS NULL`,
-      version.id,
-      punctuationVersionId,
-    );
+    const existing = orm(db).select({ id: staleness.id }).from(staleness).where(and(
+      eq(staleness.document_translation_version_id, version.id), eq(staleness.cause_kind, "punctuation_changed"),
+      eq(staleness.new_dependency_id, punctuationVersionId), isNull(staleness.resolved_by_document_translation_version_id),
+    )).get();
     if (existing) continue;
-    insertRow(db, "translation_staleness", {
+    orm(db).insert(schema.translation_staleness).values({
       id: createId(),
       project_id: projectId,
       document_translation_version_id: version.id,
@@ -751,7 +702,7 @@ function recordPunctuationStaleness(
       new_dependency_id: punctuationVersionId,
       detected_at: detectedAt,
       resolved_by_document_translation_version_id: null,
-    });
+    }).run();
   }
 }
 
@@ -779,35 +730,27 @@ function validatePunctuationProposal(
 
 /** Repair old false rejections against their own source snapshot, without applying them. */
 export function revalidateRejectedPunctuationSuggestion(db: SqliteDb, projectId: string, messageId: string): boolean {
-  return db.transaction(() => {
-    const message = getRow<{
-      request_manifest_json: string;
-      request_manifest_hash: string;
-      prompt_contract_version: string | null;
-      response_text: string;
-      response_hash: string;
-      text_content: string;
-      structured_json: string | null;
-      error_json: string | null;
-    }>(db, `SELECT m.request_manifest_json, m.request_manifest_hash, m.prompt_contract_version,
-                   response.payload_text AS response_text, response.raw_sha256 AS response_hash,
-                   part.text_content, part.structured_json, m.error_json
-            FROM chat_messages m
-            JOIN provenance_artifacts response ON response.id = m.response_artifact_id AND response.project_id = m.project_id
-            JOIN chat_message_parts part ON part.message_id = m.id AND part.project_id = m.project_id AND part.ordinal = 1
-            WHERE m.id = ? AND m.project_id = ? AND m.role = 'assistant'
-              AND m.task_kind = 'punctuation_suggest' AND m.state = 'completed'
-              AND m.output_validation_state = 'invalid_unapplied'`, messageId, projectId);
+  return orm(db).transaction(() => {
+    const message = orm(db).select({
+      request_manifest_json: messages.request_manifest_json, request_manifest_hash: messages.request_manifest_hash,
+      prompt_contract_version: messages.prompt_contract_version, response_text: artifacts.payload_text,
+      response_hash: artifacts.raw_sha256, text_content: parts.text_content,
+      structured_json: parts.structured_json, error_json: messages.error_json,
+    }).from(messages)
+      .innerJoin(artifacts, and(eq(artifacts.id, messages.response_artifact_id), eq(artifacts.project_id, messages.project_id)))
+      .innerJoin(parts, and(eq(parts.message_id, messages.id), eq(parts.project_id, messages.project_id), eq(parts.ordinal, 1)))
+      .where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.role, "assistant"),
+        eq(messages.task_kind, "punctuation_suggest"), eq(messages.state, "completed"),
+        eq(messages.output_validation_state, "invalid_unapplied"))).get();
     if (!message || typeof message.response_text !== "string" || !message.request_manifest_json
       || message.text_content !== message.response_text
       || sha256Hex(message.response_text) !== message.response_hash
       || sha256Hex(message.request_manifest_json) !== message.request_manifest_hash) return false;
     try {
       const snapshot = parsePunctuationManifest(message.request_manifest_json);
-      const source = getRow<{ content_text: string; content_hash: string }>(db,
-        `SELECT content_text, content_hash FROM src_text_versions
-         WHERE id = ? AND source_text_id = ? AND project_id = ?`,
-        snapshot.sourceTextVersionId, snapshot.sourceTextId, projectId);
+      const source = orm(db).select({ content_text: sourceVersions.content_text, content_hash: sourceVersions.content_hash })
+        .from(sourceVersions).where(and(eq(sourceVersions.id, snapshot.sourceTextVersionId),
+          eq(sourceVersions.source_text_id, snapshot.sourceTextId), eq(sourceVersions.project_id, projectId))).get();
       if (!source || source.content_hash !== snapshot.sourceTextHash || sha256Hex(source.content_text) !== snapshot.sourceTextHash) return false;
       validatePunctuationProposal(source.content_text, message.response_text, snapshot.structureMode, message.prompt_contract_version);
     } catch {
@@ -815,19 +758,18 @@ export function revalidateRejectedPunctuationSuggestion(db: SqliteDb, projectId:
     }
     const previousResult = JSON.parse(message.structured_json ?? "{}");
     if (previousResult?.applied || previousResult?.punctuationVersionId) return false;
-    db.prepare(`UPDATE chat_message_parts SET structured_json = ?
-                WHERE project_id = ? AND message_id = ? AND ordinal = 1`).run(canonicalJson({
+    orm(db).update(parts).set({ structured_json: canonicalJson({
       validationState: "valid", applied: false, punctuationVersionId: null, anchorSetId: null,
       revalidation: {
         validator: "punctuation-whitespace.v1", at: nowIso(), previousResult,
         previousError: JSON.parse(message.error_json ?? "null"),
       },
-    }), projectId, messageId);
-    db.prepare(`UPDATE chat_messages SET output_validation_state = 'valid', error_json = NULL
-                WHERE id = ? AND project_id = ? AND state = 'completed' AND output_validation_state = 'invalid_unapplied'`)
-      .run(messageId, projectId);
+    }) }).where(and(eq(parts.project_id, projectId), eq(parts.message_id, messageId), eq(parts.ordinal, 1))).run();
+    orm(db).update(messages).set({ output_validation_state: "valid", error_json: null })
+      .where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.state, "completed"),
+        eq(messages.output_validation_state, "invalid_unapplied"))).run();
     return true;
-  })();
+  });
 }
 
 function markInvalidPunctuationResponse(
@@ -843,11 +785,10 @@ function markInvalidPunctuationResponse(
     validationState: "invalid_unapplied",
     message: detail,
   });
-  db.prepare(
-    `UPDATE chat_messages
-     SET state = 'completed', output_validation_state = 'invalid_unapplied', error_json = ?, completed_at = ?
-     WHERE id = ? AND project_id = ? AND state = 'validating'`,
-  ).run(canonicalJson({ code: "invalid_punctuation_suggestion", message: detail }), nowIso(), messageId, projectId);
+  orm(db).update(messages).set({
+    state: "completed", output_validation_state: "invalid_unapplied",
+    error_json: canonicalJson({ code: "invalid_punctuation_suggestion", message: detail }), completed_at: nowIso(),
+  }).where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.state, "validating"))).run();
   return {
     messageId,
     validationState: "invalid_unapplied",
@@ -878,28 +819,15 @@ export function completePunctuationSuggestion(
   messageId: string,
   rawResponse: string,
 ): PunctuationSuggestionResult {
-  return db.transaction((): PunctuationSuggestionResult => {
-    const message = getRow<{
-      state: string | null;
-      task_kind: string | null;
-      prompt_contract_version: string | null;
-      request_manifest_json: string | null;
-      response_artifact_id: string | null;
-      response_hash: string | null;
-      output_validation_state: string | null;
-      structured_json: string | null;
-    }>(
-      db,
-      `SELECT m.state, m.task_kind, m.prompt_contract_version, m.request_manifest_json, m.response_artifact_id,
-              response.raw_sha256 AS response_hash, m.output_validation_state,
-              part.structured_json
-       FROM chat_messages m
-       LEFT JOIN provenance_artifacts response ON response.id = m.response_artifact_id
-       LEFT JOIN chat_message_parts part ON part.message_id = m.id AND part.ordinal = 1
-       WHERE m.id = ? AND m.project_id = ? AND m.role = 'assistant'`,
-      messageId,
-      projectId,
-    );
+  return orm(db).transaction((): PunctuationSuggestionResult => {
+    const message = orm(db).select({
+      state: messages.state, task_kind: messages.task_kind, prompt_contract_version: messages.prompt_contract_version,
+      request_manifest_json: messages.request_manifest_json, response_artifact_id: messages.response_artifact_id,
+      response_hash: artifacts.raw_sha256, output_validation_state: messages.output_validation_state,
+      structured_json: parts.structured_json,
+    }).from(messages).leftJoin(artifacts, eq(artifacts.id, messages.response_artifact_id))
+      .leftJoin(parts, and(eq(parts.message_id, messages.id), eq(parts.ordinal, 1)))
+      .where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.role, "assistant"))).get();
     if (!message || message.task_kind !== "punctuation_suggest" || !message.request_manifest_json || !message.response_artifact_id) {
       throw new MunhaeError("invalid_message", "stored punctuation suggestion response not found");
     }
@@ -913,18 +841,9 @@ export function completePunctuationSuggestion(
       throw new MunhaeError("invalid_message_state", "punctuation response is not ready to complete");
     }
     const snapshot = parsePunctuationManifest(message.request_manifest_json);
-    const source = getRow<{
-      source_text_id: string;
-      source_hash: string;
-      source_text: string;
-    }>(
-      db,
-      `SELECT source.source_text_id, source.content_hash AS source_hash, source.content_text AS source_text
-       FROM src_text_versions source
-       WHERE source.id = ? AND source.project_id = ?`,
-      snapshot.sourceTextVersionId,
-      projectId,
-    );
+    const source = orm(db).select({ source_text_id: sourceVersions.source_text_id, source_hash: sourceVersions.content_hash,
+      source_text: sourceVersions.content_text }).from(sourceVersions)
+      .where(and(eq(sourceVersions.id, snapshot.sourceTextVersionId), eq(sourceVersions.project_id, projectId))).get();
     if (
       !source
       || source.source_text_id !== snapshot.sourceTextId
@@ -950,11 +869,9 @@ export function completePunctuationSuggestion(
       punctuationVersionId: null,
       anchorSetId: null,
     });
-    const updated = db.prepare(
-      `UPDATE chat_messages
-       SET state = 'completed', output_validation_state = 'valid', error_json = NULL, completed_at = ?
-       WHERE id = ? AND project_id = ? AND state = 'validating'`,
-    ).run(nowIso(), messageId, projectId);
+    const updated = orm(db).update(messages).set({
+      state: "completed", output_validation_state: "valid", error_json: null, completed_at: nowIso(),
+    }).where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.state, "validating"))).run();
     if (updated.changes !== 1) {
       throw new MunhaeError("invalid_message_state", "punctuation response changed while completing");
     }
@@ -965,7 +882,7 @@ export function completePunctuationSuggestion(
       punctuationVersionId: null,
       anchorSetId: null,
     };
-  })();
+  });
 }
 
 export function applyPunctuationSuggestion(
@@ -974,29 +891,16 @@ export function applyPunctuationSuggestion(
   actors: ProjectActors,
   messageId: string,
 ): PunctuationSuggestionResult {
-  return db.transaction((): PunctuationSuggestionResult => {
+  return orm(db).transaction((): PunctuationSuggestionResult => {
     revalidateRejectedPunctuationSuggestion(db, projectId, messageId);
-    const message = getRow<{
-      state: string | null;
-      task_kind: string | null;
-      request_manifest_json: string | null;
-      response_artifact_id: string | null;
-      response_text: string | null;
-      response_hash: string | null;
-      output_validation_state: string | null;
-      structured_json: string | null;
-    }>(
-      db,
-      `SELECT m.state, m.task_kind, m.request_manifest_json, m.response_artifact_id,
-              response.payload_text AS response_text, response.raw_sha256 AS response_hash,
-              m.output_validation_state, part.structured_json
-       FROM chat_messages m
-       LEFT JOIN provenance_artifacts response ON response.id = m.response_artifact_id
-       LEFT JOIN chat_message_parts part ON part.message_id = m.id AND part.ordinal = 1
-       WHERE m.id = ? AND m.project_id = ? AND m.role = 'assistant'`,
-      messageId,
-      projectId,
-    );
+    const message = orm(db).select({
+      state: messages.state, task_kind: messages.task_kind, request_manifest_json: messages.request_manifest_json,
+      response_artifact_id: messages.response_artifact_id, response_text: artifacts.payload_text,
+      response_hash: artifacts.raw_sha256, output_validation_state: messages.output_validation_state,
+      structured_json: parts.structured_json,
+    }).from(messages).leftJoin(artifacts, eq(artifacts.id, messages.response_artifact_id))
+      .leftJoin(parts, and(eq(parts.message_id, messages.id), eq(parts.ordinal, 1)))
+      .where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.role, "assistant"))).get();
     if (
       !message
       || message.task_kind !== "punctuation_suggest"
@@ -1013,37 +917,19 @@ export function applyPunctuationSuggestion(
     if (prior.applied) return prior;
     const rawResponse = message.response_text;
     const snapshot = parsePunctuationManifest(message.request_manifest_json);
-    const current = getRow<{
-      source_text_id: string;
-      source_version_id: string;
-      source_hash: string;
-      source_state: string;
-      source_text: string;
-      punctuation_set_id: string | null;
-      punctuation_version_id: string | null;
-      punctuation_state: string | null;
-      punctuation_version_no: number | null;
-      punctuation_lock_version: number | null;
-    }>(
-      db,
-      `SELECT source.id AS source_text_id, source_version.id AS source_version_id,
-              source_version.content_hash AS source_hash, source_version.state AS source_state,
-              source_version.content_text AS source_text,
-              punctuation.id AS punctuation_set_id, punctuation_version.id AS punctuation_version_id,
-              punctuation_version.state AS punctuation_state,
-              punctuation_version.version_no AS punctuation_version_no,
-              punctuation_head.lock_version AS punctuation_lock_version
-       FROM src_texts source
-       JOIN src_text_heads source_head ON source_head.source_text_id = source.id
-       JOIN src_text_versions source_version ON source_version.id = source_head.current_version_id
-       LEFT JOIN punctuation_sets punctuation ON punctuation.source_text_id = source.id AND punctuation.status = 'active'
-       LEFT JOIN punctuation_heads punctuation_head ON punctuation_head.punctuation_set_id = punctuation.id
-       LEFT JOIN punctuation_versions punctuation_version ON punctuation_version.id = punctuation_head.current_version_id
-       WHERE source.project_id = ? AND source.document_node_id = ? AND source.tombstoned_at IS NULL
-       ORDER BY punctuation.created_at LIMIT 1`,
-      projectId,
-      snapshot.documentNodeId,
-    );
+    const current = orm(db).select({
+      source_text_id: sources.id, source_version_id: sourceVersions.id, source_hash: sourceVersions.content_hash,
+      source_state: sourceVersions.state, source_text: sourceVersions.content_text,
+      punctuation_set_id: punctuationSets.id, punctuation_version_id: punctuationVersions.id,
+      punctuation_state: punctuationVersions.state, punctuation_version_no: punctuationVersions.version_no,
+      punctuation_lock_version: punctuationHeads.lock_version,
+    }).from(sources).innerJoin(sourceHeads, eq(sourceHeads.source_text_id, sources.id))
+      .innerJoin(sourceVersions, eq(sourceVersions.id, sourceHeads.current_version_id))
+      .leftJoin(punctuationSets, and(eq(punctuationSets.source_text_id, sources.id), eq(punctuationSets.status, "active")))
+      .leftJoin(punctuationHeads, eq(punctuationHeads.punctuation_set_id, punctuationSets.id))
+      .leftJoin(punctuationVersions, eq(punctuationVersions.id, punctuationHeads.current_version_id))
+      .where(and(eq(sources.project_id, projectId), eq(sources.document_node_id, snapshot.documentNodeId), isNull(sources.tombstoned_at)))
+      .orderBy(asc(punctuationSets.created_at)).limit(1).get();
     if (
       !current
       || current.source_state !== "confirmed"
@@ -1063,18 +949,12 @@ export function applyPunctuationSuggestion(
     let punctuationSetId = current.punctuation_set_id;
     if (creatingInitialDraft) {
       punctuationSetId = createId();
-      const policy = getRow<{ id: string }>(
-        db,
-        `SELECT version.id
-         FROM core_translation_policies policy
-         JOIN core_translation_policy_heads head ON head.policy_id = policy.id
-         JOIN core_translation_policy_versions version ON version.id = head.current_version_id
-         WHERE policy.project_id = ?
-         ORDER BY policy.created_at LIMIT 1`,
-        projectId,
-      );
+      const policy = orm(db).select({ id: policyVersions.id }).from(policies)
+        .innerJoin(policyHeads, eq(policyHeads.policy_id, policies.id))
+        .innerJoin(policyVersions, eq(policyVersions.id, policyHeads.current_version_id))
+        .where(eq(policies.project_id, projectId)).orderBy(asc(policies.created_at)).limit(1).get();
       if (!policy) throw new MunhaeError("not_ready", "현재 번역 원칙을 찾을 수 없습니다");
-      insertRow(db, "punctuation_sets", {
+      orm(db).insert(schema.punctuation_sets).values({
         id: punctuationSetId,
         project_id: projectId,
         source_text_id: current.source_text_id,
@@ -1082,13 +962,14 @@ export function applyPunctuationSuggestion(
         policy_version_id: policy.id,
         status: "active",
         created_at: nowIso(),
-      });
+      }).run();
     }
     if (!punctuationSetId) {
       throw new MunhaeError("stale_request", "AI 실행 중 표점 작업 상태가 바뀌었습니다");
     }
     if (current.punctuation_state === "draft" && current.punctuation_version_id) {
-      db.prepare(`UPDATE punctuation_versions SET state = 'superseded' WHERE id = ?`).run(current.punctuation_version_id);
+      orm(db).update(punctuationVersions).set({ state: "superseded" })
+        .where(eq(punctuationVersions.id, current.punctuation_version_id)).run();
     }
     const created = insertPunctuationVersionWithAnchors({
       db,
@@ -1103,7 +984,6 @@ export function applyPunctuationSuggestion(
       versionNo: (current.punctuation_version_no ?? 0) + 1,
       punctuatedText: rawResponse,
       structureMode: snapshot.structureMode,
-      changeSummary: "AI 표점 제안",
       actorId: actors.llmId,
       anchorActorId: actors.systemId,
       originKind: "ai",
@@ -1111,39 +991,26 @@ export function applyPunctuationSuggestion(
       now: nowIso(),
     });
     if (creatingInitialDraft) {
-      insertRow(db, "punctuation_heads", {
+      orm(db).insert(schema.punctuation_heads).values({
         project_id: projectId,
         punctuation_set_id: punctuationSetId,
         current_version_id: created.punctuationVersionId,
         confirmed_version_id: null,
         lock_version: 1,
         updated_at: nowIso(),
-      });
+      }).run();
     } else {
-      const updated = db.prepare(
-        `UPDATE punctuation_heads
-         SET current_version_id = ?, lock_version = lock_version + 1, updated_at = ?
-         WHERE project_id = ? AND punctuation_set_id = ? AND lock_version = ?`,
-      ).run(
-        created.punctuationVersionId,
-        nowIso(),
-        projectId,
-        punctuationSetId,
-        snapshot.currentPunctuationLockVersion,
-      );
+      const updated = orm(db).update(punctuationHeads).set({
+        current_version_id: created.punctuationVersionId, lock_version: sql`${punctuationHeads.lock_version} + 1`, updated_at: nowIso(),
+      }).where(and(eq(punctuationHeads.project_id, projectId), eq(punctuationHeads.punctuation_set_id, punctuationSetId),
+        eq(punctuationHeads.lock_version, snapshot.currentPunctuationLockVersion!))).run();
       if (updated.changes !== 1) throw new MunhaeError("cas_conflict", "stale punctuation lock_version");
     }
     recordPunctuationStaleness(db, projectId, snapshot.documentNodeId, created.punctuationVersionId);
-    const partUpdated = db.prepare(
-      `UPDATE chat_message_parts SET structured_json = ?
-       WHERE project_id = ? AND message_id = ? AND ordinal = 1`,
-    ).run(canonicalJson({
+    const partUpdated = orm(db).update(parts).set({ structured_json: canonicalJson({
       ...JSON.parse(message.structured_json ?? "{}"),
-      validationState: "valid",
-      applied: true,
-      punctuationVersionId: created.punctuationVersionId,
-      anchorSetId: null,
-    }), projectId, messageId);
+      validationState: "valid", applied: true, punctuationVersionId: created.punctuationVersionId, anchorSetId: null,
+    }) }).where(and(eq(parts.project_id, projectId), eq(parts.message_id, messageId), eq(parts.ordinal, 1))).run();
     if (partUpdated.changes !== 1) throw new MunhaeError("invalid_message", "표점 제안 part를 찾을 수 없습니다");
     return {
       messageId,
@@ -1152,7 +1019,7 @@ export function applyPunctuationSuggestion(
       punctuationVersionId: created.punctuationVersionId,
       anchorSetId: null,
     };
-  })();
+  });
 }
 
 export function failProjectTaskRun(
@@ -1162,42 +1029,28 @@ export function failProjectTaskRun(
   error: { code: string; message: string },
   metadata: ProjectTaskFailureMetadata = {},
 ): void {
-  db.transaction(() => {
-    const current = getRow<{ state: string | null; events_artifact_id: string | null }>(
-      db,
-      `SELECT state, events_artifact_id FROM chat_messages
-       WHERE id = ? AND project_id = ? AND role = 'assistant'
-         AND task_kind IN ('chat', 'punctuation_suggest')`,
-      messageId,
-      projectId,
-    );
+  orm(db).transaction(() => {
+    const current = orm(db).select({ state: messages.state, events_artifact_id: messages.events_artifact_id }).from(messages)
+      .where(and(eq(messages.id, messageId), eq(messages.project_id, projectId), eq(messages.role, "assistant"),
+        inArray(messages.task_kind, ["chat", "punctuation_suggest"]))).get();
     if (!current) throw new MunhaeError("invalid_message", "AI task assistant message not found");
     if (["completed", "failed", "canceled"].includes(current.state ?? "")) return;
     const events = metadata.eventsJsonl && !current.events_artifact_id
       ? insertArtifact(db, projectId, "agent_events", metadata.eventsJsonl)
       : null;
     const state = error.code === "canceled" ? "canceled" : "failed";
-    const updated = db.prepare(
-      `UPDATE chat_messages
-       SET state = ?, error_json = ?, completed_at = ?, events_artifact_id = COALESCE(events_artifact_id, ?),
-           usage_json = COALESCE(usage_json, ?), resolved_model = COALESCE(resolved_model, ?),
-           runtime_version = COALESCE(runtime_version, ?)
-       WHERE id = ? AND project_id = ? AND state IN ('queued', 'running', 'validating')`,
-    ).run(
-      state,
-      canonicalJson({ code: error.code, message: error.message.slice(0, 800) }),
-      nowIso(),
-      events?.id ?? null,
-      metadata.usage === null || metadata.usage === undefined ? null : canonicalJson(metadata.usage),
-      metadata.resolvedModel ?? null,
-      metadata.runtimeVersion ?? null,
-      messageId,
-      projectId,
-    );
+    const updated = orm(db).update(messages).set({
+      state, error_json: canonicalJson({ code: error.code, message: error.message.slice(0, 800) }), completed_at: nowIso(),
+      events_artifact_id: sql`coalesce(${messages.events_artifact_id}, ${events?.id ?? null})`,
+      usage_json: sql`coalesce(${messages.usage_json}, ${metadata.usage === null || metadata.usage === undefined ? null : canonicalJson(metadata.usage)})`,
+      resolved_model: sql`coalesce(${messages.resolved_model}, ${metadata.resolvedModel ?? null})`,
+      runtime_version: sql`coalesce(${messages.runtime_version}, ${metadata.runtimeVersion ?? null})`,
+    }).where(and(eq(messages.id, messageId), eq(messages.project_id, projectId),
+      inArray(messages.state, ["queued", "running", "validating"]))).run();
     if (updated.changes !== 1) {
       throw new MunhaeError("invalid_message_state", "AI task state changed while recording failure");
     }
-  })();
+  });
 }
 
 export function invalidateAgentSession(
@@ -1206,10 +1059,8 @@ export function invalidateAgentSession(
   threadId: string,
   agentId: "codex" | "claude" | "antigravity",
 ): void {
-  db.prepare(
-    `UPDATE chat_agent_sessions SET state = 'invalid', updated_at = ?
-     WHERE project_id = ? AND thread_id = ? AND agent_id = ?`,
-  ).run(nowIso(), projectId, threadId, agentId);
+  orm(db).update(sessions).set({ state: "invalid", updated_at: nowIso() })
+    .where(and(eq(sessions.project_id, projectId), eq(sessions.thread_id, threadId), eq(sessions.agent_id, agentId))).run();
 }
 
 export function recoverInterruptedProjectTasks(
@@ -1217,14 +1068,10 @@ export function recoverInterruptedProjectTasks(
   projectId: string,
   loadEventsJsonl?: (messageId: string) => string | undefined,
 ): void {
-  const rows = allRows<{ id: string }>(
-    db,
-    `SELECT id FROM chat_messages
-     WHERE project_id = ? AND role = 'assistant'
-       AND task_kind IN ('chat', 'punctuation_suggest')
-       AND state IN ('queued', 'running', 'validating')`,
-    projectId,
-  );
+  const rows = orm(db).select({ id: messages.id }).from(messages).where(and(
+    eq(messages.project_id, projectId), eq(messages.role, "assistant"),
+    inArray(messages.task_kind, ["chat", "punctuation_suggest"]), inArray(messages.state, ["queued", "running", "validating"]),
+  )).all();
   for (const row of rows) {
     let eventsJsonl: string | undefined;
     try {
@@ -1267,6 +1114,9 @@ export function renderProjectChatRequest(input: (
       input.snapshot.enabledProjectContext.length
         ? canonicalJson(input.snapshot.enabledProjectContext)
         : "(none)",
+      "",
+      "[REFERENCE COMMENTS: questions and uncertainty are not established facts]",
+      input.snapshot.referenceComments?.length ? canonicalJson(input.snapshot.referenceComments) : "(none)",
       "",
       "[USER QUESTION]",
       input.question,

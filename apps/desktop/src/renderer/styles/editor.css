@@ -9,11 +9,12 @@
 }
 
 /* Folio: the working text is the primary surface; tools stay in the margins. */
-.folio-editor { --reading-size: 16px; --source-size: 18px; }
+.folio-editor { --reading-size: 16px; --source-size: 18px; --pane-header-height: 34px; }
 .folio-editor.large-type { --reading-size: 19px; --source-size: 21px; }
-.folio-editor .pane-center { background: var(--bg); container-type: inline-size; }
+.folio-editor .pane-center { --editor-toolbar-inset: 28px; background: var(--bg); container-type: inline-size; }
+.folio-editor .workflow-region, .folio-editor .pane-right > .scope { min-height: var(--pane-header-height); flex: 0 0 auto; }
 .workflow-region { display: flex; align-items: center; gap: 24px; padding: 0 28px; background: var(--surface); border-bottom: 1px solid var(--border); }
-.folio-editor .workflow { display: grid; flex: 0 1 500px; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; align-items: stretch; }
+.folio-editor .workflow { display: grid; flex: 0 1 680px; grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr) 20px minmax(0, 1fr); min-height: 0; padding: 0; gap: 0; border: 0; background: transparent; align-items: stretch; }
 .folio-editor .workflow-step { position: relative; min-width: 0; min-height: 33px; border: 0; border-radius: 0; padding: 2px 4px; gap: 9px; align-items: center; background: transparent; color: var(--fg); }
 .folio-editor .workflow-step:not(:disabled):hover { background: var(--fg-softer); color: var(--accent-ink); }
 .folio-editor .workflow-step.is-on { background: transparent; box-shadow: none; color: var(--accent-ink); }
@@ -44,13 +45,19 @@
 .workflow-guide { position: fixed; position-anchor: --workflow-help; inset: auto; top: anchor(bottom); right: anchor(right); width: min(320px, calc(100vw - 32px)); margin: 8px 0 0; padding: 15px 17px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--fg); box-shadow: 0 6px 24px #292b2714; font-size: 12px; line-height: 1.8; }
 .workflow-guide-label { display: block; margin-bottom: 5px; font-size: 11px; font-weight: 600; color: var(--accent-ink); }
 .workflow-guide p { margin: 0; color: var(--muted); }
-.folio-editor #translationToolbar { min-height: 36px; padding: 3px 27px; background: var(--surface); gap: 9px; flex-wrap: wrap; }
-.folio-editor #translationToolbar .seg { background: var(--bg); }
+/* Direct view switches share the header inset without a segmented-control box. */
+.folio-editor #translationToolbar { min-height: 36px; padding: 0 var(--editor-toolbar-inset); background: var(--surface); gap: 9px; flex-wrap: wrap; }
+.folio-editor #viewSeg { align-self: stretch; flex: 0 0 auto; align-items: stretch; gap: 22px; height: 35px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.folio-editor #viewSeg button { position: relative; height: 35px; padding: 0 2px; border-radius: 0; background: transparent; color: var(--muted); font-size: 11px; font-weight: 400; box-shadow: none; }
+.folio-editor #viewSeg button:hover { background: transparent; color: var(--fg); }
+.folio-editor #viewSeg button[aria-pressed="true"] { background: transparent; color: var(--fg); font-weight: 400; }
+.folio-editor #viewSeg button[aria-pressed="true"]::after { content: ""; position: absolute; right: 2px; bottom: -1px; left: 2px; height: 2px; background: var(--accent-ink); }
+.folio-editor #viewSeg button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -3px; }
+@container (max-width: 680px) {
+  .folio-editor #viewSeg { gap: 16px; }
+}
 .folio-editor .center-body { padding: 16px 28px 60px; max-width: 1400px; margin: 0 auto; }
-.folio-editor .translation-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 0 12px; font-size: 11px; }
-.folio-editor .translation-controls #alignmentStatus { flex: 1 1 190px; line-height: 1.6; }
-.folio-editor .translation-controls > .sp { display: none; }
-.folio-editor .translation-controls #btnPrepare { order: 2; }
+.folio-editor #viewSource { padding: 16px 28px 0; }
 .folio-editor .segmentation-actions.has-translation { display: none; }
 .folio-editor .full-text-document #vstrip { display: none; }
 .folio-editor .full-text-document #translationEditHelp { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -58,13 +65,28 @@
 .folio-editor #reviewSelectionHint { font-size: 10px; flex: 1 1 140px; }
 .folio-sheet { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; box-shadow: 0 2px 7px #292b2704; overflow: clip; }
 .folio-columns { display: grid; grid-template-columns: 41% minmax(0, 1fr); padding: 15px 23px; border-bottom: 1px solid var(--border); color: var(--fg); font: 17px var(--font-hanmun); }
+#viewParallel { --comparison-source-width: clamp(180px, 41%, calc(100% - 180px)); }
+#viewParallel .folio-columns { grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); min-height: 36px; padding: 0; font: 500 12px/1.4 var(--font-ui); }
+#viewParallel .folio-columns > span { align-items: center; min-height: 35px; padding: 3px 23px; gap: 8px; }
+#viewParallel .folio-columns > span:last-child { padding-left: 25px; }
+#viewParallel .parallel-source-heading { border-right: 1px solid var(--border); }
+#viewParallel .parallel-translation-heading { flex-wrap: wrap; gap: 4px 10px; }
+.folio-editor #viewParallel .brow { grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); }
+.comparison-body { position: relative; }
+.comparison-divider { position: absolute; z-index: 2; top: 0; bottom: 0; left: var(--comparison-source-width); width: 12px; transform: translateX(-50%); cursor: col-resize; touch-action: none; }
+.comparison-divider::after { content: ""; position: absolute; inset: 0 5px; background: transparent; }
+.comparison-divider:hover::after, .comparison-divider:focus-visible::after, .comparison-divider.is-drag::after { background: var(--accent-ink); }
+.comparison-divider:focus { outline: none; }
+body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize !important; user-select: none !important; }
 .folio-columns > span { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .folio-columns > span:last-child { padding-left: 25px; }
 .folio-columns small { font: 10px var(--font-ui); color: var(--muted); }
 .folio-columns .parallel-source-heading { flex-wrap: wrap; gap: 6px 10px; padding-right: 8px; }
-#parallelSource { max-width: 100%; padding: 3px 20px 3px 5px; color: var(--fg); border: 1px solid var(--border); border-radius: 4px; background-color: var(--surface); font: 11px var(--font-ui); cursor: pointer; }
+#parallelSource { min-width: 0; max-width: 100%; min-height: 28px; padding: 4px 20px 4px 8px; margin-left: -9px; color: var(--fg); border: 1px solid transparent; border-radius: 4px; background-color: transparent; font: 500 12px/1.4 var(--font-ui); cursor: pointer; }
+#parallelSource:hover:not(:disabled) { border-color: var(--border); background-color: var(--surface); }
+#parallelSource:disabled { cursor: default; opacity: .65; }
 #parallelSource:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
-#parallelSourceStatus { white-space: nowrap; }
+#parallelSourceStatus { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
 .comparison-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 7px 16px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 10px; }
 .comparison-tools label { font-size: 10px; }
 .comparison-tools input[type="checkbox"] { width: 12px; height: 12px; }
@@ -75,9 +97,9 @@
 .folio-editor .brow:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); }
 .folio-editor .brow.is-active { background: #f6f0e6; box-shadow: inset 2px 0 var(--accent-ink); }
 .folio-editor .brow.is-related { background: #f9f5ed; }
-.folio-editor .bcell { padding: 19px 23px 14px; }
+.folio-editor .bcell { padding: 23px 27px 18px; }
 .folio-editor .bcell-src { font-size: var(--source-size); line-height: 2; letter-spacing: .025em; border-right-color: var(--border); }
-.folio-editor .bcell-tgt { font-family: var(--font-hanmun); font-size: var(--reading-size); line-height: 2; padding-left: 25px; }
+.folio-editor .bcell-tgt { font-family: var(--font-hanmun); font-size: var(--reading-size); line-height: 2; padding-left: 29px; }
 .folio-editor .bmeta { min-height: 20px; margin-bottom: 9px; font-family: var(--font-ui); font-size: 10px; letter-spacing: 0; line-height: 1.5; }
 .sentence-number { color: var(--accent-ink); font-variant-numeric: tabular-nums; min-width: 22px; }
 .sentence-relation { color: var(--muted); font-size: 10px; }
@@ -100,7 +122,6 @@
 .folio-editor .draft-head h1 { font-size: 20px; font-weight: 500; }
 .folio-editor .draft-textarea { background: var(--surface); }
 .folio-editor .pane-right { background: var(--bg); }
-.folio-editor .pane-right .scope { min-height: 43px; }
 .folio-editor .rpanel .grp { background: var(--surface); }
 .folio-editor .statusbar #editorSaveState { white-space: nowrap; }
 .sentence-link-dialog { width: min(760px, calc(100vw - 40px)); max-height: calc(100vh - 70px); overflow: auto; padding: 24px; }
@@ -115,20 +136,23 @@
 .sentence-link-span > button:first-child { flex: 1; min-width: 0; border: 0; background: transparent; font: 15px/1.8 var(--font-hanmun); text-align: left; overflow-wrap: anywhere; }
 @container (max-width: 680px) {
   .folio-editor .center-body { padding: 13px 16px 45px; }
+  .folio-editor #viewSource { padding: 13px 16px 0; }
   .workflow-region { padding-inline: 16px; gap: 12px; }
-  .folio-editor .workflow { grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr) 16px minmax(0, 1fr); }
+  .folio-editor .workflow { grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr) 12px minmax(0, 1fr) 12px minmax(0, 1fr); }
   .folio-editor .workflow-step { padding: 2px; gap: 6px; }
   .folio-editor .workflow-no { width: 19px; font-size: 15px; }
   .folio-editor .workflow-step b { font-size: 12px; }
   .folio-editor .workflow-step.is-on::after { left: 27px; right: 2px; }
   .workflow-tools { gap: 6px; }
   .workflow-help-trigger > span { display: none; }
-  .folio-editor #translationToolbar { padding-inline: 16px; }
+  .folio-editor #translationToolbar { --editor-toolbar-inset: 16px; }
   .folio-editor #reviewSelectionHint { flex-basis: 100%; order: 3; }
-  .folio-editor .bcell { padding: 14px 16px; }
-  .folio-editor .bcell-tgt { padding-left: 19px; }
+  .folio-editor .bcell { padding: 18px 20px; }
+  .folio-editor .bcell-tgt { padding-left: 23px; }
   .folio-source, .folio-translation { padding: 20px 18px; }
   .folio-columns { padding-inline: 16px; }
+  #viewParallel .folio-columns > span { padding-inline: 16px; }
+  #viewParallel .folio-columns > span:last-child { padding-left: 19px; }
   .folio-columns small { font-size: 9px; }
 }
 @container (max-width: 440px) {
@@ -138,7 +162,9 @@
   .folio-editor .brow, .folio-spread { grid-template-columns: minmax(0, 1fr); }
   .folio-editor .bcell-src, .folio-source { border-right: 0; border-bottom: 1px dashed var(--border); }
   .folio-editor .sentence-edit { margin-top: 0; }
-  .folio-columns { grid-template-columns: 1fr 1fr; }
+  .folio-columns, #viewParallel .folio-columns { grid-template-columns: 1fr 1fr; }
+  .folio-editor #viewParallel .brow { grid-template-columns: minmax(0, 1fr); }
+  .comparison-divider { display: none; }
 }
 .review-toolbar[hidden] { display: none; }
 .review-toolbar #reviewSelectionHint { flex: 1 1 180px; overflow-wrap: anywhere; }
@@ -426,12 +452,13 @@
   letter-spacing: 0.01em;
 }
 .folio-editor .pane-scroll:has(> .center-body > #sourceWorkspace:not([hidden])) { display: flex; overflow: hidden; }
-.folio-editor .center-body:has(> #sourceWorkspace:not([hidden])) { flex: 1; min-height: 0; width: 100%; padding-bottom: 16px; }
+.folio-editor .center-body:has(> #sourceWorkspace:not([hidden])) { flex: 1; min-height: 0; width: 100%; max-width: none; padding: 0; }
 #sourceWorkspace { height: 100%; min-height: 0; }
-.source-sheet { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; }
+.source-sheet { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); }
 .source-sheet > :not(textarea) { flex-shrink: 0; }
-.source-toolbar { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 18px; border-bottom: 1px solid var(--border); }
-.source-toolbar > label { font-size: 12px; font-weight: 600; }
+.source-toolbar { display: flex; align-items: stretch; gap: 0; min-height: 36px; padding: 0; border-bottom: 1px solid var(--border); background: var(--chrome); }
+.source-toolbar-title { display: flex; align-items: center; flex-shrink: 0; gap: 10px; padding: 2px 16px; border-right: 1px solid var(--border); }
+.source-toolbar-title > label { font-size: 12px; font-weight: 600; }
 .source-toolbar .tag { background: transparent; border: 0; padding: 0; font-size: 10px; }
 .source-toolbar .tag::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: middle; }
 .source-sheet .btn { min-height: 28px; }
@@ -442,15 +469,26 @@
 .source-sheet #sourceDraftText::placeholder { font-family: var(--font-ui); font-size: 14px; letter-spacing: 0; color: var(--muted); }
 .source-sheet #sourceMessage { min-height: 0; margin: 0 18px 12px; padding: 0 0 0 10px; border: 0; border-left: 2px solid var(--ctl-border); border-radius: 0; background: transparent; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .source-sheet #sourceMessage.is-warn { border-left-color: var(--warn); color: var(--warn-ink); }
-.source-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; min-height: 42px; padding: 8px 18px; border-top: 1px solid var(--border); }
+.source-footer { display: flex; align-items: center; gap: 12px; min-height: 34px; padding: 0 16px; border-top: 1px solid var(--border); }
 .source-info { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .source-info > span + span { padding-left: 12px; border-left: 1px solid var(--border); }
-.source-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.source-actions { display: flex; align-items: center; flex-shrink: 0; gap: 4px; padding: 2px 6px; border-left: 1px solid var(--border); }
+.source-toolbar .btn { height: 30px; min-height: 30px; padding: 4px 8px; border-radius: 5px; font-size: 12px; line-height: 20px; white-space: nowrap; box-shadow: none; }
+.source-toolbar .ic { width: 16px; height: 16px; stroke-width: 1.4; }
+.source-toolbar .btn-ghost { color: var(--muted); border: 1px solid transparent; }
+.source-toolbar #btnConfirmSource { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+.source-toolbar .btn:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+@media (hover: hover) and (pointer: fine) {
+  .source-toolbar .btn-ghost:hover:not(:disabled) { color: var(--fg); background: var(--surface); border-color: var(--ctl-border); }
+  .source-toolbar #btnConfirmSource:hover:not(:disabled) { border-color: var(--accent-ink); }
+}
 @container (max-width: 680px) {
   .source-sheet #sourceDraftText { padding: 20px; font-size: 18px; }
 }
 @container (max-width: 440px) {
-  .source-toolbar, .source-footer { padding-inline: 12px; }
+  .source-toolbar-title { gap: 6px; padding-inline: 10px; }
+  .source-toolbar .btn { padding-inline: 6px; font-size: 11px; }
+  .source-footer { padding-inline: 12px; }
   .source-sheet #sourceDraftText { padding: 16px; }
 }
 .field-help {
@@ -459,164 +497,74 @@
   font-family: var(--font-mono);
   font-size: 10.5px;
 }
-.draft-meta-grid {
-  margin-top: 14px;
-  display: grid;
-  grid-template-columns: minmax(140px, 0.35fr) minmax(240px, 1fr);
-  gap: 12px;
+/* Punctuation uses the same paper, ink and compact tools as the source sheet. */
+.folio-editor .pane-scroll:has(> .center-body > #punctuationWorkspace:not([hidden])) { display: flex; overflow: hidden; }
+.folio-editor .center-body:has(> #punctuationWorkspace:not([hidden])) { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; max-width: none; padding: 0; }
+#punctuationWorkspace:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; --punctuation-font-size: var(--source-size); --punctuation-line-height: 1.9; }
+.punctuation-toolbar { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 4px 16px; min-height: 36px; padding: 2px 6px; background: var(--chrome); border-bottom: 1px solid var(--border); }
+.punctuation-toolbar-tools, .punctuation-toolbar-actions, #punctuationDraftActions { display: flex; align-items: center; gap: 4px; }
+.punctuation-toolbar-actions { margin-left: auto; }
+.punctuation-toolbar .btn { height: 30px; padding: 4px 8px; border-radius: 5px; font-size: 12px; line-height: 20px; box-shadow: none; }
+.punctuation-toolbar .ic { width: 16px; height: 16px; stroke-width: 1.4; }
+.punctuation-toolbar #btnConfirmPunctuation { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+.punctuation-toolbar .btn:focus-visible, #punctuationMode:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+#btnPunctuationCompare[aria-pressed="true"] { background: var(--fg-softer); color: var(--accent-ink); border-color: transparent; }
+#punctuationMode { width: 74px; height: 30px; padding-left: 8px; border-color: transparent; border-radius: 5px; background-color: transparent; font-size: 12px; box-shadow: none; }
+#punctuationMode:disabled { color: var(--muted); opacity: 1; }
+#punctuationMode:focus { border-color: transparent; box-shadow: none; }
+#btnPunctuationView { gap: 2px; anchor-name: --punctuation-settings; }
+#btnSuggestPunctuation { margin-right: 8px; }
+#punctuationViewSettings { position-anchor: --punctuation-settings; padding: 14px; border-radius: 6px; }
+#punctuationViewSettings .field { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-items: center; gap: 12px; margin: 0 0 12px; }
+#punctuationViewSettings .field label { font-size: 12px; }
+#punctuationViewSettings .check { font-size: 12px; }
+#punctuationViewSettings .select { width: 100%; height: 30px; }
+@media (hover: hover) and (pointer: fine) {
+  .punctuation-toolbar .btn-ghost:hover:not(:disabled), #punctuationMode:hover:not(:disabled) { background-color: var(--fg-softer); }
+  .punctuation-toolbar #btnConfirmPunctuation:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-soft) 80%, var(--accent-ink)); }
 }
-#punctuationDraftActions {
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  margin-top: 20px;
-  background: var(--bg);
+.punctuation-ai-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding-left: 9px; margin-left: 2px; border-left: 1px solid var(--border); }
+.punctuation-ai-controls .select { width: 94px; min-width: 0; min-height: 28px; padding-block: 3px; font-size: 11px; text-overflow: ellipsis; }
+#punctuationWorkspace > .workflow-notice { flex-shrink: 0; margin: 0 0 10px; padding: 7px 10px; max-height: 18vh; overflow: auto; font-size: 11px; }
+#punctuationAiStatus { flex: 0 0 auto; color: var(--muted); font-size: 10.5px; line-height: 1.6; padding: 0 0 8px; max-height: 16vh; overflow: auto; white-space: pre-wrap; }
+#punctuationAiStatus:empty { display: none; }
+.punctuation-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; overflow: hidden; background: var(--surface); border: 0; border-radius: 0; }
+.punctuation-comparison.is-focused { grid-template-columns: minmax(0, 1fr); }
+.punctuation-comparison.is-focused .punctuation-source-pane { display: none; }
+.punctuation-source-pane, .punctuation-comparison-target, #punctuationTextField { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.punctuation-source-pane { border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 55%, var(--surface)); }
+#punctuationTextField { flex: 1; margin: 0; gap: 0; }
+.punctuation-field-heading { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; padding: 8px 18px; border-bottom: 1px solid var(--border); font-size: 11px; }
+.punctuation-field-heading label, #punctuationSourceLabel { margin: 0; font-size: 11px; font-weight: 600; }
+.punctuation-field-heading small { color: var(--muted); font-size: 10px; }
+#punctuationLocation { margin-left: auto; font-variant-numeric: tabular-nums; }
+.punctuation-text-switch { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.punctuation-text-switch button { padding: 2px 6px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: 10px var(--font-ui); cursor: pointer; }
+.punctuation-text-switch button[aria-pressed="true"] { background: var(--fg-softer); color: var(--accent-ink); }
+.punctuation-text-switch button:focus-visible { outline: 2px solid var(--accent-ink); }
+.punctuation-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.punctuation-comparison #punctuationSourceReference, .punctuation-editor #punctuationDraftText { display: block; flex: 1 1 0; width: 100%; height: 0; min-height: 0; max-height: none; margin: 0; padding: 20px 22px; border: 0; border-radius: 0; box-shadow: none; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; resize: none; background: transparent; font-family: var(--font-hanmun); font-size: var(--punctuation-font-size); line-height: var(--punctuation-line-height); letter-spacing: .025em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.punctuation-editor #punctuationDraftText:focus-visible { outline: 1px solid var(--ctl-border); outline-offset: -1px; }
+.punctuation-source-paragraph { display: inline; cursor: pointer; }
+.punctuation-source-paragraph.is-current { background: var(--fg-softer); }
+.punctuation-source-paragraph:focus-visible { outline: 1px solid var(--accent-ink); outline-offset: 4px; }
+.punctuation-pane-footer { display: flex; flex: 0 0 auto; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 30px; padding: 6px 18px; border-top: 1px solid var(--border); color: var(--muted); font: 10px/1.5 var(--font-ui); }
+.punctuation-pane-footer > :last-child { margin-left: auto; }
+.punctuation-pane-footer .field-help { align-self: auto; font: inherit; }
+.punctuation-proposal { flex: 0 1 auto; max-height: 45%; overflow: auto; padding: 12px 18px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.punctuation-proposal-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 10px; }
+.punctuation-proposal p { margin: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.punctuation-proposal > .btn { justify-self: end; }
+.punctuation-comparison .punctuation-create-actions { flex-direction: column; align-items: flex-start; gap: 14px; margin: 0; padding: 24px 22px; border: 0; border-radius: 0; overflow: auto; }
+#punctuationWorkspace [hidden] { display: none !important; }
+@container (max-width: 680px) {
+  .punctuation-comparison, .punctuation-comparison.is-focused { grid-template-columns: minmax(0, 1fr); }
+  .punctuation-source-pane { display: none; border-right: 0; }
+  .punctuation-comparison.is-showing-source .punctuation-source-pane { display: flex; }
+  .punctuation-comparison.is-showing-source .punctuation-comparison-target { display: none; }
+  .punctuation-comparison #punctuationSourceReference, .punctuation-editor #punctuationDraftText { padding: 18px; }
 }
-.draft-actions {
-  min-height: 52px;
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.punctuation-field-heading {
-  min-height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.punctuation-text-switch {
-  display: flex;
-  padding: 2px;
-  gap: 2px;
-  border-radius: 6px;
-  background: var(--chrome);
-}
-.punctuation-text-switch button {
-  padding: 2px 8px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.punctuation-text-switch button[aria-pressed="true"] {
-  background: var(--surface);
-  color: var(--fg);
-  box-shadow: 0 1px 3px #0001;
-}
-.punctuation-editor {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.punctuation-ai-tools {
-  padding: 10px 12px;
-  border-top: 1px solid var(--border);
-  background: var(--chrome);
-  display: grid;
-  gap: 6px;
-}
-.punctuation-ai-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.punctuation-ai-controls .select {
-  flex: 1 1 160px;
-  min-width: 0;
-  width: 0;
-  max-width: 100%;
-  text-overflow: ellipsis;
-}
-.punctuation-ai-help,
-#punctuationAiStatus {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10.5px;
-  line-height: 1.45;
-}
-#punctuationAiStatus:empty {
-  display: none;
-}
-.punctuation-proposal {
-  padding: 10px 12px;
-  border-top: 1px solid var(--border);
-  display: grid;
-  gap: 8px;
-}
-.punctuation-proposal[hidden],
-.punctuation-text-switch[hidden] {
-  display: none;
-}
-.punctuation-proposal-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  font-size: 10.5px;
-}
-.punctuation-proposal p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.punctuation-proposal > .btn {
-  justify-self: end;
-}
-.punctuation-comparison {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  align-items: start;
-  gap: 16px;
-}
-.punctuation-comparison > *,
-.punctuation-comparison .field {
-  min-width: 0;
-}
-.punctuation-comparison .punctuation-create-actions {
-  flex-direction: column;
-  align-items: flex-start;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  padding: 18px 12px;
-}
-#punctuationSourceLabel {
-  min-height: 26px;
-  display: flex;
-  align-items: center;
-}
-.punctuation-editor #punctuationDraftText {
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-}
-.punctuation-editor #punctuationDraftText:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.punctuation-comparison #punctuationSourceReference,
-.punctuation-comparison #punctuationDraftText {
-  height: clamp(280px, 44vh, 460px);
-  min-height: 0;
-  max-height: none;
-  margin: 0;
-  padding: 10px 12px;
-  overflow: auto;
-  resize: none;
-  font-family: var(--font-hanmun);
-  font-size: 18px;
-  line-height: 1.9;
-  letter-spacing: 0.01em;
-  overflow-wrap: anywhere;
-}
+.draft-actions { min-height: 52px; padding: 10px 0; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
 .source-reference {
   max-height: 150px;
   margin: 0;
@@ -1497,39 +1445,6 @@ details > summary.prep-sec-h {
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
-.prep-run-meter {
-  height: 4px;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--fg-soft);
-}
-.prep-run-meter span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
-}
-.prep-run-meter[data-state="running"] span {
-  width: 42%;
-  transform: translateX(-110%);
-  animation: prep-run-indeterminate 1.25s ease-in-out infinite;
-}
-.prep-run-meter[data-state="completed"] span {
-  background: var(--ok);
-  transform: scaleX(1);
-}
-.prep-run-meter[data-state="completed"][data-validation="needs_review"] span,
-.prep-run-meter[data-state="completed"][data-validation="invalid_unapplied"] span {
-  background: var(--warn);
-}
-.prep-run-meter[data-state="failed"] span,
-.prep-run-meter[data-state="canceled"] span {
-  background: var(--danger);
-  transform: scaleX(1);
-}
 .prep-run-phase {
   margin: 10px 0 0;
   font-weight: 600;
@@ -1562,17 +1477,7 @@ details > summary.prep-sec-h {
   color: var(--danger);
   line-height: 1.45;
 }
-@keyframes prep-run-indeterminate {
-  0% { transform: translateX(-110%); }
-  55% { transform: translateX(110%); }
-  100% { transform: translateX(245%); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .prep-run-meter[data-state="running"] span {
-    width: 100%;
-    transform: scaleX(0.45);
-    animation: none;
-  }
   .typing-dots i {
     opacity: 0.55;
     animation: none;
@@ -1624,14 +1529,30 @@ details > summary.prep-sec-h {
   }
 }
 
-/* A quiet command bar above the manuscript, with secondary tools on demand. */
-.folio-editor .editor-commandbar { display: flex; align-items: center; gap: 10px; min-height: 40px; margin: -4px 0 0; padding: 0 0 8px; border-bottom: 1px solid var(--border); }
+/* Keep translation tools outside the manuscript scroller, flush with the pane. */
+.folio-editor .center-body:has(> #translationWorkspace:not([hidden])) { max-width: none; padding-top: 0; padding-inline: 0; }
+.folio-editor .pane-scroll:has(> .center-body > #translationWorkspace:not([hidden])) { scroll-padding-top: 12px; }
+.folio-editor .pane-center:not(:has(#translationWorkspace:not([hidden]))) > .editor-commandbar { display: none; }
+.folio-editor .editor-commandbar { position: relative; flex-shrink: 0; z-index: 5; display: flex; align-items: center; gap: 8px; min-height: 36px; margin: 0; padding: 0 var(--editor-toolbar-inset); border-bottom: 1px solid var(--border); background: var(--surface); }
+@container (max-width: 680px) {
+  .folio-editor .editor-commandbar { --editor-toolbar-inset: 16px; }
+}
 .editor-command-group, .editor-command-actions { display: flex; align-items: center; gap: 3px; min-width: 0; }
 .editor-command-actions { margin-left: auto; gap: 8px; }
+.editor-type-tools { border-left: 1px solid var(--border); padding-left: 6px; }
+.folio-editor .editor-commandbar #btnToolbarReadingSize { gap: 3px; align-items: baseline; }
+.reading-size-normal { font-size: 10px; }
+.reading-size-large { font-size: 15px; }
+.folio-editor .editor-commandbar #btnToolbarReadingSize[aria-pressed="true"] { background: var(--fg-softer); color: var(--accent-ink); }
+
+.editor-confirm-actions { display: flex; align-items: center; padding-left: 8px; border-left: 1px solid var(--border); }
+.editor-confirm-actions:not(:has(> button:not([hidden]))) { display: none; }
+.editor-confirm-actions kbd { color: var(--muted); font-size: 10px; }
 .editor-menu-group { border-left: 1px solid var(--border); padding-left: 10px; }
-.folio-editor .editor-commandbar .btn { min-height: 30px; white-space: nowrap; padding: 4px 8px; font-size: 11px; }
+.folio-editor .editor-commandbar .btn { min-height: 30px; white-space: nowrap; padding: 4px 8px; gap: 7px; border-radius: 3px; font-size: 11px; line-height: 20px; box-shadow: none; }
 .folio-editor .editor-commandbar .review-toolbar { margin: 0; padding: 0; }
-.editor-menu-trigger > span { margin-left: 4px; color: var(--muted); }
+.editor-menu-trigger > span { margin-left: 0; color: inherit; }
+.editor-commandbar .editor-menu-trigger > span[aria-hidden="true"] { width: 6px; height: 6px; margin: -3px 2px 0 3px; border-right: 1.25px solid currentColor; border-bottom: 1.25px solid currentColor; transform: rotate(45deg); font-size: 0; opacity: .55; }
 #btnResearchMenu { anchor-name: --research-tools; }
 #btnReviewMenu { anchor-name: --review-tools; }
 #btnComparisonFilter { anchor-name: --comparison-filters; }
@@ -1645,21 +1566,20 @@ details > summary.prep-sec-h {
 .editor-tool-popover .btn:focus-visible, .editor-commandbar .btn:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
 .editor-menu-label { display: block; padding: 6px 10px; color: var(--muted); font-size: 10px; font-weight: 500; }
 .editor-menu-divider { height: 1px; margin: 5px 4px; background: var(--border); }
-.folio-editor .translation-controls { gap: 12px; padding: 8px 0 10px; font-size: 10px; }
-.folio-editor .translation-controls #alignmentStatus { flex: 1; min-width: 0; }
-.folio-editor .translation-controls #translationSaveStatus { flex-shrink: 0; color: var(--accent-ink); }
 .folio-editor .editor-selection-hint { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .folio-editor:has(#btnAddReviewComment[aria-pressed="true"]) .editor-selection-hint { display: block; position: static; width: auto; height: auto; margin: 0 0 12px; padding: 8px 12px; clip-path: none; white-space: normal; color: var(--accent-ink); background: var(--fg-softer); border-left: 2px solid var(--accent-ink); font-size: 11px; }
-.folio-editor .comparison-tools { gap: 8px; padding: 9px 16px; }
-.folio-editor .comparison-tools #comparisonSummary { flex: 1 1 180px; min-width: 0; font-size: 10px; line-height: 1.5; }
-.folio-editor .comparison-tools > .sp { display: none; }
-.folio-editor .comparison-tools .input { width: 130px; min-width: 90px; }
-.comparison-navigation { display: flex; align-items: center; gap: 2px; border-left: 1px solid var(--border); padding-left: 6px; }
+.folio-editor .editor-commandbar .comparison-tools { flex-wrap: nowrap; gap: 3px; padding: 0 0 0 10px; border-bottom: 0; border-left: 1px solid var(--border); }
+.editor-commandbar .comparison-tools[hidden],
+.pane-center:not(:has(#viewParallel.is-open)) .editor-commandbar .comparison-tools { display: none; }
+.editor-filter-popover #comparisonSummary { margin-bottom: 6px; line-height: 1.5; }
+.editor-filter-popover #comparisonQuery { width: 100%; min-width: 0; }
+.comparison-navigation { display: flex; align-items: center; gap: 0; margin-left: 4px; padding-left: 6px; border-left: 1px solid var(--border); }
+.folio-editor .comparison-navigation .btn { width: 28px; min-height: 26px; padding: 2px; border: 0; border-radius: 4px; font-size: 14px; }
 .editor-filter-popover { padding: 8px 12px 12px; }
 .editor-filter-popover .editor-menu-label { padding-inline: 0; }
 .editor-filter-popover .select { width: 100%; margin-bottom: 12px; }
 .editor-filter-popover .check { font-size: 12px; }
-#btnComparisonFilter.is-filtered { background: var(--accent-soft); color: var(--accent-ink); }
+.folio-editor .editor-commandbar #btnComparisonFilter.is-filtered { background: var(--accent-soft); color: var(--accent-ink); }
 #btnComparisonFilter.is-filtered::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 @container (max-width: 580px) {
   .folio-editor .editor-commandbar { gap: 5px; flex-wrap: wrap; }
@@ -1667,6 +1587,196 @@ details > summary.prep-sec-h {
   .editor-command-actions { gap: 4px; }
   .editor-command-actions kbd { display: none; }
   .folio-editor .editor-commandbar .btn { padding-inline: 6px; }
-  .folio-editor .comparison-tools #comparisonSummary { flex-basis: 100%; }
-  .folio-editor .comparison-tools .input { flex: 1; }
+  .folio-editor .editor-commandbar .comparison-tools { padding-left: 5px; }
+}
+
+/* A correspondence owns one source cell and all of its translation segments. */
+.sentence-group-member + .sentence-group-member { margin-top: 14px; }
+.sentence-group-member .sentence-actions { margin-top: 2px; }
+.sentence-group-member.is-active .sentence-edit { color: var(--text); }
+.sentence-group[hidden], .sentence-group-member[hidden] { display: none; }
+
+/* Book editing keeps text geometry stable across read, hover and edit states. */
+#bookGroups { white-space: normal; position: relative; }
+.book-edit-toolbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 10px; min-height: 36px; margin: -12px -2px 14px; padding: 3px 0 7px; border-bottom: 1px solid var(--border); background: var(--panel, #fff); font: 11px/1.4 var(--font-ui); color: var(--muted); }
+.book-group-position { font-variant-numeric: tabular-nums; letter-spacing: .05em; }
+.book-edit-state { flex: 1; min-width: 0; }
+.book-edit-actions { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.book-edit-button, .book-group-menu summary { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font: 11px/1 var(--font-ui); padding: 5px 8px; }
+.book-edit-button[aria-pressed="true"] { color: var(--accent-ink); background: color-mix(in srgb, var(--accent-ink) 8%, transparent); }
+.book-edit-button:disabled { opacity: .4; cursor: default; }
+.book-edit-button:focus-visible, .book-group-menu summary:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+.book-edit-button:active:not(:disabled), .book-group-menu summary:active { transform: scale(.97); }
+.book-group-menu { position: relative; }
+.book-group-menu summary { list-style: none; width: 28px; padding: 4px; }
+.book-group-menu summary::-webkit-details-marker { display: none; }
+.book-group-menu-items { position: absolute; right: 0; top: calc(100% + 5px); width: 190px; padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel, #fff); box-shadow: 0 5px 18px #00000012; }
+.book-group-menu-items .btn { display: block; width: 100%; text-align: left; padding: 9px 10px; font-size: 12px; }
+.book-group { position: relative; border: 1px solid transparent; border-radius: 3px; padding: 8px 10px; margin: 0 -11px; }
+.book-group.is-selected::before { content: ""; position: absolute; left: -1px; top: 12px; bottom: 12px; width: 2px; background: color-mix(in srgb, var(--accent-ink) 45%, transparent); }
+.book-group.is-editing { border-color: color-mix(in srgb, var(--accent-ink) 24%, var(--border)); background: color-mix(in srgb, var(--accent-ink) 3%, transparent); }
+.book-group-marker { position: absolute; left: -24px; top: 18px; color: var(--muted); font: 9px/1 var(--font-ui); font-variant-numeric: tabular-nums; opacity: 0; }
+.book-group.is-selected .book-group-marker, .book-group.is-editing .book-group-marker { opacity: .7; }
+.folio-editor .book-group .sentence-edit { display: block; width: 100%; resize: none; overflow: hidden; font-family: var(--font-hanmun); font-size: var(--reading-size); line-height: 1.95; margin: 0; padding: 0; min-height: 0; border: 0; background: transparent; box-shadow: none; }
+.folio-editor .book-group .sentence-edit:not(:read-only):focus { box-shadow: none; }
+.book-source-highlight { background: color-mix(in srgb, var(--accent-ink) 14%, transparent); color: inherit; border-radius: 2px; }
+#bookSourceMode { margin-left: 12px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 4px; background: transparent; color: var(--muted); font: 11px var(--font-ui); }
+@media (hover: hover) and (pointer: fine) {
+  .book-group:hover:not(.is-editing) { background: color-mix(in srgb, var(--accent-ink) 2%, transparent); }
+  .book-edit-button:hover:not(:disabled), .book-group-menu summary:hover { background: color-mix(in srgb, var(--accent-ink) 7%, transparent); color: var(--text); }
+}
+.group-operation-dialog { width: min(540px, 90vw); border: 1px solid var(--border); border-radius: 10px; padding: 24px; color: var(--text); background: var(--bg); }
+.group-operation-dialog::backdrop { background: #0005; }
+.group-operation-dialog select { display: block; width: 100%; margin: 16px 0; }
+.group-operation-dialog pre { white-space: pre-wrap; max-height: 200px; overflow: auto; }
+
+/* Editing aids stay quiet until there is something to act on. */
+.folio-editor .editor-commandbar .btn { font-weight: 400; color: var(--muted); }
+.folio-editor .editor-commandbar .btn:disabled { color: var(--muted); }
+.folio-editor .editor-commandbar .btn[aria-expanded="true"],
+.folio-editor .pane-center:has(#researchTools:popover-open) .editor-commandbar #btnResearchMenu,
+.folio-editor .pane-center:has(#reviewTools:popover-open) .editor-commandbar #btnReviewMenu,
+.folio-editor .pane-center:has(#comparisonFilterTools:popover-open) .editor-commandbar #btnComparisonFilter { background: var(--fg-softer); color: var(--accent-ink); }
+.folio-editor .editor-commandbar .btn:not(:disabled):hover { color: var(--fg); }
+.folio-editor .editor-commandbar .ic { width: 14px; height: 14px; stroke-width: 1.35; }
+.editor-history { gap: 0; padding-right: 8px; border-right: 1px solid var(--border); }
+.folio-editor .editor-history .btn { width: 28px; padding-inline: 6px; }
+.folio-editor .editor-history .btn:disabled { opacity: .38; }
+#btnSaveFullTranslation { min-width: 64px; font-variant-numeric: tabular-nums; }
+#btnSaveFullTranslation.is-saved { border-color: transparent; background: transparent; opacity: 1; }
+#btnSaveFullTranslation.is-saved::before { content: "✓"; font-size: 11px; margin-right: 3px; }
+.folio-editor .editor-commandbar #btnPrepare { background: var(--fg); border-color: var(--fg); color: white; font-weight: 400; }
+.folio-editor .editor-commandbar #btnPrepare:hover:not(:disabled) { background: #43453f; border-color: #43453f; color: white; }
+.folio-editor .editor-commandbar #btnPrepare:active:not(:disabled) { background: #1d1f1b; }
+.folio-editor .editor-commandbar #btnPrepare kbd { padding: 0 0 0 7px; margin-left: 2px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: inherit; opacity: .6; font-size: 10px; }
+.folio-editor .editor-commandbar #btnSaveFullTranslation.is-saved { color: var(--muted); font-size: 11px; font-weight: 400; }
+#btnEditorView { anchor-name: --editor-view; }
+#editorViewTools { position-anchor: --editor-view; }
+.editor-view-check { display: flex; gap: 8px; padding: 9px 10px; font-size: 12px; cursor: pointer; }
+.editor-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--fg-softer); font-size: 11px; line-height: 1.6; }
+.editor-recovery[hidden] { display: none; }
+.editor-recovery-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.editor-bookmark { margin-left: auto; color: var(--muted); }
+.editor-bookmark .ic { width: 12px; height: 12px; }
+.editor-bookmark.is-marked { color: var(--accent-ink); }
+.editor-bookmark.is-marked .ic { fill: var(--accent-soft); }
+.book-group-menu-items .editor-bookmark { margin: 0; width: 100%; justify-content: flex-start; }
+.book-group-menu-items .editor-bookmark::after { content: attr(title); }
+.editor-bookmarks-dialog { width: min(480px, calc(100vw - 32px)); max-height: 70vh; padding: 20px; color: var(--fg); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+.editor-bookmarks-dialog header { display: flex; align-items: center; justify-content: space-between; }
+.editor-bookmarks-dialog h2 { font-size: 14px; font-weight: 500; }
+.editor-bookmarks-dialog ul { list-style: none; padding: 0; }
+.editor-bookmarks-dialog li { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.editor-bookmark-quote { flex: 1; min-width: 180px; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; font-size: 12px; white-space: pre-wrap; cursor: pointer; }
+.editor-bookmark-quote:disabled { color: var(--muted); cursor: default; }
+.editor-bookmarks-dialog small { color: var(--muted); }
+.editor-selection-action { position: fixed; inset: auto; margin: 0; padding: 3px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); box-shadow: 0 3px 12px #292b271a; }
+.editor-selection-action .btn { border: 0; font-size: 11px; font-weight: 400; min-height: 26px; background: transparent; }
+.has-whitespace-mirror { position: relative; }
+.editor-whitespace-mirror { position: absolute; z-index: 2; pointer-events: none; user-select: none; overflow: hidden; color: transparent !important; border-style: solid; border-color: transparent; background: transparent; }
+.editor-whitespace-mirror[hidden] { display: none; }
+.editor-whitespace-mirror span { position: relative; color: transparent; }
+.editor-whitespace-mirror span::after { position: absolute; color: var(--muted); opacity: .5; left: 0; top: 0; font-size: .7em; line-height: inherit; }
+.editor-whitespace-mirror .ws-space::after { content: "·"; }
+.editor-whitespace-mirror .ws-tab::after { content: "→"; }
+.editor-whitespace-mirror .ws-newline::after { content: "↵"; }
+
+
+
+/* Reveal local editing controls without moving the translation text. */
+.sentence-actions.sentence-group-actions { justify-content: flex-end; gap: 4px; margin-top: 4px; }
+.sentence-group-actions > [data-edit-sentence] { order: -1; }
+.sentence-group-menu { z-index: 4; }
+.sentence-group-menu .book-group-menu-items { top: auto; bottom: calc(100% + 5px); }
+@media (hover: hover) and (pointer: fine) {
+  .sentence-group-actions { opacity: 0; pointer-events: none; }
+  .sentence-group:hover .sentence-group-actions,
+  .sentence-group:focus-within .sentence-group-actions,
+  .sentence-group-actions:has([aria-pressed="true"]),
+  .sentence-group-actions:has(details[open]) { opacity: 1; pointer-events: auto; }
+}
+
+/* Punctuation preparation shares the AI translation dialog's setup surface. */
+#punctuationModelSettings { display: contents; }
+#punctuationPrepConnection { font-size: 10px; background: transparent; border: 0; padding: 0; }
+#punctuationPrepSource { margin: 0; padding: 16px; max-height: 210px; overflow: auto; border-top: 1px solid var(--border); white-space: pre-wrap; font-size: 17px; line-height: 1.9; }
+#dlgPunctuation .prep-readable-note { font-size: 11px; color: var(--muted); }
+.punctuation-run-status { display: flex; align-items: flex-start; gap: 10px; }
+.punctuation-run-status:has(#punctuationAiStatus:empty) { display: none; }
+#dlgPunctuation #punctuationAiStatus { flex: 1; margin: 16px 0 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); font-size: 12px; max-height: 170px; }
+#punctuationPrepSpinner { margin-top: 31px; color: var(--accent); }
+#dlgPunctuation .ai-run-foot { flex-wrap: wrap; }
+#dlgPunctuation .prep-setup-total { max-width: 260px; }
+#dlgPunctuation [hidden] { display: none !important; }
+
+/* Marked passages keep their indicator immediately before the overflow menu. */
+.sentence-group-actions > .editor-bookmark { margin-left: 0; }
+.book-bookmark-indicator { display: flex; align-items: center; }
+.book-bookmark-indicator:empty { display: none; }
+
+/* Explicit group selection leaves text selection and the active sentence intact. */
+.sentence-selection-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.sentence-selection-controls { flex-wrap: wrap; }
+#sentenceSelectionCount { color: var(--accent-ink); font-size: 11px; white-space: nowrap; }
+/* A permanent selection column keeps manuscript alignment stable between modes. */
+.folio-editor #viewParallel .sentence-group,
+#viewParallel:has(.sentence-group) .folio-columns { grid-template-columns: 28px calc(var(--comparison-source-width) - 28px) minmax(0, 1fr); }
+#viewParallel:has(.sentence-group) .folio-columns::before { content: ""; }
+.sentence-selection-cell { display: flex; align-items: center; justify-content: center; min-width: 0; border-right: 1px solid var(--border); }
+@container (max-width: 440px) {
+  .folio-editor #viewParallel .sentence-group { grid-template-columns: 28px minmax(0, 1fr); }
+  .sentence-selection-cell { grid-row: span 2; }
+  .sentence-group > .bcell { grid-column: 2; }
+  #viewParallel:has(.sentence-group) .folio-columns { grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr); }
+}
+.sentence-select-checkbox { appearance: none; flex: 0 0 auto; width: 15px; height: 15px; margin: 0; border: 1px solid var(--border); border-radius: 3px; background: transparent; cursor: pointer; }
+.folio-editor .editor-commandbar { padding-left: 29px; }
+/* The manuscript sheet has a 1px outer border before its 28px selection column. */
+.editor-select-all { position: absolute; left: 1px; top: 0; bottom: 0; width: 28px; display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--border); }
+.editor-select-all[hidden] { display: none; }
+.sentence-select-checkbox:indeterminate { border-color: var(--accent); background-color: var(--accent); background-image: linear-gradient(white, white); background-repeat: no-repeat; background-position: center; background-size: 7px 1.5px; }
+.sentence-select-checkbox:hover:not(:checked) { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.sentence-select-checkbox:checked { border-color: var(--accent); background-color: var(--accent); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 8 2.5 2.5L12 5' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-size: 100% 100%; }
+@media (forced-colors: active) {
+  .sentence-select-checkbox { appearance: auto; }
+}
+@container (max-width: 680px) {
+  .sentence-select-checkbox { width: 12px; height: 12px; }
+}
+.sentence-select-checkbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+#rows .brow.is-batch-selected > .bcell,
+#rows .brow.is-batch-selected > .sentence-selection-cell { background: var(--accent-soft); }
+#rows .brow.is-batch-selected > .sentence-selection-cell { box-shadow: inset 3px 0 var(--accent); }
+
+/* Translation toolbar: compact tools, quiet status, distinct document actions. */
+.folio-editor .editor-commandbar { min-height: 36px; padding-block: 0; padding-right: 0; gap: 0; align-items: stretch; background: var(--chrome); }
+.folio-editor .editor-commandbar .editor-command-group { flex-shrink: 0; gap: 2px; padding: 2px 6px; border-right: 1px solid var(--border); }
+.folio-editor .editor-commandbar .btn { min-height: 30px; padding: 4px 8px; border-radius: 5px; font-size: 12px; }
+.folio-editor .editor-commandbar .ic { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.4; }
+.folio-editor .editor-commandbar .btn-ghost { border: 1px solid transparent; }
+@media (hover: hover) and (pointer: fine) {
+  .folio-editor .editor-commandbar .btn-ghost:hover:not(:disabled) { background: var(--surface); border-color: var(--ctl-border); box-shadow: 0 1px 2px #292b2708; }
+}
+.folio-editor .editor-commandbar .btn:not(:disabled):active { transform: scale(.97); }
+.folio-editor .editor-commandbar .editor-menu-group,
+.folio-editor .editor-commandbar .comparison-tools { border-left: 0; padding-inline: 6px; }
+.folio-editor .editor-commandbar .comparison-navigation { border-left: 0; margin-left: 2px; padding-left: 0; }
+.folio-editor .editor-commandbar .editor-type-tools { border-left: 0; }
+.folio-editor .editor-commandbar kbd { display: none; }
+.folio-editor .editor-commandbar .editor-history { gap: 0; padding-inline: 6px; }
+.folio-editor .editor-commandbar .editor-history .btn { width: 30px; background: transparent; border-color: transparent; border-radius: 5px; box-shadow: none; }
+.folio-editor .editor-commandbar .editor-history .btn:disabled { opacity: 1; color: color-mix(in srgb, var(--muted) 40%, var(--surface)); }
+.folio-editor .editor-commandbar .editor-history .btn:hover:not(:disabled) { background: var(--fg-soft); border-color: transparent; box-shadow: none; }
+.folio-editor .editor-commandbar #btnDocumentFind { width: 30px; padding-inline: 7px; }
+.folio-editor .editor-commandbar #btnDocumentFind > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.folio-editor .editor-commandbar .editor-command-actions { flex-shrink: 0; gap: 8px; padding: 2px 6px; border-left: 1px solid var(--border); }
+.folio-editor .editor-commandbar .editor-confirm-actions { border-left: 1px solid var(--border); padding: 2px 6px; }
+.folio-editor .editor-commandbar #btnPrepare.is-secondary-translation { background: var(--surface); border-color: var(--border); color: var(--fg); }
+.folio-editor .editor-commandbar #btnPrepare.is-secondary-translation:hover:not(:disabled) { background: var(--fg-softer); }
+.folio-editor .editor-commandbar #btnConfirm { background: var(--accent-soft); border-color: transparent; color: var(--accent-ink); }
+.folio-editor .editor-commandbar #btnConfirm:hover:not(:disabled) { border-color: var(--accent-ink); }
+.folio-editor .editor-commandbar #sentenceSelectionCount { padding: 3px 7px; border-radius: 4px; background: var(--accent-soft); font-variant-numeric: tabular-nums; }
+@container (max-width: 880px) {
+  .folio-editor .editor-commandbar { gap: 0; flex-wrap: wrap; }
+  .folio-editor .editor-commandbar .btn { padding-inline: 6px; font-size: 11px; }
 }

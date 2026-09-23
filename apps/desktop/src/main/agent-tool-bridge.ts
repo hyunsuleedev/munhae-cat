@@ -5,10 +5,21 @@ const HOST = "127.0.0.1";
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
 const DEFAULT_TTL_MS = 25 * 60_000;
 
+export type AlignmentToolCommand = "submit-alignment" | "check-alignment" | "finish-alignment";
+export type AlignmentToolReply = { ok: boolean; [key: string]: unknown };
+type AlignmentHandler = (command: AlignmentToolCommand, raw: string) => AlignmentToolReply | Promise<AlignmentToolReply>;
+export type ReadingToolCommand = "get-reading-context" | "lookup-reading-dictionary" | "submit-reading-analysis";
+export type ReadingToolReply = { ok: boolean; [key: string]: unknown };
+type ReadingHandler = (command: ReadingToolCommand, raw: string) => ReadingToolReply | Promise<ReadingToolReply>;
+const ALIGNMENT_COMMANDS: readonly string[] = ["submit-alignment", "check-alignment", "finish-alignment"];
+const READING_COMMANDS: readonly string[] = ["get-reading-context", "lookup-reading-dictionary", "submit-reading-analysis"];
+
 type TranslationGrantRecord = {
   projectId: string;
   runId: string;
   onSubmit(rawBody: string): void | Promise<void>;
+  onAlignment?: AlignmentHandler;
+  busy?: boolean;
   expiresAt: number;
   revoked: boolean;
   callCount: number;
@@ -17,6 +28,8 @@ type TranslationGrantRecord = {
   value: unknown;
   error: "invalid_json" | "invalid_payload" | "submission_rejected" | null;
 };
+
+type ReadingGrantRecord = Omit<TranslationGrantRecord, "onSubmit" | "onAlignment"> & { onTool: ReadingHandler };
 
 export type TranslationToolSubmission = {
   callCount: number;
@@ -36,10 +49,12 @@ export type TranslationToolGrant = {
   revoke(): void;
 };
 
+export type ReadingToolGrant = TranslationToolGrant;
+
 let bridge: Server | null = null;
 let bridgeUrl: string | null = null;
 let starting: Promise<string> | null = null;
-const grants = new Map<string, TranslationGrantRecord>();
+const grants = new Map<string, TranslationGrantRecord | ReadingGrantRecord>();
 
 function tokenHash(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
@@ -91,7 +106,8 @@ function purgeExpired(now = Date.now()): void {
 }
 
 async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-  if (request.method !== "POST" || request.url !== "/v1/tools/submit-translation") {
+  const command = request.url?.replace("/v1/tools/", "");
+  if (request.method !== "POST" || !["submit-translation", ...ALIGNMENT_COMMANDS, ...READING_COMMANDS].some(name => request.url === `/v1/tools/${name}`)) {
     sendJson(response, 404, { ok: false, error: "not_found" });
     return;
   }
@@ -108,6 +124,64 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     sendJson(response, 401, { ok: false, error: "unauthorized" });
     return;
   }
+
+  if ("onTool" in grant) {
+    if (!READING_COMMANDS.includes(command!)) { sendJson(response, 403, { ok: false, error: "wrong_tool" }); return; }
+    if (grant.committed || grant.busy) { sendJson(response, 409, { ok: false, error: grant.committed ? "already_submitted" : "tool_busy" }); return; }
+    grant.busy = true;
+    grant.callCount++;
+    try {
+      const raw = await requestBody(request);
+      if (grant.revoked || grant.expiresAt <= Date.now() || grants.get(hash) !== grant) { sendJson(response, 401, { ok: false, error: "unauthorized" }); return; }
+      let value: unknown;
+      try { value = JSON.parse(raw); } catch {
+        grant.error = "invalid_json";
+        sendJson(response, 400, { ok: false, error: "invalid_json" }); return;
+      }
+      if (!isRecord(value)) { grant.error = "invalid_payload"; sendJson(response, 400, { ok: false, error: "invalid_payload" }); return; }
+      const result = await grant.onTool(command as ReadingToolCommand, raw);
+      // Reading tools only return context or proposals. A cancelled run must not
+      // publish a late result or record it as an accepted submission.
+      if (grant.revoked || grant.expiresAt <= Date.now() || grants.get(hash) !== grant) { sendJson(response, 401, { ok: false, error: "unauthorized" }); return; }
+      grant.error = result.ok ? null : "submission_rejected";
+      if (result.ok && command === "submit-reading-analysis") {
+        grant.rawBody = raw;
+        grant.value = value;
+        grant.committed = true;
+      }
+      sendJson(response, result.ok ? 200 : 422, result);
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "request_too_large") {
+        grant.error = "invalid_payload";
+        sendJson(response, 413, { ok: false, error: "request_too_large" });
+      } else {
+        grant.error = "submission_rejected";
+        sendJson(response, 422, { ok: false, error: "submission_rejected" });
+      }
+    } finally { grant.busy = false; }
+    return;
+  }
+  if (grant.onAlignment) {
+    if (!ALIGNMENT_COMMANDS.includes(command!)) { sendJson(response, 403, { ok: false, error: "wrong_tool" }); return; }
+    if (grant.committed || grant.busy) { sendJson(response, 409, { ok: false, error: grant.committed ? "already_finished" : "tool_busy" }); return; }
+    grant.busy = true;
+    grant.callCount++;
+    try {
+      const raw = await requestBody(request);
+      if (grant.revoked || grant.expiresAt <= Date.now() || grants.get(hash) !== grant) { sendJson(response, 401, { ok: false, error: "unauthorized" }); return; }
+      let value: unknown;
+      try { value = JSON.parse(raw); } catch { sendJson(response, 400, { ok: false, error: "invalid_json" }); return; }
+      if (!isRecord(value)) { sendJson(response, 400, { ok: false, error: "invalid_payload" }); return; }
+      const result = await grant.onAlignment(command as AlignmentToolCommand, raw);
+      if (result.ok && command === "submit-alignment") { grant.rawBody = raw; grant.value = value; }
+      if (result.ok && command === "finish-alignment") grant.committed = true;
+      sendJson(response, result.ok ? 200 : 422, result);
+    } catch {
+      sendJson(response, 422, { ok: false, error: "submission_rejected" });
+    } finally { grant.busy = false; }
+    return;
+  }
+  if (command !== "submit-translation") { sendJson(response, 403, { ok: false, error: "wrong_tool" }); return; }
 
   grant.callCount += 1;
   if (grant.callCount !== 1) {
@@ -198,6 +272,7 @@ export async function createTranslationToolGrant(input: {
   runId: string;
   onSubmit(rawBody: string): void | Promise<void>;
   ttlMs?: number;
+  onAlignment?: AlignmentHandler;
 }): Promise<TranslationToolGrant> {
   if (!input.projectId.trim() || !input.runId.trim() || typeof input.onSubmit !== "function") {
     throw new Error("projectId, runId, and onSubmit are required for an app tool grant");
@@ -211,6 +286,7 @@ export async function createTranslationToolGrant(input: {
     projectId: input.projectId,
     runId: input.runId,
     onSubmit: input.onSubmit,
+    onAlignment: input.onAlignment,
     expiresAt,
     revoked: false,
     callCount: 0,
@@ -224,7 +300,7 @@ export async function createTranslationToolGrant(input: {
   return {
     projectId: input.projectId,
     runId: input.runId,
-    endpoint: `${baseUrl}/v1/tools/submit-translation`,
+    endpoint: `${baseUrl}/v1/tools/${input.onAlignment ? "submit-alignment" : "submit-translation"}`,
     token,
     expiresAt: new Date(expiresAt).toISOString(),
     inspect(): TranslationToolSubmission {
@@ -239,6 +315,55 @@ export async function createTranslationToolGrant(input: {
     revoke(): void {
       if (revoked) return;
       revoked = true;
+      record.revoked = true;
+      grants.delete(hash);
+    },
+  };
+}
+
+export async function createReadingToolGrant(input: {
+  projectId: string;
+  runId: string;
+  onTool: ReadingHandler;
+  ttlMs?: number;
+}): Promise<ReadingToolGrant> {
+  if (!input.projectId.trim() || !input.runId.trim() || typeof input.onTool !== "function") {
+    throw new Error("projectId, runId, and onTool are required for a reading tool grant");
+  }
+  purgeExpired();
+  const baseUrl = await ensureBridge();
+  const token = randomBytes(32).toString("base64url");
+  const hash = tokenHash(token);
+  const expiresAt = Date.now() + Math.max(10_000, input.ttlMs ?? DEFAULT_TTL_MS);
+  const record: ReadingGrantRecord = {
+    projectId: input.projectId,
+    runId: input.runId,
+    onTool: input.onTool,
+    expiresAt,
+    revoked: false,
+    callCount: 0,
+    committed: false,
+    rawBody: null,
+    value: undefined,
+    error: null,
+  };
+  grants.set(hash, record);
+  return {
+    projectId: input.projectId,
+    runId: input.runId,
+    endpoint: `${baseUrl}/v1/tools/get-reading-context`,
+    token,
+    expiresAt: new Date(expiresAt).toISOString(),
+    inspect(): TranslationToolSubmission {
+      return {
+        callCount: record.callCount,
+        committed: record.committed,
+        rawBody: record.rawBody,
+        value: record.value,
+        error: record.error,
+      };
+    },
+    revoke(): void {
       record.revoked = true;
       grants.delete(hash);
     },

@@ -1,3 +1,12 @@
+import { bindSidebarActions } from "./sidebar-actions";
+import { SidebarNavigation } from "./sidebar-navigation";
+import { mountSidebarChrome, showAppHelp } from "./sidebar-chrome";
+import { initOnlineWorkspace, projectDocumentKey, projectLocationLabel } from "./online-workspace-ui";
+import "../styles/online-workspace.css";
+import { initProjectChanges, type ProjectRefresh } from "./project-change-ui";
+import "../styles/project-change.css";
+import { filterSidebarBranches, sidebarAncestors } from "./sidebar-model";
+import { t, ui, uiText } from "./i18n";
 import { initNotificationSounds } from "./notification-sounds";
 import { initBackgroundMusic } from "./background-music";
 import type {
@@ -43,6 +52,7 @@ export type PaletteItem = { g: string; l: string; k: string; id: string };
 
 export type SbNode = {
   h?: string;
+  searchText?: string;
   id?: string;
   k?: ScreenId;
   ic?: IconName;
@@ -101,6 +111,10 @@ const GLOBAL_ENABLED = [
   "quit",
   "newproj",
   "open",
+  "projects",
+  "newdoc",
+  "newfolder",
+  "import",
   "close",
   "undo",
   "redo",
@@ -118,34 +132,39 @@ const GLOBAL_ENABLED = [
   "zoom",
   "self",
   "help",
-  "plan",
-  "schema",
   "seeddemo",
   "backup",
   "export",
 ] as const;
 
-const PALETTE_SKIP = new Set(["self", "x", "c", "v", "quit", "min", "zoom", "palette"]);
+const PALETTE_SKIP = new Set(["self", "x", "c", "v", "undo", "redo", "quit", "min", "zoom", "palette"]);
+const PROJECT_COMMANDS = new Set(["projects", "close", "newdoc", "newfolder", "import", "backup", "export", "find", "prepare", "home", "editor", "knowledge"]);
 
 const DOC_KEY = "munhae.doc";
 const SB_KEY = "munhae.sb";
 const SB_WIDTH_KEY = "munhae.sb.width";
 
 let currentPage: PageId = "welcome";
-let selfTitle = "시작 화면";
+let activeProject: ProjectSummary | null = null;
+let projectChanges: ReturnType<typeof initProjectChanges> | undefined;
+export function registerProjectRefresh(refresh: ProjectRefresh): void { projectChanges?.register(refresh); }
+let selfTitle = t("시작 화면");
 let enabled = new Set<string>(GLOBAL_ENABLED);
 let extraPalette: PaletteItem[] = [];
 let pageCmd: ShellOptions["pageCmd"];
 let pageKeys: ShellOptions["pageKeys"];
 let projectTransition: ProjectTransitionHooks = {};
 let beforeNavigate: ShellOptions["beforeNavigate"];
-let mbOpen: HTMLElement | null = null;
+let refreshSidebarChrome: (() => void) | undefined;
 let palSel = 0;
 let palItems: PaletteItem[] = [];
 let lastAgents: AgentProbe[] = [];
 let preferredAgentId: AppConfig["agentId"] | null = null;
 let appVersion = "0.1.0";
-const expanded = new Map<string, boolean>();
+const sidebarNavigation = new SidebarNavigation();
+const expanded = sidebarNavigation.expanded;
+let sidebarTree: SbNode[] = [];
+let sidebarRevealed: string | null = null;
 let sidebarDocs: DocumentListItem[] = [];
 let sidebarCurrentDoc: string | null = null;
 let sidebarTab: string | null = null;
@@ -201,35 +220,37 @@ export function requireApi(): MunhaeApi {
   return fallbackApi;
 }
 
-export function notify(msg: string, title = "문해"): void {
+export function notify(msg: string, title = t("문해")): void {
   const n = $("#notif");
-  const t = $("#nTitle");
+  const titleEl = $("#nTitle");
   const m = $("#nMsg");
-  if (!n || !t || !m) return;
-  t.textContent = title;
-  m.textContent = msg;
+  if (!n || !titleEl || !m) return;
+  titleEl.textContent = t(title);
+  m.textContent = t(msg);
   n.classList.add("show");
   const prev = (n as HTMLElement & { _h?: number })._h;
   if (prev) window.clearTimeout(prev);
   (n as HTMLElement & { _h?: number })._h = window.setTimeout(() => n.classList.remove("show"), 3400);
 }
 
-export function unwrap<T>(result: IpcResult<T>, title = "문해"): T | null {
+export function unwrap<T>(result: IpcResult<T>, title = t("문해")): T | null {
   if (result.ok) return result.data;
   notify(result.error.message, title);
   return null;
 }
 
 export function persistDoc(id: string): void {
-  store.set(DOC_KEY, id);
+  store.set(activeProject ? projectDocumentKey(activeProject) : DOC_KEY, id);
 }
 
 export function readPersistedDoc(): string | null {
-  return new URLSearchParams(location.search).get("doc") ?? store.get(DOC_KEY);
+  return currentDocId();
 }
 
 export function currentDocId(): string | null {
-  return new URLSearchParams(location.search).get("doc") ?? store.get(DOC_KEY);
+  return new URLSearchParams(location.search).get("doc")
+    ?? store.get(activeProject ? projectDocumentKey(activeProject) : DOC_KEY)
+    ?? (activeProject?.storageMode === "local" ? store.get(DOC_KEY) : null);
 }
 
 export function go(k: ScreenId, docId?: string): void {
@@ -256,7 +277,26 @@ export async function requireProject(): Promise<ProjectSummary | null> {
     location.href = "index.html";
     return null;
   }
+  if (current.storageMode === "online") {
+    const account = await api.auth.getState();
+    if (!account.ok || account.data.status !== "signed_in" || account.data.user?.id !== current.accountId) {
+      location.replace("index.html");
+      return null;
+    }
+  }
+  setSidebarProject(current);
   return current;
+}
+
+export function setSidebarProject(project: ProjectSummary): void {
+  activeProject = project;
+  sidebarNavigation.setProject(project);
+  refreshSidebarChrome?.();
+}
+
+export { projectLocationLabel };
+export function savedLocallyLabel(): string {
+  return activeProject?.storageMode === "online" ? t("온라인 저장됨") : t("저장됨");
 }
 
 export function findDefaultDoc(docs: DocumentListItem[]): string | null {
@@ -308,11 +348,11 @@ export function stateLabel(
   state: VersionUiState,
 ): string | null {
   if (state === "none") return null;
-  if (state === "confirmed") return "확정";
-  if (state === "review") return "재검토 필요";
-  if (kind === "source") return "원문안";
-  if (kind === "punctuation") return "표점안";
-  return "번역안";
+  if (state === "confirmed") return t("확정");
+  if (state === "review") return t("재검토 필요");
+  if (kind === "source") return t("원문안");
+  if (kind === "punctuation") return t("표점안");
+  return t("번역안");
 }
 
 export function tagHtml(label: string | null, extra = ""): string {
@@ -351,27 +391,27 @@ export function agentSummary(
   if (selected) {
     const name = selected.agentId === "antigravity" ? "Antigravity CLI" : selected.agentId === "claude" ? "Claude CLI" : "Codex CLI";
     if (selected.installed && selected.loggedIn) return { text: name, cls: "ok" };
-    if (selected.installed && selected.loggedIn === false) return { text: `${name} · 로그인 필요`, cls: "warn" };
-    if (selected.installed) return { text: `${name} · 설치됨`, cls: "" };
-    return { text: `${name} 미설치`, cls: "warn" };
+    if (selected.installed && selected.loggedIn === false) return { text: ui`${name} · 로그인 필요`, cls: "warn" };
+    if (selected.installed) return { text: ui`${name} · 설치됨`, cls: "" };
+    return { text: ui`${name} 미설치`, cls: "warn" };
   }
   if (claude?.installed && claude.loggedIn) return { text: "Claude CLI", cls: "ok" };
   if (codex?.installed && codex.loggedIn) return { text: "Codex CLI", cls: "ok" };
-  if (claude?.installed) return { text: "Claude CLI · 로그인 필요", cls: "warn" };
-  if (codex?.installed) return { text: "Codex CLI · 로그인 필요", cls: "warn" };
-  if (claude && !claude.installed) return { text: "Claude CLI 미설치", cls: "warn" };
-  return { text: "AI 미연결", cls: "" };
+  if (claude?.installed) return { text: t("Claude CLI · 로그인 필요"), cls: "warn" };
+  if (codex?.installed) return { text: t("Codex CLI · 로그인 필요"), cls: "warn" };
+  if (claude && !claude.installed) return { text: t("Claude CLI 미설치"), cls: "warn" };
+  return { text: t("AI 미연결"), cls: "" };
 }
 
 export function formatAgentDetail(agents: AgentProbe[]): string {
-  if (!agents.length) return "에이전트를 확인할 수 없습니다";
+  if (!agents.length) return t("에이전트를 확인할 수 없습니다");
   return agents
     .map((a) => {
       const name = a.agentId === "antigravity" ? "Antigravity CLI" : a.agentId === "claude" ? "Claude CLI" : "Codex CLI";
-      if (!a.installed) return `${name} 미설치`;
-      if (a.loggedIn) return `${name} 로그인됨${a.version ? ` · ${a.version}` : ""}`;
-      if (a.loggedIn === false) return `${name} 설치됨, 로그인 필요`;
-      return `${name} 설치됨`;
+      if (!a.installed) return ui`${name} 미설치`;
+      if (a.loggedIn) return ui`${name} 로그인됨${a.version ? ` · ${a.version}` : ""}`;
+      if (a.loggedIn === false) return ui`${name} 설치됨, 로그인 필요`;
+      return ui`${name} 설치됨`;
     })
     .join(" · ");
 }
@@ -385,10 +425,6 @@ export function setAgentChrome(
   if (preferred !== undefined) preferredAgentId = preferred;
   if (version) appVersion = version;
   const sum = agentSummary(agents, preferredAgentId);
-  const mb = $("#menubar .mb-right .row");
-  if (mb) {
-    mb.innerHTML = `<i class="dot ${sum.cls}"></i>${esc(sum.text)}`;
-  }
   $$(".statusbar .dot").forEach((dot) => {
     const span = dot.parentElement;
     if (!span || span.id) return;
@@ -400,145 +436,110 @@ export function setAgentChrome(
   if (sbAgent) sbAgent.innerHTML = `<i class="dot ${sum.cls}"></i>${esc(sum.text)}`;
 }
 
-function menus(): MenuGroup[] {
+function commandGroups(): MenuGroup[] {
   return [
     [
-      "문해",
+      t("문해"),
       [
-        ["문해 정보", "", "about"],
+        [t("문해 정보"), "", "about"],
         null,
-        ["설정…", "⌘,", "prefs"],
-        ["AI 연결 상태…", "", "ai"],
+        [t("설정…"), "⌘,", "prefs"],
+        [t("AI 연결 상태…"), "", "ai"],
         null,
-        ["문해 종료", "⌘Q", "quit"],
+        [t("문해 종료"), "⌘Q", "quit"],
       ],
       true,
     ],
     [
-      "파일",
+      t("파일"),
       [
-        ["새 프로젝트…", "⇧⌘N", "newproj"],
-        ["프로젝트 열기…", "⌘O", "open"],
+        [t("새 프로젝트…"), "⇧⌘N", "newproj"],
+        [t("프로젝트 열기…"), "⌘O", "open"],
         null,
-        ["새 문서 node…", "⌘N", "newdoc"],
-        ["원문 가져오기…", "", "import"],
+        [t("새 문서"), "⌘N", "newdoc"],
+        [t("새 폴더"), "", "newfolder"],
+        [t("원문 가져오기…"), "", "import"],
         null,
-        ["백업 만들기…", "", "backup"],
-        ["내보내기…", "⌘E", "export"],
+        [t("백업 만들기…"), "", "backup"],
+        [t("내보내기…"), "⌘E", "export"],
         null,
-        ["프로젝트 닫기", "⌘W", "close"],
+        [t("프로젝트 닫기"), "⌘W", "close"],
       ],
     ],
     [
-      "편집",
+      t("편집"),
       [
-        ["실행 취소", "⌘Z", "undo"],
-        ["다시 실행", "⇧⌘Z", "redo"],
+        [t("실행 취소"), "⌘Z", "undo"],
+        [t("다시 실행"), "⇧⌘Z", "redo"],
         null,
-        ["잘라내기", "⌘X", "x"],
-        ["복사", "⌘C", "c"],
-        ["붙여넣기", "⌘V", "v"],
+        [t("잘라내기"), "⌘X", "x"],
+        [t("복사"), "⌘C", "c"],
+        [t("붙여넣기"), "⌘V", "v"],
         null,
-        ["찾기…", "⌘F", "find"],
+        [t("찾기…"), "⌘F", "find"],
       ],
     ],
     [
-      "보기",
+      t("보기"),
       [
-        ["사이드바 보기/가리기", "⌃⌘S", "sidebar"],
-        ["참고 자료 패널", "⌥⌘R", "refpane"],
-        [currentPage === "editor" ? "참고 자료·AI 패널" : "검사기 패널", "⌥⌘I", "ctxpane"],
+        [t("사이드바 보기/가리기"), "⌃⌘S", "sidebar"],
+        [t("참고 자료 패널"), "⌥⌘R", "refpane"],
+        [currentPage === "editor" ? t("참고 자료·AI 패널") : t("검사기 패널"), "⌥⌘I", "ctxpane"],
         null,
-        ["표점 전문", "⌘1", "v-source"],
-        ["대조", "⌘2", "v-parallel"],
-        ["번역 전문", "⌘3", "v-full"],
+        [t("표점 전문"), "⌘1", "v-source"],
+        [t("대조"), "⌘2", "v-parallel"],
+        [t("번역 전문"), "⌘3", "v-full"],
         null,
-        ["구조 표시", "", "struct"],
-        ["앵커 ID 표시", "", "keys"],
+        [t("구조 표시"), "", "struct"],
       ],
     ],
     [
-      "번역",
+      t("번역"),
       [
-        ["AI 번역…", "⌥⌘K", "prepare"],
+        [t("AI 번역…"), "⌥⌘K", "prepare"],
         null,
-        ["다음 블록과 합치기", "⌥⌘M", "merge"],
-        ["블록 나누기…", "⌥⌘S", "split"],
-        ["앵커 연결…", "⌥⌘L", "link"],
+        [t("다음 블록과 합치기"), "⌥⌘M", "merge"],
+        [t("블록 나누기…"), "⌥⌘S", "split"],
+        [t("앵커 연결…"), "⌥⌘L", "link"],
         null,
-        ["변경 비교", "⌘D", "diff"],
-        ["번역안 확정", "⇧⌘↩", "confirm"],
+        [t("변경 비교"), "⌘D", "diff"],
+        [t("번역안 확정"), "⇧⌘↩", "confirm"],
       ],
     ],
     [
-      "이동",
+      t("이동"),
       [
-        ["프로젝트 홈", "⇧⌘1", "home"],
-        ["편집", "⇧⌘2", "editor"],
-        ["번역 자료", "⇧⌘3", "knowledge"],
+        [t("프로젝트 홈"), "⇧⌘1", "home"],
+        [t("편집"), "⇧⌘2", "editor"],
+        [t("번역 자료"), "⇧⌘3", "knowledge"],
         null,
-        ["명령 검색…", "⌘K", "palette"],
+        [t("명령 검색…"), "⌘K", "palette"],
       ],
     ],
     [
-      "창",
+      t("창"),
       [
-        ["최소화", "⌘M", "min"],
-        ["확대/축소", "", "zoom"],
+        [t("최소화"), "⌘M", "min"],
+        [t("확대/축소"), "", "zoom"],
         null,
         [selfTitle, "", "self", true],
       ],
     ],
     [
-      "도움말",
+      t("도움말"),
       [
-        ["문해 도움말", "", "help"],
-        ["업데이트 확인…", "", "updates"],
-        ["plan.md 보기", "", "plan"],
-        ["schema.md 보기", "", "schema"],
+        [t("문해 도움말"), "", "help"],
+        [t("업데이트 확인…"), "", "updates"],
       ],
     ],
   ];
 }
 
-export function renderMenubar(): void {
-  const bar = $("#menubar");
-  if (!bar) return;
-  const sum = agentSummary(lastAgents, preferredAgentId);
-  bar.innerHTML =
-    menus()
-      .map(([t, items, app], i) => {
-        const body = items
-          .map((it) =>
-            it
-              ? `<button role="menuitem" data-cmd="${it[2]}"${enabled.has(it[2]) ? "" : " disabled"}${it[3] ? ' class="checked"' : ""}>${esc(it[0])}<kbd>${esc(it[1])}</kbd></button>`
-              : "<hr>",
-          )
-          .join("");
-        return `<div class="mb-item${app ? " app" : ""}" data-mi="${i}"><span>${esc(t)}</span><div class="menu" role="menu">${body}</div></div>`;
-      })
-      .join("") +
-    `<div class="mb-right"><span class="row" style="gap:5px"><i class="dot ${sum.cls}"></i>${esc(sum.text)}</span><span id="clock"></span></div>`;
-  tick();
-}
-
-function openMenu(el: HTMLElement | null): void {
-  if (mbOpen) mbOpen.classList.remove("open");
-  mbOpen = el;
-  $("#menubar")?.classList.toggle("active", !!el);
-  el?.classList.add("open");
-}
-
-function tick(): void {
-  const c = $("#clock");
-  if (c) c.textContent = fmtClock();
-}
-
 function paletteItems(q: string): PaletteItem[] {
   const out: PaletteItem[] = [...extraPalette];
-  for (const [t, items] of menus()) {
+  for (const [t, items] of commandGroups()) {
     for (const it of items) {
-      if (it && enabled.has(it[2]) && !PALETTE_SKIP.has(it[2])) {
+      if (it && enabled.has(it[2]) && !PALETTE_SKIP.has(it[2]) && (!PROJECT_COMMANDS.has(it[2]) || activeProject)) {
         out.push({ g: t, l: it[0], k: it[1], id: it[2] });
       }
     }
@@ -564,7 +565,7 @@ function renderPalette(): void {
         g = o.g;
         return h;
       })
-      .join("") || '<div class="pl-h">일치하는 명령이 없습니다</div>';
+      .join("") || uiText('<div class="pl-h">일치하는 명령이 없습니다</div>');
   const el = palList.querySelector(".is-sel");
   if (el instanceof HTMLElement) {
     const t = el.offsetTop - palList.offsetTop;
@@ -589,7 +590,7 @@ export function toggleSidebar(force?: boolean): void {
   const w = $("#win");
   const btn = $("#tbSidebar");
   if (!w) {
-    notify("시작 화면에는 사이드바가 없습니다. 프로젝트를 열면 ⌃⌘S로 접을 수 있습니다", "보기");
+    notify(t("시작 화면에는 사이드바가 없습니다. 프로젝트를 열면 ⌃⌘S로 접을 수 있습니다"), t("보기"));
     return;
   }
   const hide = force !== undefined ? force : !w.classList.contains("sb-hidden");
@@ -602,9 +603,11 @@ function initSidebarResize(): void {
   const win = $("#win");
   const sidebar = $("#sidebar");
   if (!win || !sidebar || $("#sbResizer")) return;
-  const defaultWidth = 216;
-  const minWidth = 180;
-  const maxWidth = (): number => Math.max(minWidth, Math.min(480, win.clientWidth - 720));
+  const defaultWidth = 220;
+  const minWidth = 220;
+  // AuthGate hides the shell during page initialization, making clientWidth zero.
+  // The shell fills the viewport; use that width until it becomes measurable.
+  const maxWidth = (): number => Math.max(minWidth, Math.min(480, (win.clientWidth || document.documentElement.clientWidth) - 720));
   const savedWidth = Number(store.get(SB_WIDTH_KEY));
   let preferredWidth = Number.isFinite(savedWidth) && savedWidth >= minWidth ? Math.min(480, savedWidth) : defaultWidth;
   let width = preferredWidth;
@@ -614,10 +617,10 @@ function initSidebarResize(): void {
   handle.className = "sb-resizer";
   handle.tabIndex = 0;
   handle.setAttribute("role", "separator");
-  handle.setAttribute("aria-label", "사이드바 너비");
+  handle.setAttribute("aria-label", t("사이드바 너비"));
   handle.setAttribute("aria-orientation", "vertical");
   handle.setAttribute("aria-controls", "sidebar");
-  handle.title = "드래그하여 너비 조절 · 두 번 클릭하면 기본 너비";
+  handle.title = t("드래그하여 너비 조절 · 두 번 클릭하면 기본 너비");
   sidebar.append(handle);
 
   const applyWidth = (next: number): void => {
@@ -626,7 +629,7 @@ function initSidebarResize(): void {
     handle.setAttribute("aria-valuemin", String(minWidth));
     handle.setAttribute("aria-valuemax", String(maxWidth()));
     handle.setAttribute("aria-valuenow", String(width));
-    handle.setAttribute("aria-valuetext", `${width}픽셀`);
+    handle.setAttribute("aria-valuetext", ui`${width}픽셀`);
   };
   const rememberWidth = (): void => {
     preferredWidth = width;
@@ -685,17 +688,9 @@ export function toggleInsp(): void {
   btn?.classList.toggle("is-on", !s.classList.contains("no-insp"));
 }
 
-function sidebarCreateActions(parentId: string | null): string {
-  const parent = esc(parentId ?? "");
-  return `<div class="sb-create-actions" role="group" aria-label="항목 추가">
-    <button class="sb-add" type="button" data-new-parent="${parent}" data-new-role="source_unit" title="문서 추가" aria-label="문서 추가"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 14H3V2h6l3 3v3M9 2v3h3M11.5 9v6M8.5 12h6"/></svg></button>
-    <button class="sb-add" type="button" data-new-parent="${parent}" data-new-role="container" title="폴더 추가" aria-label="폴더 추가"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M7.5 13H2V3h4.5L8 5h6v3M2 6h12M11.5 9v6M8.5 12h6"/></svg></button>
-  </div>`;
-}
-
-function sbNode(n: SbNode, d: number): string {
-  if (n.h === "문서") {
-    return `<div class="sb-h-row"><div class="sb-h">문서</div>${sidebarCreateActions(null)}</div>`;
+function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
+  if (n.h === t("문서")) {
+    return ui`<div class="sb-h-row"><div class="sb-h">문서</div><button class="sb-app-trigger sb-add-document" type="button" data-sb-app="add" aria-label="문서 추가" title="문서 추가" aria-haspopup="menu" aria-expanded="false" aria-controls="sbAppMenu">+</button></div>`;
   }
   if (n.h) return `<div class="sb-h">${esc(n.h)}</div>`;
   const kids = !!n.kids?.length;
@@ -708,11 +703,14 @@ function sbNode(n: SbNode, d: number): string {
       : n.docId
         ? currentPage !== "context" && n.docId === sidebarCurrentDoc
         : false;
-  const exp = n.id ? expanded.get(n.id) !== false : true;
+  const isDocument = !!(n.docId || n.contextFor);
+  const exp = isDocument && sidebarNavigation.query ? true : n.id ? expanded.get(n.id) !== false : true;
+  const treeAttrs = isDocument ? ` role="treeitem" tabindex="-1" data-sb-key="${esc(n.id)}" aria-level="${d + 1}" aria-posinset="${pos}" aria-setsize="${size}" aria-selected="${cur}"` : "";
   const parts: string[] = [];
-  parts.push(`<div class="sb-row">`);
+  const rowClass = n.contextFor ? " sb-context" : n.k === "home" ? " sb-home" : n.k === "knowledge" ? " sb-library" : "";
+  parts.push(`<div class="sb-row${rowClass}"${isDocument ? ' role="none"' : ""}>`);
   parts.push(
-    `<button class="sb-item${cur ? " is-current" : ""}" type="button" data-depth="${d}" style="--sb-depth:${d}"${kids && n.id ? ` aria-expanded="${exp}"` : ""}${n.k ? ` data-go="${n.k}"` : ""}${n.tab ? ` data-tab="${esc(n.tab)}"` : ""}${n.docId ? ` data-doc-id="${esc(n.docId)}"` : ""}${n.contextFor ? ` data-context-for="${esc(n.contextFor)}"` : ""}${n.t ? ` title="${esc(n.t)}"` : ""}${cur ? ' aria-current="page"' : ""}>`,
+    `<button class="sb-item${cur ? " is-current" : ""}" type="button"${treeAttrs} data-depth="${d}" style="--sb-depth:${d}"${kids && n.id ? ` aria-expanded="${exp}"` : ""}${n.k ? ` data-go="${n.k}"` : ""}${n.tab ? ` data-tab="${esc(n.tab)}"` : ""}${n.docId ? ` data-doc-id="${esc(n.docId)}"` : ""}${n.contextFor ? ` data-context-for="${esc(n.contextFor)}"` : ""}${n.t ? ` title="${esc(n.t)}"` : ""}${cur ? ' aria-current="page"' : ""}>`,
   );
   if (kids && n.id) {
     parts.push(
@@ -722,14 +720,23 @@ function sbNode(n: SbNode, d: number): string {
   if (n.ic) parts.push(ic(n.ic));
   parts.push(`<span class="lbl${n.han ? " hanmun" : ""}">${esc(n.lbl ?? "")}</span>`);
   if (n.cnt) parts.push(`<span class="cnt">${n.cnt}</span>`);
-  if (n.dot) parts.push(`<i class="dot ${n.dot}"></i>`);
+  if (n.dot) {
+    const status = t({ ok: "번역: 확정", warn: "번역: 검토 중", draft: "번역: 초안" }[n.dot]);
+    parts.push(`<i class="dot ${n.dot}" role="img" aria-label="${esc(status)}" title="${esc(status)}"></i>`);
+  }
   parts.push("</button>");
+  if (n.docId) parts.push(`<button class="sb-more" type="button" tabindex="-1" data-sb-menu="${esc(n.docId)}" aria-label="${esc(n.lbl)} · ${esc(t("문서 메뉴"))}" aria-haspopup="menu" title="${esc(t("문서 메뉴"))}">⋯</button>`);
   parts.push("</div>");
-  if (kids && exp && n.kids) parts.push(n.kids.map((k) => sbNode(k, d + 1)).join(""));
+  if (kids && exp && n.kids) {
+    parts.push(`<div class="sb-children" style="--sb-depth:${d}"${isDocument ? ' role="none"' : ""}>`);
+    parts.push(n.kids.map((k, i) => sbNode(k, d + 1, i + 1, n.kids!.length)).join(""));
+    parts.push("</div>");
+  }
   return parts.join("");
 }
 
 export function docsToTree(docs: DocumentListItem[]): SbNode[] {
+  sidebarDocs = docs;
   const byParent = new Map<string | "root", DocumentListItem[]>();
   for (const d of docs) {
     const key = d.parentId ?? "root";
@@ -758,22 +765,23 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
         docId: d.id,
         k: isContainer ? undefined : "editor",
         lbl: d.originalTitle || d.title,
+        searchText: `${d.title} ${d.originalTitle ?? ""}`,
         han: true,
         ic: isContainer ? "folder" : "doc",
         kids: [
           {
             id: `context:${d.id}`,
             contextFor: d.id,
-            lbl: "문맥",
+            lbl: t("문맥"),
             ic: "sliders",
             cnt: d.contextCount || undefined,
-            t: `${d.originalTitle || d.title} · 직접 작성한 문맥과 상위에서 이어받은 문맥`,
+            t: ui`${d.originalTitle || d.title} · 직접 작성한 문맥과 상위에서 이어받은 문맥`,
           },
           ...documentKids,
         ],
         cnt: isContainer ? documentKids.length || undefined : undefined,
         dot,
-        t: `${d.title} · ${d.isMaster ? "프로젝트 마스터 폴더" : isContainer ? "목차 폴더" : "원문 문서"}`,
+        t: `${d.title} · ${d.isMaster ? t("프로젝트 마스터 폴더") : isContainer ? t("목차 폴더") : t("원문 문서")}`,
         canHaveChildren: isContainer,
       };
     });
@@ -784,18 +792,15 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
 export function defaultSidebarTree(docs: DocumentListItem[], opts?: { knowledgeKids?: SbNode[] }): SbNode[] {
   const docTree = docsToTree(docs);
   const kn: SbNode = opts?.knowledgeKids
-    ? { id: "kn", ic: "book", lbl: "번역 자료", k: "knowledge", kids: opts.knowledgeKids }
-    : { k: "knowledge", ic: "book", lbl: "번역 자료" };
+    ? { id: "kn", ic: "book", lbl: t("번역 자료"), k: "knowledge", kids: opts.knowledgeKids }
+    : { k: "knowledge", ic: "book", lbl: t("번역 자료") };
   if (opts?.knowledgeKids && !expanded.has("kn")) expanded.set("kn", true);
   return [
-    { h: "프로젝트" },
-    { k: "home", ic: "home", lbl: "홈" },
-    { h: "문서" },
+    { k: "home", ic: "home", lbl: t("홈") },
+    { h: t("문서") },
     ...docTree,
-    { h: "프로젝트 공통" },
     kn,
-    { h: "앱" },
-    { k: "settings", ic: "gear", lbl: "설정" },
+    { k: "settings", ic: "gear", lbl: t("설정") },
   ];
 }
 
@@ -805,9 +810,46 @@ export function renderSidebar(
 ): void {
   const root = $("#sbTree");
   if (!root) return;
+  sidebarTree = tree;
+  sidebarNavigation.mount(root, () => renderSidebar(sidebarTree));
+  sidebarNavigation.beforeRender();
   if (opts?.currentDocId !== undefined) sidebarCurrentDoc = opts.currentDocId;
   if (opts?.currentTab !== undefined) sidebarTab = opts.currentTab;
-  root.innerHTML = tree.map((n) => sbNode(n, 0)).join("");
+  const activeKey = currentPage === "context" ? `context:${sidebarCurrentDoc}` : currentPage === "editor" ? sidebarCurrentDoc : null;
+  let reveal = false;
+  if (activeKey && activeKey !== sidebarRevealed) {
+    const ancestors = sidebarAncestors(tree, activeKey);
+    if (ancestors) {
+      ancestors.forEach(id => expanded.set(id, true));
+      sidebarRevealed = activeKey;
+      reveal = true;
+    }
+  }
+  const documents = filterSidebarBranches(tree.filter(n => n.docId), sidebarNavigation.query);
+  let renderedDocuments = false;
+  const documentMarkup = () => {
+    renderedDocuments = true;
+    return `<div id="sbDocuments" role="tree" aria-label="${esc(t("문서"))}">${documents.map((n, i) => sbNode(n, 0, i + 1, documents.length)).join("")}</div>`
+      + (!documents.length && sidebarNavigation.query ? `<p class="sb-empty">${esc(t("일치하는 문서가 없습니다"))}</p>` : "");
+  };
+  const footer = $("#sidebar .sb-foot");
+  const settings = tree.find(n => n.k === "settings");
+  let footerNav = footer?.querySelector<HTMLElement>(".sb-footer-nav");
+  if (footer && settings) {
+    if (!footerNav) {
+      footerNav = document.createElement("div");
+      footerNav.className = "sb-footer-nav";
+      footer.prepend(footerNav);
+    }
+    footerNav.innerHTML = sbNode(settings, 0);
+    footerNav.querySelector("button")?.addEventListener("click", () => go("settings"));
+  } else {
+    footerNav?.remove();
+  }
+  root.innerHTML = tree.map(n => n.docId || (footer && n === settings) ? "" : sbNode(n, 0) + (n.h === t("문서") ? documentMarkup() : "")).join("");
+  if (!renderedDocuments) root.insertAdjacentHTML("beforeend", documentMarkup());
+  sidebarNavigation.afterRender(reveal);
+  refreshSidebarChrome?.();
 }
 
 export function revealSidebarNode(docs: DocumentListItem[], nodeId: string): void {
@@ -842,6 +884,25 @@ export function bindSidebar(
     ((parentId, role) => { void openDocumentDialog(parentId, false, role); });
   const root = $("#sbTree");
   if (!root || root.dataset.bound === "1") return;
+  bindSidebarActions(root, {
+    api: requireApi(), docs: () => sidebarDocs, escape: esc,
+    create: (parentId, role) => sidebarOnNew?.(parentId, role),
+    context: id => go("context", id),
+    info: id => {
+      if (beforeNavigate && !beforeNavigate()) return;
+      location.href = `knowledge.html?node=${encodeURIComponent(id)}&info=1#context`;
+    },
+    mutate: async action => {
+      const transition = await runProjectTransition("organize", projectTransition, action, result => result.ok);
+      if (!transition.started) return false;
+      if (!transition.result.ok) throw new Error(transition.result.error.message);
+      // Refresh inherited metadata, context and preparation as well as the tree.
+      // Leave hooks commit only after a successful write, preserving drafts on error.
+      location.reload();
+      return true;
+    },
+    error: message => notify(message, t("문서")),
+  });
   root.dataset.bound = "1";
   root.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
@@ -859,7 +920,7 @@ export function bindSidebar(
       e.preventDefault();
       e.stopPropagation();
       const id = exp.dataset.exp;
-      expanded.set(id, expanded.get(id) === false);
+      if (!sidebarNavigation.query) expanded.set(id, expanded.get(id) === false);
       if (treeFn) renderSidebar(treeFn(), { currentDocId: sidebarCurrentDoc, currentTab: sidebarTab });
       return;
     }
@@ -872,7 +933,7 @@ export function bindSidebar(
     if (b.hasAttribute("aria-expanded") && b.dataset.docId && !b.dataset.go) {
       e.preventDefault();
       const id = b.dataset.docId;
-      expanded.set(id, expanded.get(id) === false);
+      if (!sidebarNavigation.query) expanded.set(id, expanded.get(id) === false);
       if (treeFn) renderSidebar(treeFn(), { currentDocId: sidebarCurrentDoc, currentTab: sidebarTab });
       if (options?.selectExpandable) sidebarOnDoc?.(id, b.textContent ?? "");
       return;
@@ -899,7 +960,6 @@ export function bindSidebar(
 
 export function setSelfTitle(title: string): void {
   selfTitle = title;
-  renderMenubar();
 }
 
 function ensureDialog(id: string, html: string): HTMLDialogElement {
@@ -915,7 +975,7 @@ function ensureDialog(id: string, html: string): HTMLDialogElement {
 function ensureSharedDialogs(): void {
   ensureDialog(
     "dlgNewProj",
-    `<dialog id="dlgNewProj">
+    uiText(`<dialog id="dlgNewProj">
       <form method="dialog" id="newProjForm">
         <div class="dl-h">새 프로젝트</div>
         <div class="dl-b">
@@ -924,11 +984,11 @@ function ensureSharedDialogs(): void {
         </div>
         <div class="dl-f"><button class="btn" type="button" id="npCancel">취소</button><button class="btn btn-primary" type="submit">만들기</button></div>
       </form>
-    </dialog>`,
+    </dialog>`),
   );
   ensureDialog(
     "dlgPrefs",
-    `<dialog id="dlgPrefs" style="width:min(760px,calc(100vw - 48px));margin-top:48px">
+    uiText(`<dialog id="dlgPrefs" style="width:min(760px,calc(100vw - 48px));margin-top:48px">
       <form method="dialog" id="prefsForm">
         <div class="dl-h">설정</div>
         <div class="dl-b" style="max-height:calc(100vh - 170px);overflow:auto">
@@ -960,7 +1020,7 @@ function ensureSharedDialogs(): void {
         </div>
         <div class="dl-f"><button class="btn" type="button" id="prefCancel">취소</button><button class="btn btn-primary" type="submit">저장</button></div>
       </form>
-    </dialog>`,
+    </dialog>`),
   );
   const npCancel = $("#npCancel");
   if (npCancel && !npCancel.dataset.bound) {
@@ -1008,7 +1068,7 @@ function replacePreferenceOptions(
 ): void {
   const values = [{ id: "", label: emptyLabel }, ...options.filter((option) => option.id)];
   if (selected && !values.some((option) => option.id === selected)) {
-    values.push({ id: selected, label: `${selected} · 저장된 값` });
+    values.push({ id: selected, label: ui`${selected} · 저장된 값` });
   }
   select.replaceChildren(...values.map((item) => {
     const option = document.createElement("option");
@@ -1032,18 +1092,18 @@ function populatePreferenceCapabilities(
     ? model.reasoningOptions
     : (probe?.reasoningOptions ?? []);
   const reasoningSelect = must<HTMLSelectElement>(`#pref${prefix}Reasoning`);
-  replacePreferenceOptions(reasoningSelect, reasoningOptions, reasoning, "CLI 기본값");
+  replacePreferenceOptions(reasoningSelect, reasoningOptions, reasoning, t("CLI 기본값"));
   reasoningSelect.disabled = probe ? !probe.capabilities.reasoningEffort : false;
 
   const tierSelect = must<HTMLSelectElement>(`#pref${prefix}Tier`);
   if (agentId === "claude") {
-    replacePreferenceOptions(tierSelect, [], null, "지원하지 않음");
+    replacePreferenceOptions(tierSelect, [], null, t("지원하지 않음"));
     tierSelect.disabled = true;
   } else {
     const serviceTierOptions = model?.serviceTierOptions?.length
       ? model.serviceTierOptions
       : (probe?.serviceTierOptions ?? []);
-    replacePreferenceOptions(tierSelect, serviceTierOptions, serviceTier, "CLI 기본값");
+    replacePreferenceOptions(tierSelect, serviceTierOptions, serviceTier, t("CLI 기본값"));
     tierSelect.disabled = probe ? !probe.capabilities.serviceTier : false;
   }
 }
@@ -1056,12 +1116,12 @@ function populatePreferenceAgent(
   const probe = lastAgents.find((item) => item.agentId === agentId);
   const models = probe?.models?.length
     ? probe.models
-    : [{ id: "default", label: "CLI 기본값" }];
+    : [{ id: "default", label: t("CLI 기본값") }];
   const selectedModel = prefs.model || "default";
   const modelSelect = must<HTMLSelectElement>(`#pref${prefix}Model`);
   const modelOptions = models.map((model) => ({ id: model.id, label: model.label }));
   if (!modelOptions.some((model) => model.id === selectedModel)) {
-    modelOptions.push({ id: selectedModel, label: `${selectedModel} · 저장된 값` });
+    modelOptions.push({ id: selectedModel, label: ui`${selectedModel} · 저장된 값` });
   }
   modelSelect.replaceChildren(...modelOptions.map((item) => {
     const option = document.createElement("option");
@@ -1075,23 +1135,23 @@ function populatePreferenceAgent(
 
   const status = must<HTMLElement>(`#pref${prefix}Probe`);
   if (!probe) {
-    status.textContent = "CLI 상태와 지원 모델을 확인하지 못했습니다.";
+    status.textContent = t("CLI 상태와 지원 모델을 확인하지 못했습니다.");
     return;
   }
   const install = !probe.installed
-    ? "미설치"
+    ? t("미설치")
     : probe.loggedIn === true
-      ? "로그인됨"
+      ? t("로그인됨")
       : probe.loggedIn === false
-        ? "로그인 필요"
-        : "로그인 상태 불명";
+        ? t("로그인 필요")
+        : t("로그인 상태 불명");
   const modelsLabel = probe.modelSource === "live"
-    ? `CLI 감지 모델 ${probe.models.length - 1}개`
-    : `fallback 모델 힌트 ${probe.models.length - 1}개`;
+    ? ui`CLI 감지 모델 ${probe.models.length - 1}개`
+    : ui`fallback 모델 힌트 ${probe.models.length - 1}개`;
   const boundary = probe.capabilities.jsonStreaming
     && probe.capabilities.nativeTools
-    ? "CLI 스트리밍·앱 도구 연결 지원"
-    : "필수 실행 capability 부족";
+    ? t("CLI 스트리밍·앱 도구 연결 지원")
+    : t("필수 실행 capability 부족");
   status.textContent = [
     install,
     probe.version,
@@ -1106,30 +1166,30 @@ async function showLoginInstruction(button: HTMLButtonElement): Promise<void> {
   const command = must<HTMLElement>(`#pref${prefix}Login`);
   const detail = must<HTMLElement>(`#pref${prefix}LoginDetail`);
   button.disabled = true;
-  button.textContent = "확인 중…";
+  button.textContent = t("확인 중…");
   try {
     const instruction = await requireApi().app.getLoginInstruction(agentId);
     command.style.display = "block";
     detail.style.display = "block";
     command.textContent = instruction.displayCommand;
     detail.textContent = instruction.available
-      ? "이 명령을 터미널에서 실행해 공급자의 대화형 로그인을 완료하세요."
-      : `${instruction.detail} CLI를 설치한 뒤 같은 명령을 실행하세요.`;
+      ? t("이 명령을 터미널에서 실행해 공급자의 대화형 로그인을 완료하세요.")
+      : ui`${instruction.detail} CLI를 설치한 뒤 같은 명령을 실행하세요.`;
     if (instruction.available) {
       try {
         await navigator.clipboard.writeText(instruction.displayCommand);
-        notify(`${instruction.displayCommand} 명령을 복사했습니다`, `${prefix} CLI 로그인`);
+        notify(ui`${instruction.displayCommand} 명령을 복사했습니다`, ui`${prefix} CLI 로그인`);
       } catch {
-        notify("표시된 로그인 명령을 터미널에서 실행하세요", `${prefix} CLI 로그인`);
+        notify(t("표시된 로그인 명령을 터미널에서 실행하세요"), ui`${prefix} CLI 로그인`);
       }
     }
   } catch (error) {
     command.style.display = "none";
     detail.style.display = "block";
-    detail.textContent = error instanceof Error ? error.message : "로그인 안내를 불러오지 못했습니다.";
+    detail.textContent = error instanceof Error ? error.message : t("로그인 안내를 불러오지 못했습니다.");
   } finally {
     button.disabled = false;
-    button.textContent = "로그인 안내";
+    button.textContent = t("로그인 안내");
   }
 }
 
@@ -1145,7 +1205,7 @@ async function submitNewProject(): Promise<void> {
   );
   if (!transition.started) return;
   const result = transition.result;
-  const data = unwrap(result, "새 프로젝트");
+  const data = unwrap(result, t("새 프로젝트"));
   if (data) {
     ($("#dlgNewProj") as HTMLDialogElement).close();
     location.href = "home.html";
@@ -1169,9 +1229,9 @@ async function submitPrefs(): Promise<void> {
     });
     window.dispatchEvent(new CustomEvent<AppConfig>("munhae:config-changed", { detail: updated }));
     ($("#dlgPrefs") as HTMLDialogElement).close();
-    notify("에이전트 실행 설정을 저장했습니다", "설정");
+    notify(t("에이전트 실행 설정을 저장했습니다"), t("설정"));
   } catch (error) {
-    notify(error instanceof Error ? error.message : "설정을 저장하지 못했습니다", "설정");
+    notify(error instanceof Error ? error.message : t("설정을 저장하지 못했습니다"), t("설정"));
   }
 }
 
@@ -1179,9 +1239,19 @@ async function openPrefs(): Promise<void> {
   go("settings");
 }
 
+export async function openProjectFromSidebar(packagePath?: string): Promise<void> {
+  const api = requireApi();
+  const transition = await runProjectTransition("open", projectTransition, () => api.project.open(packagePath), result => result.ok && result.data !== null);
+  if (!transition.started) return;
+  const result = transition.result;
+  if (!result.ok) notify(result.error.message, t("프로젝트 열기"));
+  else if (result.data) location.href = "home.html";
+}
+
 export async function cmd(id: string): Promise<void> {
   if ((currentPage === "account" || document.body.hasAttribute("data-auth-pending"))
     && !["quit", "min", "zoom", "c", "v", "x", "undo", "redo"].includes(id)) return;
+  if (PROJECT_COMMANDS.has(id) && !activeProject) return;
   if (pageCmd && (await pageCmd(id))) return;
   if (id === "home" || id === "editor" || id === "knowledge" || id === "settings") {
     go(id);
@@ -1207,22 +1277,22 @@ export async function cmd(id: string): Promise<void> {
       return;
     case "about": {
       const v = api ? await api.app.getVersion().catch(() => appVersion) : appVersion;
-      notify(`Munhae Studio ${v} · Phase 1 로컬 CAT`, "문해 정보");
+      notify(`Munhae Studio ${v}`, t("문해 정보"));
       return;
     }
     case "prefs":
       await openPrefs();
       return;
     case "ai": {
-      if (!api) return notify("preload missing", "AI 연결 상태");
+      if (!api) return notify("preload missing", t("AI 연결 상태"));
       const agents = await api.app.probeAgents();
       setAgentChrome(agents);
-      notify(`${formatAgentDetail(agents)}. 토큰은 CLI가 보관합니다`, "AI 연결 상태");
+      notify(ui`${formatAgentDetail(agents)}. 토큰은 CLI가 보관합니다`, t("AI 연결 상태"));
       return;
     }
     case "updates":
       try { await api?.app.checkUpdates(); }
-      catch { notify("업데이트 확인은 문해 데스크톱 앱에서 사용할 수 있습니다.", "업데이트"); }
+      catch { notify(t("업데이트 확인은 문해 데스크톱 앱에서 사용할 수 있습니다."), t("업데이트")); }
       return;
     case "quit":
       await api?.app.quit();
@@ -1233,23 +1303,9 @@ export async function cmd(id: string): Promise<void> {
       ($("#dlgNewProj") as HTMLDialogElement).showModal();
       must<HTMLInputElement>("#npTitle").focus();
       return;
-    case "open": {
-      if (!api) return;
-      const transition = await runProjectTransition(
-        "open",
-        projectTransition,
-        () => api.project.open(),
-        (result) => result.ok && result.data !== null,
-      );
-      if (!transition.started) return;
-      const result = transition.result;
-      if (!result.ok) {
-        notify(result.error.message, "프로젝트 열기");
-        return;
-      }
-      if (result.data) location.href = "home.html";
+    case "open":
+      await openProjectFromSidebar();
       return;
-    }
     case "seeddemo": {
       if (!api) return;
       const transition = await runProjectTransition(
@@ -1260,10 +1316,11 @@ export async function cmd(id: string): Promise<void> {
       );
       if (!transition.started) return;
       const result = transition.result;
-      const data = unwrap(result, "데모");
+      const data = unwrap(result, t("데모"));
       if (data) location.href = "home.html";
       return;
     }
+    case "projects":
     case "close": {
       if (!api) return;
       const transition = await runProjectTransition(
@@ -1274,27 +1331,23 @@ export async function cmd(id: string): Promise<void> {
       );
       if (!transition.started) return;
       const result = transition.result;
-      if (!result.ok) notify(result.error.message, "닫기");
+      if (!result.ok) notify(result.error.message, t("닫기"));
       else location.href = "index.html";
       return;
     }
     case "backup": {
       if (!api) return;
       const result = await api.project.backup();
-      if (!result.ok) notify(result.error.message, "백업");
-      else if (result.data) notify(`백업을 저장했습니다\n${result.data}`, "백업");
+      if (!result.ok) notify(result.error.message, t("백업"));
+      else if (result.data) notify(ui`백업을 저장했습니다\n${result.data}`, t("백업"));
       return;
     }
-    case "plan":
-    case "schema":
-      notify(`${id}.md는 저장소 루트에 있습니다`, "도움말");
-      return;
     case "help":
-      notify("문해는 프로젝트 데이터를 로컬에 저장합니다. AI 실행 때는 대화상자에서 확인한 자료만 선택한 CLI provider로 전송합니다", "도움말");
+      showAppHelp(esc);
       return;
     case "min":
     case "zoom":
-      notify("창 조절은 시스템 창 단추를 사용하세요", "창");
+      notify(t("창 조절은 시스템 창 단추를 사용하세요"), t("창"));
       return;
     case "undo":
     case "redo":
@@ -1303,7 +1356,7 @@ export async function cmd(id: string): Promise<void> {
     case "v":
       return;
     case "import":
-      notify("텍스트 파일 가져오기는 새 문서 대화상자에서 할 수 있습니다", "가져오기");
+      await openDocumentDialog(currentDocId(), true);
       return;
     case "export":
       openConfirmedExport();
@@ -1313,39 +1366,21 @@ export async function cmd(id: string): Promise<void> {
       go("editor");
       return;
     case "newdoc":
-      await openDocumentDialog();
+      await openDocumentDialog(currentDocId());
+      return;
+    case "newfolder":
+      await openDocumentDialog(currentDocId(), false, "container");
       return;
     case "find":
       openProjectSearch();
       return;
     default:
-      notify("이 명령은 아직 연결되어 있지 않습니다", "문해");
+      notify(t("이 명령은 아직 연결되어 있지 않습니다"), t("문해"));
   }
 }
 
 function bindShellEvents(): void {
-  const bar = $("#menubar");
-  if (bar && bar.dataset.bound !== "1") {
-    bar.dataset.bound = "1";
-    bar.addEventListener("click", (e) => {
-      const b = (e.target as HTMLElement).closest("button[data-cmd]");
-      if (b instanceof HTMLButtonElement) {
-        if (!b.disabled) {
-          openMenu(null);
-          void cmd(b.dataset.cmd ?? "");
-        }
-        return;
-      }
-      const mi = (e.target as HTMLElement).closest(".mb-item");
-      if (mi instanceof HTMLElement) openMenu(mbOpen === mi ? null : mi);
-    });
-    bar.addEventListener("mouseover", (e) => {
-      const mi = (e.target as HTMLElement).closest(".mb-item");
-      if (mbOpen && mi instanceof HTMLElement && mi !== mbOpen) openMenu(mi);
-    });
-  }
   document.addEventListener("click", (e) => {
-    if (mbOpen && !(e.target as HTMLElement).closest("#menubar")) openMenu(null);
     const ctx = $("#ctxmenu");
     if (ctx && !(e.target as HTMLElement).closest("#ctxmenu")) ctx.classList.remove("show");
   });
@@ -1392,8 +1427,10 @@ function bindShellEvents(): void {
       const m = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
       if (e.key === "Escape") {
-        openMenu(null);
         $("#ctxmenu")?.classList.remove("show");
+      }
+      if (m && !e.altKey && !e.shiftKey && e.code === "Comma") {
+        e.preventDefault(); void cmd("prefs"); return;
       }
       if (m && !e.altKey && !e.shiftKey && k === "k") {
         e.preventDefault();
@@ -1475,7 +1512,7 @@ function initTitlebar(): void {
   const navigation = document.createElement("div");
   navigation.className = "titlebar-navigation";
   navigation.setAttribute("role", "group");
-  navigation.setAttribute("aria-label", "화면 탐색");
+  navigation.setAttribute("aria-label", t("화면 탐색"));
   navigation.innerHTML = '<span class="titlebar-window-space" aria-hidden="true"><i></i><i></i><i></i></span>';
   navigation.append(sidebarButton);
   const nav = (window as Window & { navigation?: EventTarget & { canGoBack: boolean; canGoForward: boolean } }).navigation;
@@ -1483,7 +1520,7 @@ function initTitlebar(): void {
     const button = document.createElement("button");
     button.className = "tb titlebar-history";
     button.type = "button";
-    button.title = direction === "back" ? "뒤로" : "앞으로";
+    button.title = direction === "back" ? t("뒤로") : t("앞으로");
     button.setAttribute("aria-label", button.title);
     button.innerHTML = `<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="${direction === "back" ? "M13 8H3m5-5L3 8l5 5" : "M3 8h10m-5-5 5 5-5 5"}"/></svg>`;
     const update = () => { button.disabled = !(direction === "back" ? nav?.canGoBack : nav?.canGoForward); };
@@ -1525,14 +1562,19 @@ function initSidebarAccount(api: MunhaeApi): void {
   });
   const render = (state: AccountState) => {
     const user = state.status === "signed_in" ? state.user : null;
-    const name = user?.displayName.trim() || user?.email || "문해 계정";
+    const name = user?.displayName.trim() || user?.email || t("문해 계정");
     label.textContent = name;
-    link.title = user ? [user.displayName, user.email].filter(Boolean).join(" · ") : "문해 계정";
-    link.setAttribute("aria-label", `${name} · 계정 설정 열기`);
+    link.title = user ? [user.displayName, user.email].filter(Boolean).join(" · ") : t("문해 계정");
+    link.setAttribute("aria-label", ui`${name} · 계정 설정 열기`);
   };
   let revision = 0;
   const unsubscribe = api.auth.onStateChanged((state) => {
     revision += 1;
+    if (activeProject?.storageMode === "online" && (state.status !== "signed_in" || state.user?.id !== activeProject.accountId)) {
+      document.body.dataset.authPending = "";
+      location.replace("index.html");
+      return;
+    }
     render(state);
   });
   window.addEventListener("pagehide", unsubscribe, { once: true });
@@ -1575,13 +1617,13 @@ export function initShell(opts: ShellOptions): Shell {
   selfTitle =
     opts.selfTitle ??
     ({
-      welcome: "시작 화면",
-      home: "프로젝트 홈",
-      editor: "편집",
-      knowledge: "번역 자료",
-      context: "문맥 편집",
-      settings: "설정",
-      account: "문해 계정",
+      welcome: t("시작 화면"),
+      home: t("프로젝트 홈"),
+      editor: t("편집"),
+      knowledge: t("번역 자료"),
+      context: t("문맥 편집"),
+      settings: t("설정"),
+      account: t("문해 계정"),
     }[opts.page] as string);
   ensureSharedDialogs();
   const tbSidebar = $("#tbSidebar");
@@ -1594,15 +1636,21 @@ export function initShell(opts: ShellOptions): Shell {
     const brand = document.createElement("div");
     brand.className = "munhae-brand";
     brand.setAttribute("role", "img");
-    brand.setAttribute("aria-label", "문해 Munhae Studio");
+    brand.setAttribute("aria-label", t("문해 Munhae Studio"));
     brand.innerHTML = '<strong aria-hidden="true">文解</strong><small aria-hidden="true">MUNHAE<br>STUDIO</small>';
     sidebarTree.before(brand);
   }
-  renderMenubar();
+  refreshSidebarChrome = mountSidebarChrome({
+    api, project: () => activeProject, command: cmd, openProject: openProjectFromSidebar,
+    error: message => notify(message, t("프로젝트")),
+  });
+  refreshSidebarChrome();
   bindShellEvents();
   initSidebarAccount(api);
-  tick();
-  window.setInterval(tick, 30000);
+  if (activeProject?.storageMode === "online") {
+    projectChanges = initProjectChanges(api, activeProject);
+    initOnlineWorkspace(api, activeProject);
+  }
   if (store.get(SB_KEY) === "0") toggleSidebar(true);
   initSidebarResize();
   void api.app

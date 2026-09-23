@@ -1,5 +1,8 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { EditorView, IpcResult, MunhaeApi, ReadingAnnotationView, ReadingCitation } from "../src/shared/munhae-api";
+import type { DictionaryEntry } from "../src/shared/dictionary-types";
+import type { ReadingAnalysisApi, ReadingAnalysisRun } from "../src/shared/reading-analysis-types";
 import { configureReadingStudy } from "../src/renderer/scripts/reading-study-ui";
 
 const flush = async () => { for (let n = 0; n < 16; n++) await Promise.resolve(); };
@@ -12,26 +15,30 @@ function deferred<T>() {
 // Minimal event/element surface, following account-page-state.test.ts. No browser
 // library is required to exercise actual async controller and draft ownership.
 class Element extends EventTarget {
-  hidden = false; disabled = false; value = ""; textContent = ""; tabIndex = 0;
+  hidden = false; disabled = false; value = ""; textContent = ""; title = ""; tabIndex = 0;
   dataset: Record<string, string> = {};
   classList = { add: vi.fn(), toggle: vi.fn() };
   focus = vi.fn();
   attributes = new Map<string, string>();
   children: Element[] = [];
   private markup = "";
+  private descendants = new Map<string, Element>();
   constructor(private elements: Map<string, Element>, readonly selector = "") { super(); }
   setAttribute(name: string, value: string) { this.attributes.set(name, value); }
   getAttribute(name: string) { return this.attributes.get(name) ?? null; }
   get innerHTML() { return this.markup; }
   set innerHTML(value: string) {
     this.markup = value;
-    this.children = [...value.matchAll(/<button\b([^>]*)>/gu)].map(match => {
+    this.textContent = value.replace(/<[^>]*>/gu, "");
+    this.descendants.clear();
+    this.children = [...value.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu)].map(match => {
       const button = new Element(this.elements);
       for (const attr of match[1]!.matchAll(/([\w-]+)="([^"]*)"/gu)) {
         button.attributes.set(attr[1]!, attr[2]!);
         if (attr[1]!.startsWith("data-")) button.dataset[attr[1]!.slice(5).replace(/-([a-z])/g, (_, char: string) => char.toUpperCase())] = attr[2]!;
       }
       button.disabled = /\sdisabled(?:\s|$)/u.test(match[1]!);
+      button.innerHTML = match[2]!;
       return button;
     });
   }
@@ -48,6 +55,20 @@ class Element extends EventTarget {
   }
   querySelector(selector: string): Element | null {
     if (selector.startsWith("[")) return this.querySelectorAll(selector)[0] ?? null;
+    if (this.selector !== "host" && selector.startsWith(".")) {
+      if (!this.descendants.has(selector)) {
+        const span = [...this.markup.matchAll(/<span\b([^>]*)>([\s\S]*?)<\/span>/gu)]
+          .find(match => match[1]!.match(/class="([^"]*)"/u)?.[1]?.split(" ").includes(selector.slice(1)));
+        const child = new Element(this.elements);
+        if (span) {
+          for (const attr of span[1]!.matchAll(/([\w-]+)="([^"]*)"/gu)) child.setAttribute(attr[1]!, attr[2]!);
+          child.title = child.getAttribute("title") ?? "";
+          child.innerHTML = span[2]!;
+        }
+        this.descendants.set(selector, child);
+      }
+      return this.descendants.get(selector)!;
+    }
     if (this.selector === "host" && selector.startsWith("#") && !this.markup.includes(`id="${selector.slice(1)}"`)) return null;
     const key = selector.startsWith("#") || this.selector === "host" ? selector : `${this.selector}/${selector}`;
     if (!this.elements.has(key)) this.elements.set(key, new Element(this.elements, key));
@@ -68,23 +89,26 @@ const savedCitation = (extra: Partial<ReadingCitation> = {}): ReadingCitation =>
   sourceUrl: "https://example.invalid/source", license: "test", licenseUrl: null, attribution: "test", ...extra,
 });
 
-function fixture() {
+const dictionaryEntry = (query: string, extra: Partial<DictionaryEntry> = {}): DictionaryEntry => ({
+  id: `dict:${query}`, headword: query, kind: "character", source: "libhangul", reading: query === "甲" ? "갑" : "을", sourceLabel: "사전",
+  sourceUrl: "https://example.invalid/source", license: "test", licenseUrl: null, attribution: "test", canCite: true,
+  senses: [{ text: "사전 뜻" }], ...extra,
+});
+
+function fixture(input = sourceView(), dictionaryEntries: (query: string) => DictionaryEntry[] | Promise<DictionaryEntry[]> = query => [dictionaryEntry(query)], research?: ReadingAnalysisApi) {
   const elements = new Map<string, Element>();
   const host = new Element(elements, "host");
   const listRequests: ReturnType<typeof deferred<IpcResult<ReadingAnnotationView[]>>>[] = [];
   const saveRequests: ReturnType<typeof deferred<IpcResult<ReadingAnnotationView>>>[] = [];
   const saveReadingAnnotation = vi.fn(() => { const request = deferred<IpcResult<ReadingAnnotationView>>(); saveRequests.push(request); return request.promise; });
   const api = {
+    research,
     editor: {
       listReadingAnnotations: vi.fn(() => { const request = deferred<IpcResult<ReadingAnnotationView[]>>(); listRequests.push(request); return request.promise; }),
       saveReadingAnnotation,
       archiveReadingAnnotation: vi.fn(async () => ({ ok: true, data: undefined })),
     },
-    dictionary: { search: vi.fn(async ({ query }: { query: string }) => ({ ok: true, data: { entries: [{
-      id: `dict:${query}`, headword: query, source: "libhangul", reading: query === "甲" ? "갑" : "을", sourceLabel: "사전",
-      sourceUrl: "https://example.invalid/source", license: "test", licenseUrl: null, attribution: "test", canCite: true,
-      senses: [{ text: "사전 뜻" }],
-    }] } })) },
+    dictionary: { search: vi.fn(async ({ query }: { query: string }) => ({ ok: true, data: { entries: await dictionaryEntries(query) } })) },
   } as unknown as MunhaeApi;
   let editable = true;
   const edited = vi.fn();
@@ -98,7 +122,7 @@ function fixture() {
     host.dispatchEvent(event);
   };
   const type = (selector: string, text: string) => { const target = element(selector); target.value = text; target.dispatchEvent(new Event("input")); };
-  controller.setDocument(sourceView()); controller.setVisible(true);
+  controller.setDocument(input); controller.setVisible(true);
   return { controller, api, host, listRequests, saveRequests, saveReadingAnnotation, edited, element, click, type,
     setEditable: (value: boolean) => { editable = value; }, sense: () => host.querySelectorAll("[data-rs-sense]")[0]! };
 }
@@ -168,7 +192,146 @@ describe("reading study draft and async boundaries", () => {
   });
 });
 
+describe("reading study aligned and card views", () => {
+  function tokenMarkup(f: ReturnType<typeof fixture>, from: number) {
+    const buttons = [...f.element("#rsTokens").innerHTML.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gu)];
+    const token = buttons.find(button => button[1]!.includes(`data-rs-from="${from}"`));
+    expect(token, `token at source position ${from}`).toBeDefined();
+    return token![2]!;
+  }
+  function spanText(markup: string, className: string) {
+    const spans = [...markup.matchAll(/<span\b[^>]*class="([^"]*)"[^>]*>([\s\S]*?)<\/span>/gu)];
+    const span = spans.find(item => item[1]!.split(" ").includes(className));
+    expect(span, `span with class ${className}`).toBeDefined();
+    return span![2]!;
+  }
+
+  it.each(["#rsAligned", "#rsCards"])("keeps basic dictionary glosses separate from selected meanings in %s", async mode => {
+    const f = fixture();
+    await flush();
+    f.listRequests[0]!.resolve({ ok: true, data: [savedNote({ citation: savedCitation({ sense: "이 위치에서 선택한 뜻" }) })] });
+    await flush();
+    f.element(mode).dispatchEvent(new Event("click"));
+
+    const selected = tokenMarkup(f, 0), unselected = tokenMarkup(f, 1);
+    expect(spanText(selected, "rs-token-basic")).toBe("사전 뜻");
+    expect(spanText(selected, "rs-token-gloss")).toBe("이 위치에서 선택한 뜻");
+    expect(spanText(unselected, "rs-token-basic")).toBe("사전 뜻");
+    expect(spanText(unselected, "rs-token-gloss")).toBe("—");
+    expect(f.controller.hasUnsavedDraft()).toBe(false);
+    expect(f.saveReadingAnnotation).not.toHaveBeenCalled();
+    expect(f.edited).not.toHaveBeenCalled();
+  });
+
+  it("keeps the full basic gloss accessible when delayed dictionary results fill a compact preview", async () => {
+    const dictionary = deferred<DictionaryEntry[]>();
+    const f = fixture(sourceView(), query => query === "甲" ? dictionary.promise : [dictionaryEntry(query)]);
+    f.listRequests[0]!.resolve({ ok: true, data: [savedNote({ citation: savedCitation({ sense: "저장한 선택 뜻" }) })] });
+    await flush();
+    const token = f.element("#rsTokens").querySelector('[data-rs-from="0"]')!;
+    const basic = token.querySelector(".rs-token-basic")!;
+    expect(basic.innerHTML).toBe("");
+    const citationMarkup = f.element("#rsCitationBody").innerHTML;
+
+    dictionary.resolve([dictionaryEntry("甲", { senses: [{ text: "첫 훈, 둘째 훈" }, { text: "셋째 훈" }] })]);
+    await flush();
+    const assertCompactGloss = (node: Element) => {
+      expect(node.innerHTML).toMatch(/^첫 훈<small\b/u);
+      expect(node.innerHTML).toContain(">+2</small>");
+      expect(node.innerHTML).not.toContain("둘째 훈");
+      expect(node.innerHTML).not.toContain("셋째 훈");
+      expect(node.title).toBe("사전 기본 훈: 첫 훈, 둘째 훈 · 셋째 훈");
+      expect(node.getAttribute("aria-label")).toBe(node.title);
+    };
+    assertCompactGloss(basic);
+    expect(token.querySelector(".rs-token-gloss")!.textContent).toBe("저장한 선택 뜻");
+    expect(f.element("#rsCitationBody").innerHTML).toBe(citationMarkup);
+    expect(f.controller.hasUnsavedDraft()).toBe(false);
+    expect(f.edited).not.toHaveBeenCalled();
+
+    f.element("#rsCards").dispatchEvent(new Event("click"));
+    assertCompactGloss(f.element("#rsTokens").querySelector('[data-rs-from="0"]')!.querySelector(".rs-token-basic")!);
+  });
+
+  it("preserves an unsaved inspector draft when switching layouts and display order", async () => {
+    const f = fixture(); f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
+    expect(f.element("#rsTokens").classList.toggle).toHaveBeenCalledWith("rs-cards", false);
+    f.type("#rsReading", "보존할 독음");
+    f.type("#rsOrder", "4");
+    f.click(f.sense());
+    const citationMarkup = f.element("#rsCitationBody").innerHTML;
+    expect(f.edited).toHaveBeenCalledTimes(3);
+
+    for (const id of ["#rsCards", "#rsReadingOrder", "#rsAligned", "#rsSourceOrder"]) {
+      f.element(id).dispatchEvent(new Event("click"));
+      expect(f.element(id).getAttribute("aria-pressed")).toBe("true");
+      expect(f.element("#rsSelected").textContent).toBe("甲");
+      expect(f.element("#rsReading").value).toBe("보존할 독음");
+      expect(f.element("#rsOrder").value).toBe("4");
+      expect(f.element("#rsCitationBody").innerHTML).toBe(citationMarkup);
+      expect(f.controller.hasUnsavedDraft()).toBe(true);
+      expect(f.saveReadingAnnotation).not.toHaveBeenCalled();
+      expect(f.edited).toHaveBeenCalledTimes(3);
+    }
+  });
+
+  it("selects and saves the exact repeated phrase occurrence from its inline marker", async () => {
+    const input = sourceView(); input.source.contentText = "甲乙甲乙";
+    const f = fixture(input);
+    const first = savedNote({ id: "first-phrase", codepointTo: 2, quote: "甲乙", reading: "첫 어휘", lockVersion: 3 });
+    const second = savedNote({ id: "second-phrase", codepointFrom: 2, codepointTo: 4, quote: "甲乙", reading: "둘째 어휘", lockVersion: 11 });
+    f.listRequests[0]!.resolve({ ok: true, data: [first, second] }); await flush();
+
+    const marker = f.element("#rsTokens").querySelector('[data-rs-phrase="second-phrase"]');
+    expect(marker).not.toBeNull();
+    f.click(marker!); await flush();
+    expect(f.element("#rsSelected").textContent).toBe("甲乙");
+    expect(f.element("#rsPosition").textContent).toBe("3–4번째 위치");
+    expect(f.element("#rsReading").value).toBe("둘째 어휘");
+    expect(f.element("#rsTokens").querySelectorAll("[data-rs-from]")).toHaveLength(4);
+    const selectedMarker = f.element("#rsTokens").querySelector('[data-rs-phrase="second-phrase"]')!;
+    expect(selectedMarker).not.toBe(marker);
+    expect(selectedMarker.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+
+    f.type("#rsReading", "둘째 어휘 수정");
+    const key = new Event("keydown", { cancelable: true });
+    Object.defineProperties(key, { target: { value: selectedMarker }, key: { value: "ArrowRight" } });
+    f.element("#rsTokens").dispatchEvent(key); await flush();
+    expect(key.defaultPrevented).toBe(false);
+    expect(f.element("#rsPosition").textContent).toBe("3–4번째 위치");
+    expect(f.element("#rsReading").value).toBe("둘째 어휘 수정");
+    expect(f.saveReadingAnnotation).not.toHaveBeenCalled();
+
+    const saving = f.controller.save();
+    expect(f.saveReadingAnnotation).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      id: "second-phrase", documentNodeId: "doc", sourceVersionId: "source-1",
+      codepointFrom: 2, codepointTo: 4, quote: "甲乙", reading: "둘째 어휘 수정", expectedLockVersion: 11,
+    }));
+    f.saveRequests[0]!.resolve({ ok: true, data: { ...second, reading: "둘째 어휘 수정", lockVersion: 12 } });
+    expect(await saving).toBe(true);
+  });
+});
+
 describe("reading study dictionary meanings without manual gloss editing", () => {
+  it("marks only the exact cited source, entry and sense as selected and clears that state", async () => {
+    const f = fixture(sourceView(), query => [
+      dictionaryEntry(query, { id: "shared-id", senses: [{ text: "같은 뜻" }, { text: "다른 뜻" }] }),
+      dictionaryEntry(query, { id: "shared-id", source: "wiktionary", senses: [{ text: "같은 뜻" }] }),
+      dictionaryEntry(query, { id: "other-id", senses: [{ text: "같은 뜻" }] }),
+    ]);
+    f.listRequests[0]!.resolve({ ok: true, data: [savedNote({ citation: savedCitation({ entryId: "shared-id", sense: "같은 뜻" }) })] });
+    await flush();
+    const senses = () => f.host.querySelectorAll("[data-rs-sense]");
+    const selected = () => senses().map(button => button.getAttribute("aria-pressed"));
+    expect(selected()).toEqual(["true", "false", "false", "false"]);
+
+    f.click(senses()[2]!);
+    expect(selected()).toEqual(["false", "false", "true", "false"]);
+    f.element("#rsClearCitation").dispatchEvent(new Event("click"));
+    expect(selected()).toEqual(["false", "false", "false", "false"]);
+    expect(f.element("#rsCitation").hidden).toBe(true);
+  });
+
   it("removes the manual gloss field while retaining reading and reading-order controls", async () => {
     const f = fixture(); f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
     expect(f.host.querySelector("#rsGloss")).toBeNull();
@@ -212,12 +375,125 @@ describe("reading study dictionary meanings without manual gloss editing", () =>
     ] }); await flush();
     const cards = f.element("#rsTokens").innerHTML, phrases = f.element("#rsSavedPhrases").innerHTML;
     expect(cards).toContain("선택한 낱자 뜻");
-    expect(cards).toContain("사전 뜻");
+    expect(f.element("#rsTokens").querySelector('[data-rs-from="1"]')!.querySelector(".rs-token-basic")!.textContent).toBe("사전 뜻");
     expect(cards).not.toContain("숨길 낱자 풀이");
     expect(cards).not.toContain("숨길 기본훈 대체 풀이");
     expect(phrases).toContain("선택한 어휘 뜻");
     expect(phrases).not.toContain("숨길 어휘 풀이");
     expect(f.controller.hasUnsavedDraft()).toBe(false);
     expect(f.edited).not.toHaveBeenCalled();
+  });
+});
+
+describe("reading study optional AI actions", () => {
+  const analysisRun = (extra: Partial<ReadingAnalysisRun> = {}): ReadingAnalysisRun => ({
+    id: "analysis", documentNodeId: "doc", sourceVersionId: "source-1", translationVersionId: null,
+    sourceHash: createHash("sha256").update("甲乙").digest("hex"), ranges: [{ from: 0, to: 2, quote: "甲乙" }],
+    agentId: "codex", createdAt: "2026-09-23", state: "completed", detail: "분석 완료", error: null,
+    result: { summary: "현재 구절 분석", suggestions: [{ id: "one", from: 0, to: 1, quote: "甲", reading: "갑독음", readingOrder: null,
+      citation: savedCitation({ sense: "사전에서 확인한 뜻" }), explanation: "별도로 검토할 AI 해석", caution: "문맥 확인", applied: false }] }, ...extra,
+  });
+  function researchFixture(latest: ReadingAnalysisRun | null = null) {
+    const start = deferred<IpcResult<ReadingAnalysisRun>>(), apply = deferred<IpcResult<ReadingAnnotationView>>();
+    const api = {
+      latestReadingAnalysis: vi.fn(async () => ({ ok: true as const, data: latest })),
+      startReadingAnalysis: vi.fn(() => start.promise),
+      getReadingAnalysis: vi.fn(async () => ({ ok: true as const, data: latest ?? analysisRun() })),
+      cancelReadingAnalysis: vi.fn(async () => ({ ok: true as const, data: analysisRun({ state: "canceled" }) })),
+      applyReadingAnalysis: vi.fn(() => apply.promise),
+    } satisfies ReadingAnalysisApi;
+    return { api, start, apply };
+  }
+
+  it("starts only from the explicit button after saving the draft, using the current unit only", async () => {
+    const research = researchFixture(), input = sourceView(); input.source.contentText = "甲。乙。";
+    const f = fixture(input, undefined, research.api);
+    f.element("#rsAnalyze").dispatchEvent(new Event("click")); await flush();
+    expect(research.api.startReadingAnalysis).not.toHaveBeenCalled();
+    f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
+    f.element("#rsCards").dispatchEvent(new Event("click"));
+    f.click(f.element("#rsTokens").querySelector('[data-rs-from="0"]')!); await flush();
+    expect(research.api.startReadingAnalysis).not.toHaveBeenCalled();
+
+    f.type("#rsReading", "저장할 독음");
+    f.element("#rsAnalyze").dispatchEvent(new Event("click")); await flush();
+    expect(f.saveReadingAnnotation).toHaveBeenCalledTimes(1);
+    expect(research.api.startReadingAnalysis).not.toHaveBeenCalled();
+    f.saveRequests[0]!.resolve({ ok: false, error: { code: "conflict", message: "풀이 저장 실패" } }); await flush();
+    expect(f.element("#rsReading").value).toBe("저장할 독음");
+    expect(f.controller.hasUnsavedDraft()).toBe(true);
+    expect(research.api.startReadingAnalysis).not.toHaveBeenCalled();
+
+    f.element("#rsAnalyze").dispatchEvent(new Event("click")); await flush();
+    f.saveRequests[1]!.resolve({ ok: true, data: savedNote({ reading: "저장할 독음", gloss: "" }) }); await flush();
+    expect(research.api.startReadingAnalysis).toHaveBeenCalledExactlyOnceWith({ documentNodeId: "doc", expectedSourceVersionId: "source-1",
+      expectedTranslationVersionId: null, ranges: [{ from: 0, to: 2, quote: "甲。" }] });
+    f.controller.setVisible(false);
+    research.start.resolve({ ok: true, data: analysisRun({ state: "running", result: null }) }); await flush();
+    expect(research.api.cancelReadingAnalysis).toHaveBeenCalledExactlyOnceWith("analysis");
+    expect(f.element("#rsAnalysisPanel").hidden).toBe(true);
+  });
+
+  it("keeps AI proposals separate and only adopts on request without replacing another selected character", async () => {
+    const result = analysisRun(), research = researchFixture(result);
+    const f = fixture(sourceView(), undefined, research.api);
+    f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
+    await vi.waitFor(() => expect(f.host.querySelectorAll("[data-rs-ai-apply]")).toHaveLength(1));
+    expect(research.api.startReadingAnalysis).not.toHaveBeenCalled();
+    expect(research.api.applyReadingAnalysis).not.toHaveBeenCalled();
+    expect(f.saveReadingAnnotation).not.toHaveBeenCalled();
+    expect(f.element("#rsAnalysisSuggestions").innerHTML).toContain("AI 해석");
+    expect(f.element("#rsTokens").innerHTML).not.toContain("사전에서 확인한 뜻");
+
+    f.type("#rsReading", "내가 편집 중인 독음");
+    const blocked = f.host.querySelectorAll("[data-rs-ai-apply]")[0]!;
+    expect(blocked.disabled).toBe(true);
+    blocked.disabled = false; f.click(blocked); await flush();
+    expect(research.api.applyReadingAnalysis).not.toHaveBeenCalled();
+    expect(f.element("#rsReading").value).toBe("내가 편집 중인 독음");
+    f.element("#rsDiscard").dispatchEvent(new Event("click"));
+    f.click(f.element("#rsTokens").querySelector('[data-rs-from="1"]')!); await flush();
+    f.click(f.host.querySelectorAll("[data-rs-ai-apply]")[0]!);
+    await vi.waitFor(() => expect(research.api.applyReadingAnalysis).toHaveBeenCalledExactlyOnceWith({ runId: "analysis", suggestionId: "one" }));
+    expect(f.controller.isBusy()).toBe(true);
+    research.apply.resolve({ ok: true, data: savedNote({ reading: "갑독음", gloss: "", citation: result.result!.suggestions[0]!.citation }) }); await flush();
+    expect(f.controller.isBusy()).toBe(false);
+    expect(f.element("#rsSelected").textContent).toBe("乙");
+    expect(f.element("#rsReading").value).toBe("을");
+    expect(f.element("#rsTokens").innerHTML).toContain("사전에서 확인한 뜻");
+    expect(f.element("#rsTokens").innerHTML).not.toContain("별도로 검토할 AI 해석");
+    expect(f.element("#rsAnalysisSuggestions").innerHTML).toContain("채택됨");
+    expect(f.saveReadingAnnotation).not.toHaveBeenCalled();
+    f.controller.setVisible(false);
+  });
+
+  it("collapses completed results while retaining errors and expands a newly requested analysis", async () => {
+    const research = researchFixture(analysisRun()), f = fixture(sourceView(), undefined, research.api);
+    f.listRequests[0]!.resolve({ ok: true, data: [] }); await flush();
+    await vi.waitFor(() => expect(f.host.querySelectorAll("[data-rs-ai-apply]")).toHaveLength(1));
+    expect(f.element("#rsToggleAnalysis").textContent).toBe("1개 제안 · 접기");
+    expect(f.element("#rsAnalysisContent").hidden).toBe(false);
+    f.element("#rsToggleAnalysis").dispatchEvent(new Event("click"));
+    expect(f.element("#rsAnalysisPanel").hidden).toBe(false);
+    expect(f.element("#rsAnalysisContent").hidden).toBe(true);
+    expect(f.element("#rsToggleAnalysis").getAttribute("aria-expanded")).toBe("false");
+    expect(f.element("#rsReading").disabled).toBe(false);
+
+    f.element("#rsToggleAnalysis").dispatchEvent(new Event("click"));
+    f.click(f.host.querySelectorAll("[data-rs-ai-apply]")[0]!);
+    await vi.waitFor(() => expect(research.api.applyReadingAnalysis).toHaveBeenCalledTimes(1));
+    f.element("#rsToggleAnalysis").dispatchEvent(new Event("click"));
+    research.apply.resolve({ ok: false, error: { code: "cas_conflict", message: "현재 풀이가 변경되었습니다." } }); await flush();
+    expect(f.element("#rsAnalysisContent").hidden).toBe(true);
+    expect(f.element("#rsAnalysisError").hidden).toBe(false);
+    expect(f.element("#rsAnalysisError").textContent).toBe("현재 풀이가 변경되었습니다.");
+
+    f.element("#rsAnalyze").dispatchEvent(new Event("click")); await flush();
+    expect(f.element("#rsAnalysisContent").hidden).toBe(false);
+    research.start.resolve({ ok: true, data: analysisRun({ id: "new-analysis" }) });
+    await vi.waitFor(() => expect(f.element("#rsToggleAnalysis").hidden).toBe(false));
+    expect(f.element("#rsAnalysisContent").hidden).toBe(false);
+    expect(f.element("#rsToggleAnalysis").getAttribute("aria-expanded")).toBe("true");
+    f.controller.setVisible(false);
   });
 });

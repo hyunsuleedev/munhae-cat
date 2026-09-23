@@ -1,3 +1,9 @@
+import type { ProjectSharing, ProjectInvitation, InviteProjectMemberInput, UpdateProjectMemberInput } from "./online-projects";
+import type { ReadingAnalysisApi } from "./reading-analysis-types";
+export type { ReadingAnalysisInput, ReadingAnalysisRun, ReadingAnalysisSuggestion, ApplyReadingAnalysisInput } from "./reading-analysis-types";
+import type { TermGlossarySelection } from "./term-glossary";
+import type { BillingStatus } from "./billing";
+export type { BillingStatus } from "./billing";
 /**
  * Renderer ↔ preload ↔ main typed IPC contract.
  * Keep this file free of Node/Electron imports so the renderer can import types.
@@ -9,7 +15,20 @@ export type { ReadingAnnotationCasInput, ReadingAnnotationView, ReadingCitation,
 import type { MaterialOrigin, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
 export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
 
+import type { TermEntry, SaveTermInput } from "@munhae/db-sqlite";
+import type { OnlineProject, CreateOnlineProjectInput, OnlineWorkspaceStatus, OpenOnlineProjectInput, ProjectChangeEvent } from "./online-projects";
+export type { OnlineProject, CreateOnlineProjectInput, OnlineWorkspaceStatus, OpenOnlineProjectInput, ProjectChangeEvent } from "./online-projects";
+export type { TermEntry, TermContent, SaveTermInput } from "@munhae/db-sqlite";
+export type TermExtractionRun = { startedAt?: string; completedAt?: string | null; id: string; documentId: string; state: "running" | "completed" | "failed" | "canceled"; count: number; activity: ChatActivityBlock[]; error: { code: string; message: string } | null };
 export const IPC_CHANNELS = {
+  termsList: "munhae:terms:list",
+  termsSave: "munhae:terms:save",
+  termsDelete: "munhae:terms:delete",
+  termsPromote: "munhae:terms:promote",
+  termsStart: "munhae:terms:start",
+  termsGetRun: "munhae:terms:getRun",
+  termsLatestRun: "munhae:terms:latestRun",
+  termsCancel: "munhae:terms:cancel",
   appGetVersion: "munhae:app:getVersion",
   appGetConfig: "munhae:app:getConfig",
   appSetConfig: "munhae:app:setConfig",
@@ -18,6 +37,8 @@ export const IPC_CHANNELS = {
   appQuit: "munhae:app:quit",
   appCheckUpdates: "munhae:app:checkUpdates",
   appShowAbout: "munhae:app:showAbout",
+  appCopyText: "munhae:app:copyText",
+  appOpenChatSource: "munhae:app:openChatSource",
   appOpenExternal: "munhae:app:openExternal",
   appOpenPath: "munhae:app:openPath",
   menuCommand: "munhae:menu:command",
@@ -34,7 +55,25 @@ export const IPC_CHANNELS = {
   authUpdatePassword: "munhae:auth:updatePassword",
   authStateChanged: "munhae:auth:stateChanged",
 
+  billingGetStatus: "munhae:billing:getStatus",
+  billingOpenCheckout: "munhae:billing:openCheckout",
+  billingOpenPortal: "munhae:billing:openPortal",
+
+  projectChanged: "munhae:project:changed",
   projectCreate: "munhae:project:create",
+  onlineProjectsCreate: "munhae:onlineProjects:create",
+  onlineProjectsOpen: "munhae:onlineProjects:open",
+  onlineProjectsStatus: "munhae:onlineProjects:status",
+  onlineProjectsSync: "munhae:onlineProjects:sync",
+  onlineProjectsExportRecovery: "munhae:onlineProjects:exportRecovery",
+  onlineProjectsList: "munhae:onlineProjects:list",
+  onlineProjectsSharing: "munhae:onlineProjects:sharing",
+  onlineProjectsInvitations: "munhae:onlineProjects:invitations",
+  onlineProjectsInvite: "munhae:onlineProjects:invite",
+  onlineProjectsRespond: "munhae:onlineProjects:respond",
+  onlineProjectsCancelInvitation: "munhae:onlineProjects:cancelInvitation",
+  onlineProjectsUpdateMember: "munhae:onlineProjects:updateMember",
+  onlineProjectsGet: "munhae:onlineProjects:get",
   projectOpen: "munhae:project:open",
   projectClose: "munhae:project:close",
   projectGetCurrent: "munhae:project:getCurrent",
@@ -51,6 +90,7 @@ export const IPC_CHANNELS = {
   documentCreate: "munhae:document:create",
   documentPickText: "munhae:document:pickText",
   documentGetMetadata: "munhae:document:getMetadata",
+  documentMove: "munhae:document:move",
   documentUpdateMetadata: "munhae:document:updateMetadata",
 
   editorGet: "munhae:editor:get",
@@ -89,13 +129,21 @@ export const IPC_CHANNELS = {
   knowledgeUpdateContext: "munhae:knowledge:updateContext",
   knowledgeSetContextEnabled: "munhae:knowledge:setContextEnabled",
   knowledgeSetContextPriority: "munhae:knowledge:setContextPriority",
-  knowledgeArchiveContext: "munhae:knowledge:archiveContext",
+  knowledgeDeleteContext: "munhae:knowledge:deleteContext",
   knowledgeCreateUncertainty: "munhae:knowledge:createUncertainty",
   knowledgeVersionUncertainty: "munhae:knowledge:versionUncertainty",
   knowledgeResolveUncertainty: "munhae:knowledge:resolveUncertainty",
 
   contextPreview: "munhae:context:preview",
   researchSearchFootnotes: "munhae:research:searchFootnotes",
+  researchStartMaterialRefinement: "munhae:research:startMaterialRefinement",
+  researchGetMaterialRefinement: "munhae:research:getMaterialRefinement",
+  researchCancelMaterialRefinement: "munhae:research:cancelMaterialRefinement",
+  researchStartReadingAnalysis: "munhae:research:startReadingAnalysis",
+  researchGetReadingAnalysis: "munhae:research:getReadingAnalysis",
+  researchLatestReadingAnalysis: "munhae:research:latestReadingAnalysis",
+  researchCancelReadingAnalysis: "munhae:research:cancelReadingAnalysis",
+  researchApplyReadingAnalysis: "munhae:research:applyReadingAnalysis",
   researchStartFootnoteAnalysis: "munhae:research:startFootnoteAnalysis",
   researchGetFootnoteAnalysis: "munhae:research:getFootnoteAnalysis",
   researchCancelFootnoteAnalysis: "munhae:research:cancelFootnoteAnalysis",
@@ -118,6 +166,9 @@ export const IPC_CHANNELS = {
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
 export type AppConfig = {
+  alignment?: { agentId: AgentProbe["agentId"]; model: string; reasoning: string | null; serviceTier: string | null } | null;
+  language: "ko" | "en";
+  translationLanguage: "ko" | "en";
   agentId: "codex" | "claude" | "antigravity";
   agentModels: {
     codex: { model: string; reasoning: string | null; serviceTier: string | null };
@@ -173,10 +224,10 @@ export type AgentLoginInstruction = {
 export type ProjectSummary = {
   projectId: string;
   title: string;
+  /** Local path, or a stable online://account/project identifier (never the cache path). */
   packagePath: string;
-  storageMode: "local";
   openedAt: string;
-};
+} & ({ storageMode: "local" } | { storageMode: "online"; onlineProjectId: string; accountId: string });
 
 export type RecentProject = {
   projectId: string;
@@ -261,6 +312,13 @@ export type DocumentMetadataView = {
   sourceReference: string | null;
   lockVersion: number;
   updatedAt: string;
+};
+
+export type MoveDocumentInput = {
+  documentNodeId: string;
+  parentId: string;
+  beforeDocumentNodeId: string | null;
+  expectedLockVersion: number;
 };
 
 export type UpdateDocumentMetadataInput = {
@@ -392,7 +450,7 @@ export type EditorView = {
     textLayout?: {
       state: "pending" | "running" | "ready" | "needs_review" | "failed";
       sentences: Array<{ id: string; from: number; to: number; text: string }>;
-      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
+      links: Array<{ sentenceId: string; groupId?: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
       error: string | null;
     };
     originKind: string;
@@ -412,7 +470,6 @@ export type SaveSourceDraftInput = {
   documentNodeId: string;
   contentText: string;
   originKind: "manual" | "paste" | "import";
-  changeSummary?: string | null;
   expectedLockVersion: number;
 };
 
@@ -432,7 +489,6 @@ export type SavePunctuationDraftInput = {
   punctuatedText: string;
   structureMode: StructureMode;
   structureSpans?: StructureSpanInput[];
-  changeSummary?: string | null;
   expectedLockVersion: number;
 };
 
@@ -442,6 +498,8 @@ export type ConfirmPunctuationInput = {
 };
 
 export type SaveTranslationDraftInput = {
+  textGroups?: Array<{ id: string; text: string; spans: Array<{ from: number; to: number; quote: string }> }>;
+
   documentNodeId: string;
   textContent: string;
   blocks: Array<{
@@ -592,8 +650,9 @@ export type NodeContextView = {
   inheritToChildren?: boolean;
   conditionMd?: string;
   origin?: MaterialOrigin | null;
+  reference?: { commentId: string; needsReview: boolean; sourceChanged: boolean; sourceUnavailable: boolean; reviewedCommentLockVersion: number };
   id: string;
-  source: "context_item" | "document_description";
+  source: "context_item" | "document_description" | "comment_reference";
   scopeKind: "document_node";
   scopeId: string;
   title: string;
@@ -714,7 +773,11 @@ export type PunctuationSuggestionApplyResult = Pick<
 
 export type AiCompletionStage = "chat" | "translation" | "alignment" | "punctuation";
 
+export type ChatActivityBlock = { kind: "text" | "thinking" | "tool"; text: string; id?: string; name?: string; state?: "started" | "completed" | "failed" };
+
 export type AiRunView = {
+  /** Ordered, display-only activity for this run. */
+  activity?: ChatActivityBlock[];
   /** Ephemeral successful-stage signal; never persisted or returned by polling. */
   completionStage?: AiCompletionStage;
   messageId: string;
@@ -726,6 +789,8 @@ export type AiRunView = {
   phase: string;
   detail: string | null;
   partialText: string;
+  /** Provider-visible reasoning; display only, never part of the validated answer. */
+  thinkingText?: string;
   error: { code: string; message: string } | null;
   validationState: "valid" | "needs_review" | "invalid_unapplied" | null;
   startedAt: string;
@@ -775,7 +840,6 @@ export type VersionHistoryEntry = {
   createdAt: string;
   createdBy: string;
   originKind: string;
-  changeSummary: string | null;
   validationState: "valid" | "needs_review" | null;
   sourceTextVersionId: string | null;
   sourceTextHash: string | null;
@@ -925,6 +989,9 @@ export type FootnoteAnalysisResult = {
   limitations: string[];
 };
 
+export type MaterialRefinementInput = { scopeId: string; title: string; contentMd: string; instruction: string; mode?: "refine" | "chat"; draftMd?: string; conversation?: Array<{ role: "user" | "assistant"; content: string }> };
+export type MaterialRefinementRun = { activity?: ChatActivityBlock[]; thinkingText?: string; id: string; state: "running" | "completed" | "failed" | "canceled"; result: { contentMd: string; notes: string } | null; error: { code: string; message: string } | null };
+
 export type FootnoteAnalysisRun = {
   id: string;
   documentNodeId: string;
@@ -965,6 +1032,11 @@ export type ItkcFootnoteSearchResult = {
 };
 
 export type MunhaeApi = {
+  billing: {
+    getStatus(): Promise<IpcResult<BillingStatus>>;
+    openCheckout(): Promise<IpcResult<void>>;
+    openPortal(): Promise<IpcResult<void>>;
+  };
   dictionary: {
     search(input: DictionarySearchInput): Promise<IpcResult<DictionarySearchResult>>;
     getStatus(): Promise<IpcResult<DictionaryStatus>>;
@@ -992,9 +1064,27 @@ export type MunhaeApi = {
     quit(): Promise<void>;
     checkUpdates(): Promise<void>;
     openExternal(url: string): Promise<void>;
+    copyText(text: string): Promise<void>;
+    openChatSource(url: string): Promise<void>;
     onCommand(handler: (id: string) => void): () => void;
   };
+  onlineProjects: {
+    sharing(id: string): Promise<IpcResult<ProjectSharing>>;
+    invitations(): Promise<IpcResult<ProjectInvitation[]>>;
+    invite(input: InviteProjectMemberInput): Promise<IpcResult<string>>;
+    respond(input: { invitationId: string; accept: boolean }): Promise<IpcResult<string>>;
+    cancelInvitation(id: string): Promise<IpcResult<void>>;
+    updateMember(input: UpdateProjectMemberInput): Promise<IpcResult<void>>;
+    open(input: OpenOnlineProjectInput): Promise<IpcResult<ProjectSummary | null>>;
+    status(): Promise<IpcResult<OnlineWorkspaceStatus | null>>;
+    sync(): Promise<IpcResult<OnlineWorkspaceStatus | null>>;
+    exportRecovery(id: string): Promise<IpcResult<string | null>>;
+    create(input: CreateOnlineProjectInput): Promise<IpcResult<OnlineProject>>;
+    list(): Promise<IpcResult<OnlineProject[]>>;
+    get(id: string): Promise<IpcResult<OnlineProject>>;
+  };
   project: {
+    onChanged(handler: (event: ProjectChangeEvent) => void): () => void;
     create(input: CreateProjectInput): Promise<IpcResult<ProjectSummary>>;
     open(packagePath?: string): Promise<IpcResult<ProjectSummary | null>>;
     close(): Promise<IpcResult<void>>;
@@ -1013,6 +1103,7 @@ export type MunhaeApi = {
     createDocument(input: CreateDocumentInput): Promise<IpcResult<DocumentListItem>>;
     pickTextFile(): Promise<IpcResult<string | null>>;
     getDocumentMetadata(documentNodeId: string): Promise<IpcResult<DocumentMetadataView>>;
+    moveDocument(input: MoveDocumentInput): Promise<IpcResult<DocumentMetadataView>>;
     updateDocumentMetadata(input: UpdateDocumentMetadataInput): Promise<IpcResult<DocumentMetadataView>>;
   };
   editor: {
@@ -1043,6 +1134,16 @@ export type MunhaeApi = {
     readReference(documentNodeId: string, assetId: string): Promise<IpcResult<ReferenceAssetContent>>;
     openReference(documentNodeId: string, assetId: string): Promise<IpcResult<void>>;
   };
+  terms: {
+    list(documentId?: string): Promise<IpcResult<TermEntry[]>>;
+    delete(input: { id: string; expectedLockVersion: number }): Promise<IpcResult<void>>;
+    save(input: SaveTermInput): Promise<IpcResult<TermEntry>>;
+    promote(input: SaveTermInput): Promise<IpcResult<TermEntry>>;
+    start(documentId: string, excludedMaterialIds?: string[], glossarySelection?: TermGlossarySelection): Promise<IpcResult<TermExtractionRun>>;
+    getRun(id: string): Promise<IpcResult<TermExtractionRun>>;
+    latestRun(documentId: string): Promise<IpcResult<TermExtractionRun | null>>;
+    cancel(id: string): Promise<IpcResult<TermExtractionRun>>;
+  };
   knowledge: {
     getMaterials(documentNodeId?: string): Promise<IpcResult<MaterialsView>>;
     setMaterialPreference(input: SetMaterialPreferenceInput): Promise<IpcResult<void>>;
@@ -1053,7 +1154,7 @@ export type MunhaeApi = {
     updateContext(input: UpdateContextItemInput): Promise<IpcResult<NodeContextView>>;
     setContextEnabled(input: SetContextItemEnabledInput): Promise<IpcResult<NodeContextView>>;
     setContextPriority(input: SetContextItemPriorityInput): Promise<IpcResult<NodeContextView>>;
-    archiveContext(input: ContextItemCasInput): Promise<IpcResult<void>>;
+    deleteContext(input: ContextItemCasInput): Promise<IpcResult<void>>;
     createUncertainty(input: CreateUncertaintyInput): Promise<IpcResult<UncertaintyView>>;
     versionUncertainty(input: CreateUncertaintyVersionInput): Promise<IpcResult<UncertaintyView>>;
     resolveUncertainty(input: ResolveUncertaintyInput): Promise<IpcResult<UncertaintyView>>;
@@ -1061,7 +1162,10 @@ export type MunhaeApi = {
   context: {
     preview(input: ContextPreviewInput): Promise<IpcResult<ContextPreview>>;
   };
-  research: {
+  research: ReadingAnalysisApi & {
+    startMaterialRefinement(input: MaterialRefinementInput): Promise<IpcResult<MaterialRefinementRun>>;
+    getMaterialRefinement(id: string): Promise<IpcResult<MaterialRefinementRun>>;
+    cancelMaterialRefinement(id: string): Promise<IpcResult<MaterialRefinementRun>>;
     searchFootnotes(input: ItkcFootnoteSearchInput): Promise<IpcResult<ItkcFootnoteSearchResult>>;
     startFootnoteAnalysis(input: FootnoteAnalysisInput): Promise<IpcResult<FootnoteAnalysisRun>>;
     getFootnoteAnalysis(id: string): Promise<IpcResult<FootnoteAnalysisRun>>;
@@ -1081,6 +1185,9 @@ export type MunhaeApi = {
 };
 
 export const DEFAULT_APP_CONFIG: AppConfig = {
+  alignment: null,
+  language: "ko",
+  translationLanguage: "ko",
   agentId: "claude",
   agentModels: {
     codex: { model: "default", reasoning: "medium", serviceTier: null },

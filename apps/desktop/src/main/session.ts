@@ -1,3 +1,7 @@
+import { onlineProjectAccount } from "../shared/online-projects";
+import { translateUi } from "../shared/ui-translations";
+import { createHash } from "node:crypto";
+import { IPC_CHANNELS, type IpcChannel } from "../shared/munhae-api";
 import type { ReviewExportInput, ReviewExportSaveResult } from "../shared/munhae-api";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -39,7 +43,14 @@ import { log } from "./log";
 import { isInsidePackageRoot } from "./paths";
 import { getMainWindow } from "./window";
 import { extractMunhaePkg } from "./zip";
-import { hasActiveAiRuns } from "./ai-runs";
+import { hasActiveAiRuns, cancelAllAiRuns } from "./ai-runs";
+import { assertAuthenticatedUser, withAuthenticatedClient, subscribeAccountState, watchAuthenticatedProject } from "./auth";
+import { OnlineProjectsService, onlineProjectId } from "./online-projects";
+import { OnlineWorkspace } from "./online-workspace";
+import { OnlinePostgresRemote } from "./online-postgres-remote";
+import { emitProjectChange } from "./project-events";
+import { OnlineWorkspaceRemote } from "./online-workspace-remote";
+import type { OnlineWorkspaceStatus } from "../shared/online-projects";
 
 type SessionState = {
   userDataDir: string;
@@ -57,8 +68,78 @@ const state: SessionState = {
   config: DEFAULT_APP_CONFIG,
   current: null,
 };
+let onlineWorkspace: OnlineWorkspace | null = null;
+let openingOnline = false;
+let stopAccountWatch: (() => void) | null = null;
+const onlineRemote = new OnlinePostgresRemote(withAuthenticatedClient);
+const legacyOnlineRemote = new OnlineWorkspaceRemote(withAuthenticatedClient);
+const onlineProjects = new OnlineProjectsService(withAuthenticatedClient);
+type OnlineSaveReceipt = { value: unknown; editorDocumentId: string | null; generation: number; revision: number };
+type OnlineSaveRetries = { receipts: Map<string, OnlineSaveReceipt>; flights: Map<string, Promise<unknown>> };
+const onlineSaveRetries = new WeakMap<OnlineWorkspace, OnlineSaveRetries>();
+const MAX_ONLINE_SAVE_RECEIPTS = 8;
+const RETRYABLE_SAVE_CHANNELS = new Set<IpcChannel>([
+  IPC_CHANNELS.documentCreate, IPC_CHANNELS.documentMove, IPC_CHANNELS.documentUpdateMetadata,
+  IPC_CHANNELS.editorSaveSourceDraft, IPC_CHANNELS.editorConfirmSource, IPC_CHANNELS.editorCreatePunctuationDraft,
+  IPC_CHANNELS.editorSavePunctuationDraft, IPC_CHANNELS.editorConfirmPunctuation, IPC_CHANNELS.editorCreateTranslationDraft,
+  IPC_CHANNELS.editorResetTranslationDraft, IPC_CHANNELS.editorSaveDraft, IPC_CHANNELS.editorConfirm, IPC_CHANNELS.editorRevise,
+  IPC_CHANNELS.editorMergeBlocks, IPC_CHANNELS.editorSplitBlock, IPC_CHANNELS.editorSaveSentenceLink,
+  IPC_CHANNELS.editorCreateReviewComment, IPC_CHANNELS.editorUpdateReviewComment, IPC_CHANNELS.editorArchiveReviewComment,
+  IPC_CHANNELS.editorSaveReadingAnnotation, IPC_CHANNELS.editorArchiveReadingAnnotation, IPC_CHANNELS.editorAttachReference,
+  IPC_CHANNELS.knowledgeSetMaterialPreference, IPC_CHANNELS.knowledgeReuseCommentAsMaterial, IPC_CHANNELS.knowledgeUpsertGlossary,
+  IPC_CHANNELS.knowledgeCreateContext, IPC_CHANNELS.knowledgeUpdateContext, IPC_CHANNELS.knowledgeSetContextEnabled,
+  IPC_CHANNELS.knowledgeSetContextPriority, IPC_CHANNELS.knowledgeDeleteContext, IPC_CHANNELS.knowledgeCreateUncertainty,
+  IPC_CHANNELS.knowledgeVersionUncertainty, IPC_CHANNELS.knowledgeResolveUncertainty,
+  IPC_CHANNELS.termsSave, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsPromote, IPC_CHANNELS.termsStart, IPC_CHANNELS.termsCancel,
+  IPC_CHANNELS.aiStartTranslation, IPC_CHANNELS.aiStartChat, IPC_CHANNELS.aiStartPunctuation, IPC_CHANNELS.aiApplyPunctuationSuggestion,
+  IPC_CHANNELS.aiCancelRun, IPC_CHANNELS.researchStartMaterialRefinement, IPC_CHANNELS.researchCancelMaterialRefinement,
+  IPC_CHANNELS.researchStartFootnoteAnalysis, IPC_CHANNELS.researchCancelFootnoteAnalysis,
+  IPC_CHANNELS.researchStartReadingAnalysis, IPC_CHANNELS.researchCancelReadingAnalysis, IPC_CHANNELS.researchApplyReadingAnalysis,
+]);
+
+/** Hash only; neither document text nor auth inputs become durable retry keys/logs. */
+export function onlineSaveRequestKey(channel: IpcChannel, args: readonly unknown[]): string | undefined {
+  if (!RETRYABLE_SAVE_CHANNELS.has(channel)) return undefined;
+  try {
+    const canonical = JSON.stringify([channel, args], (_key, value) => value && typeof value === "object" && !Array.isArray(value)
+      ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+    return createHash("sha256").update(canonical).digest("hex");
+  } catch { throw new AppError("invalid_input", "저장 요청 형식을 확인하세요."); }
+}
+
+function assertOnlineSaveWorkspace(workspace: OnlineWorkspace): void {
+  assertAuthenticatedUser(onlineProjectAccount(workspace.project));
+  if (onlineWorkspace !== workspace || state.current !== workspace.repo) {
+    throw new AppError("project_transition", "프로젝트가 변경되어 이전 요청을 취소했습니다.");
+  }
+}
+
+function receiptFor(workspace: OnlineWorkspace, value: unknown): OnlineSaveReceipt {
+  const result = value as { project?: { projectId?: unknown }; document?: { id?: unknown }; source?: unknown } | null;
+  const editorDocumentId = result?.project?.projectId === workspace.repo.projectId && result.source
+    && typeof result.document?.id === "string" ? result.document.id : null;
+  // EditorView can contain a whole book. Keep its identity and re-read current
+  // versions after retry instead of retaining or returning an obsolete snapshot.
+  return { value: editorDocumentId ? undefined : structuredClone(value), editorDocumentId,
+    generation: workspace.changeGeneration, revision: workspace.status().revision };
+}
+
+function retryResult<T>(workspace: OnlineWorkspace, receipt: OnlineSaveReceipt): T {
+  if (receipt.editorDocumentId) return workspace.repo.getEditor(receipt.editorDocumentId) as T;
+  // A background sync of this receipt is safe. Additional local edits or later
+  // remote commits make a cached non-editor row/result unsafe to reintroduce.
+  if (workspace.changeGeneration !== receipt.generation || workspace.status().revision > receipt.revision + 1) {
+    throw new AppError("online_save_result_changed", "앞선 변경은 보존되어 있지만 이후 내용이 바뀌었습니다. 작성 중인 내용을 보관하고 최신 상태를 다시 확인해 주세요.");
+  }
+  return structuredClone(receipt.value) as T;
+}
+
+function assertNoOnlineTransition(): void {
+  if (openingOnline) throw new AppError("project_transition", "온라인 프로젝트를 여는 중입니다. 잠시 기다려 주세요.");
+}
 
 function toSummary(repo: ProjectRepo): ProjectSummary {
+  if (onlineWorkspace?.repo === repo) return onlineWorkspace.summary;
   return {
     projectId: repo.projectId,
     title: repo.title,
@@ -86,6 +167,18 @@ export function initSession(userDataDir: string): void {
   state.userDataDir = userDataDir;
   state.config = loadAppConfig(userDataDir);
   state.appDb = openAppDatabase(userDataDir);
+  stopAccountWatch?.();
+  stopAccountWatch = subscribeAccountState(account => {
+    const workspace = onlineWorkspace;
+    if (!workspace || (account.status === "signed_in" && account.user?.id === onlineProjectAccount(workspace.project))) return;
+    // Hide the old account's working copy synchronously, including all existing project IPC reads.
+    onlineSaveRetries.delete(workspace);
+    onlineWorkspace = null;
+    if (state.current === workspace.repo) state.current = null;
+    try { if (workspace.project.role !== "viewer") workspace.markDirty(); }
+    catch { log.warn("online recovery journal could not be updated"); }
+    void cancelAllAiRuns().finally(() => workspace.close(true)).catch(() => undefined);
+  });
   log.info("app session ready");
 }
 
@@ -95,12 +188,23 @@ export function getAppConfig(): AppConfig {
 
 export function setAppConfig(patchUnknown: unknown): AppConfig {
   const patch = parseConfigPatch(patchUnknown);
-  state.config = mergeAppConfig(state.config, patch);
-  saveAppConfig(state.userDataDir, state.config);
+  const next = mergeAppConfig(state.config, patch);
+  if (next.translationLanguage !== state.config.translationLanguage && state.current && hasActiveAiRuns(state.current.projectId)) {
+    throw new AppError("ai_run_active", "Wait for the active AI task to finish before changing the translation language.");
+  }
+  state.current?.setTranslationLanguage(next.translationLanguage);
+  try { saveAppConfig(state.userDataDir, next); } catch (error) {
+    state.current?.setTranslationLanguage(state.config.translationLanguage);
+    throw error;
+  }
+  state.config = next;
   return state.config;
 }
 
 export function getCurrentSummary(): ProjectSummary | null {
+  if (onlineWorkspace) {
+    try { assertAuthenticatedUser(onlineProjectAccount(onlineWorkspace.project)); } catch { return null; }
+  }
   return state.current ? toSummary(state.current) : null;
 }
 
@@ -108,7 +212,165 @@ export function requireRepo(): ProjectRepo {
   if (!state.current) {
     throw new AppError("no_project", "열린 프로젝트가 없습니다.");
   }
+  if (onlineWorkspace) assertAuthenticatedUser(onlineProjectAccount(onlineWorkspace.project));
   return state.current;
+}
+
+/** Native dialogs can stay open while another window changes account or project. */
+function captureExportAccess(repo: ProjectRepo): () => void {
+  const workspace = onlineWorkspace?.repo === repo ? onlineWorkspace : null;
+  return () => {
+    if (workspace) assertAuthenticatedUser(onlineProjectAccount(workspace.project));
+    if (state.current !== repo || (workspace && onlineWorkspace !== workspace)) {
+      throw new AppError("stale_request", "프로젝트가 변경되었습니다. 현재 프로젝트에서 다시 내보내 주세요.");
+    }
+  };
+}
+
+export function getOnlineWorkspaceStatus(): OnlineWorkspaceStatus | null {
+  if (!onlineWorkspace) return null;
+  try { return onlineWorkspace.status(); } catch { return null; }
+}
+
+export async function syncOnlineWorkspace(): Promise<OnlineWorkspaceStatus | null> {
+  const workspace = onlineWorkspace;
+  if (!workspace) return null;
+  await workspace.flush();
+  return workspace.status();
+}
+
+/** A successful online save reply means PostgreSQL accepted the mutation. Reads do not flush. */
+export async function withOnlineProjectSave<T>(operation: () => T | Promise<T>, allowTransition = false, requestKey?: string): Promise<T> {
+  const workspace = onlineWorkspace;
+  if (workspace && requestKey && !allowTransition) {
+    assertOnlineSaveWorkspace(workspace);
+    let retries = onlineSaveRetries.get(workspace);
+    if (!retries) { retries = { receipts: new Map(), flights: new Map() }; onlineSaveRetries.set(workspace, retries); }
+    const existingFlight = retries.flights.get(requestKey);
+    if (existingFlight) return existingFlight as Promise<T>;
+    const receipt = retries.receipts.get(requestKey);
+    if (!receipt && new Set([...retries.receipts.keys(), ...retries.flights.keys()]).size >= MAX_ONLINE_SAVE_RECEIPTS) {
+      throw new AppError("online_save_retry_limit", "완료하지 못한 온라인 저장이 남아 있습니다. 앞선 저장을 다시 시도하거나 복구본을 보관한 뒤 계속하세요.");
+    }
+    const cache = retries;
+    const flight = (async (): Promise<T> => {
+      if (receipt) {
+        await workspace.flush(); assertOnlineSaveWorkspace(workspace);
+        const result = retryResult<T>(workspace, receipt);
+        cache.receipts.delete(requestKey); return result;
+      }
+      const generation = workspace.changeGeneration;
+      const value = await operation(); assertOnlineSaveWorkspace(workspace);
+      if (workspace.changeGeneration !== generation) {
+        cache.receipts.set(requestKey, receiptFor(workspace, value));
+        await workspace.flush(); assertOnlineSaveWorkspace(workspace);
+        cache.receipts.delete(requestKey);
+      }
+      return value;
+    })();
+    cache.flights.set(requestKey, flight);
+    try { return await flight; }
+    finally { cache.flights.delete(requestKey); }
+  }
+  const generation = workspace?.changeGeneration;
+  const value = await operation();
+  if (workspace && !allowTransition) {
+    assertAuthenticatedUser(onlineProjectAccount(workspace.project));
+    if (onlineWorkspace !== workspace) throw new AppError("project_transition", "프로젝트가 변경되어 이전 요청을 취소했습니다.");
+  }
+  if (workspace && onlineWorkspace === workspace && workspace.changeGeneration !== generation) {
+    await workspace.flush();
+    assertAuthenticatedUser(onlineProjectAccount(workspace.project));
+    if (onlineWorkspace !== workspace) throw new AppError("project_transition", "프로젝트가 변경되어 이전 요청을 취소했습니다.");
+  }
+  return value;
+}
+
+/** The same hook is used after background AI completion and before leaving a workspace. */
+export async function flushOnlineWorkspace(projectId?: string): Promise<void> {
+  const workspace = onlineWorkspace;
+  if (workspace && (!projectId || workspace.repo.projectId === projectId)) await workspace.flush();
+}
+
+export async function leaveOnlineWorkspace(keepUnsynced = false): Promise<void> {
+  const workspace = onlineWorkspace;
+  if (!workspace) return;
+  if (hasActiveAiRuns(workspace.repo.projectId)) throw new AppError("ai_run_active", "AI 작업이 끝나거나 취소된 뒤 프로젝트를 바꿀 수 있습니다.");
+  if (!keepUnsynced) await workspace.flush();
+  if (onlineWorkspace !== workspace) throw new AppError("project_transition", "프로젝트가 변경되었습니다. 현재 상태를 확인해 주세요.");
+  if (hasActiveAiRuns(workspace.repo.projectId)) throw new AppError("ai_run_active", "AI 작업이 진행 중입니다.");
+  // Detach before awaiting release so no new operation can write into a closing workspace.
+  if (state.current === workspace.repo) state.current = null;
+  onlineSaveRetries.delete(workspace);
+  onlineWorkspace = null;
+  // The guarded flush above is complete. A second flush after detaching could
+  // fail and leave an open working copy with no session through which to retry.
+  await workspace.close(true);
+}
+
+export async function prepareOnlineAccountChange(): Promise<void> {
+  if (!onlineWorkspace) return;
+  assertNoOnlineTransition();
+  await cancelAllAiRuns();
+  await leaveOnlineWorkspace();
+}
+
+export async function openOnlineProject(input: unknown): Promise<ProjectSummary | null> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new AppError("invalid_input", "온라인 프로젝트를 선택하세요.");
+  const value = input as Record<string, unknown>;
+  if (Object.keys(value).some(key => key !== "id" && key !== "discardLocal") || (value.discardLocal !== undefined && typeof value.discardLocal !== "boolean")) throw new AppError("invalid_input", "온라인 프로젝트 요청을 확인하세요.");
+  const id = onlineProjectId(value.id);
+  assertNoOnlineTransition();
+  if (onlineWorkspace?.project.id === id && value.discardLocal !== true) {
+    assertAuthenticatedUser(onlineProjectAccount(onlineWorkspace.project));
+    return onlineWorkspace.summary;
+  }
+  if (hasActiveAiRuns()) throw new AppError("ai_run_active", "AI 작업이 끝나거나 취소된 뒤 프로젝트를 바꿀 수 있습니다.");
+  openingOnline = true;
+  let workspace: OnlineWorkspace | null = null;
+  try {
+    const project = await onlineProjects.get(id);
+    if (onlineWorkspace) {
+      // A deliberate server-version open keeps the pending local copy as a recovery package.
+      await leaveOnlineWorkspace(value.discardLocal === true && onlineWorkspace.project.id === id);
+    }
+    workspace = await OnlineWorkspace.open(project, { remote: onlineRemote, legacy: legacyOnlineRemote, refreshProject: id => onlineProjects.get(id), watch: watchAuthenticatedProject, onChange: emitProjectChange,
+      root: join(state.userDataDir, "online-projects"), assertUser: assertAuthenticatedUser }, value.discardLocal === true);
+    assertAuthenticatedUser(project.accountId ?? project.ownerId);
+    if (hasActiveAiRuns()) throw new AppError("ai_run_active", "AI 작업이 진행 중입니다.");
+    const previous = state.current;
+    if (project.role === "owner") workspace.repo.setTranslationLanguage(state.config.translationLanguage);
+    await workspace.flush();
+    state.current = workspace.repo;
+    onlineWorkspace = workspace;
+    previous?.close();
+    return workspace.summary;
+  } catch (error) {
+    if (workspace && workspace !== onlineWorkspace) await workspace.close(true);
+    throw error;
+  } finally { openingOnline = false; }
+}
+
+export async function exportOnlineRecovery(input: unknown): Promise<string | null> {
+  const id = onlineProjectId(input);
+  // Recovery must remain available when the Data API or Storage is unreachable.
+  const project = onlineWorkspace?.project.id === id ? onlineWorkspace.project : await withAuthenticatedClient(async (_client, ownerId) => {
+    const path = join(OnlineWorkspace.directory(join(state.userDataDir, "online-projects"), ownerId, id), "workspace.munhae");
+    if (!existsSync(path)) throw new AppError("not_found", "이 기기에 보관된 온라인 작업본이 없습니다.");
+    return { id, ownerId, accountId: ownerId, title: readManifest(path).title };
+  });
+  const directory = OnlineWorkspace.directory(join(state.userDataDir, "online-projects"), project.accountId ?? project.ownerId, project.id);
+  const packagePath = join(directory, "workspace.munhae");
+  if (!existsSync(packagePath)) throw new AppError("not_found", "이 기기에 보관된 온라인 작업본이 없습니다.");
+  const result = await saveDialog({ title: "온라인 작업 복구본 내보내기",
+    defaultPath: join(app.getPath("documents"), backupFileName(`${project.title}-복구본`)),
+    filters: [{ name: "Munhae backup", extensions: ["munhaepkg"] }] });
+  if (result.canceled || !result.filePath) return null;
+  assertAuthenticatedUser(project.accountId ?? project.ownerId);
+  const repo = onlineWorkspace?.project.id === project.id ? onlineWorkspace.repo : openProject(packagePath, { onlineCache: true });
+  const destination = result.filePath.endsWith(".munhaepkg") ? result.filePath : `${result.filePath}.munhaepkg`;
+  try { repo.backupTo(destination); } finally { if (repo !== onlineWorkspace?.repo) repo.close(); }
+  return destination;
 }
 
 export function getRuntimeSessionRef(input: {
@@ -156,6 +418,7 @@ function adoptRepo(repo: ProjectRepo, summary?: ProjectSummary): ProjectSummary 
     repo.close();
     throw new AppError("ai_run_active", "AI 번역이 끝나거나 취소된 뒤 프로젝트를 바꿀 수 있습니다.");
   }
+  repo.setTranslationLanguage(state.config.translationLanguage);
   state.current = repo;
   if (prev && prev !== repo) {
     try {
@@ -181,11 +444,19 @@ function adoptRepo(repo: ProjectRepo, summary?: ProjectSummary): ProjectSummary 
 }
 
 async function openDialog(options: OpenDialogOptions): Promise<OpenDialogReturnValue> {
+  const localize = (value: string | undefined) => value === undefined ? undefined : translateUi(value, state.config.language);
+  options = { ...options, title: localize(options.title), message: localize(options.message), buttonLabel: localize(options.buttonLabel),
+    filters: options.filters?.map(filter => ({ ...filter, name: localize(filter.name)! })) };
+
   const win = parentWindow();
   return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
 }
 
 async function saveDialog(options: SaveDialogOptions): Promise<SaveDialogReturnValue> {
+  const localize = (value: string | undefined) => value === undefined ? undefined : translateUi(value, state.config.language);
+  options = { ...options, title: localize(options.title), message: localize(options.message), buttonLabel: localize(options.buttonLabel),
+    filters: options.filters?.map(filter => ({ ...filter, name: localize(filter.name)! })) };
+
   const win = parentWindow();
   return win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options);
 }
@@ -262,6 +533,9 @@ export async function openProjectFromPath(
   rawPath: string,
   beforeAdopt?: SessionTransitionPreflight,
 ): Promise<ProjectSummary | null> {
+  assertNoOnlineTransition();
+  // Internal account caches must only be opened through authenticated online session handling.
+  if (isInsidePackageRoot(join(state.userDataDir, "online-projects"), resolve(rawPath))) throw new AppError("invalid_path", "온라인 프로젝트는 온라인 목록에서 열어 주세요.");
   if (state.current && resolve(state.current.packagePath) === resolve(rawPath)) {
     return toSummary(state.current);
   }
@@ -276,6 +550,7 @@ export async function openProjectFromPath(
   let adopted = false;
   try {
     if (beforeAdopt && !(await beforeAdopt())) return null;
+    await leaveOnlineWorkspace();
     adopted = true;
     return adoptRepo(repo);
   } finally {
@@ -303,6 +578,7 @@ export async function createProjectInteractive(
   input: CreateProjectInput,
   beforeAdopt?: SessionTransitionPreflight,
 ): Promise<ProjectSummary | null> {
+  assertNoOnlineTransition();
   const parentDir = input.parentDir
     ? assertExistingDir(input.parentDir)
     : await chooseDirectory("새 프로젝트를 만들 폴더");
@@ -310,6 +586,7 @@ export async function createProjectInteractive(
     throw new AppError("cancelled", "폴더 선택이 취소되었습니다.");
   }
   if (beforeAdopt && !(await beforeAdopt())) return null;
+  await leaveOnlineWorkspace();
   const created = createProject({ title: input.title, parentDir });
   return adoptRepo(created.handle, created.summary);
 }
@@ -347,6 +624,8 @@ function demoParentDir(): string {
 export function seedDemo(): ProjectSummary;
 export function seedDemo(beforeAdopt: SyncSessionTransitionPreflight): ProjectSummary | null;
 export function seedDemo(beforeAdopt?: SyncSessionTransitionPreflight): ProjectSummary | null {
+  assertNoOnlineTransition();
+  if (onlineWorkspace) throw new AppError("online_workspace_pending", "온라인 프로젝트를 닫은 뒤 데모를 여세요.");
   if (beforeAdopt && !beforeAdopt()) return null;
   const repo = seedDemoProject(demoParentDir());
   return adoptRepo(repo);
@@ -356,6 +635,10 @@ export function closeProject(
   force = false,
   beforeClose?: SyncSessionTransitionPreflight,
 ): void {
+  if (!force) {
+    assertNoOnlineTransition();
+    if (onlineWorkspace) throw new AppError("online_workspace_pending", "온라인 프로젝트 저장을 마친 뒤 닫아 주세요.");
+  }
   const current = state.current;
   if (!current) return;
   if (!force && hasActiveAiRuns(current.projectId)) {
@@ -380,7 +663,8 @@ function backupFileName(title: string, date = new Date()): string {
 
 export async function backupProject(): Promise<string | null> {
   const repo = requireRepo();
-  const parent = dirname(repo.packagePath);
+  const assertExportAccess = captureExportAccess(repo);
+  const parent = onlineWorkspace ? app.getPath("documents") : dirname(repo.packagePath);
   const defaultPath = join(parent, backupFileName(repo.title));
   const result = await saveDialog({
     title: "프로젝트 백업",
@@ -388,6 +672,7 @@ export async function backupProject(): Promise<string | null> {
     filters: [{ name: "Munhae backup", extensions: ["munhaepkg"] }],
   });
   if (result.canceled || !result.filePath) return null;
+  assertExportAccess();
   const dest = result.filePath.toLowerCase().endsWith(".munhaepkg")
     ? result.filePath
     : `${result.filePath}.munhaepkg`;
@@ -400,6 +685,7 @@ export async function exportConfirmedTranslations(
   input: ConfirmedExportInput,
 ): Promise<ExportSaveResult | null> {
   const repo = requireRepo();
+  const assertExportAccess = captureExportAccess(repo);
   const payload = repo.createConfirmedExport(input);
   const labels = {
     markdown: "Markdown",
@@ -408,10 +694,11 @@ export async function exportConfirmedTranslations(
   } as const;
   const result = await saveDialog({
     title: `확정 번역 ${labels[payload.format]} 내보내기`,
-    defaultPath: join(dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`),
+    defaultPath: join(onlineWorkspace ? app.getPath("documents") : dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`),
     filters: [{ name: labels[payload.format], extensions: [payload.extension] }],
   });
   if (result.canceled || !result.filePath) return null;
+  assertExportAccess();
   const suffix = `.${payload.extension}`;
   const filePath = result.filePath.toLocaleLowerCase().endsWith(suffix)
     ? result.filePath
@@ -474,6 +761,8 @@ export async function openProjectPathInOs(target: string): Promise<void> {
 }
 
 export function shutdownSession(): void {
+  stopAccountWatch?.();
+  stopAccountWatch = null;
   closeProject(true);
   if (state.appDb) {
     try {
@@ -499,9 +788,11 @@ export function projectPathFromArgv(argv: string[]): string | null {
 
 export async function exportReviewTranslations(input: ReviewExportInput): Promise<ReviewExportSaveResult | null> {
   const repo = requireRepo();
+  const assertExportAccess = captureExportAccess(repo);
   const payload = repo.createReviewExport(input);
-  const result = await saveDialog({ title: "번역 검토본 내보내기", defaultPath: join(dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`), filters: [{ name: payload.format === "html" ? "인쇄용 HTML" : "Markdown", extensions: [payload.extension] }] });
+  const result = await saveDialog({ title: "번역 검토본 내보내기", defaultPath: join(onlineWorkspace ? app.getPath("documents") : dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`), filters: [{ name: payload.format === "html" ? "인쇄용 HTML" : "Markdown", extensions: [payload.extension] }] });
   if (result.canceled || !result.filePath) return null;
+  assertExportAccess();
   const suffix = `.${payload.extension}`;
   const filePath = result.filePath.toLowerCase().endsWith(suffix) ? result.filePath : `${result.filePath}${suffix}`;
   writeFileSync(filePath, payload.content, { encoding: "utf8" });

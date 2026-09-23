@@ -858,8 +858,8 @@ describe("strict JSONL parsers", () => {
       { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "before Cook" } } },
       { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "ie: cookie-value\na split-delta-" } } },
       { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "secret after" } } },
-      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "thinking_delta", thinking: "split-delta-" } } },
-      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "thinking_delta", thinking: "secret" } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "thinking_delta", thinking: "검토 " } } },
+      { type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "thinking_delta", thinking: "중" } } },
       { type: "assistant", message: { id: "message-secret", content: [{ type: "text", text: "duplicate final block" }] } },
       { type: "result", is_error: false, usage: {} },
     ].map((record) => JSON.stringify(record)).join("\n") + "\n");
@@ -872,7 +872,7 @@ describe("strict JSONL parsers", () => {
     expect(publicEvents).not.toContain("cookie-value");
     expect(publicEvents).not.toContain(secret);
     expect(events.filter((event) => (event as { type?: string }).type === "thinking_delta"))
-      .toEqual([{ type: "thinking_delta", text: "" }]);
+      .toEqual([{ type: "thinking_delta", text: "" }, { type: "thinking_delta", text: "검토 " }, { type: "thinking_delta", text: "중" }]);
     expect(events).toContainEqual({ type: "text_delta", text: result.outputText });
   });
 
@@ -975,8 +975,8 @@ describe("strict JSONL parsers", () => {
     claude.finish();
     expect(claude.snapshot().error).toBeNull();
     expect(events).toEqual(expect.arrayContaining([
-      { type: "tool_call", name: "Bash", state: "started" },
-      { type: "tool_call", name: "Bash", state: "completed" },
+      { type: "tool_call", id: "tool-1", name: "Bash", state: "started" },
+      { type: "tool_call", id: "tool-1", name: "Bash", state: "completed" },
     ]));
     expect(JSON.stringify(events)).not.toContain("must stay private");
   });
@@ -1004,8 +1004,8 @@ describe("strict JSONL parsers", () => {
     parser.finish();
     expect(parser.snapshot().error).toBeNull();
     expect(events).toEqual(expect.arrayContaining([
-      { type: "tool_call", name: "command_execution", state: "started" },
-      { type: "tool_call", name: "command_execution", state: "completed" },
+      { type: "tool_call", id: "command-1", name: "command_execution", state: "started" },
+      { type: "tool_call", id: "command-1", name: "command_execution", state: "completed" },
     ]));
     expect(JSON.stringify(events)).not.toContain("private command");
   });
@@ -1170,6 +1170,17 @@ describe("fake CLI integration", () => {
       }
     },
   );
+
+  it("applies user-context overrides only to an opted-in fresh Codex run", async () => {
+    const fake = await makeFakeCli("codex");
+    const adapter = createCodexAdapter({ binary: fake.binary, tempRoot: suiteDir });
+    const result = await adapter.run({ runId: "codex-context-isolated", prompt: "extract", codexDisableUserContext: true });
+    expect(result.ok).toBe(true);
+    const run = await readRun("codex", "success");
+    expect(run.args).toContain("memories.use_memories=false");
+    expect(run.args).toContain("project_doc_max_bytes=0");
+    expect(run.args.some((arg: string) => arg.startsWith("skills.config=["))).toBe(true);
+  });
 
   it("runs Codex via stdin in an isolated cwd with an output-schema file", async () => {
     const fake = await makeFakeCli("codex");
@@ -1430,6 +1441,24 @@ describe("fake CLI integration", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.code).toBe("canceled");
+  });
+
+  it("disables the default timeout explicitly while retaining manual cancellation", async () => {
+    const fake = await makeFakeCli("codex", "hang");
+    const adapter = createCodexAdapter({ binary: fake.binary, tempRoot: suiteDir, defaultTimeoutMs: 40, cancelGraceMs: 20, killGraceMs: 20 });
+    let initialized!: () => void;
+    const ready = new Promise<void>(resolve => { initialized = resolve; });
+    let settled = false;
+    const running = adapter.run({ runId: "unlimited", prompt: "terms", timeoutMs: 0, inactivityTimeoutMs: 0 }, event => {
+      if (event.type === "session") initialized();
+    }).then(result => { settled = true; return result; });
+    await ready;
+    await new Promise(resolve => setTimeout(resolve, 100));
+    expect(settled).toBe(false);
+    await adapter.cancel("unlimited");
+    const result = await running;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("canceled");
   });
 
   it("enforces a hard timeout", async () => {

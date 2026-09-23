@@ -12,7 +12,7 @@ import { loadMigrationSql } from "./sql.ts";
 import { contextItemContentHash, type ContextItemContent } from "./knowledge-content.ts";
 import type { SqliteDb } from "./sqlite.ts";
 
-export const PROJECT_SCHEMA_VERSION = 7;
+export const PROJECT_SCHEMA_VERSION = 10;
 const PROJECT_BASELINE_NAME = "001_init.sql";
 const PROJECT_BASELINE_PATH = "sqlite/001_init.sql";
 const PROJECT_MIGRATIONS = [
@@ -23,6 +23,9 @@ const PROJECT_MIGRATIONS = [
   "005_remove_people_places.sql",
   "006_reading_annotations.sql",
   "007_translation_materials.sql",
+  "008_term_review.sql",
+  "009_comment_references.sql",
+  "010_remove_change_summary.sql",
 ] as const;
 
 type ProjectMigrationRow = {
@@ -178,6 +181,9 @@ export function migrateProjectDb(db: SqliteDb): void {
   );
   applySqlMigration(db, loadMigrationSql("sqlite/006_reading_annotations.sql"), "006_reading_annotations.sql", 6);
   applySqlMigration(db, loadMigrationSql("sqlite/007_translation_materials.sql"), "007_translation_materials.sql", 7);
+  applySqlMigration(db, loadMigrationSql("sqlite/008_term_review.sql"), "008_term_review.sql", 8);
+  applySqlMigration(db, loadMigrationSql("sqlite/009_comment_references.sql"), "009_comment_references.sql", 9);
+  applySqlMigration(db, loadMigrationSql("sqlite/010_remove_change_summary.sql"), "010_remove_change_summary.sql", 10);
 }
 
 export function migrateAppDb(db: SqliteDb): void {

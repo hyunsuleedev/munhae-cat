@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AccountState, IpcResult, MunhaeApi } from "../src/shared/munhae-api";
 
+// Billing has its own UI tests; isolate authentication state ordering here.
+vi.mock("../src/renderer/scripts/billing-ui", () => ({
+  mountBilling: () => ({ setAccount: vi.fn(), render: vi.fn(), refresh: vi.fn() }),
+}));
+
 const shared = vi.hoisted(() => ({ api: undefined as unknown, must: undefined as unknown }));
 vi.mock("../src/renderer/scripts/shared", () => ({
   initShell: () => ({ api: shared.api }),
@@ -56,13 +61,13 @@ async function fixture({ embedded = true, search = "" }: { embedded?: boolean; s
   shared.must = element;
   const replace = vi.fn();
   vi.stubGlobal("location", { search, replace });
-  vi.stubGlobal("window", { setInterval: vi.fn() });
+  vi.stubGlobal("window", { setInterval: vi.fn(), addEventListener: vi.fn() });
   const modeButtons = ["SignIn", "SignUp", "Reset"].map((name) => {
     const button = element(`#account${name}Link`);
     button.dataset.accountMode = name.toLowerCase();
     return button;
   });
-  vi.stubGlobal("document", { querySelectorAll: (selector: string) => selector === "[data-account-mode]" ? modeButtons : [] });
+  vi.stubGlobal("document", { addEventListener: vi.fn(), querySelectorAll: (selector: string) => selector === "[data-account-mode]" ? modeButtons : [] });
   let controller: { deactivate(): void } | null = null;
   if (embedded) {
     const { mountAccount } = await import("../src/renderer/scripts/account-ui");

@@ -1,3 +1,4 @@
+import { ui, t } from "./i18n";
 import type { EditorView } from "../../shared/munhae-api";
 import { createPunctuationProjection } from "./punctuation-projection";
 
@@ -107,7 +108,7 @@ export function buildReadingUnits(view: EditorView): ReadingUnit[] {
         || !sentence.text.trim() || translated.slice(sentence.from, sentence.to).join("") !== sentence.text
         || !link.spans.every(validSourceRange)) return;
       units.push({
-        id: `translation:${sentence.id}`, label: `번역 문장 ${index + 1}`, translation: sentence.text,
+        id: `translation:${sentence.id}`, label: ui`번역 문장 ${index + 1}`, translation: sentence.text,
         ranges: mergeRanges(link.spans, source), needsReview: link.needsReview || layout.state !== "ready" || !!layout.error,
       });
     });
@@ -145,7 +146,7 @@ export function buildReadingUnits(view: EditorView): ReadingUnit[] {
       // A single grapheme can exceed the limit; never separate its combining marks.
       const to = naturalEnd ?? boundedEnd ?? graphemeEnds[after(graphemeEnds, from)]!;
       const quote = source.slice(from, to).join("");
-      if (quote.trim()) units.push({ id: `source:${from}:${to}`, label: "원문 구절", translation: null,
+      if (quote.trim()) units.push({ id: `source:${from}:${to}`, label: t("원문 구절"), translation: null,
         ranges: [{ from, to, quote }], needsReview: !!translation });
       from = to;
     }

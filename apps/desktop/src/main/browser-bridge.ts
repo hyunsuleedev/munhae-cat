@@ -1,5 +1,9 @@
+import { READING_ANALYSIS_CHANNELS, dispatchReadingAnalysis } from "./reading-analysis-handlers";
+import { onlineSaveRequestKey, withOnlineProjectSave } from "./session";
+import { latestTermExtraction, startTermExtraction, getTermExtraction, cancelTermExtraction } from "./term-review";
+import { startMaterialRefinement, getMaterialRefinement, cancelMaterialRefinement } from "./material-refinement";
 import { MATERIAL_CHANNELS, dispatchMaterial } from "./translation-materials";
-import { parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
+import { parseTermGlossarySelection, parseTermMaterialExclusions, parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
 import { exportReviewTranslations } from "./session";
 import { app } from "electron";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -51,11 +55,12 @@ import {
   parseUpdateContextItemInput,
   parseUpdateReviewCommentInput,
   parseUpdateDocumentMetadataInput,
+  parseMoveDocumentInput,
   parseVersionDiffInput,
 } from "./ipc-validate";
 import { attachReferenceInteractive, openReference, readReference } from "./reference-assets";
 import { log, redact } from "./log";
-import { openHttpsExternal } from "./security";
+import { openHttpsExternal, openChatSource } from "./security";
 import {
   backupProject,
   closeProject,
@@ -85,7 +90,11 @@ import {
 import { getAgentLoginInstruction } from "./agent-runtime-client";
 import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
 import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
+import { ONLINE_PROJECT_CHANNELS, dispatchOnlineProject } from "./online-project-handlers";
+import { BILLING_CHANNELS, dispatchBilling } from "./billing-handlers";
+import { leaveOnlineWorkspace } from "./session";
 import { subscribeAccountState, withAccount } from "./auth";
+import { serveProjectEvents } from "./project-events";
 import { serveBrowserAuthEvents } from "./browser-auth-events";
 
 const runtimeSessionStore = {
@@ -101,7 +110,10 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.dictionaryGetStatus,
   IPC_CHANNELS.dictionarySetKey,
   ...ACCOUNT_CHANNELS,
+  ...BILLING_CHANNELS,
+  ...ONLINE_PROJECT_CHANNELS,
   ...READING_ANNOTATION_CHANNELS,
+  ...READING_ANALYSIS_CHANNELS,
   ...MATERIAL_CHANNELS,
   IPC_CHANNELS.appGetVersion,
   IPC_CHANNELS.appGetConfig,
@@ -110,6 +122,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.appGetLoginInstruction,
   IPC_CHANNELS.appQuit,
   IPC_CHANNELS.appOpenExternal,
+  IPC_CHANNELS.appOpenChatSource,
   IPC_CHANNELS.projectCreate,
   IPC_CHANNELS.projectOpen,
   IPC_CHANNELS.projectClose,
@@ -127,6 +140,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.documentPickText,
   IPC_CHANNELS.documentGetMetadata,
   IPC_CHANNELS.documentUpdateMetadata,
+  IPC_CHANNELS.documentMove,
   IPC_CHANNELS.editorGet,
   IPC_CHANNELS.editorSaveSourceDraft,
   IPC_CHANNELS.editorConfirmSource,
@@ -156,12 +170,16 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.knowledgeUpdateContext,
   IPC_CHANNELS.knowledgeSetContextEnabled,
   IPC_CHANNELS.knowledgeSetContextPriority,
-  IPC_CHANNELS.knowledgeArchiveContext,
+  IPC_CHANNELS.knowledgeDeleteContext,
   IPC_CHANNELS.knowledgeCreateUncertainty,
   IPC_CHANNELS.knowledgeVersionUncertainty,
   IPC_CHANNELS.knowledgeResolveUncertainty,
   IPC_CHANNELS.contextPreview,
   IPC_CHANNELS.researchSearchFootnotes,
+  IPC_CHANNELS.termsList, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsSave, IPC_CHANNELS.termsPromote, IPC_CHANNELS.termsStart, IPC_CHANNELS.termsGetRun, IPC_CHANNELS.termsLatestRun, IPC_CHANNELS.termsCancel,
+  IPC_CHANNELS.researchStartMaterialRefinement,
+  IPC_CHANNELS.researchGetMaterialRefinement,
+  IPC_CHANNELS.researchCancelMaterialRefinement,
   IPC_CHANNELS.researchStartFootnoteAnalysis,
   IPC_CHANNELS.researchGetFootnoteAnalysis,
   IPC_CHANNELS.researchCancelFootnoteAnalysis,
@@ -221,15 +239,30 @@ async function readBody(req: IncomingMessage, limit = BODY_LIMIT): Promise<unkno
 }
 
 async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> {
+  const wrap = <T>(fn: () => T | Promise<T>, allowTransition = false) => wrapResult(fn, allowTransition, onlineSaveRequestKey(channel, args));
+  if (BILLING_CHANNELS.includes(channel)) return wrap(() => dispatchBilling(channel));
+  if (ONLINE_PROJECT_CHANNELS.includes(channel)) return wrap(() => dispatchOnlineProject(channel, args[0]), channel === IPC_CHANNELS.onlineProjectsOpen);
+  if (READING_ANALYSIS_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnalysis(channel, args[0]));
   if (READING_ANNOTATION_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnnotation(channel, args[0]));
   if (channel === IPC_CHANNELS.dictionarySearch) return wrap(() => dictionarySearch(args[0]));
   if (channel === IPC_CHANNELS.dictionaryGetStatus) return wrap(() => dictionaryGetStatus());
   if (channel === IPC_CHANNELS.dictionarySetKey) return wrap(() => dictionarySetKey(args[0]));
   if (channel === IPC_CHANNELS.researchSearchFootnotes) return wrap(() => searchItkcFootnotes(args[0]));
+  if (channel === IPC_CHANNELS.termsList) return wrap(() => requireRepo().getTerms(args[0] == null ? undefined : parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.termsDelete) return wrap(() => requireRepo().deleteTerm(args[0] as { id: string; expectedLockVersion: number }));
+  if (channel === IPC_CHANNELS.termsSave) return wrap(() => requireRepo().saveTerm(args[0] as import("@munhae/db-sqlite").SaveTermInput));
+  if (channel === IPC_CHANNELS.termsPromote) return wrap(() => requireRepo().promoteTerm(args[0] as import("@munhae/db-sqlite").SaveTermInput));
+  if (channel === IPC_CHANNELS.termsStart) return wrap(() => startTermExtraction(requireRepo(), getAppConfig(), parseMessageId(args[0]), parseTermMaterialExclusions(args[1]), parseTermGlossarySelection(args[2])));
+  if (channel === IPC_CHANNELS.termsGetRun) return wrap(() => getTermExtraction(requireRepo(), parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.termsLatestRun) return wrap(() => latestTermExtraction(requireRepo(), parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.termsCancel) return wrap(() => cancelTermExtraction(requireRepo(), parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.researchStartMaterialRefinement) return wrap(() => startMaterialRefinement(requireRepo(), getAppConfig(), args[0]));
+  if (channel === IPC_CHANNELS.researchGetMaterialRefinement) return wrap(() => getMaterialRefinement(requireRepo(), parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.researchCancelMaterialRefinement) return wrap(() => cancelMaterialRefinement(requireRepo(), parseMessageId(args[0])));
   if (channel === IPC_CHANNELS.researchStartFootnoteAnalysis) return wrap(() => startFootnoteAnalysis(requireRepo(), getAppConfig(), args[0]));
   if (channel === IPC_CHANNELS.researchGetFootnoteAnalysis) return wrap(() => getFootnoteAnalysis(requireRepo(), parseMessageId(args[0])));
   if (channel === IPC_CHANNELS.researchCancelFootnoteAnalysis) return wrap(() => cancelFootnoteAnalysis(requireRepo(), parseMessageId(args[0])));
-  if (ACCOUNT_CHANNELS.includes(channel)) return wrap(() => dispatchAccount(channel, args[0]));
+  if (ACCOUNT_CHANNELS.includes(channel)) return wrap(() => dispatchAccount(channel, args[0]), true);
   if (MATERIAL_CHANNELS.includes(channel)) return wrap(() => dispatchMaterial(channel, args[0]));
   switch (channel) {
     case IPC_CHANNELS.appGetVersion: return app.getVersion();
@@ -240,14 +273,17 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
     case IPC_CHANNELS.appQuit:
       setImmediate(() => app.quit());
       return undefined;
+    case IPC_CHANNELS.appOpenChatSource:
+      if (typeof args[0] !== "string") throw new Error("올바른 웹 주소가 아닙니다.");
+      return openChatSource(args[0]);
     case IPC_CHANNELS.appOpenExternal:
       if (typeof args[0] !== "string") throw new Error("https 주소만 열 수 있습니다.");
       return openHttpsExternal(args[0]);
     case IPC_CHANNELS.projectGetCurrent: return getCurrentSummary();
     case IPC_CHANNELS.projectListRecent: return listRecent();
-    case IPC_CHANNELS.projectCreate: return wrap(() => createProjectInteractive(parseCreateProjectInput(args[0])));
-    case IPC_CHANNELS.projectOpen: return wrap(() => openProjectInteractive(parseOptionalPath(args[0])));
-    case IPC_CHANNELS.projectClose: return wrap(() => closeProject());
+    case IPC_CHANNELS.projectCreate: return wrap(() => createProjectInteractive(parseCreateProjectInput(args[0])), true);
+    case IPC_CHANNELS.projectOpen: return wrap(() => openProjectInteractive(parseOptionalPath(args[0])), true);
+    case IPC_CHANNELS.projectClose: return wrap(async () => { await leaveOnlineWorkspace(); closeProject(); }, true);
     case IPC_CHANNELS.projectBackup: return wrap(() => backupProject());
     case IPC_CHANNELS.projectConcordance:
       return wrap(() => requireRepo().concordance(parseConcordanceInput(args[0])));
@@ -257,13 +293,14 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => exportConfirmedTranslations(parseConfirmedExportInput(args[0])));
     case IPC_CHANNELS.projectSearch:
       return wrap(() => requireRepo().search(parseSearchQueryInput(args[0])));
-    case IPC_CHANNELS.projectCreateFromPaste: return wrap(() => createFromPaste(parseCreateFromPasteInput(args[0])));
-    case IPC_CHANNELS.projectSeedDemo: return wrap(() => seedDemo());
+    case IPC_CHANNELS.projectCreateFromPaste: return wrap(() => createFromPaste(parseCreateFromPasteInput(args[0])), true);
+    case IPC_CHANNELS.projectSeedDemo: return wrap(async () => { await leaveOnlineWorkspace(); return seedDemo(); }, true);
     case IPC_CHANNELS.homeGet: return wrap(() => getHome());
     case IPC_CHANNELS.documentCreate: return wrap(() => requireRepo().createDocument(parseCreateDocumentInput(args[0])));
     case IPC_CHANNELS.documentPickText: return wrap(() => pickTextFile());
     case IPC_CHANNELS.documentGetMetadata:
       return wrap(() => requireRepo().getDocumentMetadata(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.documentMove: return wrap(() => requireRepo().moveDocument(parseMoveDocumentInput(args[0])));
     case IPC_CHANNELS.documentUpdateMetadata:
       return wrap(() => requireRepo().updateDocumentMetadata(parseUpdateDocumentMetadataInput(args[0])));
     case IPC_CHANNELS.editorGet: return wrap(() => requireRepo().getEditor(parseDocumentNodeId(args[0])));
@@ -318,8 +355,8 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => requireRepo().setContextItemEnabled(parseSetContextItemEnabledInput(args[0])));
     case IPC_CHANNELS.knowledgeSetContextPriority:
       return wrap(() => requireRepo().setContextItemPriority(parseSetContextItemPriorityInput(args[0])));
-    case IPC_CHANNELS.knowledgeArchiveContext:
-      return wrap(() => requireRepo().archiveContextItem(parseContextItemCasInput(args[0])));
+    case IPC_CHANNELS.knowledgeDeleteContext:
+      return wrap(() => requireRepo().deleteContextItem(parseContextItemCasInput(args[0])));
     case IPC_CHANNELS.knowledgeCreateUncertainty:
       return wrap(() => requireRepo().createUncertainty(parseCreateUncertaintyInput(args[0])));
     case IPC_CHANNELS.knowledgeVersionUncertainty:
@@ -363,9 +400,9 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
   }
 }
 
-async function wrap<T>(fn: () => T | Promise<T>): Promise<IpcResult<T>> {
+async function wrapResult<T>(fn: () => T | Promise<T>, allowTransition = false, requestKey?: string): Promise<IpcResult<T>> {
   try {
-    return { ok: true, data: await fn() };
+    return { ok: true, data: await withOnlineProjectSave(fn, allowTransition, requestKey) };
   } catch (error) {
     log.warn("browser bridge rejected", { code: errorCode(error) });
     return toResultError(error);
@@ -389,12 +426,12 @@ async function handle(req: IncomingMessage, res: ServerResponse, origin: string)
     res.end();
     return;
   }
-  if (req.method !== "POST" || (req.url !== "/api" && req.url !== "/auth-events")) {
+  if (req.method !== "POST" || (req.url !== "/api" && req.url !== "/auth-events" && req.url !== "/project-events")) {
     writeJson(res, 404, { error: "not_found" }, origin);
     return;
   }
   try {
-    if (req.url === "/auth-events") {
+    if (req.url === "/auth-events" || req.url === "/project-events") {
       await readBody(req, 1_024);
       if (accountStreams.size >= 64) {
         writeJson(res, 503, { error: "too_many_subscriptions" }, origin);
@@ -402,7 +439,9 @@ async function handle(req: IncomingMessage, res: ServerResponse, origin: string)
       }
       let closed = false;
       let close = () => undefined as void;
-      close = serveBrowserAuthEvents(res, origin, {
+      close = req.url === "/project-events"
+        ? serveProjectEvents(res, origin, () => { closed = true; accountStreams.delete(close); })
+        : serveBrowserAuthEvents(res, origin, {
         subscribe: subscribeAccountState,
         getState: () => withAccount((account) => account.getState()),
       }, () => { closed = true; accountStreams.delete(close); });

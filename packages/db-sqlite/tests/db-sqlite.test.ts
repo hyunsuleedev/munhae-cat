@@ -191,8 +191,8 @@ describe("create / open", () => {
   it("ships the original baseline and a mirrored full-text upgrade", () => {
     const packageMigrations = new URL("../migrations/sqlite/", import.meta.url);
     const infraMigrations = new URL("../../../infra/migrations/sqlite/", import.meta.url);
-    expect(readdirSync(packageMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql"]);
-    expect(readdirSync(infraMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql"]);
+    expect(readdirSync(packageMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql", "008_term_review.sql", "009_comment_references.sql", "010_remove_change_summary.sql"]);
+    expect(readdirSync(infraMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql", "008_term_review.sql", "009_comment_references.sql", "010_remove_change_summary.sql"]);
     expect(readFileSync(new URL("001_init.sql", packageMigrations)))
       .toEqual(readFileSync(new URL("001_init.sql", infraMigrations)));
     expect(PROJECT_INIT_SQL).toBe(readFileSync(new URL("001_init.sql", packageMigrations), "utf8"));
@@ -241,7 +241,7 @@ describe("create / open", () => {
          JOIN core_translation_policy_heads head
          JOIN core_translation_policy_versions version ON version.id = head.current_version_id`,
       ).get()).toEqual({
-        schema_version: 7,
+        schema_version: 10,
         style_guide_md: "현재 문서 전체를 빠짐없이 자연스러운 한국어로 번역한다.",
         rules_json: '{"sourceLanguage":"lzh","targetLocale":"ko","audience":"연구자·일반 독자","hanjaPolicy":"중요 용어는 한국어(漢字)로 병기한다.","supplementPolicy":"원문 밖 보충은 별도 표시한다.","uncertaintyPolicy":"textual uncertainty와 interpretive uncertainty를 분리한다."}',
       });
@@ -264,7 +264,7 @@ describe("create / open", () => {
       expect(agentSessionColumns).not.toContain("native_session_id");
       expect(db.prepare(
         "SELECT version, name FROM meta_schema_migrations ORDER BY version",
-      ).all()).toEqual([{ version: 1, name: "001_init.sql" }, { version: 2, name: "002_full_text_translation.sql" }, { version: 3, name: "003_context_without_kind.sql" }, { version: 4, name: "004_review_comments.sql" }, { version: 5, name: "005_remove_people_places.sql" }, { version: 6, name: "006_reading_annotations.sql" }, { version: 7, name: "007_translation_materials.sql" }]);
+      ).all()).toEqual([{ version: 1, name: "001_init.sql" }, { version: 2, name: "002_full_text_translation.sql" }, { version: 3, name: "003_context_without_kind.sql" }, { version: 4, name: "004_review_comments.sql" }, { version: 5, name: "005_remove_people_places.sql" }, { version: 6, name: "006_reading_annotations.sql" }, { version: 7, name: "007_translation_materials.sql" }, { version: 8, name: "008_term_review.sql" }, { version: 9, name: "009_comment_references.sql" }, { version: 10, name: "010_remove_change_summary.sql" }]);
       expect(db.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'reflection_%'",
       ).all()).toEqual([]);
@@ -282,11 +282,11 @@ describe("create / open", () => {
 
     const db = openSqlite(dbPath);
     try {
-      db.prepare("UPDATE meta_project_state SET schema_version = 8").run();
+      db.prepare("UPDATE meta_project_state SET schema_version = 11").run();
       const insertMigration = db.prepare(
         "INSERT INTO meta_schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
       );
-      for (const version of [8]) {
+      for (const version of [11]) {
         insertMigration.run(
           version,
           `00${String(version)}_legacy.sql`,
@@ -313,10 +313,10 @@ describe("create / open", () => {
       ).toEqual({ id: projectId });
       expect(
         db.prepare("SELECT schema_version FROM meta_project_state").get(),
-      ).toEqual({ schema_version: 8 });
+      ).toEqual({ schema_version: 11 });
       expect(
         db.prepare("SELECT COUNT(*) AS count FROM meta_schema_migrations").get(),
-      ).toEqual({ count: 8 });
+      ).toEqual({ count: 11 });
     } finally {
       db.close();
     }
@@ -381,7 +381,6 @@ describe("source and punctuation versions", () => {
       documentNodeId: document.id,
       contentText: "天地🙂玄黃",
       originKind: "manual",
-      changeSummary: "이체자 보완",
       expectedLockVersion: initial.source.lockVersion,
     });
     expect(saved.source).toMatchObject({ versionNo: 2, lockVersion: 2, state: "draft", contentText: "天地🙂玄黃" });
@@ -508,7 +507,6 @@ describe("source and punctuation versions", () => {
       documentNodeId: document.id,
       punctuatedText: "甲🙂，乙。丙！",
       structureMode: "prose",
-      changeSummary: "문장 경계 확정",
       expectedLockVersion: punctuation.lockVersion,
     });
     expect(saved.punctuation).toMatchObject({ versionNo: 2, lockVersion: 2, state: "draft", structureMode: "prose" });

@@ -12,7 +12,9 @@ import {
   type TranslationEnvelopeValidationFinding,
 } from "@munhae/domain";
 import type { ProjectActors } from "./bootstrap.ts";
-import { allRows, getRow, insertRow } from "./rows.ts";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema as tables } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import { insertVersionBlocks, loadAnchors, type BlockDraft } from "./translation.ts";
 
@@ -104,34 +106,48 @@ function insertArtifact(
       // Invalid provider output is deliberately content-addressed by its exact bytes.
     }
   }
-  const existing = getRow<{ id: string; raw_sha256: string }>(
-    db,
-    `SELECT id, raw_sha256 FROM provenance_artifacts
-     WHERE project_id = ? AND artifact_kind = ? AND canonical_sha256 = ?`,
-    projectId,
-    kind,
-    canonicalHash,
-  );
+  const existing = orm(db)
+    .select({
+      id: tables.provenance_artifacts.id,
+      raw_sha256: tables.provenance_artifacts.raw_sha256,
+    })
+    .from(tables.provenance_artifacts)
+    .where(
+      and(
+        eq(tables.provenance_artifacts.project_id, projectId),
+        eq(tables.provenance_artifacts.artifact_kind, kind),
+        eq(tables.provenance_artifacts.canonical_sha256, canonicalHash),
+      ),
+    )
+    .get();
   if (existing) return { id: existing.id, rawHash, canonicalHash };
   const id = createId();
-  insertRow(db, "provenance_artifacts", {
-    id,
-    project_id: projectId,
-    artifact_kind: kind,
-    media_type: kind === "agent_events" ? "application/x-ndjson" : opts.payloadJson ? "application/json" : "text/plain",
-    payload_text: payloadText,
-    payload_json: opts.payloadJson ?? null,
-    storage_asset_id: null,
-    raw_sha256: rawHash,
-    canonical_sha256: canonicalHash,
-    byte_size: utf8ByteLength(payloadText),
-    schema_name: opts.schemaName ?? null,
-    schema_version: opts.schemaVersion ?? null,
-    classification: "project_private",
-    retention_class: "project_history",
-    redaction_state: "not_required",
-    created_at: nowIso(),
-  });
+  orm(db)
+    .insert(tables.provenance_artifacts)
+    .values({
+      id,
+      project_id: projectId,
+      artifact_kind: kind,
+      media_type:
+        kind === "agent_events"
+          ? "application/x-ndjson"
+          : opts.payloadJson
+            ? "application/json"
+            : "text/plain",
+      payload_text: payloadText,
+      payload_json: opts.payloadJson ?? null,
+      storage_asset_id: null,
+      raw_sha256: rawHash,
+      canonical_sha256: canonicalHash,
+      byte_size: utf8ByteLength(payloadText),
+      schema_name: opts.schemaName ?? null,
+      schema_version: opts.schemaVersion ?? null,
+      classification: "project_private",
+      retention_class: "project_history",
+      redaction_state: "not_required",
+      created_at: nowIso(),
+    })
+    .run();
   return { id, rawHash, canonicalHash };
 }
 
@@ -256,25 +272,34 @@ function findOrCreateDocumentThread(
   documentNodeId: string,
   humanActorId: string,
 ): string {
-  const existing = getRow<{ id: string }>(
-    db,
-    `SELECT id FROM chat_threads
-     WHERE project_id = ? AND scope_kind = 'document_node' AND scope_id = ? AND title = 'AI 번역'
-     ORDER BY created_at LIMIT 1`,
-    projectId,
-    documentNodeId,
-  );
+  const existing = orm(db)
+    .select({ id: tables.chat_threads.id })
+    .from(tables.chat_threads)
+    .where(
+      and(
+        eq(tables.chat_threads.project_id, projectId),
+        eq(tables.chat_threads.scope_kind, "document_node"),
+        eq(tables.chat_threads.scope_id, documentNodeId),
+        eq(tables.chat_threads.title, "AI 번역"),
+      ),
+    )
+    .orderBy(tables.chat_threads.created_at)
+    .limit(1)
+    .get();
   if (existing) return existing.id;
   const id = createId();
-  insertRow(db, "chat_threads", {
-    id,
-    project_id: projectId,
-    title: "AI 번역",
-    scope_kind: "document_node",
-    scope_id: documentNodeId,
-    created_by_actor_id: humanActorId,
-    created_at: nowIso(),
-  });
+  orm(db)
+    .insert(tables.chat_threads)
+    .values({
+      id,
+      project_id: projectId,
+      title: "AI 번역",
+      scope_kind: "document_node",
+      scope_id: documentNodeId,
+      created_by_actor_id: humanActorId,
+      created_at: nowIso(),
+    })
+    .run();
   return id;
 }
 
@@ -284,7 +309,7 @@ export function reserveTranslationRun(
   actors: ProjectActors,
   input: ReserveTranslationRunInput,
 ): ReservedTranslationRun {
-  return db.transaction(() => {
+  return orm(db).transaction(() => {
     const manifest = requireCanonicalManifest(input.requestManifestJson);
     if (
       manifest.manifest.snapshot.documentNodeId !== input.documentNodeId ||
@@ -298,84 +323,100 @@ export function reserveTranslationRun(
       input.documentNodeId,
       actors.humanId,
     );
-    const busy = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM chat_messages
-       WHERE thread_id = ? AND role = 'assistant' AND state IN ('queued', 'running', 'validating')
-       LIMIT 1`,
-      threadId,
-    );
+    const busy = orm(db)
+      .select({ id: tables.chat_messages.id })
+      .from(tables.chat_messages)
+      .where(
+        and(
+          eq(tables.chat_messages.thread_id, threadId),
+          eq(tables.chat_messages.role, "assistant"),
+          inArray(tables.chat_messages.state, ["queued", "running", "validating"]),
+        ),
+      )
+      .limit(1)
+      .get();
     if (busy) throw new MunhaeError("thread_busy", "이 문서의 AI 실행이 이미 진행 중입니다");
 
     const artifact = insertArtifact(db, projectId, "exact_llm_request", input.requestText);
-    const previous = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM chat_messages WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-      threadId,
-    );
+    const previous = orm(db)
+      .select({ id: tables.chat_messages.id })
+      .from(tables.chat_messages)
+      .where(eq(tables.chat_messages.thread_id, threadId))
+      .orderBy(desc(tables.chat_messages.created_at), desc(sql`rowid`))
+      .limit(1)
+      .get();
     const now = nowIso();
     const userMessageId = createId();
-    insertRow(db, "chat_messages", {
-      id: userMessageId,
-      project_id: projectId,
-      thread_id: threadId,
-      parent_message_id: previous?.id ?? null,
-      role: "user",
-      actor_id: actors.humanId,
-      state: "completed",
-      task_kind: "translation_request",
-      output_validation_state: "not_applicable",
-      completed_at: now,
-      created_at: now,
-    });
-    insertRow(db, "chat_message_parts", {
-      id: createId(),
-      project_id: projectId,
-      message_id: userMessageId,
-      ordinal: 1,
-      part_kind: "text",
-      text_content: "전체 문서 완성 번역 요청",
-      structured_json: null,
-      artifact_id: null,
-    });
+    orm(db)
+      .insert(tables.chat_messages)
+      .values({
+        id: userMessageId,
+        project_id: projectId,
+        thread_id: threadId,
+        parent_message_id: previous?.id ?? null,
+        role: "user",
+        actor_id: actors.humanId,
+        state: "completed",
+        task_kind: "translation_request",
+        output_validation_state: "not_applicable",
+        completed_at: now,
+        created_at: now,
+      })
+      .run();
+    orm(db)
+      .insert(tables.chat_message_parts)
+      .values({
+        id: createId(),
+        project_id: projectId,
+        message_id: userMessageId,
+        ordinal: 1,
+        part_kind: "text",
+        text_content: "전체 문서 완성 번역 요청",
+        structured_json: null,
+        artifact_id: null,
+      })
+      .run();
 
     const messageId = createId();
-    insertRow(db, "chat_messages", {
-      id: messageId,
-      project_id: projectId,
-      thread_id: threadId,
-      parent_message_id: userMessageId,
-      role: "assistant",
-      actor_id: actors.llmId,
-      state: "running",
-      agent_id: input.agentId,
-      requested_model: input.requestedModel,
-      resolved_model: null,
-      reasoning_level: input.reasoningLevel,
-      service_tier: input.serviceTier,
-      runtime_version: input.runtimeVersion,
-      task_kind: "translation",
-      output_contract: "translation-envelope.v2",
-      prompt_contract_version: input.promptContractVersion,
-      request_manifest_json: manifest.json,
-      request_manifest_hash: manifest.hash,
-      request_artifact_id: artifact.id,
-      response_artifact_id: null,
-      events_artifact_id: null,
-      output_validation_state: null,
-      usage_json: null,
-      error_json: null,
-      started_at: now,
-      completed_at: null,
-      created_at: now,
-    });
+    orm(db)
+      .insert(tables.chat_messages)
+      .values({
+        id: messageId,
+        project_id: projectId,
+        thread_id: threadId,
+        parent_message_id: userMessageId,
+        role: "assistant",
+        actor_id: actors.llmId,
+        state: "running",
+        agent_id: input.agentId,
+        requested_model: input.requestedModel,
+        resolved_model: null,
+        reasoning_level: input.reasoningLevel,
+        service_tier: input.serviceTier,
+        runtime_version: input.runtimeVersion,
+        task_kind: "translation",
+        output_contract: "translation-envelope.v2",
+        prompt_contract_version: input.promptContractVersion,
+        request_manifest_json: manifest.json,
+        request_manifest_hash: manifest.hash,
+        request_artifact_id: artifact.id,
+        response_artifact_id: null,
+        events_artifact_id: null,
+        output_validation_state: null,
+        usage_json: null,
+        error_json: null,
+        started_at: now,
+        completed_at: null,
+        created_at: now,
+      })
+      .run();
     return {
       messageId,
       threadId,
       requestArtifactId: artifact.id,
       requestHash: artifact.rawHash,
     };
-  })();
+  });
 }
 
 export function storeTranslationResponse(
@@ -383,35 +424,40 @@ export function storeTranslationResponse(
   projectId: string,
   input: StoreTranslationResponseInput,
 ): { responseArtifactId: string; responseRawHash: string; eventsArtifactId: string | null } {
-  return db.transaction(() => {
-    const message = getRow<{
-      id: string;
-      response_artifact_id: string | null;
-      events_artifact_id: string | null;
-      usage_json: string | null;
-      resolved_model: string | null;
-      runtime_version: string | null;
-      role: string;
-      task_kind: string | null;
-      output_contract: string | null;
-      state: string | null;
-    }>(
-      db,
-      `SELECT id, response_artifact_id, events_artifact_id, usage_json,
-              resolved_model, runtime_version, role, task_kind, state, output_contract
-       FROM chat_messages WHERE id = ? AND project_id = ?`,
-      input.messageId,
-      projectId,
-    );
+  return orm(db).transaction(() => {
+    const message = orm(db)
+      .select({
+        id: tables.chat_messages.id,
+        response_artifact_id: tables.chat_messages.response_artifact_id,
+        events_artifact_id: tables.chat_messages.events_artifact_id,
+        usage_json: tables.chat_messages.usage_json,
+        resolved_model: tables.chat_messages.resolved_model,
+        runtime_version: tables.chat_messages.runtime_version,
+        role: tables.chat_messages.role,
+        task_kind: tables.chat_messages.task_kind,
+        state: tables.chat_messages.state,
+        output_contract: tables.chat_messages.output_contract,
+      })
+      .from(tables.chat_messages)
+      .where(
+        and(
+          eq(tables.chat_messages.id, input.messageId),
+          eq(tables.chat_messages.project_id, projectId),
+        ),
+      )
+      .get();
     if (!message || message.role !== "assistant" || message.task_kind !== "translation") {
       throw new MunhaeError("invalid_message", "translation assistant message not found");
     }
     if (message.response_artifact_id) {
-      const existing = getRow<{ id: string; raw_sha256: string }>(
-        db,
-        `SELECT id, raw_sha256 FROM provenance_artifacts WHERE id = ?`,
-        message.response_artifact_id,
-      );
+      const existing = orm(db)
+        .select({
+          id: tables.provenance_artifacts.id,
+          raw_sha256: tables.provenance_artifacts.raw_sha256,
+        })
+        .from(tables.provenance_artifacts)
+        .where(eq(tables.provenance_artifacts.id, message.response_artifact_id))
+        .get();
       if (!existing || existing.raw_sha256 !== sha256Hex(input.rawResponse)) {
         throw new MunhaeError("idempotency_conflict", "assistant message already has a different response");
       }
@@ -424,13 +470,19 @@ export function storeTranslationResponse(
         let eventsArtifactId = message.events_artifact_id;
         if (input.eventsJsonl) {
           if (eventsArtifactId) {
-            const priorEvents = getRow<{ artifact_kind: string; payload_text: string | null }>(
-              db,
-              `SELECT artifact_kind, payload_text FROM provenance_artifacts
-               WHERE id = ? AND project_id = ?`,
-              eventsArtifactId,
-              projectId,
-            );
+            const priorEvents = orm(db)
+              .select({
+                artifact_kind: tables.provenance_artifacts.artifact_kind,
+                payload_text: tables.provenance_artifacts.payload_text,
+              })
+              .from(tables.provenance_artifacts)
+              .where(
+                and(
+                  eq(tables.provenance_artifacts.id, eventsArtifactId),
+                  eq(tables.provenance_artifacts.project_id, projectId),
+                ),
+              )
+              .get();
             if (
               !priorEvents
               || priorEvents.artifact_kind !== "agent_events"
@@ -457,21 +509,22 @@ export function storeTranslationResponse(
         if (message.runtime_version && input.runtimeVersion && message.runtime_version !== input.runtimeVersion) {
           throw new MunhaeError("idempotency_conflict", "translation runtime metadata already differs");
         }
-        const updated = db.prepare(
-          `UPDATE chat_messages
-           SET events_artifact_id = ?, usage_json = COALESCE(usage_json, ?),
-               resolved_model = COALESCE(resolved_model, ?),
-               runtime_version = COALESCE(runtime_version, ?)
-           WHERE id = ? AND project_id = ? AND response_artifact_id = ?`,
-        ).run(
-          eventsArtifactId,
-          usageJson,
-          input.resolvedModel,
-          input.runtimeVersion,
-          input.messageId,
-          projectId,
-          existing.id,
-        );
+        const updated = orm(db)
+          .update(tables.chat_messages)
+          .set({
+            events_artifact_id: eventsArtifactId,
+            usage_json: sql`coalesce(${tables.chat_messages.usage_json}, ${usageJson})`,
+            resolved_model: sql`coalesce(${tables.chat_messages.resolved_model}, ${input.resolvedModel})`,
+            runtime_version: sql`coalesce(${tables.chat_messages.runtime_version}, ${input.runtimeVersion})`,
+          })
+          .where(
+            and(
+              eq(tables.chat_messages.id, input.messageId),
+              eq(tables.chat_messages.project_id, projectId),
+              eq(tables.chat_messages.response_artifact_id, existing.id),
+            ),
+          )
+          .run();
         if (updated.changes !== 1) {
           throw new MunhaeError("invalid_message_state", "translation response metadata changed concurrently");
         }
@@ -502,21 +555,28 @@ export function storeTranslationResponse(
     const events = input.eventsJsonl
       ? insertArtifact(db, projectId, "agent_events", input.eventsJsonl)
       : null;
-    const updated = db.prepare(
-      `UPDATE chat_messages
-       SET state = 'validating', response_artifact_id = ?, events_artifact_id = ?,
-           usage_json = ?, resolved_model = COALESCE(?, resolved_model),
-           runtime_version = COALESCE(?, runtime_version), error_json = NULL
-       WHERE id = ? AND project_id = ? AND state IN ('running', 'validating')`,
-    ).run(
-      response.id,
-      events?.id ?? null,
-      input.usage === null || input.usage === undefined ? null : canonicalJson(input.usage),
-      input.resolvedModel,
-      input.runtimeVersion,
-      input.messageId,
-      projectId,
-    );
+    const updated = orm(db)
+      .update(tables.chat_messages)
+      .set({
+        state: "validating",
+        response_artifact_id: response.id,
+        events_artifact_id: events?.id ?? null,
+        usage_json:
+          input.usage === null || input.usage === undefined
+            ? null
+            : canonicalJson(input.usage),
+        resolved_model: sql`coalesce(${input.resolvedModel}, ${tables.chat_messages.resolved_model})`,
+        runtime_version: sql`coalesce(${input.runtimeVersion}, ${tables.chat_messages.runtime_version})`,
+        error_json: null,
+      })
+      .where(
+        and(
+          eq(tables.chat_messages.id, input.messageId),
+          eq(tables.chat_messages.project_id, projectId),
+          inArray(tables.chat_messages.state, ["running", "validating"]),
+        ),
+      )
+      .run();
     if (updated.changes !== 1) {
       throw new MunhaeError("invalid_message_state", "translation execution state changed while storing its response");
     }
@@ -525,7 +585,7 @@ export function storeTranslationResponse(
       responseRawHash: response.rawHash,
       eventsArtifactId: events?.id ?? null,
     };
-  })();
+  });
 }
 
 /**
@@ -538,15 +598,23 @@ export function recordInvalidTranslationResponse(
   projectId: string,
   input: RecordInvalidTranslationResponseInput,
 ): { responseArtifactId: string; responseRawHash: string; eventsArtifactId: string | null } {
-  return db.transaction(() => {
+  return orm(db).transaction(() => {
     const stored = storeTranslationResponse(db, projectId, input);
-    const current = getRow<{ state: string | null; output_validation_state: string | null }>(
-      db,
-      `SELECT state, output_validation_state FROM chat_messages
-       WHERE id = ? AND project_id = ? AND role = 'assistant' AND task_kind = 'translation'`,
-      input.messageId,
-      projectId,
-    );
+    const current = orm(db)
+      .select({
+        state: tables.chat_messages.state,
+        output_validation_state: tables.chat_messages.output_validation_state,
+      })
+      .from(tables.chat_messages)
+      .where(
+        and(
+          eq(tables.chat_messages.id, input.messageId),
+          eq(tables.chat_messages.project_id, projectId),
+          eq(tables.chat_messages.role, "assistant"),
+          eq(tables.chat_messages.task_kind, "translation"),
+        ),
+      )
+      .get();
     if (
       (current?.state === "completed" && current.output_validation_state === "invalid_unapplied")
       || current?.state === "failed"
@@ -560,26 +628,32 @@ export function recordInvalidTranslationResponse(
         `cannot reject a translation response while execution is ${current?.state ?? "unknown"}`,
       );
     }
-    const updated = db.prepare(
-      `UPDATE chat_messages
-       SET state = 'completed', output_validation_state = 'invalid_unapplied',
-           error_json = ?, completed_at = ?
-       WHERE id = ? AND project_id = ? AND role = 'assistant' AND task_kind = 'translation'
-         AND state = 'validating'`,
-    ).run(
-      canonicalJson({
-        code: input.error.code,
-        message: input.error.message.slice(0, 800),
-      }),
-      nowIso(),
-      input.messageId,
-      projectId,
-    );
+    const updated = orm(db)
+      .update(tables.chat_messages)
+      .set({
+        state: "completed",
+        output_validation_state: "invalid_unapplied",
+        error_json: canonicalJson({
+          code: input.error.code,
+          message: input.error.message.slice(0, 800),
+        }),
+        completed_at: nowIso(),
+      })
+      .where(
+        and(
+          eq(tables.chat_messages.id, input.messageId),
+          eq(tables.chat_messages.project_id, projectId),
+          eq(tables.chat_messages.role, "assistant"),
+          eq(tables.chat_messages.task_kind, "translation"),
+          eq(tables.chat_messages.state, "validating"),
+        ),
+      )
+      .run();
     if (updated.changes !== 1) {
       throw new MunhaeError("invalid_message_state", "translation execution changed while rejecting its response");
     }
     return stored;
-  })();
+  });
 }
 
 function assertSnapshotDependencies(
@@ -587,35 +661,98 @@ function assertSnapshotDependencies(
   projectId: string,
   input: ApplyTranslationEnvelopeInput,
 ): { sourceTextId: string; targetLocale: string } {
-  const row = getRow<{ source_text_id: string; target_locale: string }>(
-    db,
-    `SELECT sv.source_text_id, policy_version.target_locale
-     FROM translation_anchor_sets a
-     JOIN src_text_versions sv ON sv.id = a.source_text_version_id
-     JOIN src_text_heads source_head
-       ON source_head.source_text_id = sv.source_text_id
-      AND source_head.project_id = a.project_id
-      AND source_head.current_version_id = a.source_text_version_id
-     JOIN punctuation_versions pv ON pv.id = a.punctuation_version_id
-     JOIN punctuation_heads punctuation_head
-       ON punctuation_head.punctuation_set_id = pv.punctuation_set_id
-      AND punctuation_head.project_id = a.project_id
-      AND punctuation_head.current_version_id = a.punctuation_version_id
-     JOIN core_translation_policy_versions policy_version ON policy_version.id = ?
-     JOIN core_translation_policies policy
-       ON policy.id = policy_version.policy_id AND policy.project_id = a.project_id
-     WHERE a.id = ? AND a.project_id = ? AND a.document_node_id = ?
-       AND a.source_text_version_id = ? AND a.punctuation_version_id = ?
-       AND pv.source_text_version_id = a.source_text_version_id
-       AND policy_version.id = ?`,
-    input.policyVersionId,
-    input.anchorSetId,
-    projectId,
-    input.documentNodeId,
-    input.sourceTextVersionId,
-    input.punctuationVersionId,
-    input.policyVersionId,
-  );
+  const row = orm(db)
+    .select({
+      source_text_id: tables.src_text_versions.source_text_id,
+      target_locale: tables.core_translation_policy_versions.target_locale,
+    })
+    .from(tables.translation_anchor_sets)
+    .innerJoin(
+      tables.src_text_versions,
+      eq(
+        tables.src_text_versions.id,
+        tables.translation_anchor_sets.source_text_version_id,
+      ),
+    )
+    .innerJoin(
+      tables.src_text_heads,
+      and(
+        eq(
+          tables.src_text_heads.source_text_id,
+          tables.src_text_versions.source_text_id,
+        ),
+        eq(
+          tables.src_text_heads.project_id,
+          tables.translation_anchor_sets.project_id,
+        ),
+        eq(
+          tables.src_text_heads.current_version_id,
+          tables.translation_anchor_sets.source_text_version_id,
+        ),
+      ),
+    )
+    .innerJoin(
+      tables.punctuation_versions,
+      eq(
+        tables.punctuation_versions.id,
+        tables.translation_anchor_sets.punctuation_version_id,
+      ),
+    )
+    .innerJoin(
+      tables.punctuation_heads,
+      and(
+        eq(
+          tables.punctuation_heads.punctuation_set_id,
+          tables.punctuation_versions.punctuation_set_id,
+        ),
+        eq(
+          tables.punctuation_heads.project_id,
+          tables.translation_anchor_sets.project_id,
+        ),
+        eq(
+          tables.punctuation_heads.current_version_id,
+          tables.translation_anchor_sets.punctuation_version_id,
+        ),
+      ),
+    )
+    .innerJoin(
+      tables.core_translation_policy_versions,
+      eq(tables.core_translation_policy_versions.id, input.policyVersionId),
+    )
+    .innerJoin(
+      tables.core_translation_policies,
+      and(
+        eq(
+          tables.core_translation_policies.id,
+          tables.core_translation_policy_versions.policy_id,
+        ),
+        eq(
+          tables.core_translation_policies.project_id,
+          tables.translation_anchor_sets.project_id,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(tables.translation_anchor_sets.id, input.anchorSetId),
+        eq(tables.translation_anchor_sets.project_id, projectId),
+        eq(tables.translation_anchor_sets.document_node_id, input.documentNodeId),
+        eq(
+          tables.translation_anchor_sets.source_text_version_id,
+          input.sourceTextVersionId,
+        ),
+        eq(
+          tables.translation_anchor_sets.punctuation_version_id,
+          input.punctuationVersionId,
+        ),
+        eq(
+          tables.punctuation_versions.source_text_version_id,
+          tables.translation_anchor_sets.source_text_version_id,
+        ),
+        eq(tables.core_translation_policy_versions.id, input.policyVersionId),
+      ),
+    )
+    .get();
   if (!row) {
     throw new MunhaeError(
       "stale_request",
@@ -631,20 +768,28 @@ function validateMessageResponse(
   messageId: string,
   rawResponse: string,
 ): void {
-  const row = getRow<{
-    role: string;
-    task_kind: string | null;
-    response_artifact_id: string | null;
-    raw_sha256: string | null;
-  }>(
-    db,
-    `SELECT m.role, m.task_kind, m.response_artifact_id, a.raw_sha256
-     FROM chat_messages m
-     LEFT JOIN provenance_artifacts a ON a.id = m.response_artifact_id
-     WHERE m.id = ? AND m.project_id = ?`,
-    messageId,
-    projectId,
-  );
+  const row = orm(db)
+    .select({
+      role: tables.chat_messages.role,
+      task_kind: tables.chat_messages.task_kind,
+      response_artifact_id: tables.chat_messages.response_artifact_id,
+      raw_sha256: tables.provenance_artifacts.raw_sha256,
+    })
+    .from(tables.chat_messages)
+    .leftJoin(
+      tables.provenance_artifacts,
+      eq(
+        tables.provenance_artifacts.id,
+        tables.chat_messages.response_artifact_id,
+      ),
+    )
+    .where(
+      and(
+        eq(tables.chat_messages.id, messageId),
+        eq(tables.chat_messages.project_id, projectId),
+      ),
+    )
+    .get();
   if (!row || row.role !== "assistant" || row.task_kind !== "translation" || !row.response_artifact_id) {
     throw new MunhaeError("invalid_message", "stored translation response not found");
   }
@@ -658,25 +803,39 @@ function requireBoundManifestForApply(
   projectId: string,
   input: ApplyTranslationEnvelopeInput,
 ): StoredTranslationSnapshot {
-  const row = getRow<{
-    state: string | null;
-    request_manifest_json: string | null;
-    request_manifest_hash: string | null;
-    request_raw_hash: string | null;
-    scope_kind: string | null;
-    scope_id: string | null;
-  }>(
-    db,
-    `SELECT m.state, m.request_manifest_json, m.request_manifest_hash,
-            request.raw_sha256 AS request_raw_hash, t.scope_kind, t.scope_id
-     FROM chat_messages m
-     JOIN chat_threads t ON t.id = m.thread_id AND t.project_id = m.project_id
-     LEFT JOIN provenance_artifacts request ON request.id = m.request_artifact_id
-     WHERE m.id = ? AND m.project_id = ? AND m.role = 'assistant'
-       AND m.task_kind = 'translation'`,
-    input.messageId,
-    projectId,
-  );
+  const row = orm(db)
+    .select({
+      state: tables.chat_messages.state,
+      request_manifest_json: tables.chat_messages.request_manifest_json,
+      request_manifest_hash: tables.chat_messages.request_manifest_hash,
+      request_raw_hash: tables.provenance_artifacts.raw_sha256,
+      scope_kind: tables.chat_threads.scope_kind,
+      scope_id: tables.chat_threads.scope_id,
+    })
+    .from(tables.chat_messages)
+    .innerJoin(
+      tables.chat_threads,
+      and(
+        eq(tables.chat_threads.id, tables.chat_messages.thread_id),
+        eq(tables.chat_threads.project_id, tables.chat_messages.project_id),
+      ),
+    )
+    .leftJoin(
+      tables.provenance_artifacts,
+      eq(
+        tables.provenance_artifacts.id,
+        tables.chat_messages.request_artifact_id,
+      ),
+    )
+    .where(
+      and(
+        eq(tables.chat_messages.id, input.messageId),
+        eq(tables.chat_messages.project_id, projectId),
+        eq(tables.chat_messages.role, "assistant"),
+        eq(tables.chat_messages.task_kind, "translation"),
+      ),
+    )
+    .get();
   if (!row?.request_manifest_json) {
     throw new MunhaeError("invalid_message", "translation request manifest not found");
   }
@@ -735,28 +894,34 @@ function recordEnvelopeValidation(
   anchorIds: Map<string, string>,
 ): void {
   const validationId = createId();
-  insertRow(db, "document_translation_validations", {
-    id: validationId,
-    project_id: projectId,
-    document_translation_version_id: versionId,
-    source_message_id: messageId,
-    validator_version: "translation-envelope.v2",
-    result: validationState,
-    needs_review: 0,
-    summary_json: canonicalJson({ findings }),
-    validated_at: nowIso(),
-  });
-  for (const item of findings) {
-    insertRow(db, "document_translation_validation_findings", {
-      id: createId(),
+  orm(db)
+    .insert(tables.document_translation_validations)
+    .values({
+      id: validationId,
       project_id: projectId,
-      validation_id: validationId,
-      finding_kind: item.kind,
-      severity: item.severity,
-      block_key: item.blockKey,
-      anchor_id: item.anchorKey ? anchorIds.get(item.anchorKey) ?? null : null,
-      details_json: canonicalJson(item),
-    });
+      document_translation_version_id: versionId,
+      source_message_id: messageId,
+      validator_version: "translation-envelope.v2",
+      result: validationState,
+      needs_review: 0,
+      summary_json: canonicalJson({ findings }),
+      validated_at: nowIso(),
+    })
+    .run();
+  for (const item of findings) {
+    orm(db)
+      .insert(tables.document_translation_validation_findings)
+      .values({
+        id: createId(),
+        project_id: projectId,
+        validation_id: validationId,
+        finding_kind: item.kind,
+        severity: item.severity,
+        block_key: item.blockKey,
+        anchor_id: item.anchorKey ? (anchorIds.get(item.anchorKey) ?? null) : null,
+        details_json: canonicalJson(item),
+      })
+      .run();
   }
 }
 
@@ -768,19 +933,19 @@ function existingGeneratedVersions(
   versionId: string;
   validationState: "valid" | "needs_review";
 }> {
-  return allRows<{
-    translation_id: string;
-    version_id: string;
-    validation_state: "valid" | "needs_review";
-  }>(
-    db,
-    `SELECT v.document_translation_id AS translation_id,
-            v.id AS version_id, v.validation_state
-     FROM document_translation_versions v
-     WHERE v.generated_by_message_id = ?
-     ORDER BY v.created_at`,
-    messageId,
-  ).map((row) => ({
+  return orm(db)
+    .select({
+      translation_id:
+        tables.document_translation_versions.document_translation_id,
+      version_id: tables.document_translation_versions.id,
+      validation_state: tables.document_translation_versions.validation_state,
+    })
+    .from(tables.document_translation_versions)
+    .where(
+      eq(tables.document_translation_versions.generated_by_message_id, messageId),
+    )
+    .orderBy(tables.document_translation_versions.created_at)
+    .all().map((row) => ({
     translationId: row.translation_id,
     versionId: row.version_id,
     validationState: row.validation_state,
@@ -805,25 +970,32 @@ function applyTranslationEnvelopeInternal(
     })),
   });
   if (validation.state !== "valid" || !validation.envelope) {
-    db.prepare(
-      `UPDATE chat_messages
-       SET state = 'completed', output_validation_state = 'invalid_unapplied',
-           error_json = ?, completed_at = ?
-       WHERE id = ? AND project_id = ?`,
-    ).run(
-      canonicalJson({
-        code: "invalid_envelope",
-        findings: [...validation.fatalFindings, ...validation.recoverableFindings],
-      }),
-      nowIso(),
-      input.messageId,
-      projectId,
-    );
+    orm(db)
+      .update(tables.chat_messages)
+      .set({
+        state: "completed",
+        output_validation_state: "invalid_unapplied",
+        error_json: canonicalJson({
+          code: "invalid_envelope",
+          findings: [
+            ...validation.fatalFindings,
+            ...validation.recoverableFindings,
+          ],
+        }),
+        completed_at: nowIso(),
+      })
+      .where(
+        and(
+          eq(tables.chat_messages.id, input.messageId),
+          eq(tables.chat_messages.project_id, projectId),
+        ),
+      )
+      .run();
     return { messageId: input.messageId, validation, version: null, idempotent: false };
   }
   const envelope = validation.envelope;
 
-  return db.transaction(() => {
+  return orm(db).transaction(() => {
     validateMessageResponse(db, projectId, input.messageId, input.rawResponse);
     const existing = existingGeneratedVersions(db, input.messageId);
     if (existing.length > 0) {
@@ -854,35 +1026,52 @@ function applyTranslationEnvelopeInternal(
     const knownAnchors = new Set(anchors.map((anchor) => anchor.anchor_key));
     const anchorIds = new Map(anchors.map((anchor) => [anchor.anchor_key, anchor.id]));
     const baseline = input.expectedHead;
-    let translation = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM document_translations
-       WHERE project_id = ? AND source_text_id = ? AND target_locale = ? AND tombstoned_at IS NULL`,
-      projectId,
-      snapshot.sourceTextId,
-      snapshot.targetLocale,
-    );
+    let translation = orm(db)
+      .select({ id: tables.document_translations.id })
+      .from(tables.document_translations)
+      .where(
+        and(
+          eq(tables.document_translations.project_id, projectId),
+          eq(tables.document_translations.source_text_id, snapshot.sourceTextId),
+          eq(tables.document_translations.target_locale, snapshot.targetLocale),
+          isNull(tables.document_translations.tombstoned_at),
+        ),
+      )
+      .get();
     if (!translation) {
       if (baseline !== null) throw new MunhaeError("cas_conflict", "translation head disappeared");
       translation = { id: createId() };
-      insertRow(db, "document_translations", {
-        id: translation.id,
-        project_id: projectId,
-        document_node_id: input.documentNodeId,
-        source_text_id: snapshot.sourceTextId,
-        target_locale: snapshot.targetLocale,
-        created_at: nowIso(),
-        tombstoned_at: null,
-      });
+      orm(db)
+        .insert(tables.document_translations)
+        .values({
+          id: translation.id,
+          project_id: projectId,
+          document_node_id: input.documentNodeId,
+          source_text_id: snapshot.sourceTextId,
+          target_locale: snapshot.targetLocale,
+          created_at: nowIso(),
+          tombstoned_at: null,
+        })
+        .run();
     } else if (baseline === null || baseline.translationId !== translation.id) {
       throw new MunhaeError("cas_conflict", "translation aggregate changed while AI was running");
     }
 
-    const head = getRow<{
-      current_version_id: string;
-      confirmed_version_id: string | null;
-      lock_version: number;
-    }>(db, `SELECT current_version_id, confirmed_version_id, lock_version FROM document_translation_heads WHERE document_translation_id = ?`, translation.id);
+    const head = orm(db)
+      .select({
+        current_version_id: tables.document_translation_heads.current_version_id,
+        confirmed_version_id:
+          tables.document_translation_heads.confirmed_version_id,
+        lock_version: tables.document_translation_heads.lock_version,
+      })
+      .from(tables.document_translation_heads)
+      .where(
+        eq(
+          tables.document_translation_heads.document_translation_id,
+          translation.id,
+        ),
+      )
+      .get();
     if (baseline) {
       if (!head || head.current_version_id !== baseline.currentVersionId || head.lock_version !== baseline.lockVersion) {
         throw new MunhaeError("cas_conflict", "translation was edited while AI was running");
@@ -892,36 +1081,46 @@ function applyTranslationEnvelopeInternal(
     }
 
     const versionNo =
-      (getRow<{ value: number | null }>(
-        db,
-        `SELECT MAX(version_no) AS value FROM document_translation_versions WHERE document_translation_id = ?`,
-        translation.id,
-      )?.value ?? 0) + 1;
+      (orm(db)
+        .select({
+          value: sql<number | null>`max(${tables.document_translation_versions.version_no})`,
+        })
+        .from(tables.document_translation_versions)
+        .where(
+          eq(
+            tables.document_translation_versions.document_translation_id,
+            translation.id,
+          ),
+        )
+        .get()?.value ?? 0) + 1;
     const validationState = "valid" as const;
     const drafts = envelopeDrafts(envelope, knownAnchors);
     const text = drafts.map((block) => block.translation).join(" ");
     const versionId = createId();
     const now = nowIso();
-    insertRow(db, "document_translation_versions", {
-      id: versionId,
-      project_id: projectId,
-      document_translation_id: translation.id,
-      parent_version_id: head?.current_version_id ?? null,
-      version_no: versionNo,
-      source_text_version_id: input.sourceTextVersionId,
-      punctuation_version_id: input.punctuationVersionId,
-      translation_anchor_set_id: input.anchorSetId,
-      translation_policy_version_id: input.policyVersionId,
-      text_content: text,
-      origin_kind: "ai",
-      generated_by_message_id: input.messageId,
-      validation_state: validationState,
-      needs_review: 0,
-      state: "draft",
-      content_hash: sha256Hex(text),
-      created_by_actor_id: actors.llmId,
-      created_at: now,
-    });
+    orm(db)
+      .insert(tables.document_translation_versions)
+      .values({
+        id: versionId,
+        project_id: projectId,
+        document_translation_id: translation.id,
+        parent_version_id: head?.current_version_id ?? null,
+        version_no: versionNo,
+        source_text_version_id: input.sourceTextVersionId,
+        punctuation_version_id: input.punctuationVersionId,
+        translation_anchor_set_id: input.anchorSetId,
+        translation_policy_version_id: input.policyVersionId,
+        text_content: text,
+        origin_kind: "ai",
+        generated_by_message_id: input.messageId,
+        validation_state: validationState,
+        needs_review: 0,
+        state: "draft",
+        content_hash: sha256Hex(text),
+        created_by_actor_id: actors.llmId,
+        created_at: now,
+      })
+      .run();
     insertVersionBlocks(db, projectId, versionId, drafts, anchors, validationState);
     recordEnvelopeValidation(
       db,
@@ -933,68 +1132,132 @@ function applyTranslationEnvelopeInternal(
       anchorIds,
     );
     if (head) {
-      const update = db.prepare(
-        `UPDATE document_translation_heads
-         SET current_version_id = ?, lock_version = lock_version + 1, updated_at = ?
-         WHERE document_translation_id = ? AND current_version_id = ? AND lock_version = ?`,
-      ).run(versionId, now, translation.id, baseline?.currentVersionId, baseline?.lockVersion);
+      const update = orm(db)
+        .update(tables.document_translation_heads)
+        .set({
+          current_version_id: versionId,
+          lock_version: sql`${tables.document_translation_heads.lock_version} + 1`,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(
+              tables.document_translation_heads.document_translation_id,
+              translation.id,
+            ),
+            eq(
+              tables.document_translation_heads.current_version_id,
+              baseline!.currentVersionId,
+            ),
+            eq(tables.document_translation_heads.lock_version, baseline!.lockVersion),
+          ),
+        )
+        .run();
       if (update.changes !== 1) throw new MunhaeError("cas_conflict", "stale translation head");
-      db.prepare(
-        `UPDATE document_translation_versions SET state = 'superseded'
-         WHERE id = ? AND state = 'draft'`,
-      ).run(head.current_version_id);
+      orm(db)
+        .update(tables.document_translation_versions)
+        .set({
+          state: "superseded",
+        })
+        .where(
+          and(
+            eq(tables.document_translation_versions.id, head.current_version_id),
+            eq(tables.document_translation_versions.state, "draft"),
+          ),
+        )
+        .run();
     } else {
-      insertRow(db, "document_translation_heads", {
-        project_id: projectId,
-        document_translation_id: translation.id,
-        current_version_id: versionId,
-        confirmed_version_id: null,
-        lock_version: 1,
-        updated_at: now,
-      });
+      orm(db)
+        .insert(tables.document_translation_heads)
+        .values({
+          project_id: projectId,
+          document_translation_id: translation.id,
+          current_version_id: versionId,
+          confirmed_version_id: null,
+          lock_version: 1,
+          updated_at: now,
+        })
+        .run();
     }
-    db.prepare(
-      `UPDATE translation_staleness
-       SET resolved_by_document_translation_version_id = ?
-       WHERE resolved_by_document_translation_version_id IS NULL
-         AND document_translation_version_id IN (
-           SELECT id FROM document_translation_versions WHERE document_translation_id = ?
-         )`,
-    ).run(versionId, translation.id);
+    orm(db)
+      .update(tables.translation_staleness)
+      .set({ resolved_by_document_translation_version_id: versionId })
+      .where(
+        and(
+          isNull(
+            tables.translation_staleness
+              .resolved_by_document_translation_version_id,
+          ),
+          inArray(
+            tables.translation_staleness.document_translation_version_id,
+            orm(db)
+              .select({ id: tables.document_translation_versions.id })
+              .from(tables.document_translation_versions)
+              .where(
+                eq(
+                  tables.document_translation_versions.document_translation_id,
+                  translation.id,
+                ),
+              ),
+          ),
+        ),
+      )
+      .run();
 
-    const existingPart = getRow<{ id: string }>(
-      db,
-      `SELECT id FROM chat_message_parts WHERE message_id = ? AND ordinal = 1`,
-      input.messageId,
-    );
+    const existingPart = orm(db)
+      .select({ id: tables.chat_message_parts.id })
+      .from(tables.chat_message_parts)
+      .where(
+        and(
+          eq(tables.chat_message_parts.message_id, input.messageId),
+          eq(tables.chat_message_parts.ordinal, 1),
+        ),
+      )
+      .get();
     if (!existingPart) {
-      insertRow(db, "chat_message_parts", {
-        id: createId(),
-        project_id: projectId,
-        message_id: input.messageId,
-        ordinal: 1,
-        part_kind: "translation_envelope",
-        text_content: envelope.blocks.map((block) => block.translation).join(" "),
-        structured_json: canonicalJson(envelope),
-        artifact_id: getRow<{ response_artifact_id: string }>(
-          db,
-          `SELECT response_artifact_id FROM chat_messages WHERE id = ?`,
-          input.messageId,
-        )?.response_artifact_id ?? null,
-      });
+      orm(db)
+        .insert(tables.chat_message_parts)
+        .values({
+          id: createId(),
+          project_id: projectId,
+          message_id: input.messageId,
+          ordinal: 1,
+          part_kind: "translation_envelope",
+          text_content: envelope.blocks.map((block) => block.translation).join(" "),
+          structured_json: canonicalJson(envelope),
+          artifact_id:
+            orm(db)
+              .select({
+                response_artifact_id: tables.chat_messages.response_artifact_id,
+              })
+              .from(tables.chat_messages)
+              .where(eq(tables.chat_messages.id, input.messageId))
+              .get()?.response_artifact_id ?? null,
+        })
+        .run();
     }
-    db.prepare(
-      `UPDATE chat_messages
-       SET state = 'completed', output_validation_state = ?, error_json = NULL, completed_at = ?
-       WHERE id = ? AND project_id = ?`,
-    ).run(validation.state, nowIso(), input.messageId, projectId);
+    orm(db)
+      .update(tables.chat_messages)
+      .set({
+        state: "completed",
+        output_validation_state: validation.state,
+        error_json: null,
+        completed_at: nowIso(),
+      })
+      .where(
+        and(
+          eq(tables.chat_messages.id, input.messageId),
+          eq(tables.chat_messages.project_id, projectId),
+        ),
+      )
+      .run();
     return {
       messageId: input.messageId,
       validation,
       version: { translationId: translation.id, versionId, validationState },
       idempotent: false,
     };
-  })();
+  });
 }
 
 export function applyTranslationEnvelope(
@@ -1024,14 +1287,22 @@ export function failTranslationRun(
   error: { code: string; message: string },
   metadata: TranslationRunFailureMetadata = {},
 ): void {
-  db.transaction(() => {
-    const current = getRow<{ state: string | null; events_artifact_id: string | null }>(
-      db,
-      `SELECT state, events_artifact_id FROM chat_messages
-       WHERE id = ? AND project_id = ? AND role = 'assistant' AND task_kind = 'translation'`,
-      messageId,
-      projectId,
-    );
+  orm(db).transaction(() => {
+    const current = orm(db)
+      .select({
+        state: tables.chat_messages.state,
+        events_artifact_id: tables.chat_messages.events_artifact_id,
+      })
+      .from(tables.chat_messages)
+      .where(
+        and(
+          eq(tables.chat_messages.id, messageId),
+          eq(tables.chat_messages.project_id, projectId),
+          eq(tables.chat_messages.role, "assistant"),
+          eq(tables.chat_messages.task_kind, "translation"),
+        ),
+      )
+      .get();
     if (!current) throw new MunhaeError("invalid_message", "translation assistant message not found");
     if (current.state === "completed" || current.state === "failed" || current.state === "canceled") return;
     if (current.state !== "queued" && current.state !== "running" && current.state !== "validating") {
@@ -1041,30 +1312,34 @@ export function failTranslationRun(
       ? insertArtifact(db, projectId, "agent_events", metadata.eventsJsonl)
       : null;
     const state = error.code === "canceled" ? "canceled" : "failed";
-    const updated = db.prepare(
-      `UPDATE chat_messages
-       SET state = ?, error_json = ?, completed_at = ?,
-           events_artifact_id = COALESCE(events_artifact_id, ?),
-           usage_json = COALESCE(usage_json, ?),
-           resolved_model = COALESCE(resolved_model, ?),
-           runtime_version = COALESCE(runtime_version, ?)
-       WHERE id = ? AND project_id = ? AND role = 'assistant' AND task_kind = 'translation'
-         AND state IN ('queued', 'running', 'validating')`,
-    ).run(
-      state,
-      canonicalJson({ code: error.code, message: error.message.slice(0, 800) }),
-      nowIso(),
-      events?.id ?? null,
-      metadata.usage === null || metadata.usage === undefined ? null : canonicalJson(metadata.usage),
-      metadata.resolvedModel ?? null,
-      metadata.runtimeVersion ?? null,
-      messageId,
-      projectId,
-    );
+    const updated = orm(db)
+      .update(tables.chat_messages)
+      .set({
+        state: state,
+        error_json: canonicalJson({
+          code: error.code,
+          message: error.message.slice(0, 800),
+        }),
+        completed_at: nowIso(),
+        events_artifact_id: sql`coalesce(${tables.chat_messages.events_artifact_id}, ${events?.id ?? null})`,
+        usage_json: sql`coalesce(${tables.chat_messages.usage_json}, ${metadata.usage === null || metadata.usage === undefined ? null : canonicalJson(metadata.usage)})`,
+        resolved_model: sql`coalesce(${tables.chat_messages.resolved_model}, ${metadata.resolvedModel ?? null})`,
+        runtime_version: sql`coalesce(${tables.chat_messages.runtime_version}, ${metadata.runtimeVersion ?? null})`,
+      })
+      .where(
+        and(
+          eq(tables.chat_messages.id, messageId),
+          eq(tables.chat_messages.project_id, projectId),
+          eq(tables.chat_messages.role, "assistant"),
+          eq(tables.chat_messages.task_kind, "translation"),
+          inArray(tables.chat_messages.state, ["queued", "running", "validating"]),
+        ),
+      )
+      .run();
     if (updated.changes !== 1) {
       throw new MunhaeError("invalid_message_state", "translation execution state changed while recording failure");
     }
-  })();
+  });
 }
 
 export function captureTranslationHead(
@@ -1073,21 +1348,29 @@ export function captureTranslationHead(
   sourceTextId: string,
   targetLocale: string,
 ): TranslationHeadBaseline {
-  const row = getRow<{
-    translation_id: string;
-    current_version_id: string;
-    lock_version: number;
-  }>(
-    db,
-    `SELECT t.id AS translation_id, h.current_version_id, h.lock_version
-     FROM document_translations t
-     JOIN document_translation_heads h ON h.document_translation_id = t.id
-     WHERE t.project_id = ? AND t.source_text_id = ? AND t.target_locale = ?
-       AND t.tombstoned_at IS NULL`,
-    projectId,
-    sourceTextId,
-    targetLocale,
-  );
+  const row = orm(db)
+    .select({
+      translation_id: tables.document_translations.id,
+      current_version_id: tables.document_translation_heads.current_version_id,
+      lock_version: tables.document_translation_heads.lock_version,
+    })
+    .from(tables.document_translations)
+    .innerJoin(
+      tables.document_translation_heads,
+      eq(
+        tables.document_translation_heads.document_translation_id,
+        tables.document_translations.id,
+      ),
+    )
+    .where(
+      and(
+        eq(tables.document_translations.project_id, projectId),
+        eq(tables.document_translations.source_text_id, sourceTextId),
+        eq(tables.document_translations.target_locale, targetLocale),
+        isNull(tables.document_translations.tombstoned_at),
+      ),
+    )
+    .get();
   return row
     ? {
         translationId: row.translation_id,
@@ -1109,38 +1392,54 @@ export function upsertAgentSession(
     stablePromptHash: string;
   },
 ): void {
-  const bound = getRow<{ id: string }>(
-    db,
-    `SELECT m.id
-     FROM chat_messages m
-     JOIN chat_threads t ON t.id = m.thread_id AND t.project_id = m.project_id
-     WHERE m.id = ? AND m.project_id = ? AND m.thread_id = ?
-       AND m.role = 'assistant' AND m.agent_id = ?`,
-    input.messageId,
-    input.projectId,
-    input.threadId,
-    input.agentId,
-  );
+  const bound = orm(db)
+    .select({ id: tables.chat_messages.id })
+    .from(tables.chat_messages)
+    .innerJoin(
+      tables.chat_threads,
+      and(
+        eq(tables.chat_threads.id, tables.chat_messages.thread_id),
+        eq(tables.chat_threads.project_id, tables.chat_messages.project_id),
+      ),
+    )
+    .where(
+      and(
+        eq(tables.chat_messages.id, input.messageId),
+        eq(tables.chat_messages.project_id, input.projectId),
+        eq(tables.chat_messages.thread_id, input.threadId),
+        eq(tables.chat_messages.role, "assistant"),
+        eq(tables.chat_messages.agent_id, input.agentId),
+      ),
+    )
+    .get();
   if (!bound) throw new MunhaeError("invalid_session", "agent session is not bound to the assistant message");
-  db.prepare(
-    `INSERT INTO chat_agent_sessions
-       (project_id, thread_id, agent_id, model, cwd_hash,
-        last_message_id, stable_prompt_hash, state, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
-     ON CONFLICT(thread_id, agent_id) DO UPDATE SET
-       model = excluded.model,
-       cwd_hash = excluded.cwd_hash,
-       last_message_id = excluded.last_message_id,
-       stable_prompt_hash = excluded.stable_prompt_hash,
-       state = 'active', updated_at = excluded.updated_at`,
-  ).run(
-    input.projectId,
-    input.threadId,
-    input.agentId,
-    input.model,
-    input.cwdHash,
-    input.messageId,
-    input.stablePromptHash,
-    nowIso(),
-  );
+  const now = nowIso();
+  orm(db)
+    .insert(tables.chat_agent_sessions)
+    .values({
+      project_id: input.projectId,
+      thread_id: input.threadId,
+      agent_id: input.agentId,
+      model: input.model,
+      cwd_hash: input.cwdHash,
+      last_message_id: input.messageId,
+      stable_prompt_hash: input.stablePromptHash,
+      state: "active",
+      updated_at: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        tables.chat_agent_sessions.thread_id,
+        tables.chat_agent_sessions.agent_id,
+      ],
+      set: {
+        model: input.model,
+        cwd_hash: input.cwdHash,
+        last_message_id: input.messageId,
+        stable_prompt_hash: input.stablePromptHash,
+        state: "active",
+        updated_at: now,
+      },
+    })
+    .run();
 }

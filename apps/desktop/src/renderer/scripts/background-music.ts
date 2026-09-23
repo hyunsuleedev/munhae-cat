@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { AppConfig, MunhaeApi } from "../../shared/munhae-api";
 
 let initialized = false;
@@ -25,19 +26,19 @@ export function initBackgroundMusic(api: MunhaeApi): void {
     try {
       await audio.play();
       if (!enabled) audio.pause();
-      else status("재생 중");
+      else status(t("재생 중"));
     } catch (error) {
       if (!enabled) return;
       status(error instanceof DOMException && error.name === "NotAllowedError"
-        ? "화면을 클릭하면 음악이 재생됩니다."
-        : "음악을 재생하지 못했습니다. 음악을 껐다가 다시 켜 주세요.");
+        ? t("화면을 클릭하면 음악이 재생됩니다.")
+        : t("음악을 재생하지 못했습니다. 음악을 껐다가 다시 켜 주세요."));
     }
   };
   const apply = (config: AppConfig) => {
     audio.volume = Math.min(100, Math.max(0, config.backgroundMusicVolume ?? 18)) / 100;
     enabled = config.backgroundMusicEnabled;
     if (enabled) void play();
-    else { audio.pause(); status("꺼짐"); }
+    else { audio.pause(); status(t("꺼짐")); }
   };
   audio.addEventListener("loadedmetadata", () => {
     try {
@@ -46,7 +47,7 @@ export function initBackgroundMusic(api: MunhaeApi): void {
     } catch { /* Playback remains available when storage is unavailable. */ }
   }, { once: true });
   audio.addEventListener("error", () => {
-    if (enabled) status("음원 파일을 불러오지 못했습니다.");
+    if (enabled) status(t("음원 파일을 불러오지 못했습니다."));
   });
   window.addEventListener("pagehide", () => {
     try { sessionStorage.setItem(positionKey, String(audio.currentTime)); } catch { /* Best effort. */ }
@@ -64,5 +65,5 @@ export function initBackgroundMusic(api: MunhaeApi): void {
   const initialRevision = revision;
   void api.app.getConfig().then((config) => {
     if (revision === initialRevision) apply(config);
-  }).catch(() => status("배경음악 설정을 불러오지 못했습니다."));
+  }).catch(() => status(t("배경음악 설정을 불러오지 못했습니다.")));
 }

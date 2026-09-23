@@ -103,7 +103,7 @@ describe("document metadata and context cards", () => {
     );
   });
 
-  it("creates, edits, toggles, reprioritizes, and archives context cards with CAS", () => {
+  it("creates, edits, toggles, reprioritizes, and deletes context cards with CAS", () => {
     const repo = track(createProject({ title: "문맥", parentDir: tempDir() }).handle);
     const root = repo.getHome().documents.find((item) => item.isMaster)!;
     const child = repo.createDocument({
@@ -179,10 +179,10 @@ describe("document metadata and context cards", () => {
       priority: 8,
       expectedLockVersion: disabled.lockVersion,
     });
-    repo.archiveContextItem({ id: prioritized.id, expectedLockVersion: prioritized.lockVersion });
+    repo.deleteContextItem({ id: prioritized.id, expectedLockVersion: prioritized.lockVersion });
     expect(repo.getKnowledge().contextItems.some((item) => item.id === direct.id)).toBe(false);
     expectCode(
-      () => repo.archiveContextItem({ id: ancestor.id, expectedLockVersion: ancestor.lockVersion + 1 }),
+      () => repo.deleteContextItem({ id: ancestor.id, expectedLockVersion: ancestor.lockVersion + 1 }),
       "cas_conflict",
     );
   });

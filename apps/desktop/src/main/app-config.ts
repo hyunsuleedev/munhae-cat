@@ -1,3 +1,4 @@
+import { fixedGeminiEffort } from "../shared/agent-model-preferences";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DEFAULT_APP_CONFIG, type AppConfig } from "../shared/munhae-api";
@@ -64,14 +65,23 @@ export function parseAppConfig(value: unknown): AppConfig {
   const claude = { ...parsedClaude, serviceTier: null };
   const parsedAntigravity = parseModelPrefs(models.antigravity) ?? DEFAULT_APP_CONFIG.agentModels.antigravity;
   const antigravity = { ...parsedAntigravity, serviceTier: null,
-    reasoning: ["low", "medium", "high"].includes(parsedAntigravity.reasoning ?? "") ? parsedAntigravity.reasoning : null };
+    reasoning: fixedGeminiEffort(parsedAntigravity.model) ?? (["low", "medium", "high"].includes(parsedAntigravity.reasoning ?? "") ? parsedAntigravity.reasoning : null) };
+  const alignmentRecord = isRecord(rec.alignment) ? rec.alignment : null;
+  const alignmentAgent = alignmentRecord && parseAgentId(alignmentRecord.agentId);
+  const alignmentPrefs = alignmentRecord && parseModelPrefs(alignmentRecord);
+  const alignment = alignmentAgent && alignmentPrefs ? { ...alignmentPrefs, agentId: alignmentAgent,
+    serviceTier: alignmentAgent === "codex" ? alignmentPrefs.serviceTier : null,
+    reasoning: alignmentAgent === "antigravity" ? fixedGeminiEffort(alignmentPrefs.model) ?? (["low", "medium", "high"].includes(alignmentPrefs.reasoning ?? "") ? alignmentPrefs.reasoning : null) : alignmentPrefs.reasoning } : null;
   const showWelcomeOnLaunch =
     typeof rec.showWelcomeOnLaunch === "boolean"
       ? rec.showWelcomeOnLaunch
       : DEFAULT_APP_CONFIG.showWelcomeOnLaunch;
   return {
+    language: rec.language === "en" ? "en" : "ko",
+    translationLanguage: rec.translationLanguage === "en" ? "en" : "ko",
     agentId,
     agentModels: { codex, claude, antigravity },
+    alignment,
     showWelcomeOnLaunch,
     backgroundMusicVolume: typeof rec.backgroundMusicVolume === "number" && Number.isFinite(rec.backgroundMusicVolume)
       ? Math.round(Math.min(100, Math.max(0, rec.backgroundMusicVolume)))
@@ -92,7 +102,7 @@ export function parseConfigPatch(value: unknown): Partial<AppConfig> {
       throw new AppError("invalid_payload", "설정에 비밀 값을 저장할 수 없습니다.");
     }
   }
-  const allowed = new Set(["agentId", "agentModels", "showWelcomeOnLaunch", "backgroundMusicEnabled", "backgroundMusicVolume", "notificationSoundEnabled", "notificationSoundVolume"]);
+  const allowed = new Set(["alignment", "language", "translationLanguage", "agentId", "agentModels", "showWelcomeOnLaunch", "backgroundMusicEnabled", "backgroundMusicVolume", "notificationSoundEnabled", "notificationSoundVolume"]);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) {
       throw new AppError("invalid_payload", "알 수 없는 설정 항목입니다.");
@@ -100,6 +110,15 @@ export function parseConfigPatch(value: unknown): Partial<AppConfig> {
   }
   const parsed = parseAppConfig({ ...DEFAULT_APP_CONFIG, ...value });
   const patch: Partial<AppConfig> = {};
+  if ("language" in value) {
+    if (value.language !== "ko" && value.language !== "en") throw new AppError("invalid_payload", "Unsupported display language.");
+    patch.language = value.language;
+  }
+  if ("translationLanguage" in value) {
+    if (value.translationLanguage !== "ko" && value.translationLanguage !== "en") throw new AppError("invalid_payload", "Unsupported translation language.");
+    patch.translationLanguage = value.translationLanguage;
+  }
+  if ("alignment" in value) patch.alignment = parsed.alignment;
   if ("agentId" in value) patch.agentId = parsed.agentId;
   if ("agentModels" in value) patch.agentModels = parsed.agentModels;
   if ("showWelcomeOnLaunch" in value) patch.showWelcomeOnLaunch = parsed.showWelcomeOnLaunch;

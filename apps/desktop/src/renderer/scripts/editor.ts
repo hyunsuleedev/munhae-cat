@@ -1,3 +1,14 @@
+import { configureSentenceSelection } from "./sentence-selection-ui";
+import { createPunctuationProgress } from "./punctuation-progress-ui";
+import { configurePunctuationWorkspace } from "./punctuation-workspace-ui";
+import { configureComparisonResize } from "./comparison-resize";
+import { configureTermReview } from "./term-review-ui";
+import { alignmentSettingsMarkup, changeAlignmentSetting } from "./alignment-settings-ui";
+import { chatMessageMarkup, configureChatSurface, isChatSubmit } from "./chat-ui";
+import { thinkingMarkup, chatActivityMarkup } from "./thinking-ui";
+import { createTranslationProgress, translationProgressState, translationRunLabel } from "./translation-progress-ui";
+import { prepModelMarkup, changePrepModelSetting, prepAlignmentSummary, prepRequiredContent, isTechnicalPreparationItem } from "./translation-setup-ui";
+import { t, ui, uiText } from "./i18n";
 import { configureConcordance } from "./concordance-ui";
 import { configureQuickTerm } from "./quick-term-ui";
 import { USAGE_LABELS } from "./knowledge-model";
@@ -7,9 +18,11 @@ import { configureReviewExport } from "./review-export-ui";
 import { configureTranslationChecks } from "./translation-checks-ui";
 import { configureDocumentFind } from "./document-find-ui";
 import type { CheckInput, TranslationCheck } from "./translation-checks";
-import { matchUnchangedTextSentences, replaceTextSentence, textSentences, type TextSentence } from "@munhae/domain/text-sentences";
+import { groupedTextSentences, matchUnchangedTextSentences, replaceTextSentence, textSentences, type TextSentence } from "@munhae/domain/text-sentences";
 import { configureSentenceLinkUi } from "./sentence-link-ui";
 import { termMarkup } from "./term-markup";
+import { configureEditorAids, type TranslationDraft, type EditorRecovery } from "./editor-aids-ui";
+import { findReviewPlace, type ReadingPosition } from "./editor-session";
 import { configureReviewComments } from "./review-comments-ui";
 import { configureDocumentMaterials } from "./document-materials-ui";
 import { createPunctuationProjection, projectSourceRange, type PunctuationProjection } from "./punctuation-projection";
@@ -44,9 +57,11 @@ import {
   persistDoc,
   readPersistedDoc,
   renderSidebar,
+  registerProjectRefresh,
   requireProject,
   setSelfTitle,
-  shortPath,
+  projectLocationLabel,
+  savedLocallyLabel,
   store,
   unwrap,
 } from "./shared";
@@ -61,7 +76,7 @@ const project = await requireProject();
 if (!project) throw new Error("redirect");
 
 type Layout = "source" | "parallel" | "full" | "reading";
-type Workspace = "source" | "punctuation" | "segmentation" | "translation";
+type Workspace = "terms" | "source" | "punctuation" | "segmentation" | "translation";
 type Block = {
   key: string;
   anchors: string[];
@@ -90,7 +105,7 @@ const api = initShell({
     "prepare",
     "run",
   ],
-  selfTitle: `편집 — ${project.title}`,
+  selfTitle: ui`편집 — ${project.title}`,
   pageCmd,
   pageKeys,
   beforeNavigate: () => {
@@ -121,10 +136,12 @@ let workspaceSwitching = false;
 const activeMutations = new Map<HTMLButtonElement, string>();
 let editorLoadSerial = 0;
 let editorEditSerial = 0;
+let editorViewSerial = 0;
 let translationDraftText = "";
 let selectedSentenceId: string | null = null;
 let sentenceDrafts: TextSentence[] = [];
 let editingSentenceId: string | null = null;
+let groupStructureDirty = false;
 let sentenceLinks: NonNullable<NonNullable<EditorView["translation"]>["textLayout"]>["links"] = [];
 const pendingTranslationEdits = new Set<string>();
 let blockOrderSaving = false;
@@ -133,6 +150,7 @@ let hot: string[] = [];
 let sourceDirty = false;
 let sourceEditingConfirmed = false;
 let punctuationDirty = false;
+let punctuationEditingConfirmed = false;
 let structureDrafts: StructureSpanInput[] | undefined = [];
 let terms: Record<string, TermInfo> = {};
 let knowledge: KnowledgeView | null = null;
@@ -143,6 +161,8 @@ let prepPreview: ContextPreview | null = null;
 let prepDocId: string | null = null;
 let prepRevision: { baseVersionId: string; commentIds: string[] } | undefined;
 let prepRequest = 0;
+let prepPreviewPending = false;
+let prepPreviewError: string | null = null;
 const prepAuxMode = new Map<string, "auto" | "pin" | "exclude">();
 const prepExpanded = new Set<string>();
 let agentProbes: AgentProbe[] = [];
@@ -151,6 +171,10 @@ let agentProbeLoading = false;
 let agentProbeError: string | null = null;
 let aiRun: AiRunView | null = null;
 let aiStarting = false;
+let prepProgressMode = false;
+let prepSettingsSaveChain = Promise.resolve();
+let prepSettingsSaveError: unknown = null;
+let prepSettingsPending = 0;
 let aiCanceling = false;
 let aiActionError: { code: string; message: string } | null = null;
 let aiPollTimer: number | null = null;
@@ -182,14 +206,19 @@ let referenceObjectUrl: string | null = null;
 let loadedReferenceKey: string | null = null;
 let referenceLoadSerial = 0;
 
+const termReview = configureTermReview({ api, host: must("#termsWorkspace"), view: () => view,
+  canStart: () => !sourceDirty && !punctuationDirty && !editorMutationBusy(),
+  changed: () => { prepRevision = undefined; },
+});
+
 const reviewComments = configureReviewComments({
   api,
   openDictionary: context => dictionary.open(context),
-  view: () => view,
+  view: () => view?.translation?.textLayout ? { ...view, translation: { ...view.translation, textLayout: { ...view.translation.textLayout, sentences: sentenceDrafts, links: sentenceLinks } } } : view,
   hasUnsavedChanges: () => hasUnsavedChanges() || aiStarting || aiRun?.state === "running",
   hasUnsavedTextChanges: () => dirty || sourceDirty || punctuationDirty || translationSaving || workspaceSaving
     || aiStarting || aiRun?.state === "running" || auxiliaryStarting !== null || auxiliaryRun?.state === "running",
-  canEditTranslation: (sentenceId) => editing() && !editorMutationBusy() && sentenceId === editingSentenceId,
+  canEditTranslation: (sentenceId) => editing() && !editorMutationBusy() && isSentenceEditing(sentenceId),
   escape: esc,
   notify,
   showComments: (next = "parallel") => {
@@ -243,7 +272,7 @@ const documentFind = configureDocumentFind({ host: must("#translationWorkspace")
 });
 const concordance = configureConcordance({ api, escape: esc, notify, currentDocumentId: () => view?.document.id ?? null,
   openDocument: async (id, sentenceId, versionId) => {
-    if (hasUnsavedChanges()) { notify("편집한 내용을 저장한 뒤 다른 용례 위치로 이동하세요.", "내 번역 용례"); return; }
+    if (hasUnsavedChanges()) { notify(t("편집한 내용을 저장한 뒤 다른 용례 위치로 이동하세요."), t("내 번역 용례")); return; }
     if (view?.document.id !== id) await loadEditor(id);
     if (view?.document.id !== id) return;
     if (sentenceId && view.translation?.versionId === versionId) {
@@ -270,9 +299,73 @@ const readingStudy = configureReadingStudy({ api, host: must("#viewReading"), es
 });
 const reviewExport = configureReviewExport({ api, currentDocumentId: () => view?.document.id ?? null, notify,
   beforeExport: () => {
-    if (hasUnsavedChanges() || editorMutationBusy()) { notify("편집한 내용을 먼저 저장한 뒤 검토본을 출력하세요.", "검토본 출력"); return false; }
+    if (hasUnsavedChanges() || editorMutationBusy()) { notify(t("편집한 내용을 먼저 저장한 뒤 검토본을 출력하세요."), t("검토본 출력")); return false; }
     return true;
   },
+});
+
+function captureTranslation(): TranslationDraft {
+  return structuredClone({ text: translationDraftText, sentences: sentenceDrafts, links: sentenceLinks, blocks, structureDirty: groupStructureDirty });
+}
+function editorPosition(): ReadingPosition {
+  const sentence = sentenceDrafts.find(s => s.id === selectedSentenceId);
+  return { workspace, layout, sentenceId: sentence?.id ?? null, quote: sentence?.text ?? "", from: sentence?.from ?? 0, translationVersion: view?.translation?.versionId ?? null, scrollTop: must(".pane-center .pane-scroll").scrollTop };
+}
+function restoreEditorPosition(position: ReadingPosition): void {
+  const id = position.translationVersion === view?.translation?.versionId && sentenceDrafts.some(s => s.id === position.sentenceId)
+    ? position.sentenceId : findReviewPlace({ sentenceId: position.sentenceId ?? "", from: position.from, quote: position.quote }, sentenceDrafts);
+  selectedSentenceId = id;
+  setWorkspace(position.workspace as Workspace); setView(position.layout as Layout);
+  renderComparisonState(); renderBookGroups(); resizeSentenceEditors();
+  must(".pane-center .pane-scroll").scrollTop = position.scrollTop;
+}
+function restoreTranslation(snapshot: TranslationDraft): void {
+  const focused = document.activeElement instanceof HTMLTextAreaElement ? document.activeElement : null;
+  const focusId = focused?.dataset.sentenceEdit, caret = focused?.selectionStart ?? 0;
+  translationDraftText = snapshot.text; sentenceDrafts = snapshot.sentences; sentenceLinks = snapshot.links; blocks = snapshot.blocks;
+  const saved = view?.translation;
+  const groupKey = (sentences: TextSentence[], links: typeof sentenceLinks) => JSON.stringify(sentences.map(s => ({ text: s.text, spans: links.find(l => l.sentenceId === s.id)?.spans ?? [] })));
+  groupStructureDirty = !!saved?.textLayout && groupKey(sentenceDrafts, sentenceLinks) !== groupKey(groupedTextSentences(saved.textContent, saved.textLayout.sentences, saved.textLayout.links), saved.textLayout.links);
+  dirty = saved?.textLayout ? translationDraftText !== saved.textContent || groupStructureDirty : JSON.stringify(blocks) !== JSON.stringify(saved ? blocksFrom(saved) : []);
+  if (!sentenceDrafts.some(s => s.id === editingSentenceId)) editingSentenceId = null;
+  if (focusId && sentenceDrafts.some(s => s.id === focusId)) { selectedSentenceId = focusId; editingSentenceId = focusId; }
+  must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
+  must("#bookGroups").replaceChildren(); editorEditSerial++;
+  reviewComments.cancelSelection(); renderRows(); renderFull(); renderStrip();
+  if (focusId) {
+    const field = Array.from(document.querySelectorAll<HTMLTextAreaElement>(".sentence-edit")).find(f => f.dataset.sentenceEdit === focusId && f.getClientRects().length);
+    field?.focus({ preventScroll: true }); field?.setSelectionRange(caret, caret);
+  }
+}
+const editorAids = configureEditorAids({
+  root: must(".center-body"), escape: esc, notify,
+  context: () => view ? {
+    scope: JSON.stringify([project.packagePath, project.projectId, view.document.id]),
+    base: JSON.stringify([view.source.versionId, view.source.lockVersion, view.punctuation?.versionId, view.punctuation?.lockVersion, view.translation?.versionId, view.translation?.lockVersion]),
+    sourceVersion: view.source.versionId, translationVersion: view.translation?.versionId ?? null,
+    editable: editing(), busy: editorMutationBusy(), dirty: sourceDirty || punctuationDirty || dirty, sentences: sentenceDrafts,
+  } : null,
+  capture: captureTranslation, restore: restoreTranslation,
+  recovery: () => ({ translation: captureTranslation(), translationDirty: dirty,
+    source: must<HTMLTextAreaElement>("#sourceDraftText").value, sourceDirty, sourceEditingConfirmed,
+    punctuation: must<HTMLTextAreaElement>("#punctuationDraftText").value, punctuationDirty,
+    punctuationMode: must<HTMLSelectElement>("#punctuationMode").value,
+    structures: structureDrafts, position: editorPosition(),
+  }),
+  restoreRecovery: (draft: EditorRecovery) => {
+    sourceDirty = draft.sourceDirty; sourceEditingConfirmed = draft.sourceEditingConfirmed;
+    punctuationDirty = draft.punctuationDirty;
+    punctuationEditingConfirmed = draft.punctuationDirty && view?.punctuation?.state === "confirmed";
+    structureDrafts = draft.structures;
+    must<HTMLTextAreaElement>("#sourceDraftText").value = draft.source;
+    must<HTMLTextAreaElement>("#punctuationDraftText").value = draft.punctuation;
+    must<HTMLSelectElement>("#punctuationMode").value = draft.punctuationMode;
+    if (draft.translationDirty) restoreTranslation(draft.translation);
+    renderDraftWorkspaces(); restoreEditorPosition(draft.position); editorEditSerial++;
+  },
+  position: editorPosition, restorePosition: restoreEditorPosition,
+  changed: () => { renderRows(); const menu = must("#bookGroups").querySelector<HTMLElement>(".book-group-menu"); if (menu) delete menu.dataset.sentence; renderBookGroups(); },
+  locate: locateSentence,
 });
 
 function checkSnapshot(): CheckInput | null {
@@ -328,10 +421,14 @@ function locateTextRange(target: "source" | "translation", from: number, to: num
   if (!view) return;
   reviewComments.cancelSelection(); setWorkspace("translation"); setView("full");
   if (target === "translation" && view.translation?.textLayout) {
-    const field = must<HTMLTextAreaElement>("#fullTranslationInput");
-    const normalizedFrom = translationDraftText.slice(0, from).replace(/\r\n?/g, "\n").length;
-    const normalizedTo = translationDraftText.slice(0, to).replace(/\r\n?/g, "\n").length;
-    field.focus(); field.setSelectionRange(normalizedFrom, normalizedTo); scrollTextareaSelection(field, normalizedFrom);
+    const pointFrom = Array.from(translationDraftText.slice(0, from)).length;
+    const sentence = sentenceDrafts.find(sentence => sentence.to > pointFrom) ?? sentenceDrafts.at(-1);
+    const field = sentence && Array.from(must("#bookGroups").querySelectorAll<HTMLTextAreaElement>("textarea")).find(field => field.dataset.sentenceEdit === sentence.id);
+    if (field && sentence) {
+      const prefix = Array.from(translationDraftText).slice(0, sentence.from).join("").length;
+      field.focus(); field.setSelectionRange(Math.max(0, from - prefix), Math.min(field.value.length, to - prefix));
+      field.scrollIntoView({ block: "center" });
+    }
   } else if (target === "translation") {
     const root = must("#fullText");
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -355,7 +452,7 @@ function locateTextRange(target: "source" | "translation", from: number, to: num
     if (!node) return;
     const range = document.createRange(); range.setStart(node, Math.min(from, node.textContent?.length ?? 0)); range.setEnd(node, Math.min(to, node.textContent?.length ?? 0));
     const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
-    scrollToTextRect(range.getBoundingClientRect()); must("#folioSourceLabel").textContent = "원문 · 선택 위치";
+    scrollToTextRect(range.getBoundingClientRect()); must("#folioSourceLabel").textContent = t("원문 · 선택 위치");
   }
 }
 function locateCheck(issue: TranslationCheck): void {
@@ -375,6 +472,7 @@ function comparisonSentences() {
     if (dirty && sentence.id === selectedSentenceId) return true;
     const link = sentenceLinks.find(item => item.sentenceId === sentence.id);
     if (only && !sentenceNeedsReview(sentence.id)) return false;
+    if (filter === "bookmarks" && !editorAids.isBookmarked(sentence.id)) return false;
     if (filter === "unlinked" && link?.spans.length) return false;
     if (filter === "comments" && (dirty || !comments.some(comment => comment.targetKind === "translation"
       ? comment.codepointFrom < sentence.to && comment.codepointTo > sentence.from
@@ -384,18 +482,18 @@ function comparisonSentences() {
 }
 
 const VERSION_STATE_LABELS: Record<EditorView["source"]["state"], string> = {
-  draft: "작성 중",
-  confirmed: "확정",
-  rejected: "반려",
-  superseded: "이전 버전",
+  draft: t("작성 중"),
+  confirmed: t("확정"),
+  rejected: t("반려"),
+  superseded: t("이전 버전"),
 };
 
 const STRUCTURE_KIND_LABELS: Record<StructureSpanKind, string> = {
-  paragraph: "문단",
-  sentence: "문장",
-  verse_line: "행",
-  couplet: "대구",
-  stanza: "연",
+  paragraph: t("문단"),
+  sentence: t("문장"),
+  verse_line: t("행"),
+  couplet: t("대구"),
+  stanza: t("연"),
 };
 
 function codepointLength(text: string): number {
@@ -424,15 +522,15 @@ function fmt(n: number): string {
 }
 
 function prepReasonLabel(reason: string): string {
-  if (reason === "current_document" || reason === "current_document_context") return "현재 문서";
+  if (reason === "current_document" || reason === "current_document_context") return t("현재 문서");
   if (reason.startsWith("ancestor_document_context:")) {
-    return `상위 문서 · ${reason.split(":")[1]}단계`;
+    return ui`상위 문서 · ${reason.split(":")[1]}단계`;
   }
   const labels: Record<string, string> = {
-    exact_match: "원문 일치",
-    related_uncertainty: "현재 문서 앵커",
-    project_uncertainty: "다른 문서의 불확실성",
-    project_glossary: "공통 용어집",
+    exact_match: t("원문 일치"),
+    related_uncertainty: t("현재 문서 앵커"),
+    project_uncertainty: t("다른 문서의 불확실성"),
+    project_glossary: t("공통 용어집"),
   };
   return labels[reason] ?? reason;
 }
@@ -448,15 +546,15 @@ function selectedChatAgent(): AgentProbe["agentId"] {
 function renderChatModelInfo(): void {
   const info = must("#chatModelInfo");
   if (!appConfig) {
-    info.textContent = "설정 확인 중…";
+    info.textContent = t("설정 확인 중…");
     return;
   }
   const prefs = appConfig.agentModels[selectedChatAgent()];
   const model = agentProbe(selectedChatAgent())?.models.find((item) => item.id === prefs.model);
   const modelLabel = !prefs.model || prefs.model === "default"
-    ? "CLI 기본값"
+    ? t("CLI 기본값")
     : model?.label || prefs.model;
-  info.textContent = `${modelLabel} · effort ${prefs.reasoning || "CLI 기본값"}`;
+  info.textContent = `${modelLabel} · effort ${prefs.reasoning || t("CLI 기본값")}`;
 }
 
 function selectedChatScope(): ChatScopeKind {
@@ -498,59 +596,124 @@ function renderAgentOptions(): void {
       const agentId = option.value as AgentProbe["agentId"];
       const probe = agentProbes.find((item) => item.agentId === agentId);
       const status = !probe
-        ? "상태 확인 전"
+        ? t("상태 확인 전")
         : !probe.installed
-          ? "설치되지 않음"
+          ? t("설치되지 않음")
           : probe.loggedIn === true
-            ? "연결됨"
+            ? t("연결됨")
             : probe.loggedIn === false
-              ? "로그인 필요"
-              : "로그인 상태 확인 불가";
+              ? t("로그인 필요")
+              : t("로그인 상태 확인 불가");
       const version = probe?.version ? ` · ${probe.version}` : "";
-      option.textContent = `${agentLabel(agentId)}${version} · ${status}`;
+      option.textContent = select.id === "prepAgent" && agentId === "antigravity" ? "Gemini · Antigravity" : agentLabel(agentId).replace(" CLI", "");
+      option.title = `${agentLabel(agentId)}${version} · ${status}`;
     }
   }
 }
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
-    queued: "실행 대기",
-    starting: "로컬 에이전트 시작",
-    preparing: "요청 준비",
-    assembling: "요청 조립",
-    spawning: "로컬 에이전트 시작",
-    running: "번역 생성",
-    streaming: "번역 생성",
-    thinking: "응답 구상",
-    parsing: "응답 해석",
-    validating: "응답 형식 확인",
-    validation_failed: "응답 형식 확인 실패",
-    applying: "번역안 저장",
-    translation_saved: "문장을 연결하는 중",
-    aligning: "문장을 연결하는 중",
-    stopping: "실행 중지",
-    completed: "번역 완료",
-    failed: "실행 실패",
-    canceled: "실행 취소",
+    queued: t("실행 대기"),
+    starting: t("로컬 에이전트 시작"),
+    preparing: t("요청 준비"),
+    assembling: t("요청 조립"),
+    spawning: t("로컬 에이전트 시작"),
+    running: t("번역 생성"),
+    streaming: t("번역 생성"),
+    thinking: t("응답 구상"),
+    parsing: t("응답 해석"),
+    validating: t("응답 형식 확인"),
+    validation_failed: t("응답 형식 확인 실패"),
+    applying: t("번역안 저장"),
+    translation_saved: t("문장을 연결하는 중"),
+    aligning: t("문장을 연결하는 중"),
+    stopping: t("실행 중지"),
+    completed: t("번역 완료"),
+    failed: t("실행 실패"),
+    canceled: t("실행 취소"),
   };
   return labels[phase] ?? phase.replaceAll("_", " ");
 }
 
 function validationLabel(state: AiRunView["validationState"]): string | null {
-  if (state === "valid") return "형식·현재 분절 참조 확인 · 번역안 적용됨";
-  if (state === "needs_review") return "번역안 적용됨 · 재검토 필요";
-  if (state === "invalid_unapplied") return "형식 또는 현재 분절 참조 오류 · 번역안 미적용";
+  if (state === "valid") return t("형식·현재 분절 참조 확인 · 번역안 적용됨");
+  if (state === "needs_review") return t("번역안 적용됨 · 재검토 필요");
+  if (state === "invalid_unapplied") return t("형식 또는 현재 분절 참조 오류 · 번역안 미적용");
   return null;
 }
 
 function actionableAiError(runError: { code: string; message: string }): string {
   if (runError.code === "context_too_large") {
-    return `${runError.message} 문서를 장·절·편 단위로 나눈 뒤 다시 실행하세요.`;
+    return ui`${t(runError.message)} 문서를 장·절·편 단위로 나눈 뒤 다시 실행하세요.`;
   }
   if (runError.code === "auth_required" || runError.code === "auth_unknown") {
-    return `${runError.message} 설정에서 CLI 로그인 명령을 확인한 뒤 터미널에서 실행하세요.`;
+    return ui`${t(runError.message)} 설정에서 CLI 로그인 명령을 확인한 뒤 터미널에서 실행하세요.`;
   }
-  return runError.message;
+  return t(runError.message);
+}
+
+let punctuationProgressMode = false;
+const punctuationProgress = createPunctuationProgress(must<HTMLDialogElement>("#dlgPunctuation"));
+window.addEventListener("pagehide", event => { if (!event.persisted) punctuationProgress.dispose(); });
+const punctuationActivityOverrides = new Map<string, boolean>();
+let punctuationActivitySignature = "";
+function renderPunctuationProgress(run: AiRunView | null, starting: boolean, running: boolean): void {
+  if (running) punctuationProgressMode = true;
+  const dialog = must<HTMLDialogElement>("#dlgPunctuation");
+  dialog.dataset.mode = punctuationProgressMode ? "progress" : "setup";
+  must("#punctuationRunPanel").hidden = !punctuationProgressMode;
+  must("#punctuationPrepBack").hidden = !punctuationProgressMode || running;
+  must("#punctuationPrepFootnote").className = punctuationProgressMode ? "prep-background-note" : "prep-setup-total";
+  must("#punctuationPrepEyebrow").hidden = !punctuationProgressMode;
+  must("#punctuationPrepHeading").textContent = punctuationProgressMode ? view?.document.originalTitle || view?.document.title || t("AI 표점 생성") : t("AI 표점 생성");
+  must("#punctuationPrepProvider").textContent = agentLabel(run?.agentId ?? selectedPunctuationAgent()).replace(" CLI", "");
+  const error = auxiliaryActionError?.kind === "punctuation_suggest" ? auxiliaryActionError : run?.error;
+  punctuationProgress.update(run, starting, !!run && auxiliaryCanceling, error ? actionableAiError(error) : "");
+  const container = must("#punctuationRunActivity");
+  if (!container.dataset.bound) {
+    container.dataset.bound = "true";
+    container.addEventListener("click", event => {
+      const details = (event.target as Element).closest("summary")?.parentElement as HTMLDetailsElement | null;
+      if (details?.dataset.thinkingKey) punctuationActivityOverrides.set(details.dataset.thinkingKey, !details.open);
+    });
+  }
+  const blocks = run?.activity?.filter(block => block.kind !== "text");
+  const signature = JSON.stringify([run?.messageId, run?.state, blocks]);
+  if (punctuationActivitySignature !== signature) {
+    punctuationActivitySignature = signature;
+    const top = container.scrollTop, pinned = container.scrollHeight - top - container.clientHeight < 48;
+    container.innerHTML = run ? chatActivityMarkup(blocks, run.messageId, new Set(), undefined, {
+      state: run.state, startedAt: run.startedAt, completedAt: run.completedAt, overrides: punctuationActivityOverrides, grouped: false,
+    }) : "";
+    container.hidden = !container.innerHTML;
+    container.scrollTop = pinned ? container.scrollHeight : top;
+  }
+}
+const prepActivityOverrides = new Map<string, boolean>();
+const prepProgress = createTranslationProgress(must<HTMLDialogElement>("#dlgPrepare"));
+window.addEventListener("pagehide", event => { if (!event.persisted) prepProgress.dispose(); });
+let prepActivitySignature = "";
+function renderPrepActivity(): void {
+  const container = must<HTMLElement>("#prepRunActivity");
+  if (!container.dataset.bound) {
+    container.dataset.bound = "true";
+    container.addEventListener("click", event => {
+      const summary = (event.target as Element).closest("summary");
+      const details = summary?.parentElement as HTMLDetailsElement | null;
+      if (details?.dataset.thinkingKey) prepActivityOverrides.set(details.dataset.thinkingKey, !details.open);
+    });
+  }
+  const blocks = aiRun?.activity?.filter(block => block.kind !== "text");
+  const signature = JSON.stringify([aiRun?.messageId, aiRun?.state, blocks]);
+  if (signature === prepActivitySignature) return;
+  prepActivitySignature = signature;
+  const top = container.scrollTop;
+  const pinned = container.scrollHeight - top - container.clientHeight < 48;
+  container.innerHTML = aiRun ? chatActivityMarkup(blocks, aiRun.messageId, new Set(), undefined, {
+    state: aiRun.state, startedAt: aiRun.startedAt, completedAt: aiRun.completedAt, overrides: prepActivityOverrides, grouped: false,
+  }) : "";
+  container.hidden = !container.innerHTML;
+  container.scrollTop = pinned ? container.scrollHeight : top;
 }
 
 function renderAiRunPanel(): void {
@@ -561,18 +724,20 @@ function renderAiRunPanel(): void {
   const error = must<HTMLElement>("#prepRunError");
   const hasState = aiStarting || !!aiRun || !!aiActionError;
   panel.hidden = !hasState;
+  renderPrepActivity();
+  prepProgress.update(aiRun, aiStarting, aiCanceling);
   if (!hasState) return;
 
   const state: AiRunView["state"] = aiStarting ? "running" : (aiRun?.state ?? "failed");
   const labels: Record<AiRunView["state"], string> = {
-    running: aiCanceling ? "취소 요청 중" : ["translation_saved", "aligning"].includes(aiRun?.phase ?? "") ? "문장을 연결하는 중" : "실행 중",
+    running: aiCanceling ? t("취소 요청 중") : ["translation_saved", "aligning"].includes(aiRun?.phase ?? "") ? t("문장을 연결하는 중") : t("실행 중"),
     completed: aiRun?.validationState === "invalid_unapplied"
-      ? "완료 · 미적용"
+      ? t("완료 · 미적용")
       : aiRun?.validationState === "needs_review"
-        ? "완료 · 재검토"
-        : "완료",
-    failed: "실패",
-    canceled: "취소됨",
+        ? t("완료 · 재검토")
+        : t("완료"),
+    failed: t("실패"),
+    canceled: t("취소됨"),
   };
   const classes: Record<AiRunView["state"], string> = {
     running: "tag tag-line",
@@ -591,33 +756,46 @@ function renderAiRunPanel(): void {
   meter.setAttribute("aria-busy", String(state === "running"));
 
   const validation = state === "running" ? null : validationLabel(aiRun?.validationState ?? null);
-  must("#prepRunPhase").textContent = aiStarting
-    ? "로컬 에이전트에 실행을 요청하는 중입니다."
-    : [phaseLabel(aiRun?.phase ?? state), validation].filter(Boolean).join(" · ");
+  const progress = translationProgressState(aiRun, aiStarting, aiCanceling);
+  must("#prepRunPhase").textContent = t(progress.title);
+  must("#prepRunDetail").textContent = t(progress.description);
+  must("#prepLatestActivity").textContent = aiStarting ? t("요청 준비") : phaseLabel(aiRun?.phase ?? state);
   const differentDocument = !!aiRun && !!view && aiRun.documentNodeId !== view.document.id;
-  must("#prepRunDetail").textContent = [
-    aiRun?.detail,
-    aiRun?.validationState === "invalid_unapplied"
-      ? "응답은 실행 기록에 보존됐지만 번역안에는 적용되지 않았습니다."
-      : null,
-    differentDocument ? "다른 문서에서 시작한 실행입니다." : null,
-  ].filter(Boolean).join(" ");
+  must("#prepActivityDetail").textContent = [
+    aiRun?.detail ? t(aiRun.detail) : null,
+    validation,
+    differentDocument ? t("다른 문서에서 시작한 실행입니다.") : null,
+  ].filter(Boolean).join(" ") || t(progress.description);
 
   const partialText = aiRun?.partialText ?? "";
   partial.textContent = partialText.length > 12_000
-    ? `…앞부분 생략…\n${partialText.slice(-12_000)}`
+    ? ui`…앞부분 생략…\n${partialText.slice(-12_000)}`
     : partialText;
   partial.hidden = !partial.textContent;
-  partial.setAttribute("aria-label", "현재까지 생성된 번역");
+  partial.setAttribute("aria-label", t("현재까지 생성된 번역"));
   const runError = aiActionError ?? aiRun?.error;
   error.textContent = runError ? `${actionableAiError(runError)} (${runError.code})` : "";
   error.hidden = !runError;
 
-  must("#prepStatus").className = stateClass;
-  must("#prepStatus").textContent = labels[state];
+}
+
+function renderTranslationRunIndicator(): void {
+  const currentDocument = !!view && (!aiRun || aiRun.documentNodeId === view.document.id);
+  const label = currentDocument ? translationRunLabel(aiRun, aiStarting, aiCanceling) : null;
+  const indicator = must<HTMLButtonElement>("#translationRunIndicator");
+  indicator.hidden = !label;
+  const text = label ? t(label) : "";
+  const status = must("#translationRunLabel");
+  if (status.textContent !== text) status.textContent = text;
+  const accessibleLabel = label ? ui`${text} · 진행 화면 열기` : t("진행 화면 열기");
+  if (indicator.getAttribute("aria-label") !== accessibleLabel) indicator.setAttribute("aria-label", accessibleLabel);
+  const buttonLabel = must("#prepareButtonLabel");
+  const action = label ? t("진행 보기") : view?.translation?.isCurrentDependencies ? t("새 AI 번역… ") : t("AI 번역… ");
+  if (buttonLabel.textContent !== action) buttonLabel.textContent = action;
 }
 
 function renderPreparationControls(): void {
+  renderTranslationRunIndicator();
   const selectedId = selectedPrepAgent();
   const probe = selectedAgentProbe();
   const running = aiRun?.state === "running";
@@ -627,61 +805,106 @@ function renderPreparationControls(): void {
   const available = !!probe?.installed && (probe.loggedIn === true || (probe.agentId === "antigravity" && probe.loggedIn === null));
 
   must<HTMLSelectElement>("#prepAgent").disabled = controlsLocked;
+  $$("#prepModelSettings select").forEach(element => {
+    const select = element as HTMLSelectElement;
+    select.disabled = controlsLocked || agentProbeLoading || select.dataset.capabilityDisabled === "true";
+  });
+  $$("#prepAlignmentSettings select").forEach(element => {
+    const select = element as HTMLSelectElement;
+    select.disabled = controlsLocked || agentProbeLoading || select.dataset.capabilityDisabled === "true";
+  });
   $$("#prepAux button[data-prep-mode]").forEach((button) => {
     (button as HTMLButtonElement).disabled = controlsLocked;
   });
-  runButton.hidden = running;
-  runButton.disabled = !prepPreview || agentProbeLoading || !available || controlsLocked || hasUnsavedChanges();
+  if (aiStarting || running) prepProgressMode = true;
+  const dialog = must("#dlgPrepare");
+  const mode = prepProgressMode ? "progress" : "setup";
+  if (dialog.dataset.mode !== mode) dialog.dataset.mode = mode;
+  must<HTMLButtonElement>("#prepBack").hidden = !prepProgressMode || aiStarting || running;
+  if (prepProgressMode) {
+    must("#prepHeading").textContent = view?.document.originalTitle || view?.document.title || t("AI 번역 진행");
+  }
+  must("#prepEyebrow").textContent = t(prepProgressMode ? "AI 번역" : "현재 문서에서 실행");
+  must("#prepProvider").textContent = agentLabel(aiRun?.agentId ?? selectedId).replace(" CLI", "");
+  must("#prepBackgroundNote").hidden = !prepProgressMode || !(aiStarting || running);
+  must<HTMLButtonElement>("#prepClose").classList.toggle("btn-primary", prepProgressMode);
+  runButton.hidden = prepProgressMode;
+  runButton.disabled = !prepPreview || prepPreviewPending || !!prepPreviewError || agentProbeLoading || !available || controlsLocked || hasUnsavedChanges() || prepSettingsPending > 0 || !!prepSettingsSaveError;
   runButton.textContent = aiStarting
-    ? "실행 시작 중…"
-    : `${prepRevision ? "재번역" : "번역"} 실행 — ${agentLabel(selectedId)}`;
+    ? t("실행 시작 중…")
+    : prepRevision ? t("재번역 시작") : t("번역 시작");
   cancelButton.hidden = !running;
   cancelButton.disabled = aiCanceling;
-  cancelButton.textContent = aiCanceling ? "취소 요청 중…" : "실행 취소";
+  cancelButton.textContent = aiCanceling ? t("취소 요청 중…") : t("실행 중지");
+  must<HTMLButtonElement>("#prepRetrySettings").hidden = !prepSettingsSaveError || prepSettingsPending > 0;
 
   if (prepPreview && !running && !aiStarting) {
     const status = must("#prepStatus");
     const note = must("#prepNote");
-    if (hasUnsavedChanges()) {
+    note.hidden = false;
+    if (prepPreviewError) {
       status.className = "tag tag-warn";
-      status.textContent = "저장 필요";
-      note.textContent = "편집 중인 변경을 먼저 저장한 뒤 AI 번역을 실행하세요.";
+      status.textContent = t("확인 필요");
+      note.textContent = prepPreviewError;
+    } else if (prepPreviewPending) {
+      status.className = "tag tag-line";
+      status.textContent = t("자료 확인 중");
+      note.hidden = true;
+    } else if (prepSettingsSaveError) {
+      status.className = "tag tag-warn";
+      status.textContent = t("저장 실패");
+      note.textContent = t("AI 설정을 저장하지 못했습니다. 다시 시도해 주세요.");
+    } else if (prepSettingsPending > 0) {
+      status.className = "tag tag-line";
+      status.textContent = t("설정 저장 중");
+      note.hidden = true;
+    } else if (hasUnsavedChanges()) {
+      status.className = "tag tag-warn";
+      status.textContent = t("저장 필요");
+      note.textContent = t("편집 중인 변경을 먼저 저장한 뒤 AI 번역을 실행하세요.");
     } else if (agentProbeLoading) {
       status.className = "tag tag-plain";
-      status.textContent = "연결 확인 중";
-      note.textContent = `${agentLabel(selectedId)}의 설치와 로그인 상태를 확인하고 있습니다.`;
+      status.textContent = t("연결 확인 중");
+      note.hidden = true;
     } else if (!available) {
       status.className = "tag tag-warn";
-      status.textContent = "연결 필요";
+      status.textContent = t("연결 필요");
       note.textContent = agentProbeError
         ?? probe?.detail
         ?? (!probe?.installed
-          ? `${agentLabel(selectedId)}를 설치한 뒤 다시 확인하세요.`
-          : `${agentLabel(selectedId)}에 로그인한 뒤 다시 확인하세요.`);
+          ? ui`${agentLabel(selectedId)}를 설치한 뒤 다시 확인하세요.`
+          : ui`${agentLabel(selectedId)}에 로그인한 뒤 다시 확인하세요.`);
     } else {
       status.className = "tag tag-ok";
-      status.textContent = "실행 가능";
-      note.textContent = `${agentLabel(selectedId)}가 설치되어 로그인되어 있습니다. 실행하면 현재 요청 명세가 로컬 CLI로 전달됩니다.`;
+      status.textContent = t("연결됨");
+      note.textContent = "";
+      note.hidden = true;
     }
   }
   renderAiRunPanel();
-  reviewComments.refresh();
+  reviewComments.refreshAvailability();
 }
 
-function createPreparationContent(content: string, key: string, label: string): HTMLDetailsElement {
+function createPreparationContent(content: string, key: string, label: string, metadata?: string): HTMLDetailsElement {
   const details = document.createElement("details");
   details.className = "prep-content";
   details.open = prepExpanded.has(key);
 
   const summary = document.createElement("summary");
-  summary.textContent = "내용 펼쳐 보기";
-  summary.setAttribute("aria-label", `${label} 내용 펼쳐 보기`);
+  summary.textContent = t("내용 펼쳐 보기");
+  summary.setAttribute("aria-label", ui`${label} 내용 펼쳐 보기`);
 
   const body = document.createElement("pre");
   body.className = "prep-content-body";
   body.textContent = content;
 
   details.append(summary, body);
+  if (metadata) {
+    const info = document.createElement("p");
+    info.className = "prep-content-meta";
+    info.textContent = metadata;
+    details.append(info);
+  }
   details.addEventListener("toggle", () => {
     if (details.open) prepExpanded.add(key);
     else prepExpanded.delete(key);
@@ -693,8 +916,10 @@ function appendRequiredPreparationItem(
   container: HTMLElement,
   item: ContextPreview["required"][number],
 ): void {
+  const technical = isTechnicalPreparationItem(item);
   const card = document.createElement("div");
   card.className = "prep-item";
+  card.dataset.prepKind = item.kind;
 
   const row = document.createElement("div");
   row.className = "prep-item-row";
@@ -702,32 +927,55 @@ function appendRequiredPreparationItem(
   const main = document.createElement("div");
   main.className = "prep-item-main";
   const title = document.createElement("b");
-  title.textContent = item.label;
-  const metadata = document.createElement("div");
-  metadata.className = "prep-item-sub";
-  metadata.textContent = [item.kind, item.version, item.hash].filter(Boolean).join(" · ");
-  main.append(title, metadata);
+  title.textContent = t(item.label);
+  main.append(title);
 
-  const count = document.createElement("div");
-  count.className = "prep-item-count";
-  count.textContent = `${fmt(item.chars)}자`;
-
-  const lock = document.createElement("span");
-  lock.className = "prep-lock";
-  lock.textContent = "필수";
-
-  row.append(main, count, lock);
-  card.append(row, createPreparationContent(item.content, `required:${item.kind}`, item.label));
+  row.append(main);
+  if (technical || item.kind === "source" || item.kind === "base_translation") {
+    const count = document.createElement("div");
+    count.className = "prep-item-count";
+    count.textContent = ui`${fmt(item.chars)}자`;
+    row.append(count);
+  }
+  card.append(row);
+  if (technical) {
+    card.append(createPreparationContent(item.content, `required:${item.kind}`, item.label, [item.kind, item.version, item.hash].filter(Boolean).join(" · ")));
+  } else {
+    const content = prepRequiredContent(item);
+    if (content.text) {
+      if (item.kind === "target_language" || content.fields) {
+        const text = document.createElement("p");
+        text.className = "prep-readable-note";
+        text.textContent = content.text;
+        card.append(text);
+      } else {
+        card.append(createPreparationContent(content.text, `required:${item.kind}`, item.label));
+      }
+    }
+    if (content.fields) {
+      const fields = document.createElement("dl");
+      fields.className = "prep-readable-fields";
+      for (const field of content.fields) {
+        const label = document.createElement("dt");
+        label.textContent = field.label;
+        const value = document.createElement("dd");
+        value.textContent = field.value;
+        fields.append(label, value);
+      }
+      card.append(fields);
+    }
+  }
   container.append(card);
 }
 
 function appendAuxiliaryPreparationItem(
   container: HTMLElement,
   item: ContextPreview["auxiliary"][number],
-): void {
+): HTMLElement {
   const mode = prepAuxMode.get(item.id) ?? item.selection;
   const card = document.createElement("div");
   card.className = `prep-item${item.included ? "" : " is-off"}`;
+  card.dataset.prepItemId = item.id;
 
   const row = document.createElement("div");
   row.className = "prep-item-row";
@@ -738,24 +986,24 @@ function appendAuxiliaryPreparationItem(
   title.textContent = item.label;
   const metadata = document.createElement("div");
   metadata.className = "prep-item-sub";
-  metadata.textContent = `${item.kind} · ${prepReasonLabel(item.reason)} · ${item.included ? "전송" : "미전송"} · ${item.hash}`;
+  metadata.textContent = `${prepReasonLabel(item.reason)} · ${item.included ? t("포함") : t("제외됨")}`;
   main.append(title, metadata);
 
   const count = document.createElement("div");
   count.className = "prep-item-count";
-  count.textContent = item.chars ? `${fmt(item.chars)}자` : "—";
+  count.textContent = item.chars ? ui`${fmt(item.chars)}자` : "—";
 
   row.append(main, count);
   if (item.chars) {
     const choice = document.createElement("div");
     choice.className = "seg prep-choice";
     choice.setAttribute("role", "group");
-    choice.setAttribute("aria-label", `${item.label} 전송 방식`);
+    choice.setAttribute("aria-label", ui`${item.label} 전송 방식`);
     choice.dataset.prepId = item.id;
     for (const [modeId, modeLabel] of [
-      ["auto", "자동"],
-      ["pin", "고정"],
-      ["exclude", "제외"],
+      ["auto", t("자동")],
+      ["pin", t("고정")],
+      ["exclude", t("제외")],
     ] as const) {
       const button = document.createElement("button");
       button.type = "button";
@@ -768,12 +1016,59 @@ function appendAuxiliaryPreparationItem(
   } else {
     const lock = document.createElement("span");
     lock.className = "prep-lock";
-    lock.textContent = "해당 없음";
+    lock.textContent = t("해당 없음");
     row.append(lock);
   }
 
-  card.append(row, createPreparationContent(item.content, `auxiliary:${item.id}`, item.label));
+  card.append(row, createPreparationContent(item.content, `auxiliary:${item.id}`, item.label, `${item.kind} · ${item.hash}`));
   container.append(card);
+  return card;
+}
+
+/** Keep the active button and open content panels mounted when inclusion changes. */
+function updatePreparationMaterials(): void {
+  if (!prepPreview) return;
+  const required = must("#prepRequired");
+  const signature = JSON.stringify(prepPreview.required.map(item => [item.kind, item.hash, item.version, item.label, item.chars]));
+  if (required.dataset.signature !== signature) {
+    required.replaceChildren();
+    const technical = must("#prepTechnicalInputs");
+    technical.replaceChildren();
+    for (const item of prepPreview.required) appendRequiredPreparationItem(isTechnicalPreparationItem(item) ? technical : required, item);
+    required.dataset.signature = signature;
+  }
+  const auxiliary = must("#prepAux");
+  const existing = new Map([...auxiliary.querySelectorAll<HTMLElement>(":scope > [data-prep-item-id]")].map(card => [card.dataset.prepItemId!, card]));
+  const ids = new Set(prepPreview.auxiliary.map(item => item.id));
+  for (const child of [...auxiliary.children]) {
+    if (!(child instanceof HTMLElement) || !ids.has(child.dataset.prepItemId ?? "")) child.remove();
+  }
+  prepPreview.auxiliary.forEach((item, index) => {
+    let card = existing.get(item.id);
+    if (card && !!item.chars !== !!card.querySelector("[data-prep-id]")) { card.remove(); card = undefined; }
+    if (!card) card = appendAuxiliaryPreparationItem(auxiliary, item);
+    card.classList.toggle("is-off", !item.included);
+    const setText = (selector: string, text: string) => {
+      const element = card!.querySelector<HTMLElement>(selector);
+      if (element && element.textContent !== text) element.textContent = text;
+    };
+    setText(".prep-item-main b", item.label);
+    setText(".prep-item-sub", `${prepReasonLabel(item.reason)} · ${item.included ? t("포함") : t("제외됨")}`);
+    setText(".prep-item-count", item.chars ? ui`${fmt(item.chars)}자` : "—");
+    setText(".prep-content-body", item.content);
+    setText(".prep-content-meta", `${item.kind} · ${item.hash}`);
+    card.querySelector(".prep-content > summary")?.setAttribute("aria-label", ui`${item.label} 내용 펼쳐 보기`);
+    card.querySelectorAll<HTMLElement>("[data-prep-mode]").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.prepMode === (prepAuxMode.get(item.id) ?? item.selection)));
+    });
+    if (auxiliary.children[index] !== card) auxiliary.insertBefore(card, auxiliary.children[index] ?? null);
+  });
+  if (!prepPreview.auxiliary.length) {
+    const empty = document.createElement("p");
+    empty.className = "prep-empty";
+    empty.textContent = t("현재 문서에 연결된 참고 자료가 없습니다.");
+    auxiliary.append(empty);
+  }
 }
 
 function renderPreparationBudget(entries: Array<{
@@ -807,50 +1102,70 @@ async function refreshAgentProbes(): Promise<void> {
   try {
     agentProbes = await api.app.probeAgents();
   } catch (error) {
-    agentProbeError = error instanceof Error ? error.message : "에이전트 연결 상태를 확인하지 못했습니다.";
+    agentProbeError = error instanceof Error ? error.message : t("에이전트 연결 상태를 확인하지 못했습니다.");
   } finally {
     agentProbeLoading = false;
     renderAgentOptions();
+    renderPunctuationPreparationSettings();
+    renderPreparationSettings();
     renderPreparationControls();
     renderAuxiliaryRunControls();
   }
 }
 
-function renderPreparation(): void {
+function renderPreparationSettings(): void {
+  if (!appConfig) return;
+  const selected = selectedPrepAgent();
+  must("#prepModelSettings").innerHTML = prepModelMarkup(appConfig, agentProbe(selected), selected);
+  const preferences = appConfig.agentModels[selected];
+  const model = agentProbe(selected)?.models.find(item => item.id === preferences.model)?.label;
+  const summary = [agentLabel(selected).replace(" CLI", ""), preferences.model === "default" ? t("CLI 기본값") : model ?? preferences.model, preferences.reasoning].filter(Boolean).join(" · ");
+  must("#prepAiSummary").textContent = summary;
+  must("#prepAiSummary").title = summary;
+  const alignment = must("#prepAlignmentSettings");
+  alignment.innerHTML = alignmentSettingsMarkup(appConfig, agentProbes, "prep-alignment");
+  alignment.querySelectorAll<HTMLSelectElement>("select").forEach(select => {
+    select.dataset.capabilityDisabled = String(select.disabled);
+  });
+  must("#prepAlignmentSummary").textContent = prepAlignmentSummary(appConfig, agentProbes);
+}
+
+function renderPreparation(keepSettings = false): void {
   if (!view || !prepPreview) return;
+  const scroller = must("#dlgPrepare .ai-run-body");
+  const scrollTop = scroller.scrollTop;
   const title = view.document.originalTitle || view.document.title;
   const reqChars = prepPreview.required.reduce((sum, item) => sum + item.chars, 0);
   const auxChars = prepPreview.auxiliary
     .filter((item) => item.included)
     .reduce((sum, item) => sum + item.chars, 0);
 
-  must("#prepHeading").textContent = prepRevision ? "코멘트를 반영한 재번역" : "AI 번역";
+  must("#prepHeading").textContent = prepRevision ? t("코멘트를 반영한 재번역") : t("AI 번역");
   must("#prepTitle").textContent = prepRevision
-    ? `${title}의 원문·현재 번역·선택한 코멘트 ${prepRevision.commentIds.length}개를 함께 보냅니다. 이전 번역은 보존됩니다.`
-    : `${title}의 원문 전체와 선택한 보조 자료를 함께 보냅니다.`;
-  must("#prepTotal").textContent = `${fmt(prepPreview.characterCount)}자 · ${fmt(prepPreview.utf8ByteCount)} B`;
-  const requiredContainer = must("#prepRequired");
-  requiredContainer.replaceChildren();
-  for (const item of prepPreview.required) appendRequiredPreparationItem(requiredContainer, item);
-  const auxiliaryContainer = must("#prepAux");
-  auxiliaryContainer.replaceChildren();
-  for (const item of prepPreview.auxiliary) appendAuxiliaryPreparationItem(auxiliaryContainer, item);
+    ? ui`${title}의 원문·현재 번역·선택한 코멘트 ${prepRevision.commentIds.length}개를 함께 보냅니다. 이전 번역은 보존됩니다.`
+    : title;
+  must("#prepTotal").textContent = ui`전송 분량 ${fmt(prepPreview.characterCount)}자`;
+  const sourceChars = prepPreview.required.find(item => item.kind === "source")?.chars ?? 0;
+  const included = prepPreview.auxiliary.filter(item => item.included).length;
+  must("#prepMaterialsSummary").textContent = ui`원문 ${fmt(sourceChars)}자 · 참고 자료 ${included}개`;
+  updatePreparationMaterials();
   const selectedAgent = selectedPrepAgent();
+  if (!keepSettings) renderPreparationSettings();
   const preferences = appConfig?.agentModels[selectedAgent];
   const serviceTier = selectedAgent !== "codex"
-    ? `N/A · ${agentLabel(selectedAgent)} 미지원`
-    : (preferences?.serviceTier ?? "CLI 기본값");
+    ? ui`N/A · ${agentLabel(selectedAgent)} 미지원`
+    : (preferences?.serviceTier ?? t("CLI 기본값"));
   renderPreparationBudget([
-    { label: "문서", value: title, className: "hanmun" },
-    { label: "에이전트", value: agentLabel(selectedAgent) },
-    { label: "모델", value: preferences?.model ?? "default", className: "mono" },
-    { label: "Reasoning", value: preferences?.reasoning ?? "CLI 기본값", className: "mono" },
+    { label: t("문서"), value: title, className: "hanmun" },
+    { label: t("에이전트"), value: agentLabel(selectedAgent) },
+    { label: t("모델"), value: preferences?.model ?? "default", className: "mono" },
+    { label: "Reasoning", value: preferences?.reasoning ?? t("CLI 기본값"), className: "mono" },
     { label: "Service tier", value: serviceTier, className: "mono" },
-    { label: "필수 입력", value: `${fmt(reqChars)}자` },
-    { label: "보조 자료", value: `${fmt(auxChars)}자` },
+    { label: t("필수 입력"), value: ui`${fmt(reqChars)}자` },
+    { label: t("보조 자료"), value: ui`${fmt(auxChars)}자` },
     {
-      label: "실제 요청",
-      value: [`${fmt(prepPreview.characterCount)}자`, `${fmt(prepPreview.utf8ByteCount)} B`],
+      label: t("실제 요청"),
+      value: [ui`${fmt(prepPreview.characterCount)}자`, `${fmt(prepPreview.utf8ByteCount)} B`],
       className: "prep-total",
     },
   ]);
@@ -863,23 +1178,28 @@ function renderPreparation(): void {
   must("#prepRequestText").textContent = prepPreview.requestText;
   must("#prepRequestHash").textContent = `sha256 ${prepPreview.requestHash.slice(0, 12)}…`;
   renderPreparationControls();
+  scroller.scrollTop = scrollTop;
 }
 
 function showPreparationLoading(): void {
   prepPreview = null;
   const requiredLoading = document.createElement("p");
   requiredLoading.className = "muted";
-  requiredLoading.textContent = "필수 입력을 불러오는 중입니다.";
+  requiredLoading.textContent = t("필수 입력을 불러오는 중입니다.");
   must("#prepRequired").replaceChildren(requiredLoading);
+  must("#prepTechnicalInputs").replaceChildren();
+  delete must("#prepRequired").dataset.signature;
   const auxiliaryLoading = document.createElement("p");
   auxiliaryLoading.className = "muted";
-  auxiliaryLoading.textContent = "보조 자료를 불러오는 중입니다.";
+  auxiliaryLoading.textContent = t("보조 자료를 불러오는 중입니다.");
   must("#prepAux").replaceChildren(auxiliaryLoading);
-  must("#prepTotal").textContent = "전송 자료 계산 중";
+  must("#prepTotal").textContent = t("전송 자료 계산 중");
   must("#prepStatus").className = "tag tag-plain";
-  must("#prepStatus").textContent = "계산 중";
+  must("#prepStatus").textContent = t("계산 중");
   must("#prepBudget").replaceChildren();
-  must("#prepNote").textContent = "현재 문서의 exact request를 조립하고 있습니다.";
+  must("#prepNote").textContent = "";
+  must("#prepNote").hidden = true;
+  must("#prepMaterialsSummary").textContent = t("자료 확인 중");
   must("#prepManifest").textContent = "";
   must("#prepManifestHash").textContent = "";
   must("#prepRequestText").textContent = "";
@@ -891,9 +1211,13 @@ async function loadPreparation(preserveSelections = false): Promise<void> {
   if (!view) return;
   const documentNodeId = view.document.id;
   const request = ++prepRequest;
+  const refreshing = preserveSelections && prepDocId === documentNodeId && !!prepPreview;
   if (!preserveSelections || prepDocId !== documentNodeId) prepAuxMode.clear();
   prepDocId = documentNodeId;
-  showPreparationLoading();
+  prepPreviewPending = true;
+  prepPreviewError = null;
+  if (refreshing) renderPreparationControls();
+  else showPreparationLoading();
   let result: Awaited<ReturnType<typeof api.context.preview>>;
   try {
     result = await api.context.preview({
@@ -904,28 +1228,36 @@ async function loadPreparation(preserveSelections = false): Promise<void> {
     });
   } catch (error) {
     if (request !== prepRequest || view?.document.id !== documentNodeId) return;
-    const message = error instanceof Error ? error.message : "전송 자료를 만들지 못했습니다.";
+    const message = error instanceof Error ? error.message : t("전송 자료를 만들지 못했습니다.");
+    prepPreviewPending = false;
+    prepPreviewError = message;
+    renderPreparationControls();
     must("#prepStatus").className = "tag tag-danger";
-    must("#prepStatus").textContent = "연결 오류";
+    must("#prepStatus").textContent = t("연결 오류");
     must("#prepNote").textContent = message;
-    must("#prepTotal").textContent = "전송 자료를 만들 수 없음";
-    notify(message, "AI 번역");
+    must("#prepNote").hidden = false;
+    must("#prepTotal").textContent = t("전송 자료를 만들 수 없음");
+    notify(message, t("AI 번역"));
     return;
   }
   if (request !== prepRequest || view?.document.id !== documentNodeId) return;
+  prepPreviewPending = false;
   if (!result.ok) {
     const message = actionableAiError(result.error);
+    prepPreviewError = message;
+    renderPreparationControls();
     must("#prepStatus").className = "tag tag-warn";
-    must("#prepStatus").textContent = "확인 필요";
+    must("#prepStatus").textContent = t("확인 필요");
     must("#prepNote").textContent = message;
-    must("#prepTotal").textContent = "전송 자료를 만들 수 없음";
-    notify(message, "AI 번역");
+    must("#prepNote").hidden = false;
+    must("#prepTotal").textContent = t("전송 자료를 만들 수 없음");
+    notify(message, t("AI 번역"));
     return;
   }
   prepPreview = result.data;
   prepAuxMode.clear();
   for (const item of result.data.auxiliary) prepAuxMode.set(item.id, item.selection);
-  renderPreparation();
+  renderPreparation(refreshing);
 }
 
 function openPreparation(): void {
@@ -935,13 +1267,15 @@ function openPreparation(): void {
 
 function openPreparationDialog(): void {
   if (!view || !translationReady()) {
-    notify("원문을 먼저 저장하세요", "AI 번역");
+    notify(t("원문을 먼저 저장하세요"), t("AI 번역"));
     setWorkspace("source");
     return;
   }
   const dialog = must("#dlgPrepare") as HTMLDialogElement;
+  prepProgressMode = aiStarting || aiRun?.state === "running";
   if (!dialog.open) dialog.showModal();
-  renderAiRunPanel();
+  renderPreparationSettings();
+  renderPreparationControls();
   void refreshAgentProbes();
   void loadPreparation(prepDocId === view.document.id);
 }
@@ -975,7 +1309,7 @@ async function pollAiRun(messageId: string): Promise<void> {
   } catch (error) {
     aiActionError = {
       code: "run_status_unavailable",
-      message: error instanceof Error ? error.message : "실행 상태를 확인하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("실행 상태를 확인하지 못했습니다."),
     };
     renderPreparationControls();
     scheduleAiPoll(messageId);
@@ -1027,12 +1361,12 @@ async function finalizeAiRun(messageId: string): Promise<void> {
   handledAiTerminals.add(messageId);
 
   if (terminal.state === "canceled") {
-    notify("AI 번역 실행을 취소했습니다.", "AI 번역");
+    notify(t("AI 번역 실행을 취소했습니다."), t("AI 번역"));
     return;
   }
   if (terminal.state === "failed") {
-    const runError = terminal.error ?? { code: "ai_run_failed", message: terminal.detail ?? "AI 번역을 완료하지 못했습니다." };
-    notify(actionableAiError(runError), "AI 번역 실패");
+    const runError = terminal.error ?? { code: "ai_run_failed", message: terminal.detail ?? t("AI 번역을 완료하지 못했습니다.") };
+    notify(actionableAiError(runError), t("AI 번역 실패"));
     return;
   }
 
@@ -1041,10 +1375,10 @@ async function finalizeAiRun(messageId: string): Promise<void> {
     if (hasUnsavedChanges()) {
       aiActionError = {
         code: "unsaved_changes",
-        message: "실행은 완료됐지만 미저장 편집을 보호하기 위해 결과 새로고침을 보류했습니다. 변경을 저장한 뒤 문서를 다시 여세요.",
+        message: t("실행은 완료됐지만 미저장 편집을 보호하기 위해 결과 새로고침을 보류했습니다. 변경을 저장한 뒤 문서를 다시 여세요."),
       };
       renderPreparationControls();
-      notify(aiActionError.message, "AI 번역 완료");
+      notify(aiActionError.message, t("AI 번역 완료"));
       return;
     }
     await loadEditor(terminal.documentNodeId);
@@ -1052,16 +1386,16 @@ async function finalizeAiRun(messageId: string): Promise<void> {
   }
 
   if (invalid) {
-    notify("AI 응답은 기록에 보존됐지만 형식 또는 현재 분절 참조가 맞지 않아 번역안에는 적용되지 않았습니다.", "AI 번역");
+    notify(t("AI 응답은 기록에 보존됐지만 형식 또는 현재 분절 참조가 맞지 않아 번역안에는 적용되지 않았습니다."), t("AI 번역"));
     return;
   }
   const dialog = must<HTMLDialogElement>("#dlgPrepare");
   if (dialog.open) dialog.close();
   notify(
     terminal.validationState === "needs_review"
-      ? "완성 번역을 가져왔지만 구조 검증 항목이 있어 재검토가 필요합니다."
-      : "AI가 완성본으로 제출한 단일 번역을 번역 작업안으로 가져왔습니다.",
-    "AI 번역 완료",
+      ? t("완성 번역을 가져왔지만 구조 검증 항목이 있어 재검토가 필요합니다.")
+      : t("AI가 완성본으로 제출한 단일 번역을 번역 작업안으로 가져왔습니다."),
+    t("AI 번역 완료"),
   );
 }
 
@@ -1069,30 +1403,36 @@ async function startAiTranslation(): Promise<void> {
   if (
     !view
     || !prepPreview
+    || prepPreviewPending
+    || !!prepPreviewError
     || aiStarting
     || aiRun?.state === "running"
     || auxiliaryStarting
     || auxiliaryRun?.state === "running"
   ) return;
   if (hasUnsavedChanges()) {
-    notify("편집 중인 변경을 먼저 저장한 뒤 AI 번역을 실행하세요.", "AI 번역");
+    notify(t("편집 중인 변경을 먼저 저장한 뒤 AI 번역을 실행하세요."), t("AI 번역"));
     renderPreparationControls();
     return;
   }
   const probe = selectedAgentProbe();
   if (!probe?.installed || (probe.loggedIn !== true && !(probe.agentId === "antigravity" && probe.loggedIn === null))) {
-    notify(`${agentLabel(selectedPrepAgent())}의 설치와 로그인을 확인하세요.`, "AI 번역");
+    notify(ui`${agentLabel(selectedPrepAgent())}의 설치와 로그인을 확인하세요.`, t("AI 번역"));
     renderPreparationControls();
     return;
   }
 
   aiRun = null;
+  prepActivityOverrides.clear();
+  must<HTMLDetailsElement>("#prepActivityDisclosure").open = false;
   aiActionError = null;
   aiStarting = true;
   renderPreparationControls();
   const launchDocumentId = view.document.id;
   const referenceCommentIds = documentMaterials.referenceCommentIds();
   try {
+    await prepSettingsSaveChain;
+    if (prepSettingsSaveError) throw prepSettingsSaveError;
     const result = await api.ai.startTranslation({
       documentNodeId: launchDocumentId,
       revision: prepRevision,
@@ -1104,7 +1444,7 @@ async function startAiTranslation(): Promise<void> {
       aiStarting = false;
       aiActionError = result.error;
       renderPreparationControls();
-      notify(actionableAiError(result.error), "AI 번역을 시작하지 못했습니다");
+      notify(actionableAiError(result.error), t("AI 번역을 시작하지 못했습니다"));
       return;
     }
     documentMaterials.clearLaunchedComments(launchDocumentId, referenceCommentIds);
@@ -1113,10 +1453,10 @@ async function startAiTranslation(): Promise<void> {
     aiStarting = false;
     aiActionError = {
       code: "ai_start_unavailable",
-      message: error instanceof Error ? error.message : "AI 번역 실행을 시작하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("AI 번역 실행을 시작하지 못했습니다."),
     };
     renderPreparationControls();
-    notify(aiActionError.message, "AI 번역을 시작하지 못했습니다");
+    notify(aiActionError.message, t("AI 번역을 시작하지 못했습니다"));
   }
 }
 
@@ -1132,7 +1472,7 @@ async function cancelAiTranslation(): Promise<void> {
       aiCanceling = false;
       aiActionError = result.error;
       renderPreparationControls();
-      notify(result.error.message, "실행을 취소하지 못했습니다");
+      notify(result.error.message, t("실행을 취소하지 못했습니다"));
       scheduleAiPoll(messageId);
       return;
     }
@@ -1141,10 +1481,10 @@ async function cancelAiTranslation(): Promise<void> {
     aiCanceling = false;
     aiActionError = {
       code: "ai_cancel_unavailable",
-      message: error instanceof Error ? error.message : "취소 요청을 전달하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("취소 요청을 전달하지 못했습니다."),
     };
     renderPreparationControls();
-    notify(aiActionError.message, "실행을 취소하지 못했습니다");
+    notify(aiActionError.message, t("실행을 취소하지 못했습니다"));
     scheduleAiPoll(messageId);
   }
 }
@@ -1156,7 +1496,7 @@ function activeAuxiliaryKind(): AuxiliaryTaskKind | null {
 }
 
 function auxiliaryStatus(kind: AuxiliaryTaskKind, agentId: AgentProbe["agentId"]): string {
-  if (auxiliaryStarting === kind) return `${agentLabel(agentId)}에 실행을 요청하는 중입니다.`;
+  if (auxiliaryStarting === kind) return ui`${agentLabel(agentId)}에 실행을 요청하는 중입니다.`;
   if (auxiliaryActionError?.kind === kind) {
     return `${actionableAiError(auxiliaryActionError)} (${auxiliaryActionError.code})`;
   }
@@ -1166,21 +1506,21 @@ function auxiliaryStatus(kind: AuxiliaryTaskKind, agentId: AgentProbe["agentId"]
     && (kind !== "chat" || runChatScope(auxiliaryRun) === selectedChatScope())
   ) {
     if (auxiliaryRun.state === "running") {
-      if (kind === "chat") return "응답 처리 중…";
-      return [phaseLabel(auxiliaryRun.phase), auxiliaryRun.detail].filter(Boolean).join(" · ");
+      if (kind === "chat") return t("응답 처리 중…");
+      return [phaseLabel(auxiliaryRun.phase), auxiliaryRun.detail ? t(auxiliaryRun.detail) : null].filter(Boolean).join(" · ");
     }
     if (auxiliaryRun.state === "failed") {
       return actionableAiError(auxiliaryRun.error ?? {
         code: "ai_run_failed",
-        message: auxiliaryRun.detail ?? "AI 실행을 완료하지 못했습니다.",
+        message: auxiliaryRun.detail ?? t("AI 실행을 완료하지 못했습니다."),
       });
     }
-    if (auxiliaryRun.state === "canceled") return "실행을 취소했습니다.";
-    return auxiliaryRun.detail ?? "실행을 완료했습니다.";
+    if (auxiliaryRun.state === "canceled") return t("실행을 취소했습니다.");
+    return auxiliaryRun.detail ? t(auxiliaryRun.detail) : t("실행을 완료했습니다.");
   }
   const probe = agentProbe(agentId);
-  if (!probe?.installed) return `${agentLabel(agentId)}가 설치되어 있지 않습니다. 설정에서 연결 안내를 확인하세요.`;
-  if (probe.loggedIn !== true && !(probe.agentId === "antigravity" && probe.loggedIn === null)) return `${agentLabel(agentId)} 로그인이 필요합니다. 설정에서 로그인 명령을 확인하세요.`;
+  if (!probe?.installed) return ui`${agentLabel(agentId)}가 설치되어 있지 않습니다. 설정에서 연결 안내를 확인하세요.`;
+  if (probe.loggedIn !== true && !(probe.agentId === "antigravity" && probe.loggedIn === null)) return ui`${agentLabel(agentId)} 로그인이 필요합니다. 설정에서 로그인 명령을 확인하세요.`;
   return "";
 }
 
@@ -1206,29 +1546,32 @@ function renderAuxiliaryRunControls(): void {
     || !agentReady(chatAgent);
   chatCancel.hidden = !(chatCurrent && auxiliaryRun?.state === "running");
   chatCancel.disabled = auxiliaryCanceling;
-  chatCancel.textContent = auxiliaryCanceling ? "취소 요청 중…" : "취소";
+  chatCancel.textContent = auxiliaryCanceling ? t("취소 요청 중…") : t("취소");
   renderChatModelInfo();
+  must("#chatModelInfo").title = must("#chatModelInfo").textContent ?? "";
   must<HTMLSelectElement>("#chatScope").disabled = auxiliaryBusy;
-  must<HTMLTextAreaElement>("#chatInput").disabled = auxiliaryStarting === "chat"
-    || (chatCurrent && auxiliaryRun?.state === "running");
-  must("#chatRunStatus").textContent = auxiliaryStatus("chat", chatAgent);
+  must<HTMLTextAreaElement>("#chatInput").disabled = false;
+  must("#chatRunStatus").textContent = chatCurrent && auxiliaryRun?.state === "completed" ? "" : auxiliaryStatus("chat", chatAgent);
 
   const punctuationButton = must<HTMLButtonElement>("#btnSuggestPunctuation");
   const punctuationCancel = must<HTMLButtonElement>("#btnCancelPunctuation");
-  punctuationButton.disabled = !view
-    || view.source.state !== "confirmed"
-    || punctuationApplying
-    || hasUnsavedChanges()
-    || translationBusy
-    || auxiliaryBusy
-    || !agentReady(punctuationAgent);
-  punctuationButton.textContent = auxiliaryStarting === "punctuation_suggest" || (punctuationCurrent && auxiliaryRun?.state === "running") ? "생성 중…" : "AI 표점 생성";
+  const punctuationRunning = auxiliaryStarting === "punctuation_suggest" || (punctuationCurrent && auxiliaryRun?.state === "running");
+  const punctuationLocked = view?.punctuation?.state === "confirmed" && !punctuationEditingConfirmed;
+  punctuationButton.hidden = punctuationLocked && !punctuationRunning;
+  punctuationButton.disabled = !view || (!punctuationRunning && (punctuationLocked || view.source.state !== "confirmed" || punctuationApplying || hasUnsavedChanges() || translationBusy || auxiliaryBusy || editorMutationBusy()));
+  punctuationButton.textContent = punctuationRunning ? t("진행 보기") : t("AI 표점 생성");
+  const startPunctuation = must<HTMLButtonElement>("#punctuationPrepRun");
+  startPunctuation.disabled = punctuationButton.disabled || punctuationRunning || !agentReady(punctuationAgent) || agentProbeLoading || prepSettingsPending > 0 || !!prepSettingsSaveError;
+  startPunctuation.textContent = punctuationRunning ? t("생성 중…") : t("생성 시작");
   punctuationCancel.hidden = !(punctuationCurrent && auxiliaryRun?.state === "running");
   punctuationCancel.disabled = auxiliaryCanceling;
-  punctuationCancel.textContent = auxiliaryCanceling ? "취소 요청 중…" : "취소";
-  must<HTMLSelectElement>("#punctuationAgent").disabled = auxiliaryBusy;
+  punctuationCancel.textContent = auxiliaryCanceling ? t("취소 요청 중…") : t("취소");
+  const punctuationAgentSelect = must<HTMLSelectElement>("#punctuationAgent");
+  punctuationAgentSelect.disabled = auxiliaryBusy || (view?.punctuation?.state === "confirmed" && !punctuationEditingConfirmed);
+  punctuationAgentSelect.title = punctuationAgentSelect.selectedOptions[0]?.title ?? "";
   must("#punctuationAiStatus").textContent = auxiliaryStatus("punctuation_suggest", punctuationAgent);
   renderPunctuationSuggestionPreview();
+  renderPunctuationPreparationControls();
 }
 
 function previewedPunctuationSuggestion(): PunctuationSuggestionView | null {
@@ -1267,23 +1610,24 @@ function renderPunctuationSuggestionPreview(): void {
   must("#punctuationProposalMeta").textContent = `${agentLabel(suggestion.agentId)} · ${suggestion.createdAt.slice(0, 16).replace("T", " ")}`;
   if (suggestion.validationState === "invalid_unapplied") {
     badge.className = "tag tag-danger";
-    badge.textContent = "원문·표점 형식 확인 실패 · 미적용";
-    must("#punctuationProposalHelp").textContent = `${suggestion.validationError || "원문 보존 또는 표점 형식 검사에 실패했습니다."} 응답은 실행 이력에 보존됐습니다.`;
+    badge.textContent = t("원문·표점 형식 확인 실패 · 미적용");
+    must("#punctuationProposalHelp").textContent = ui`${suggestion.validationError || t("원문 보존 또는 표점 형식 검사에 실패했습니다.")} 응답은 실행 이력에 보존됐습니다.`;
     apply.disabled = true;
-    apply.textContent = "적용할 수 없음";
+    apply.textContent = t("적용할 수 없음");
     return;
   }
   badge.className = "tag tag-line";
-  badge.textContent = "원문 보존 확인 · 미적용";
+  badge.textContent = t("원문 보존 확인 · 미적용");
   must("#punctuationProposalHelp").textContent = hasUnsavedChanges()
-    ? "작성하던 변경이 보존되어 있습니다. 작업안으로 돌아가 먼저 저장한 뒤 제안을 적용하세요."
-    : "왼쪽 원문과 대조해 검토하세요. 적용하면 이 입력란에서 수정할 수 있습니다. 표점 해석의 정확성은 직접 확인하세요.";
-  apply.disabled = punctuationApplying
+    ? t("작성하던 변경이 보존되어 있습니다. 작업안으로 돌아가 먼저 저장한 뒤 제안을 적용하세요.")
+    : t("왼쪽 원문과 대조해 검토하세요. 적용하면 이 입력란에서 수정할 수 있습니다. 표점 해석의 정확성은 직접 확인하세요.");
+  apply.disabled = (view?.punctuation?.state === "confirmed" && !punctuationEditingConfirmed)
+    || punctuationApplying
     || hasUnsavedChanges()
     || activeAuxiliaryKind() !== null
     || aiStarting
     || aiRun?.state === "running";
-  apply.textContent = punctuationApplying ? "적용 중…" : "제안 적용하고 편집";
+  apply.textContent = punctuationApplying ? t("적용 중…") : t("제안 적용하고 편집");
 }
 
 function clearAuxiliaryPoll(): void {
@@ -1319,7 +1663,7 @@ async function pollAuxiliaryRun(messageId: string): Promise<void> {
     auxiliaryActionError = {
       kind: auxiliaryRun.taskKind as AuxiliaryTaskKind,
       code: "run_status_unavailable",
-      message: error instanceof Error ? error.message : "실행 상태를 확인하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("실행 상태를 확인하지 못했습니다."),
     };
     renderAuxiliaryRunControls();
     scheduleAuxiliaryPoll(messageId);
@@ -1416,39 +1760,40 @@ async function finalizeAuxiliaryRun(messageId: string): Promise<void> {
   renderChat();
   renderAuxiliaryRunControls();
 
-  const title = terminal.taskKind === "chat" ? "AI 채팅" : "AI 표점 제안";
+  const title = terminal.taskKind === "chat" ? t("AI 채팅") : t("AI 표점 제안");
   if (terminal.state === "canceled") {
-    notify("실행을 취소했습니다.", title);
+    notify(t("실행을 취소했습니다."), title);
     return;
   }
   if (terminal.state === "failed") {
     notify(actionableAiError(terminal.error ?? {
       code: "ai_run_failed",
-      message: terminal.detail ?? "AI 실행을 완료하지 못했습니다.",
-    }), `${title} 실패`);
+      message: terminal.detail ?? t("AI 실행을 완료하지 못했습니다."),
+    }), ui`${title} 실패`);
     return;
   }
   if (terminal.taskKind === "chat") {
-    notify("답변과 실행 기록을 프로젝트에 저장했습니다.", title);
+    notify(t("답변과 실행 기록을 프로젝트에 저장했습니다."), title);
     return;
   }
   await loadPunctuationSuggestion(terminal.documentNodeId);
   if (terminal.validationState === "invalid_unapplied") {
-    notify(punctuationSuggestion?.validationError || "응답은 보존했지만 원문·표점 형식 검사에 실패해 적용하지 않았습니다.", title);
+    notify(punctuationSuggestion?.validationError || t("응답은 보존했지만 원문·표점 형식 검사에 실패해 적용하지 않았습니다."), title);
     return;
   }
-  notify("표점 원문 입력란에서 AI 제안을 검토한 뒤 적용하세요.", title);
+  notify(t("표점 원문 입력란에서 AI 제안을 검토한 뒤 적용하세요."), title);
 }
 
 async function applyCurrentPunctuationSuggestion(): Promise<void> {
   const suggestion = punctuationSuggestion;
   if (!view || !suggestion || suggestion.documentNodeId !== view.document.id || suggestion.applied) return;
+  if (view.punctuation?.state === "confirmed" && !punctuationEditingConfirmed) return;
   if (suggestion.validationState !== "valid") {
-    notify("원문 보존 검증을 통과한 제안만 적용할 수 있습니다.", "AI 표점 제안");
+    notify(t("원문 보존 검증을 통과한 제안만 적용할 수 있습니다."), t("AI 표점 제안"));
     return;
   }
   if (hasUnsavedChanges()) {
-    notify("편집 중인 변경을 먼저 저장한 뒤 제안을 적용하세요.", "AI 표점 제안");
+    notify(t("편집 중인 변경을 먼저 저장한 뒤 제안을 적용하세요."), t("AI 표점 제안"));
     return;
   }
   punctuationApplying = true;
@@ -1458,21 +1803,21 @@ async function applyCurrentPunctuationSuggestion(): Promise<void> {
     const result = await api.ai.applyPunctuationSuggestion(suggestion.messageId);
     if (!result.ok) {
       auxiliaryActionError = { kind: "punctuation_suggest", ...result.error };
-      notify(actionableAiError(result.error), "표점 제안을 적용하지 못했습니다");
+      notify(actionableAiError(result.error), t("표점 제안을 적용하지 못했습니다"));
       return;
     }
     punctuationSuggestion = { ...suggestion, ...result.data };
     await loadEditor(suggestion.documentNodeId);
     setWorkspace("punctuation");
     must<HTMLTextAreaElement>("#punctuationDraftText").focus();
-    notify("새 표점 작업안으로 적용했습니다. 내용과 구조를 검토한 뒤 직접 확정하세요.", "AI 표점 제안");
+    notify(t("새 표점 작업안으로 적용했습니다. 내용과 구조를 검토한 뒤 직접 확정하세요."), t("AI 표점 제안"));
   } catch (error) {
     auxiliaryActionError = {
       kind: "punctuation_suggest",
       code: "punctuation_apply_unavailable",
-      message: error instanceof Error ? error.message : "표점 제안을 적용하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("표점 제안을 적용하지 못했습니다."),
     };
-    notify(auxiliaryActionError.message, "표점 제안을 적용하지 못했습니다");
+    notify(auxiliaryActionError.message, t("표점 제안을 적용하지 못했습니다"));
   } finally {
     punctuationApplying = false;
     renderAuxiliaryRunControls();
@@ -1484,13 +1829,14 @@ async function startProjectChat(): Promise<void> {
   const question = must<HTMLTextAreaElement>("#chatInput").value.trim();
   if (!question) return;
   if (hasUnsavedChanges()) {
-    notify("편집 중인 변경을 먼저 저장한 뒤 채팅을 실행하세요.", "AI 채팅");
+    notify(t("편집 중인 변경을 먼저 저장한 뒤 채팅을 실행하세요."), t("AI 채팅"));
     return;
   }
   const agentId = selectedChatAgent();
   const scopeKind = selectedChatScope();
+  lastChatRequest = { key: `${view.document.id}:${scopeKind}`, question };
   if (!agentReady(agentId)) {
-    notify(`${agentLabel(agentId)}의 설치와 로그인을 설정에서 확인하세요.`, "AI 채팅");
+    notify(ui`${agentLabel(agentId)}의 설치와 로그인을 설정에서 확인하세요.`, t("AI 채팅"));
     return;
   }
   auxiliaryRun = null;
@@ -1503,8 +1849,9 @@ async function startProjectChat(): Promise<void> {
     createdAt: new Date().toISOString(),
     messageId: null,
   };
-  must<HTMLTextAreaElement>("#chatInput").value = "";
+  chatSurface?.setDraft("");
   renderChat();
+  chatSurface?.bottom();
   renderAuxiliaryRunControls();
   try {
     const result = await api.ai.startChat({ documentNodeId: view.document.id, scopeKind, question, agentId });
@@ -1512,10 +1859,10 @@ async function startProjectChat(): Promise<void> {
       auxiliaryStarting = null;
       auxiliaryActionError = { kind: "chat", ...result.error };
       pendingChatMessage = null;
-      must<HTMLTextAreaElement>("#chatInput").value = question;
+      if (!must<HTMLTextAreaElement>("#chatInput").value.trim()) chatSurface?.setDraft(question);
       renderChat();
       renderAuxiliaryRunControls();
-      notify(actionableAiError(result.error), "AI 채팅을 시작하지 못했습니다");
+      notify(actionableAiError(result.error), t("AI 채팅을 시작하지 못했습니다"));
       return;
     }
     if (pendingChatMessage) pendingChatMessage.messageId = result.data.messageId;
@@ -1525,29 +1872,72 @@ async function startProjectChat(): Promise<void> {
     auxiliaryActionError = {
       kind: "chat",
       code: "ai_start_unavailable",
-      message: error instanceof Error ? error.message : "AI 채팅을 시작하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("AI 채팅을 시작하지 못했습니다."),
     };
     pendingChatMessage = null;
-    must<HTMLTextAreaElement>("#chatInput").value = question;
+    if (!must<HTMLTextAreaElement>("#chatInput").value.trim()) chatSurface?.setDraft(question);
     renderChat();
     renderAuxiliaryRunControls();
-    notify(auxiliaryActionError.message, "AI 채팅을 시작하지 못했습니다");
+    notify(auxiliaryActionError.message, t("AI 채팅을 시작하지 못했습니다"));
   }
 }
 
+function renderPunctuationPreparationSettings(): void {
+  if (!appConfig) return;
+  const selected = selectedPunctuationAgent();
+  must("#punctuationModelSettings").innerHTML = prepModelMarkup(appConfig, agentProbe(selected), selected).replaceAll("prep-model-", "punctuation-model-");
+  const preferences = appConfig.agentModels[selected];
+  const model = agentProbe(selected)?.models.find(item => item.id === preferences.model)?.label;
+  must("#punctuationPrepSummary").textContent = [agentLabel(selected).replace(" CLI", ""), preferences.model === "default" ? t("CLI 기본값") : model ?? preferences.model, preferences.reasoning].filter(Boolean).join(" · ");
+}
+
+function renderPunctuationPreparationControls(): void {
+  const current = auxiliaryRun?.taskKind === "punctuation_suggest" && auxiliaryRun.documentNodeId === view?.document.id;
+  const running = auxiliaryStarting === "punctuation_suggest" || (current && auxiliaryRun?.state === "running");
+  const ready = punctuationSuggestion?.documentNodeId === view?.document.id && punctuationSuggestion?.validationState === "valid" && !punctuationSuggestion.applied && !running
+    && (!current || punctuationSuggestion.messageId === auxiliaryRun?.messageId);
+  renderPunctuationProgress(current ? auxiliaryRun : null, auxiliaryStarting === "punctuation_suggest", !!running);
+  must("#punctuationPrepSpinner").hidden = !running;
+  must("#punctuationPrepReview").hidden = !ready;
+  must("#punctuationPrepClose").className = punctuationProgressMode && !ready ? "btn btn-primary" : "btn btn-ghost";
+  must("#punctuationPrepRun").hidden = !!ready || punctuationProgressMode;
+  must("#punctuationPrepConnection").textContent = agentProbeLoading ? t("연결 확인 중") : agentReady(selectedPunctuationAgent()) ? t("연결됨") : t("연결 확인 필요");
+  const locked = activeAuxiliaryKind() !== null || aiStarting || aiRun?.state === "running";
+  $$<HTMLSelectElement>("#punctuationModelSettings select").forEach(select => { select.disabled = locked || select.dataset.capabilityDisabled === "true"; });
+  const note = must("#punctuationSettingsNote");
+  note.textContent = prepSettingsSaveError ? t("AI 설정을 저장하지 못했습니다. 다시 시도해 주세요.") : prepSettingsPending ? t("설정 저장 중") : "";
+  note.hidden = !note.textContent;
+  must("#punctuationRetrySettings").hidden = !prepSettingsSaveError || prepSettingsPending > 0;
+  must("#punctuationPrepFootnote").textContent = running ? t("닫아도 작업은 계속됩니다.") : ready ? t("생성된 제안을 원문과 대조하세요.") : t("검토 후 직접 확정합니다.");
+}
+
+function openPunctuationPreparation(): void {
+  if (!view) return;
+  const dialog = must<HTMLDialogElement>("#dlgPunctuation");
+  must("#punctuationPrepTitle").textContent = view.document.originalTitle || view.document.title;
+  must("#punctuationPrepSource").textContent = view.source.contentText;
+  must("#punctuationPrepSourceInfo").textContent = ui`${fmt(codepointLength(view.source.contentText))}자 · ${must<HTMLSelectElement>("#punctuationMode").value === "poetry" ? t("운문") : t("산문")}`;
+  renderPunctuationPreparationSettings();
+  renderAuxiliaryRunControls();
+  if (!dialog.open) dialog.showModal();
+  void refreshAgentProbes();
+}
+
 async function startPunctuationSuggestion(): Promise<void> {
+  if (prepSettingsPending > 0 || prepSettingsSaveError || agentProbeLoading || editorMutationBusy()) return;
   if (!view || auxiliaryStarting || auxiliaryRun?.state === "running" || aiStarting || aiRun?.state === "running") return;
+  if (view.punctuation?.state === "confirmed" && !punctuationEditingConfirmed) return;
   if (view.source.state !== "confirmed") {
-    notify("원문안을 먼저 확정하세요.", "AI 표점 제안");
+    notify(t("원문안을 먼저 확정하세요."), t("AI 표점 제안"));
     return;
   }
   if (hasUnsavedChanges()) {
-    notify("편집 중인 변경을 먼저 저장한 뒤 표점을 요청하세요.", "AI 표점 제안");
+    notify(t("편집 중인 변경을 먼저 저장한 뒤 표점을 요청하세요."), t("AI 표점 제안"));
     return;
   }
   const agentId = selectedPunctuationAgent();
   if (!agentReady(agentId)) {
-    notify(`${agentLabel(agentId)}의 설치와 로그인을 설정에서 확인하세요.`, "AI 표점 제안");
+    notify(ui`${agentLabel(agentId)}의 설치와 로그인을 설정에서 확인하세요.`, t("AI 표점 제안"));
     return;
   }
   auxiliaryRun = null;
@@ -1564,7 +1954,7 @@ async function startPunctuationSuggestion(): Promise<void> {
       auxiliaryStarting = null;
       auxiliaryActionError = { kind: "punctuation_suggest", ...result.error };
       renderAuxiliaryRunControls();
-      notify(actionableAiError(result.error), "AI 표점 제안을 시작하지 못했습니다");
+      notify(actionableAiError(result.error), t("AI 표점 제안을 시작하지 못했습니다"));
       return;
     }
     receiveAuxiliaryRun(result.data);
@@ -1573,10 +1963,10 @@ async function startPunctuationSuggestion(): Promise<void> {
     auxiliaryActionError = {
       kind: "punctuation_suggest",
       code: "ai_start_unavailable",
-      message: error instanceof Error ? error.message : "AI 표점 제안을 시작하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("AI 표점 제안을 시작하지 못했습니다."),
     };
     renderAuxiliaryRunControls();
-    notify(auxiliaryActionError.message, "AI 표점 제안을 시작하지 못했습니다");
+    notify(auxiliaryActionError.message, t("AI 표점 제안을 시작하지 못했습니다"));
   }
 }
 
@@ -1592,7 +1982,7 @@ async function cancelAuxiliaryRun(): Promise<void> {
       auxiliaryCanceling = false;
       auxiliaryActionError = { kind: auxiliaryRun.taskKind as AuxiliaryTaskKind, ...result.error };
       renderAuxiliaryRunControls();
-      notify(result.error.message, "실행을 취소하지 못했습니다");
+      notify(result.error.message, t("실행을 취소하지 못했습니다"));
       scheduleAuxiliaryPoll(messageId);
       return;
     }
@@ -1602,10 +1992,10 @@ async function cancelAuxiliaryRun(): Promise<void> {
     auxiliaryActionError = {
       kind: auxiliaryRun.taskKind as AuxiliaryTaskKind,
       code: "ai_cancel_unavailable",
-      message: error instanceof Error ? error.message : "취소 요청을 전달하지 못했습니다.",
+      message: error instanceof Error ? error.message : t("취소 요청을 전달하지 못했습니다."),
     };
     renderAuxiliaryRunControls();
-    notify(auxiliaryActionError.message, "실행을 취소하지 못했습니다");
+    notify(auxiliaryActionError.message, t("실행을 취소하지 못했습니다"));
     scheduleAuxiliaryPoll(messageId);
   }
 }
@@ -1634,23 +2024,38 @@ function editorMutationBusy(): boolean {
   return workspaceSaving || translationSaving || activeMutations.size > 0 || sentenceLinkUi.isBusy() || readingStudy.isBusy() || documentMaterials.isBusy();
 }
 
+function isSentenceEditing(sentenceId: string | undefined): boolean {
+  if (!sentenceId || !editingSentenceId) return false;
+  if (sentenceId === editingSentenceId) return true;
+  const groupId = sentenceLinks.find(link => link.sentenceId === editingSentenceId)?.groupId;
+  return !!groupId && sentenceLinks.some(link => link.sentenceId === sentenceId && link.groupId === groupId);
+}
+
 function renderEditingLocks(): void {
   if (!view) return;
   const busy = editorMutationBusy();
   const sourceLocked = view.source.state === "confirmed" && !sourceEditingConfirmed;
-  const punctuationLocked = !!previewedPunctuationSuggestion() || !view.punctuation || view.punctuation.state === "superseded";
+  const punctuationLocked = !!previewedPunctuationSuggestion() || !view.punctuation || view.punctuation.state === "superseded"
+    || (view.punctuation.state === "confirmed" && !punctuationEditingConfirmed);
+  must<HTMLButtonElement>("#btnEditPunctuation").disabled = busy || punctuationApplying;
+  must<HTMLButtonElement>("#btnCancelPunctuationEdit").disabled = busy || punctuationApplying;
   must<HTMLTextAreaElement>("#sourceDraftText").readOnly = busy || sourceLocked;
   must<HTMLButtonElement>("#btnEditSource").disabled = busy;
   must<HTMLButtonElement>("#btnCancelSourceEdit").disabled = busy;
   must<HTMLTextAreaElement>("#punctuationDraftText").readOnly = busy || punctuationLocked;
   must<HTMLSelectElement>("#punctuationMode").disabled = busy || punctuationLocked;
-  must<HTMLInputElement>("#punctuationChangeSummary").disabled = busy || punctuationLocked;
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly = busy || !editing();
-  $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach((el) => { el.readOnly = busy || !editing() || reviewComments.isSelecting() || el.dataset.sentenceEdit !== editingSentenceId; });
-  $$<HTMLButtonElement>("#rows [data-edit-sentence]").forEach((button) => {
+  $$<HTMLTextAreaElement>("#rows .sentence-edit, #bookGroups textarea").forEach((el) => { el.readOnly = busy || !editing() || reviewComments.isSelecting() || !isSentenceEditing(el.dataset.sentenceEdit); });
+  $$<HTMLButtonElement>("#rows [data-edit-sentence], #bookGroups [data-edit-sentence]").forEach((button) => {
     button.disabled = busy || !editing() || reviewComments.isSelecting();
-    button.textContent = button.dataset.editSentence === editingSentenceId ? "편집 마침" : "편집";
-    button.setAttribute("aria-pressed", String(button.dataset.editSentence === editingSentenceId));
+    const label = isSentenceEditing(button.dataset.editSentence) ? t("편집 마침") : t("편집");
+    const caption = button.querySelector("[data-edit-caption]");
+    if (caption) caption.textContent = label;
+    else button.textContent = label;
+    button.setAttribute("aria-pressed", String(isSentenceEditing(button.dataset.editSentence)));
+  });
+  $$<HTMLButtonElement>("#rows [data-split-group], #rows [data-merge-group]").forEach(button => {
+    button.disabled = busy || !editing() || reviewComments.isSelecting() || (button.hasAttribute("data-merge-group") && sentenceDrafts.at(-1)?.id === button.dataset.mergeGroup);
   });
   $$("#rows .tgt-edit").forEach((el) => { el.contentEditable = String(!busy && editing()); });
 }
@@ -1666,16 +2071,16 @@ function markTerms(text: string): string {
 function validate(bs: Block[]): string[] {
   const issues: string[] = [];
   if (!view) return issues;
-  if (view.translation?.textLayout) return must<HTMLTextAreaElement>("#fullTranslationInput").value.trim() ? [] : ["번역 내용이 비어 있습니다"];
+  if (view.translation?.textLayout) return must<HTMLTextAreaElement>("#fullTranslationInput").value.trim() ? [] : [t("번역 내용이 비어 있습니다")];
   const knownAnchors = new Set(view.anchors.map((a) => a.anchorKey));
-  if (!bs.length) issues.push("번역 블록 없음 (empty_block)");
+  if (!bs.length) issues.push(t("번역 블록 없음 (empty_block)"));
   bs.forEach((b) => {
-    if (!b.text.trim()) issues.push(`${b.key} 번역이 비어 있음 (empty_translation)`);
-    if (!b.anchors.length) issues.push(`${b.key} 연결 앵커 없음 (empty_block)`);
+    if (!b.text.trim()) issues.push(ui`${b.key} 번역이 비어 있음 (empty_translation)`);
+    if (!b.anchors.length) issues.push(ui`${b.key} 연결 앵커 없음 (empty_block)`);
     const blockSeen = new Set<string>();
     b.anchors.forEach((k) => {
-      if (!knownAnchors.has(k)) issues.push(`${k} 현재 분절에 없는 앵커 (unknown_anchor)`);
-      if (blockSeen.has(k)) issues.push(`${b.key} 안의 ${k} 중복 연결 (duplicate_anchor)`);
+      if (!knownAnchors.has(k)) issues.push(ui`${k} 현재 분절에 없는 앵커 (unknown_anchor)`);
+      if (blockSeen.has(k)) issues.push(ui`${b.key} 안의 ${k} 중복 연결 (duplicate_anchor)`);
       blockSeen.add(k);
     });
   });
@@ -1718,11 +2123,11 @@ function renderParallelSourceHeading(): void {
   select.options[1]!.disabled = !punctuationProjection;
   must("#parallelSourceGlyph").textContent = showsPunctuation() || legacyFallback ? "標點" : "原文";
   const status = must("#parallelSourceStatus");
-  status.textContent = legacyFallback ? "번역 당시 표점 구절" : showsPunctuation()
+  status.textContent = legacyFallback ? t("번역 당시 표점 구절") : showsPunctuation()
     ? `P${view!.punctuation!.versionNo} · ${VERSION_STATE_LABELS[view!.punctuation!.state]}`
-    : !view?.punctuation ? "표점 저장 후 전환 가능" : !punctuationProjection ? "현재 원문에 맞는 표점 필요" : "";
+    : !view?.punctuation ? t("표점 저장 후 전환 가능") : !punctuationProjection ? t("현재 원문에 맞는 표점 필요") : "";
   status.hidden = !status.textContent;
-  select.title = showsPunctuation() ? "저장된 표점문에서 연결 구절을 표시합니다." : "연결된 원문 구절을 표시합니다.";
+  select.title = showsPunctuation() ? t("저장된 표점문에서 연결 구절을 표시합니다.") : t("연결된 원문 구절을 표시합니다.");
 }
 
 function sourceSpanMarkup(span: { from: number; to: number; quote: string }): string {
@@ -1743,8 +2148,8 @@ function parallelAnchor(key: string): string {
 
 function renderSource(): void {
   must("#viewSource > p").textContent = view?.punctuation
-    ? view.punctuation.state === "confirmed" ? "확정 표점 원문" : "표점 작업안"
-    : "원문";
+    ? view.punctuation.state === "confirmed" ? t("확정 표점 원문") : t("표점 작업안")
+    : t("원문");
   if (!view) return;
   const punctuation = view.punctuation;
   const spans = punctuation?.structureSpans ?? [];
@@ -1784,21 +2189,42 @@ function renderSource(): void {
   must("#sourceText").innerHTML = parts.join("");
 }
 
+let sentenceSelection: ReturnType<typeof configureSentenceSelection> | undefined;
+function syncSentenceSelection(): void {
+  sentenceSelection ??= configureSentenceSelection();
+  sentenceSelection.sync(`${view?.document.id ?? ""}:${view?.translation?.versionId ?? ""}`,
+    workspace === "translation" && layout === "parallel" && !!view?.translation);
+}
+
 function renderRows(): void {
   renderParallelSourceHeading();
   const textLayout=view?.translation?.textLayout;
   if(textLayout) {
-    const signature = (spans: typeof sentenceLinks[number]["spans"]) => spans.map((span) => `${span.from}:${span.to}`).join(",");
-    must("#rows").innerHTML = sentenceDrafts.map((sentence, index) => {
-      const link = sentenceLinks.find((item) => item.sentenceId === sentence.id);
-      const source = link?.spans.map(sourceSpanMarkup).join(" ") || '<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>';
-      const relatedCount = link?.spans.length ? sentenceLinks.filter((item) => signature(item.spans) === signature(link.spans)).length : 0;
-      const relation = relatedCount > 1 ? `같은 원문 · 번역 ${relatedCount}문장` : link?.spans.length ? `연결 구절 ${link.spans.length}개` : "미연결";
-      const canLink = !!view?.translation?.isCurrentDependencies && !dirty && !translationSaving && textLayout.state !== "running";
-      return `<article class="brow" data-review-sentence="${esc(sentence.id)}" aria-label="번역 ${index + 1} 대조"><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span><span data-review-row-count></span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || editorMutationBusy() || reviewComments.isSelecting() || editingSentenceId !== sentence.id ? " readonly" : ""}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state">${!link?.spans.length || link.needsReview ? "대응 확인 필요" : link.reviewedBy === "human" ? "대응 확인됨" : "자동 연결"}</span><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence="${esc(sentence.id)}" aria-pressed="${editingSentenceId === sentence.id}"${!editing() || editorMutationBusy() || reviewComments.isSelecting() ? " disabled" : ""}>${editingSentenceId === sentence.id ? "편집 마침" : "편집"}</button><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(sentence.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? "대응 확인·수정" : "원문 연결"}</button></div></div></article>`;
+    const groups: Array<{ key: string; sentences: typeof sentenceDrafts }> = [];
+    const byGroup = new Map<string, typeof groups[number]>();
+    for (const sentence of sentenceDrafts) {
+      const link = sentenceLinks.find(item => item.sentenceId === sentence.id);
+      const key = link?.groupId ?? `sentence:${sentence.id}`;
+      let group = byGroup.get(key);
+      if (!group) { group = { key, sentences: [] }; byGroup.set(key, group); groups.push(group); }
+      group.sentences.push(sentence);
+    }
+    const canLink = !!view?.translation?.isCurrentDependencies && !dirty && !translationSaving && textLayout.state !== "running";
+    must("#rows").innerHTML = groups.map((group, index) => {
+      const first = group.sentences[0]!;
+      const link = sentenceLinks.find(item => item.sentenceId === first.id);
+      const source = link?.spans.map(sourceSpanMarkup).join(" ") || uiText('<span class="unlinked-source">원문 구절을 연결해 대조하세요.</span>');
+      const relation = link?.spans.length ? ui`연결 묶음 · 번역 ${group.sentences.length}구간` : t("미연결");
+      const targets = group.sentences.map(sentence => {
+        const link = sentenceLinks.find(item => item.sentenceId === sentence.id);
+        return `<div class="sentence-group-member" data-review-sentence="${esc(sentence.id)}"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || editorMutationBusy() || reviewComments.isSelecting() || !isSentenceEditing(sentence.id) ? " readonly" : ""}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state"${link?.spans.length && !link.needsReview && link.reviewedBy !== "human" ? " hidden" : ""}>${!link?.spans.length || link.needsReview ? t("대응 확인 필요") : link.reviewedBy === "human" ? t("대응 확인됨") : ""}</span><span data-review-row-count></span></div></div>`;
+      }).join("");
+      const bookmarkMenu = group.sentences.map((sentence, i) => editorAids.bookmarkMarkup(sentence.id, group.sentences.length > 1 ? i + 1 : undefined)).join("");
+      const bookmarkIndicators = group.sentences.filter(sentence => editorAids.isBookmarked(sentence.id)).map(sentence => editorAids.bookmarkMarkup(sentence.id, group.sentences.length > 1 ? group.sentences.indexOf(sentence) + 1 : undefined)).join("");
+      return `<article class="brow sentence-group" data-sentence-group="${esc(group.key)}" aria-label="${esc(group.sentences.map(sentence => sentence.id).join(", "))}"><div class="sentence-selection-cell"></div><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt">${targets}<div class="sentence-actions sentence-group-actions">${bookmarkIndicators}<details class="book-group-menu sentence-group-menu"><summary aria-label="${esc(t("묶음 작업"))}" title="${esc(t("묶음 작업"))}">⋯</summary><div class="book-group-menu-items"><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(first.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? t("대응 확인·수정") : t("원문 연결")}</button>${groupActions(first.id)}${bookmarkMenu}</div></details><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence="${esc(first.id)}" aria-pressed="${isSentenceEditing(first.id)}"${!editing() || editorMutationBusy() || reviewComments.isSelecting() ? " disabled" : ""}>${isSentenceEditing(first.id) ? t("편집 마침") : t("편집")}</button></div></div></article>`;
     }).join("");
     renderComparisonState();
-    must("#blockCount").textContent=String(sentenceDrafts.length);
+    must("#blockCount").textContent=String(groups.length);
     resizeSentenceEditors();
     reviewComments.refresh();
     return;
@@ -1806,6 +2232,13 @@ function renderRows(): void {
   const bs = shownBlocks();
   const can = editing();
   const rows = must("#rows");
+rows.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  rows.querySelectorAll<HTMLDetailsElement>(".sentence-group-menu[open]").forEach(menu => {
+    menu.open = false;
+    menu.querySelector<HTMLElement>("summary")?.focus();
+  });
+});
   rows.setAttribute("aria-busy", String(blockOrderSaving));
   rows.innerHTML = bs
     .map((b, i) => {
@@ -1814,14 +2247,15 @@ function renderRows(): void {
       const orderDisabled = !can || blockOrderSaving;
       const upDisabled = orderDisabled || i === 0;
       const downDisabled = orderDisabled || i === bs.length - 1;
-      return `<article class="brow${active === b.key ? " is-active" : ""}${isHot ? " is-hot" : ""}" data-key="${esc(b.key)}" data-i="${i}">
+      return ui`<article class="brow${active === b.key ? " is-active" : ""}${isHot ? " is-hot" : ""}" data-key="${esc(b.key)}" data-i="${i}">
       <div class="bcell bcell-src"><div class="bmeta"><span class="bkey">${esc(b.key)}</span>${b.anchors.map((k) => `<span class="akey${hot.includes(k) ? " is-hot" : ""}" data-akey="${esc(k)}">${esc(k)}</span>`).join("")}</div><div>${markTerms(src)}</div></div>
-      <div class="bcell bcell-tgt"><div class="bmeta"><span class="tag tag-plain">${esc(b.kind || "paragraph")}</span>${can ? "" : '<span class="tag tag-line">읽기 전용</span>'}<span class="sp"></span><span class="block-order" role="group" aria-label="${esc(b.key)} 블록 순서 변경"><button type="button" data-move="up" data-move-i="${i}" aria-label="${esc(b.key)} 블록을 위로 이동" title="위로 이동 (⌥⌘↑)"${upDisabled ? " disabled" : ""}><span aria-hidden="true">↑</span></button><button type="button" data-move="down" data-move-i="${i}" aria-label="${esc(b.key)} 블록을 아래로 이동" title="아래로 이동 (⌥⌘↓)"${downDisabled ? " disabled" : ""}><span aria-hidden="true">↓</span></button></span><button class="more" data-more="${i}" type="button" aria-label="${esc(b.key)} 블록 동작 메뉴" title="블록 동작 (우클릭)">⋯</button></div>
+      <div class="bcell bcell-tgt"><div class="bmeta"><span class="tag tag-plain">${esc(b.kind || "paragraph")}</span>${can ? "" : uiText('<span class="tag tag-line">읽기 전용</span>')}<span class="sp"></span><span class="block-order" role="group" aria-label="${esc(b.key)} 블록 순서 변경"><button type="button" data-move="up" data-move-i="${i}" aria-label="${esc(b.key)} 블록을 위로 이동" title="위로 이동 (⌥⌘↑)"${upDisabled ? " disabled" : ""}><span aria-hidden="true">↑</span></button><button type="button" data-move="down" data-move-i="${i}" aria-label="${esc(b.key)} 블록을 아래로 이동" title="아래로 이동 (⌥⌘↓)"${downDisabled ? " disabled" : ""}><span aria-hidden="true">↓</span></button></span><button class="more" data-more="${i}" type="button" aria-label="${esc(b.key)} 블록 동작 메뉴" title="블록 동작 (우클릭)">⋯</button></div>
         <div class="tgt-edit" contenteditable="${can}" spellcheck="false" data-edit="${esc(b.key)}">${esc(b.text)}</div></div>
     </article>`;
     })
     .join("");
   must("#blockCount").textContent = String(bs.length);
+  syncSentenceSelection();
 }
 
 function sentenceNeedsReview(id: string): boolean {
@@ -1831,8 +2265,8 @@ function sentenceNeedsReview(id: string): boolean {
 
 function renderComparisonState(): void {
   const whole = !!view?.translation?.textLayout;
-  must("#viewParallel .comparison-tools").hidden = !whole;
-  if (!whole) { must("#comparisonEmpty").hidden = true; return; }
+  must(".editor-commandbar .comparison-tools").hidden = !whole;
+  if (!whole) { must("#comparisonEmpty").hidden = true; syncSentenceSelection(); return; }
   const only = must<HTMLInputElement>("#alignmentReviewOnly").checked;
   const visible = comparisonSentences();
   renderComparisonFilterButton();
@@ -1844,24 +2278,38 @@ function renderComparisonState(): void {
   };
   $$("#rows [data-review-sentence]").forEach((row) => {
     const id = row.dataset.reviewSentence!;
-    row.hidden = !visible.some(sentence => sentence.id === id);
+    const group = row.closest<HTMLElement>("[data-sentence-group]");
+    const members = group ? Array.from(group.querySelectorAll<HTMLElement>("[data-review-sentence]")) : [row];
+    row.hidden = !members.some(member => visible.some(sentence => sentence.id === member.dataset.reviewSentence));
     row.classList.toggle("is-active", id === selectedSentenceId);
     row.classList.toggle("is-related", id !== selectedSentenceId && sameSource(id));
     const label = row.querySelector<HTMLElement>("[data-sentence-review]");
     const link = sentenceLinks.find((item) => item.sentenceId === id);
-    if (label) { label.hidden = false; label.textContent = sentenceNeedsReview(id) ? "대응 확인 필요" : link?.reviewedBy === "human" ? "대응 확인됨" : "자동 연결"; }
+    if (label) { label.textContent = sentenceNeedsReview(id) ? t("대응 확인 필요") : link?.reviewedBy === "human" ? t("대응 확인됨") : ""; label.hidden = !label.textContent; }
     const button = row.querySelector<HTMLButtonElement>("[data-edit-sentence-link]");
+    if (button) button.disabled = dirty || editorMutationBusy() || !view?.translation?.isCurrentDependencies || view.translation.textLayout?.state === "running";
+  });
+  $$("#rows [data-sentence-group]").forEach(group => {
+    const members = Array.from(group.querySelectorAll<HTMLElement>("[data-review-sentence]"));
+    group.hidden = members.every(member => member.hidden);
+    group.classList.toggle("is-active", members.some(member => member.dataset.reviewSentence === selectedSentenceId));
+    const button = group.querySelector<HTMLButtonElement>("[data-edit-sentence-link]");
     if (button) button.disabled = dirty || editorMutationBusy() || !view?.translation?.isCurrentDependencies || view.translation.textLayout?.state === "running";
   });
   const pending = sentenceDrafts.filter((sentence) => sentenceNeedsReview(sentence.id)).length;
   must("#comparisonSummary").textContent = pending
-    ? `번역 ${sentenceDrafts.length}문장 · 대응 확인 필요 ${pending}`
-    : `번역 문장 연결 ${sentenceDrafts.length}/${sentenceDrafts.length}${view?.translation?.textLayout?.error ? " · 원문 전체 범위는 별도 확인" : ""}`;
+    ? ui`번역 ${sentenceDrafts.length}문장 · 대응 확인 필요 ${pending}`
+    : ui`번역 문장 연결 ${sentenceDrafts.length}/${sentenceDrafts.length}`;
+  const alignment = view?.translation?.textLayout;
+  if (alignment?.state === "running") must("#comparisonSummary").textContent = t("원문 연결 중");
+  else if (alignment?.state === "failed") must("#comparisonSummary").textContent = [t("원문 연결 실패 · 번역은 보존됨"), alignment.error].filter(Boolean).join(" · ");
+  else if (alignment?.error) must("#comparisonSummary").textContent += ` · ${alignment.error}`;
   must("#comparisonEmpty").hidden = visible.length > 0;
-  must("#comparisonEmpty").textContent = sentenceDrafts.length ? "검색·필터 조건에 맞는 문장이 없습니다." : "서책 보기에서 번역을 입력하면 문장별로 대조할 수 있습니다.";
+  must("#comparisonEmpty").textContent = sentenceDrafts.length ? t("검색·필터 조건에 맞는 문장이 없습니다.") : t("서책 보기에서 번역을 입력하면 문장별로 대조할 수 있습니다.");
   const index = visible.findIndex((sentence) => sentence.id === selectedSentenceId);
   must<HTMLButtonElement>("#btnPreviousSentence").disabled = index <= 0;
   must<HTMLButtonElement>("#btnNextSentence").disabled = index < 0 || index >= visible.length - 1;
+  syncSentenceSelection();
 }
 
 function moveSentence(direction: -1 | 1): void {
@@ -1877,12 +2325,97 @@ function moveSentence(direction: -1 | 1): void {
 
 function resizeSentenceEditor(editor: HTMLTextAreaElement): void {
   if (!editor.getClientRects().length) return;
+  const pane = editor.closest<HTMLElement>(".pane-scroll"), top = pane?.scrollTop;
   editor.style.height = "0px";
   editor.style.height = `${editor.scrollHeight}px`;
+  if (pane && top !== undefined) pane.scrollTop = top;
 }
 
 function resizeSentenceEditors(): void {
-  $$<HTMLTextAreaElement>("#rows .sentence-edit").forEach(resizeSentenceEditor);
+  $$<HTMLTextAreaElement>("#rows .sentence-edit, #bookGroups textarea").forEach(resizeSentenceEditor);
+}
+
+function groupActions(id: string): string {
+  if (!sentenceLinks.find(link => link.sentenceId === id)?.groupId) return "";
+  return `<button type="button" class="btn btn-ghost btn-sm" data-split-group="${esc(id)}">묶음 나누기</button><button type="button" class="btn btn-ghost btn-sm" data-merge-group="${esc(id)}"${sentenceDrafts.at(-1)?.id === id ? " disabled" : ""}>다음 묶음과 합치기</button>`;
+}
+
+function renderBookGroups(): void {
+  const root = must("#bookGroups");
+  root.hidden = !view?.translation?.textLayout;
+  if (root.hidden) return;
+  root.classList.toggle("is-editing", !!editingSentenceId);
+  must<HTMLSelectElement>("#bookSourceMode").value = showsPunctuation() ? "punctuation" : "source";
+  must<HTMLSelectElement>("#bookSourceMode").options[1]!.disabled = !punctuationProjection;
+  const ids = sentenceDrafts.map(sentence => sentence.id).join("|");
+  if (root.dataset.ids !== ids || !root.children.length) {
+    root.dataset.ids = ids;
+    root.innerHTML = `<div class="book-edit-toolbar" aria-label="선택한 번역 묶음 도구"><span class="book-group-position"></span><span class="book-edit-state" role="status"></span><div class="book-edit-actions"><button class="book-edit-button" type="button" data-edit-sentence=""><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg><span data-edit-caption>편집</span></button><span class="book-bookmark-indicator"></span><details class="book-group-menu"><summary aria-label="묶음 작업" title="묶음 작업"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary><div class="book-group-menu-items"></div></details></div></div>` + sentenceDrafts.map((sentence, index) => `<section class="book-group" data-book-group="${esc(sentence.id)}"><span class="book-group-marker" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="번역 묶음 ${index + 1}" spellcheck="false" rows="1">${esc(sentence.text)}</textarea></section>`).join("");
+  }
+  root.querySelectorAll<HTMLElement>("[data-book-group]").forEach(box => {
+    const id = box.dataset.bookGroup!;
+    const field = box.querySelector<HTMLTextAreaElement>("textarea")!;
+    const text = sentenceDrafts.find(sentence => sentence.id === id)?.text ?? "";
+    // The final line break separates editing units in the canonical document.
+    // Keep it in storage without rendering an extra empty line inside the box.
+    if (field.dataset.trailingSeparator === undefined) field.dataset.trailingSeparator = text.endsWith("\r\n") ? "\r\n" : text.endsWith("\n") ? "\n" : "";
+    const separator = field.dataset.trailingSeparator && text.endsWith(field.dataset.trailingSeparator) ? field.dataset.trailingSeparator : "";
+    field.dataset.trailingSeparator = separator;
+    const content = separator ? text.slice(0, -separator.length) : text;
+    if (field.value !== content) field.value = content;
+    box.classList.toggle("is-editing", isSentenceEditing(id));
+    box.classList.toggle("is-selected", selectedSentenceId === id);
+
+    box.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.disabled = !editing() || editorMutationBusy() || reviewComments.isSelecting() || (button.hasAttribute("data-merge-group") && sentenceDrafts.at(-1)?.id === id); });
+    resizeSentenceEditor(field);
+  });
+  const current = sentenceDrafts.find(sentence => sentence.id === selectedSentenceId) ?? sentenceDrafts[0];
+  if (current) {
+    const toolbar = root.querySelector<HTMLElement>(".book-edit-toolbar")!;
+    toolbar.querySelector(".book-group-position")!.textContent = `${String(sentenceDrafts.indexOf(current) + 1).padStart(2, "0")} / ${sentenceDrafts.length}`;
+    toolbar.querySelector(".book-edit-state")!.textContent = isSentenceEditing(current.id) ? "편집 중" : sentenceNeedsReview(current.id) ? "대응 확인 필요" : "";
+    const edit = toolbar.querySelector<HTMLButtonElement>("[data-edit-sentence]")!;
+    edit.dataset.editSentence = current.id;
+    edit.disabled = !editing() || editorMutationBusy() || reviewComments.isSelecting();
+    edit.setAttribute("aria-pressed", String(isSentenceEditing(current.id)));
+    edit.querySelector("[data-edit-caption]")!.textContent = isSentenceEditing(current.id) ? "편집 마침" : "편집";
+    toolbar.querySelector(".book-bookmark-indicator")!.innerHTML = editorAids.isBookmarked(current.id) ? editorAids.bookmarkMarkup(current.id) : "";
+    const menu = toolbar.querySelector<HTMLDetailsElement>("details")!;
+    if (menu.dataset.sentence !== current.id) {
+      menu.open = false; menu.dataset.sentence = current.id;
+      menu.querySelector(".book-group-menu-items")!.innerHTML = editorAids.bookmarkMarkup(current.id) + groupActions(current.id);
+    }
+    menu.hidden = false;
+    menu.querySelectorAll<HTMLButtonElement>("button:not([data-editor-bookmark])").forEach(button => { button.disabled = !editing() || editorMutationBusy() || reviewComments.isSelecting() || (button.hasAttribute("data-merge-group") && current.id === sentenceDrafts.at(-1)?.id); });
+  }
+}
+
+function highlightBookSource(id: string): void {
+  if (!view) return;
+  const source = showsPunctuation() ? view.punctuation!.punctuatedText : view.source.contentText;
+  const points = Array.from(source);
+  const mapping = showsPunctuation() ? punctuationProjection!.sourceBoundaryByPunctuationBoundary : null;
+  const spans = sentenceLinks.find(link => link.sentenceId === id)?.spans ?? [];
+  const isHot = (index: number) => {
+    const owner = showsPunctuation() ? punctuationProjection!.sourceOwnerByPunctuationCodepoint[index]! : index;
+    return spans.some(span => owner >= span.from && owner < span.to);
+  };
+  let html = "";
+  let marked = false;
+  points.forEach((char, index) => {
+    const hot = isHot(index);
+    if (hot !== marked) { html += hot ? '<mark class="book-source-highlight">' : '</mark>'; marked = hot; }
+    html += esc(char);
+  });
+  if (marked) html += '</mark>';
+  const sourceElement = must("#folioSourceText");
+  sourceElement.innerHTML = html;
+  sourceElement.dataset.reviewSourceFrom = "0";
+  sourceElement.dataset.reviewSourceTo = String(sourceCodepoints.length);
+  sourceElement.dataset.reviewSourceQuote = view.source.contentText;
+  if (mapping) sourceElement.dataset.reviewSourceMap = JSON.stringify(mapping);
+  else delete sourceElement.dataset.reviewSourceMap;
+  must("#folioSourceLabel").textContent = showsPunctuation() ? t("확정 표점 원문") : t("원문");
 }
 
 function renderFull(): void {
@@ -1891,16 +2424,16 @@ function renderFull(): void {
   renderSaveState();
   renderComparisonState();
   reviewComments.refresh();
-  must("#reviewCommentToolbar").hidden = !whole;
-  must("#fullTranslationInput").hidden=!whole;
+  editorAids.checkpoint();
+  must("#fullTranslationInput").hidden=true;
+  renderBookGroups();
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly=!editing() || translationSaving;
   renderEditingLocks();
   must("#translationEditHelp").hidden=!whole;
   must("#translationEditHelp").textContent=editing()
-    ? "문장별 ‘편집’을 눌러 수정하세요. 번역 저장 또는 ⌘S로 저장합니다."
-    : "읽기 전용 번역입니다. 확정본은 ‘새 번역안으로 수정’을 눌러 편집하세요.";
+    ? t("문장별 ‘편집’을 눌러 수정하세요. 번역 저장 또는 ⌘S로 저장합니다.")
+    : t("읽기 전용 번역입니다. 확정본은 ‘새 번역안으로 수정’을 눌러 편집하세요.");
   must("#fullText").hidden=whole;
-  must("#textTranslationControls").hidden=!whole;
   must("#btnSaveFullTranslation").hidden = !whole;
   must("#btnRetryAlignment").hidden = !whole;
   must<HTMLInputElement>("#chkStruct").closest("label")!.hidden=whole;
@@ -1908,13 +2441,10 @@ function renderFull(): void {
   must("#legacyTranslationCounts").hidden=whole;
   must("#validBadge").hidden=whole;
   if(whole) {
-    const states={pending:"원문 연결 필요",running:"원문 연결 중",ready:"자동 연결 완료 · 대응 검토 필요",needs_review:"원문 연결 확인 필요",failed:"원문 연결 실패 · 번역은 보존됨"};
-    must("#alignmentStatus").textContent=[states[view!.translation!.textLayout!.state],view!.translation!.textLayout!.error].filter(Boolean).join(" · ");
     must<HTMLButtonElement>("#btnSaveFullTranslation").disabled=!editing()||!dirty||translationSaving;
-    must("#btnSaveFullTranslation").textContent=translationSaving ? "저장 중…" : "번역 저장";
-    must("#translationSaveStatus").textContent=translationSaving ? "저장 중…" : dirty ? "저장하지 않은 변경" : "";
-    if(dirty) must("#alignmentStatus").textContent="번역 수정 중 · 저장 후 원문 연결을 다시 확인하세요";
-    must("#btnRetryAlignment").textContent=view!.translation!.textLayout!.state==="running" ? "원문 연결 중" : view!.translation!.textLayout!.state==="pending" ? "원문 연결" : "원문 다시 연결";
+    must("#btnSaveFullTranslation").textContent=translationSaving ? t("저장 중…") : dirty ? t("저장") : t("저장됨");
+    must("#btnSaveFullTranslation").classList.toggle("is-saved", !dirty && !translationSaving);
+    must("#btnRetryAlignment").textContent=view!.translation!.textLayout!.state==="running" ? t("원문 연결 중") : view!.translation!.textLayout!.state==="pending" ? t("원문 연결") : t("원문 다시 연결");
     must<HTMLButtonElement>("#btnRetryAlignment").disabled=!view?.translation?.textContent.trim()||dirty||aiRun?.state==="running"||view?.translation?.textLayout?.state==="running"||!view?.translation?.isCurrentDependencies;
     return;
   }
@@ -1940,13 +2470,13 @@ function renderStrip(): void {
   const issues = validate(bs);
   const ok = issues.length === 0;
   vs.classList.toggle("is-bad", !ok);
-  vs.innerHTML = view?.translation?.textLayout ? `<span class="tag tag-ok">번역 전문</span><span>문단과 줄바꿈 보존 · 원문 연결은 별도 검토</span>` : ok
-    ? `<span class="tag tag-ok">valid</span><span>저장 형식·현재 분절 참조 이상 없음</span><i class="sep"></i><span class="muted">원문 대응은 사용자가 검토 · 블록 ${bs.length}개 · v${translation.versionNo}</span>`
-    : `<span class="tag tag-warn">needs_review</span><span>${issues.length}건 — ${esc(issues[0] ?? "")}${issues.length > 1 ? " 외" : ""}</span><i class="sep"></i><span class="muted">형식 또는 현재 분절 참조를 고쳐 새 valid 번역안을 만들기 전에는 확정할 수 없습니다</span>`;
+  vs.innerHTML = view?.translation?.textLayout ? uiText(`<span class="tag tag-ok">번역 전문</span><span>문단과 줄바꿈 보존 · 원문 연결은 별도 검토</span>`) : ok
+    ? ui`<span class="tag tag-ok">valid</span><span>저장 형식·현재 분절 참조 이상 없음</span><i class="sep"></i><span class="muted">원문 대응은 사용자가 검토 · 블록 ${bs.length}개 · v${translation.versionNo}</span>`
+    : ui`<span class="tag tag-warn">needs_review</span><span>${issues.length}건 — ${esc(issues[0] ?? "")}${issues.length > 1 ? t(" 외") : ""}</span><i class="sep"></i><span class="muted">형식 또는 현재 분절 참조를 고쳐 새 valid 번역안을 만들기 전에는 확정할 수 없습니다</span>`;
   const sb = must("#stateBadge");
   const vb = must("#validBadge");
   const confirmed = translation.state === "confirmed";
-  const label = confirmed ? `확정 v${translation.versionNo}` : `번역안 v${translation.versionNo}`;
+  const label = confirmed ? ui`확정 v${translation.versionNo}` : ui`번역안 v${translation.versionNo}`;
   if (confirmed) {
     sb.className = "tag tag-ok";
   } else {
@@ -1955,19 +2485,19 @@ function renderStrip(): void {
   sb.textContent = label;
   vb.className = ok ? "tag tag-plain" : "tag tag-warn";
   vb.textContent = ok ? "valid" : "needs_review";
-  const docTitle = view?.document.originalTitle || view?.document.title || "문서";
+  const docTitle = view?.document.originalTitle || view?.document.title || t("문서");
   must("#titleDoc").textContent = docTitle;
   must("#titleSub").textContent = `— ${label}`;
-  document.title = `${docTitle} — 문해 Munhae Studio`;
-  must("#sbValid").innerHTML = view?.translation?.textLayout ? `번역 ${view.translation.textLayout.sentences.length}문장` : `<span class="tag ${ok ? "tag-ok" : "tag-warn"}" style="height:16px;font-size:10.5px">${ok ? "valid" : "needs_review"}</span> 블록 ${bs.length}`;
+  document.title = ui`${docTitle} — 문해 Munhae Studio`;
+  must("#sbValid").innerHTML = view?.translation?.textLayout ? ui`번역 ${view.translation.textLayout.sentences.length}문장` : ui`<span class="tag ${ok ? "tag-ok" : "tag-warn"}" style="height:16px;font-size:10.5px">${ok ? "valid" : "needs_review"}</span> 블록 ${bs.length}`;
   const bc = must<HTMLButtonElement>("#btnConfirm");
   const br = must<HTMLButtonElement>("#btnRevise");
   bc.hidden = confirmed;
   br.hidden = !confirmed;
   bc.disabled = !ok;
   bc.title = !ok
-    ? "needs_review 상태에서는 확정할 수 없습니다"
-    : "번역안 확정 (⇧⌘↩)";
+    ? t("needs_review 상태에서는 확정할 수 없습니다")
+    : t("번역안 확정 (⇧⌘↩)");
 }
 
 function renderHistory(): void {
@@ -1976,11 +2506,46 @@ function renderHistory(): void {
 }
 
 function historyKind(): "source" | "punctuation" | "translation" {
-  return workspace === "segmentation" ? "punctuation" : workspace;
+  return workspace === "terms" ? "source" : workspace === "segmentation" ? "punctuation" : workspace;
 }
+
+let lastChatRequest: { key: string; question: string } | null = null;
+let chatSurface: ReturnType<typeof configureChatSurface> | null = null;
+const chatDisclosureOverrides = new Map<string, boolean>();
+const chatActivityTiming = new Map<string, { startedAt: string; completedAt: string | null }>();
+const chatThinkingHistory = new Map<string, string>();
+const chatActivityHistory = new Map<string, NonNullable<import("../../shared/munhae-api").AiRunView["activity"]>>();
 
 function renderChat(): void {
   const list = must("#chatList");
+  chatSurface ??= configureChatSurface(list, must<HTMLTextAreaElement>("#chatInput"), {
+    key: () => view ? `${view.document.id}:${selectedChatScope()}` : "",
+    messages: () => {
+      const messages = selectedChatScope() === "project" ? projectChat : (view?.chat ?? []);
+      const pending = pendingChatMessage?.documentNodeId === view?.document.id && pendingChatMessage?.scopeKind === selectedChatScope() ? pendingChatMessage : null;
+      return [...messages, ...(pending ? [{ role: "user" as const, text: pending.text }] : [])];
+    },
+    changed: renderAuxiliaryRunControls,
+    retry: () => {
+      const messages = selectedChatScope() === "project" ? projectChat : (view?.chat ?? []);
+      const lastQuestion = lastChatRequest?.key === `${view?.document.id}:${selectedChatScope()}` ? lastChatRequest.question : [...messages].reverse().find(message => message.role === "user")?.text;
+      if (lastQuestion) { chatSurface!.setDraft(lastQuestion); void startProjectChat(); }
+    },
+  });
+  chatSurface.sync();
+  if (!list.dataset.activityDisclosureBound) {
+    list.dataset.activityDisclosureBound = "true";
+    list.addEventListener("click", event => {
+      const summary = (event.target as Element).closest("summary");
+      const details = summary?.parentElement as HTMLDetailsElement | undefined;
+      const key = details?.dataset.thinkingKey;
+      if (key && details) {
+        chatDisclosureOverrides.set(key, !details.open);
+        if (chatDisclosureOverrides.size > 500) chatDisclosureOverrides.delete(chatDisclosureOverrides.keys().next().value!);
+      }
+    });
+  }
+  const restoreChatScroll = chatSurface.captureScroll();
   const scopeKind = selectedChatScope();
   const msgs = scopeKind === "project" ? projectChat : (view?.chat ?? []);
   const projectScope = scopeKind === "project";
@@ -1995,43 +2560,71 @@ function renderChat(): void {
       && auxiliaryRun.documentNodeId === view?.document.id
       && runChatScope(auxiliaryRun) === scopeKind);
   must("#chatScopeNote").textContent = projectScope
-    ? "요청 본문에는 프로젝트 제목·문서 목록/상태·프로젝트 공통 문맥만 포함합니다. 문서 원문은 포함하지 않습니다."
-    : "현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.";
+    ? t("요청 본문에는 프로젝트 제목·문서 목록/상태·프로젝트 공통 문맥만 포함합니다. 문서 원문은 포함하지 않습니다.")
+    : t("현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.");
   must<HTMLTextAreaElement>("#chatInput").placeholder = projectScope
-    ? "프로젝트 구성이나 진행 상태에 대해 질문하세요"
-    : "이 문서에 대해 질문하거나 검토를 요청하세요";
+    ? t("프로젝트 구성이나 진행 상태에 대해 질문하세요")
+    : t("이 문서에 대해 질문하거나 검토를 요청하세요");
   const visibleMessages = pending
     ? [...msgs, { role: "user" as const, text: pending.text, createdAt: pending.createdAt }]
     : msgs;
+  const thinkingOpenKeys = new Set(Array.from(list.querySelectorAll<HTMLDetailsElement>("details.chat-thinking[open]")).map(el => el.dataset.thinkingKey));
+  const thinkingOpen = !!auxiliaryRun && thinkingOpenKeys.has(auxiliaryRun.messageId);
+  let currentThinking = auxiliaryRun?.taskKind === "chat"
+    && auxiliaryRun.documentNodeId === view?.document.id
+    && runChatScope(auxiliaryRun) === scopeKind
+    ? (auxiliaryRun.activity?.length ? chatActivityMarkup(auxiliaryRun.activity, auxiliaryRun.messageId, new Set(), undefined, { state: auxiliaryRun.state, startedAt: auxiliaryRun.startedAt, completedAt: auxiliaryRun.completedAt, overrides: chatDisclosureOverrides }) : thinkingMarkup(auxiliaryRun.thinkingText, auxiliaryRun.messageId, thinkingOpen)) : "";
+  const lastMessage = visibleMessages.at(-1);
+  const historyKey = (m: { createdAt: string; text: string }) => `${view?.document.id}:${scopeKind}:${m.createdAt}`;
+  if (lastMessage?.role === "assistant" && auxiliaryRun?.state === "completed"
+      && currentThinking && auxiliaryRun.partialText === lastMessage.text) {
+    if (auxiliaryRun.activity?.length) {
+      chatActivityHistory.set(historyKey(lastMessage), auxiliaryRun.activity.map(block => ({ ...block })));
+      chatActivityTiming.set(historyKey(lastMessage), { startedAt: auxiliaryRun.startedAt, completedAt: auxiliaryRun.completedAt });
+      for (const [key, open] of [...chatDisclosureOverrides]) if (key.startsWith(`${auxiliaryRun.messageId}:`)) chatDisclosureOverrides.set(key.replace(auxiliaryRun.messageId, historyKey(lastMessage)), open);
+      if (chatActivityTiming.size > 50) chatActivityTiming.delete(chatActivityTiming.keys().next().value!);
+      for (const key of thinkingOpenKeys) if (key?.startsWith(`${auxiliaryRun.messageId}:`)) thinkingOpenKeys.add(key.replace(auxiliaryRun.messageId, historyKey(lastMessage)));
+      if (chatActivityHistory.size > 50) chatActivityHistory.delete(chatActivityHistory.keys().next().value!);
+    } else chatThinkingHistory.set(historyKey(lastMessage), auxiliaryRun.thinkingText!);
+    if (thinkingOpen) thinkingOpenKeys.add(historyKey(lastMessage));
+    if (chatThinkingHistory.size > 50) chatThinkingHistory.delete(chatThinkingHistory.keys().next().value!);
+    currentThinking = "";
+  }
   const rendered = visibleMessages
-    .map((m) => {
+    .map((m, index) => {
       const when = m.createdAt.length >= 16 ? m.createdAt.slice(11, 16) : m.createdAt;
       if (m.role === "user") {
-        return `<div class="msg msg-user"><div class="msg-head"><span>나</span><span>${esc(when)}</span></div><div class="msg-body">${esc(m.text)}</div></div>`;
+        return chatMessageMarkup({ role: "user", text: m.text, time: when }, index);
       }
-      return `<div class="msg msg-ai"><div class="msg-head"><span class="tag tag-line">assistant</span><span>${esc(when)}</span></div><div class="msg-body"><p>${esc(m.text)}</p>${m.meta ? `<dl class="run-card"><dt>meta</dt><dd>${esc(m.meta)}</dd></dl>` : ""}</div></div>`;
+      const key = historyKey(m);
+      const thinking = chatActivityHistory.has(key) ? chatActivityMarkup(chatActivityHistory.get(key), key, new Set(), m.text, { state: "completed", ...chatActivityTiming.get(key), overrides: chatDisclosureOverrides }) : thinkingMarkup(chatThinkingHistory.get(key), key, thinkingOpenKeys.has(key));
+      return chatMessageMarkup({ role: "assistant", text: m.text, time: when, meta: m.meta ?? undefined }, index, thinking);
     })
     .join("");
   const typingIndicator = isGenerating
-    ? `<div class="msg msg-ai msg-typing">
+    ? uiText(`<div class="msg msg-ai msg-typing">
         <div class="msg-head"><span class="tag tag-line">assistant</span><span>작성 중</span></div>
         <div class="msg-body" role="status" aria-label="AI가 답변을 작성하고 있습니다">
           <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         </div>
-      </div>`
+      </div>`)
     : "";
-  list.innerHTML = rendered || typingIndicator
-    ? `${rendered}${typingIndicator}`
+  const errorMessage = auxiliaryActionError?.kind === "chat" && lastChatRequest?.key === `${view?.document.id}:${scopeKind}` ? auxiliaryActionError.message : auxiliaryRun?.taskKind === "chat" && auxiliaryRun.documentNodeId === view?.document.id && runChatScope(auxiliaryRun) === scopeKind && auxiliaryRun.state === "failed" ? auxiliaryRun.error?.message ?? t("응답을 받지 못했습니다.") : null;
+  const chatError = !isGenerating && errorMessage
+    ? `<div class="chat-error" role="alert">${esc(errorMessage)}<br><button class="btn btn-sm" type="button" data-chat-action="retry">${esc(t("다시 시도"))}</button></div>` : "";
+  list.innerHTML = rendered || typingIndicator || currentThinking || chatError
+    ? `${rendered}${currentThinking}${typingIndicator}${chatError}`
     : `<p class="muted" style="font-size:12px;padding:8px">${projectScope
-      ? "프로젝트 전체 채팅 기록이 없습니다. 요청 본문에는 문서 원문 없이 프로젝트 개요와 공통 문맥만 포함합니다."
-      : "현재 문서 채팅 기록이 없습니다. 문서 snapshot은 로컬 CLI로 전송되며 번역 데이터는 변경하지 않습니다."}</p>`;
-  list.scrollTop = list.scrollHeight;
+      ? t("프로젝트 전체 채팅 기록이 없습니다. 요청 본문에는 문서 원문 없이 프로젝트 개요와 공통 문맥만 포함합니다.")
+      : t("현재 문서 채팅 기록이 없습니다. 문서 snapshot은 로컬 CLI로 전송되며 번역 데이터는 변경하지 않습니다.")}</p>`;
+  chatSurface.afterRender();
+  restoreChatScroll();
 }
 
 function renderTerms(): void {
   const source = view?.source.contentText ?? "";
   const entries = (knowledge?.glossary ?? []).filter(entry => source.includes(entry.sourceTerm));
-  must("#ctxTerms").innerHTML = entries.length ? entries.map(entry => `<div class="li" style="display:grid;gap:5px"><span><b class="hanmun">${esc(entry.sourceTerm)}</b> → ${esc(entry.targetTerm)}</span><span class="tag ${entry.usageStatus === "preferred" ? "tag-ok" : "tag-plain"}">${USAGE_LABELS[entry.usageStatus]}</span>${entry.noteMd ? `<p class="muted" style="white-space:pre-wrap;margin:0">${esc(entry.noteMd)}</p>` : ""}</div>`).join("") : '<p class="muted" style="font-size:12px">원문에 일치하는 등록 용어가 없습니다. 확인한 표현은 ‘용어 등록’에서 남길 수 있습니다.</p>';
+  must("#ctxTerms").innerHTML = entries.length ? entries.map(entry => `<div class="li" style="display:grid;gap:5px"><span><b class="hanmun">${esc(entry.sourceTerm)}</b> → ${esc(entry.targetTerm)}</span><span class="tag ${entry.usageStatus === "preferred" ? "tag-ok" : "tag-plain"}">${USAGE_LABELS[entry.usageStatus]}</span>${entry.noteMd ? `<p class="muted" style="white-space:pre-wrap;margin:0">${esc(entry.noteMd)}</p>` : ""}</div>`).join("") : uiText('<p class="muted" style="font-size:12px">원문에 일치하는 등록 용어가 없습니다. 확인한 표현은 ‘용어 등록’에서 남길 수 있습니다.</p>');
   const unc = knowledge?.uncertainties.filter((u) => u.state === "open") ?? [];
   must("#ctxUnc").innerHTML = unc.length
     ? unc
@@ -2040,7 +2633,7 @@ function renderTerms(): void {
             `<div class="li"><span><b>${esc(u.id.slice(0, 8))}</b> ${esc(u.statementMd)}</span><span class="tag tag-warn">${esc(u.category)}</span></div>`,
         )
         .join("")
-    : '<p class="muted" style="font-size:12px">열린 불확실성이 없습니다.</p>';
+    : uiText('<p class="muted" style="font-size:12px">열린 불확실성이 없습니다.</p>');
 }
 
 function versionTagClass(state: EditorView["source"]["state"]): string {
@@ -2058,16 +2651,16 @@ function renderSegmentation(): void {
   const ready = translationReady();
   const badge = must("#segmentationStateBadge");
   badge.className = `tag ${ready ? "tag-ok" : "tag-warn"}`;
-  badge.textContent = ready ? `${view.anchors.length}개 앵커` : "생성 전";
+  badge.textContent = ready ? ui`${view.anchors.length}개 앵커` : t("생성 전");
   must("#segmentationMessage").textContent = ready
-    ? `표점 원문 ${view.punctuation ? `P${view.punctuation.versionNo}` : ""}에서 생성한 앵커입니다. 이 목록은 직접 수정하지 않습니다.`
-    : "표점 원문을 확정하면 이 단계에 번역 앵커가 생성됩니다.";
+    ? ui`표점 원문 ${view.punctuation ? `P${view.punctuation.versionNo}` : ""}에서 생성한 앵커입니다. 이 목록은 직접 수정하지 않습니다.`
+    : t("표점 원문을 확정하면 이 단계에 번역 앵커가 생성됩니다.");
   must("#segmentationAnchorList").innerHTML = ready
     ? view.anchors.map((anchor) => `<article class="segmentation-row">
         <div class="segmentation-row-meta"><b>${esc(anchor.anchorKey)}</b><span>${esc(anchor.boundaryKind)}</span><span>${anchor.punctuationFrom}–${anchor.punctuationTo}</span></div>
         <blockquote class="hanmun">${esc(anchor.punctuatedQuote)}</blockquote>
       </article>`).join("")
-    : '<div class="structure-empty"><b>아직 분절이 없습니다</b><span>표점 원문을 저장하고 확정하세요.</span></div>';
+    : uiText('<div class="structure-empty"><b>아직 분절이 없습니다</b><span>표점 원문을 저장하고 확정하세요.</span></div>');
 }
 
 function updateDraftActionDisabled(): void {
@@ -2081,16 +2674,19 @@ function updateDraftActionDisabled(): void {
   const punctuation = view.punctuation;
   const needsCreation = !punctuation || punctuation.state === "superseded";
   const punctuationNeedsRefresh = punctuation?.state === "rejected";
+  const confirmedLocked = punctuation?.state === "confirmed" && !punctuationEditingConfirmed;
   const previewing = !!previewedPunctuationSuggestion();
   must<HTMLButtonElement>("#btnCreatePunctuationDraft").disabled = !sourceConfirmed || !needsCreation || sourceDirty;
-  must<HTMLButtonElement>("#btnSavePunctuationDraft").disabled = previewing || !sourceConfirmed || !punctuation || punctuation.state === "superseded" || !punctuationText.trim() || (!punctuationDirty && !punctuationNeedsRefresh);
-  must<HTMLButtonElement>("#btnConfirmPunctuation").disabled = previewing || !sourceConfirmed || !punctuation || punctuation.state === "superseded" || !punctuationText.trim() || (!punctuationDirty && punctuation.state !== "draft");
+  must<HTMLButtonElement>("#btnSavePunctuationDraft").disabled = confirmedLocked || previewing || !sourceConfirmed || !punctuation || punctuation.state === "superseded" || !punctuationText.trim() || (!punctuationDirty && !punctuationNeedsRefresh);
+  must<HTMLButtonElement>("#btnConfirmPunctuation").disabled = confirmedLocked || previewing || !sourceConfirmed || !punctuation || punctuation.state === "superseded" || !punctuationText.trim() || (!punctuationDirty && punctuation.state !== "draft");
   must<HTMLButtonElement>("#btnCreateTranslationDraft").disabled =
     !translationReady() || view.translation !== null;
   must<HTMLButtonElement>("#btnResetTranslationDraft").disabled =
     !translationReady() || !view.translation || view.translation.isCurrentDependencies;
   renderAuxiliaryRunControls();
 }
+
+const punctuationWorkspaceUi = configurePunctuationWorkspace();
 
 function renderDraftWorkspaces(): void {
   renderSaveState();
@@ -2103,20 +2699,20 @@ function renderDraftWorkspaces(): void {
   must("#btnSaveSourceDraft").hidden = sourceLocked;
   must("#btnConfirmSource").hidden = sourceLocked;
   if (!sourceDirty) sourceText.value = view.source.contentText;
-  must("#sourceTextCount").textContent = `${fmt(codepointLength(sourceText.value))}자`;
-  must("#sourceVersion").textContent = `원문 V${view.source.versionNo}`;
+  must("#sourceTextCount").textContent = ui`${fmt(codepointLength(sourceText.value))}자`;
+  must("#sourceVersion").textContent = ui`원문 V${view.source.versionNo}`;
   const sourceBadge = must("#sourceStateBadge");
   sourceBadge.className = `tag ${versionTagClass(view.source.state)}`;
   sourceBadge.textContent = VERSION_STATE_LABELS[view.source.state];
   const sourceMessage = must("#sourceMessage");
   sourceMessage.className = `workflow-notice${sourceDirty ? " is-warn" : view.source.state === "confirmed" ? " is-ok" : ""}`;
   sourceMessage.textContent = sourceDirty
-    ? "저장하지 않은 원문 변경이 있습니다. 저장하면 덮어쓰지 않고 새 원문안으로 보존됩니다."
+    ? t("저장하지 않은 원문 변경이 있습니다. 저장하면 덮어쓰지 않고 새 원문안으로 보존됩니다.")
     : view.source.state === "confirmed"
       ? sourceEditingConfirmed
-        ? "확정 원문을 수정 중입니다. 저장하면 새 원문안으로 보존됩니다."
+        ? t("확정 원문을 수정 중입니다. 저장하면 새 원문안으로 보존됩니다.")
         : ""
-      : "원문안을 저장한 뒤 확정하세요.";
+      : t("원문안을 저장한 뒤 확정하세요.");
   sourceMessage.hidden = !sourceMessage.textContent;
 
   const punctuationText = must<HTMLTextAreaElement>("#punctuationDraftText");
@@ -2124,7 +2720,12 @@ function renderDraftWorkspaces(): void {
   const punctuationNeedsCreation = !punctuation || punctuation.state === "superseded";
   const punctuationEditable = !!punctuation && punctuation.state !== "superseded";
   const preview = previewedPunctuationSuggestion();
-  punctuationText.readOnly = !!preview || !punctuationEditable;
+  const confirmedLocked = punctuation?.state === "confirmed" && !punctuationEditingConfirmed;
+  punctuationText.readOnly = !!preview || !punctuationEditable || confirmedLocked;
+  must("#btnEditPunctuation").hidden = !confirmedLocked;
+  must("#btnCancelPunctuationEdit").hidden = !punctuationEditingConfirmed;
+  must("#btnSavePunctuationDraft").hidden = confirmedLocked || !!preview;
+  must("#btnConfirmPunctuation").hidden = confirmedLocked || !!preview;
   punctuationText.hidden = !preview && !punctuationEditable;
   punctuationText.setAttribute("aria-describedby", preview ? "punctuationProposalState punctuationProposalHelp punctuationTextCount" : "punctuationTextCount");
   if (preview || !punctuationDirty) {
@@ -2140,42 +2741,38 @@ function renderDraftWorkspaces(): void {
       ? punctuation.structureMode
       : "prose";
   }
-  must("#punctuationSourceReference").textContent = view.source.contentText;
-  must("#punctuationTextCount").textContent = `${fmt(codepointLength(punctuationText.value))}자${preview ? " · AI 제안 · 읽기 전용" : ""}`;
+  punctuationWorkspaceUi.update(view.source.contentText);
+  must("#punctuationTextCount").textContent = ui`${fmt(codepointLength(punctuationText.value))}자${preview ? t(" · AI 제안 · 읽기 전용") : ""}`;
   must("#punctuationVersion").textContent = punctuationEditable
-    ? `표점 P${punctuation.versionNo}`
-    : "현재 원문 기준 표점 원문 미생성";
-  const punctuationBadge = must("#punctuationStateBadge");
-  punctuationBadge.className = `tag ${punctuationEditable ? versionTagClass(punctuation.state) : "tag-plain"}`;
-  punctuationBadge.textContent = punctuationEditable ? VERSION_STATE_LABELS[punctuation.state] : "미생성";
+    ? ui`표점 P${punctuation.versionNo}`
+    : t("현재 원문 기준 표점 원문 미생성");
   const punctuationMessage = must("#punctuationMessage");
   const sourceConfirmed = view.source.state === "confirmed";
   punctuationMessage.className = `workflow-notice${!sourceConfirmed || punctuationDirty || (!preview && punctuationNeedsCreation) ? " is-warn" : ""}`;
   punctuationMessage.textContent = preview
-    ? "AI 제안을 원문과 대조하고 있습니다. 제안을 적용하면 같은 입력란에서 표점과 구조를 편집할 수 있습니다."
+    ? ""
     : !sourceConfirmed
-    ? "원문안을 먼저 확정하세요. 확정 전에는 표점 원문을 만들 수 없습니다."
+    ? t("원문안을 먼저 확정하세요. 확정 전에는 표점 원문을 만들 수 없습니다.")
     : punctuationNeedsCreation
       ? punctuation
-        ? "원문이 바뀌었습니다. 현재 확정 원문으로 새 표점 작업안을 만든 뒤 편집하세요."
-        : "확정 원문으로 표점 작업안을 만들거나 AI 표점 원문 제안을 생성하세요."
+        ? t("원문이 바뀌었습니다. 현재 확정 원문으로 새 표점 작업안을 만든 뒤 편집하세요.")
+        : t("확정 원문으로 표점 작업안을 만들거나 AI 표점 원문 제안을 생성하세요.")
     : punctuationDirty
-      ? "저장하지 않은 표점 원문 변경이 있습니다. 구조 범위가 표점 원문과 맞는지 확인하세요."
+      ? t("저장하지 않은 표점 원문 변경이 있습니다. 구조 범위가 표점 원문과 맞는지 확인하세요.")
       : punctuation?.state === "confirmed"
         ? ""
-        : "표점 원문과 구조 범위를 저장한 뒤 확정하세요.";
+        : t("표점 원문과 구조 범위를 저장한 뒤 확정하세요.");
   punctuationMessage.hidden = !punctuationMessage.textContent;
   const createActions = must<HTMLElement>("#punctuationCreateActions");
   createActions.hidden = !!preview || !sourceConfirmed || !punctuationNeedsCreation;
   const createCopy = createActions.querySelector("span");
   if (createCopy) {
     createCopy.innerHTML = punctuation
-      ? "<b>원문이 바뀌어 새 표점 작업안이 필요합니다.</b> 현재 확정 원문을 복사해 다시 시작하거나 AI 제안을 검토하세요."
-      : "<b>표점 원문을 아직 만들지 않았습니다.</b> 확정 원문을 복사해 직접 시작하거나 AI 제안을 먼저 검토할 수 있습니다.";
+      ? uiText("<b>원문이 바뀌어 새 표점 작업안이 필요합니다.</b> 현재 확정 원문을 복사해 다시 시작하거나 AI 제안을 검토하세요.")
+      : uiText("<b>표점 원문을 아직 만들지 않았습니다.</b> 확정 원문을 복사해 직접 시작하거나 AI 제안을 먼저 검토할 수 있습니다.");
   }
-  must<HTMLElement>("#punctuationChangeField").hidden = !punctuationEditable;
   must<HTMLElement>("#punctuationDraftFields").hidden = !!preview;
-  must<HTMLElement>("#punctuationDraftActions").hidden = !!preview || !punctuationEditable;
+  must<HTMLElement>("#punctuationDraftActions").hidden = !punctuationEditable || (!!preview && !confirmedLocked && !punctuationEditingConfirmed);
   renderEditingLocks();
 
   updateDraftActionDisabled();
@@ -2202,27 +2799,28 @@ function renderWorkflowProgress(): void {
     button.classList.toggle("is-attention", step.attention);
   }
   const completed = workspace === "translation" && currentTranslation?.state === "confirmed" && !dirty;
-  must("#workflowGuideLabel").textContent = completed ? "번역 확정됨" : "다음 할 일";
+  must("#workflowGuideLabel").textContent = completed ? t("번역 확정됨") : t("다음 할 일");
   must("#workflowHint").textContent = workspace === "source"
-    ? sourceDirty ? "원문 변경을 저장하세요. 다른 단계로 이동할 때도 먼저 저장합니다."
-      : !ready ? "원문을 입력하고 저장하세요. 표점 없이 바로 번역할 수 있습니다."
-      : source.state === "confirmed" ? "원문이 준비되었습니다. 바로 번역하거나, 필요하면 표점을 먼저 정리하세요."
-      : "원문을 대조하고 확정하세요. 저장된 원문만으로 번역을 시작할 수도 있습니다."
+    ? sourceDirty ? t("원문 변경을 저장하세요. 다른 단계로 이동할 때도 먼저 저장합니다.")
+      : !ready ? t("원문을 입력하고 저장하세요. 표점 없이 바로 번역할 수 있습니다.")
+      : source.state === "confirmed" ? t("원문이 준비되었습니다. 바로 번역하거나, 필요하면 표점을 먼저 정리하세요.")
+      : t("원문을 대조하고 확정하세요. 저장된 원문만으로 번역을 시작할 수도 있습니다.")
     : workspace === "punctuation"
-      ? punctuationDirty ? "표점 변경을 저장한 뒤 확정하세요. 표점은 선택 작업입니다."
-        : previewedPunctuationSuggestion() ? "AI 제안을 원문과 대조하고 적용하세요. 표점 없이 번역할 수도 있습니다."
-        : punctuation?.state === "confirmed" ? "표점이 확정되었습니다. 번역 단계에서 문장별로 대조하세요."
-        : "필요한 구두점과 문단을 정리하세요. 표점은 생략하고 번역할 수 있습니다."
-      : !ready ? "원문 단계에서 번역할 내용을 먼저 입력하고 저장하세요."
-        : translation && !currentTranslation ? "원문 또는 표점 기준이 변경되었습니다. 현재 기준으로 새 번역안을 만드세요."
-        : !currentTranslation ? "직접 번역을 입력하거나 AI 번역을 시작하세요. 표점은 선택 사항입니다."
-        : completed ? "내용이 승인된 번역입니다. 수정하려면 ‘새 번역안으로 수정’을 누르세요."
-        : validate(shownBlocks()).length ? "저장 검사에서 발견된 문제를 먼저 수정한 뒤 번역안을 확정하세요."
-        : "문장별 대조로 원문 대응과 번역 내용을 검토한 뒤, 상단의 ‘확정’을 누르세요.";
+      ? punctuationDirty ? t("표점 변경을 저장한 뒤 확정하세요. 표점은 선택 작업입니다.")
+        : previewedPunctuationSuggestion() ? t("AI 제안을 원문과 대조하고 적용하세요. 표점 없이 번역할 수도 있습니다.")
+        : punctuation?.state === "confirmed" ? t("표점이 확정되었습니다. 번역 단계에서 문장별로 대조하세요.")
+        : t("필요한 구두점과 문단을 정리하세요. 표점은 생략하고 번역할 수 있습니다.")
+      : workspace === "terms" ? "필요한 용어만 검토하세요. 검토한 풀이를 번역에 반영하며, 이 단계는 건너뛸 수 있습니다."
+      : !ready ? t("원문 단계에서 번역할 내용을 먼저 입력하고 저장하세요.")
+        : translation && !currentTranslation ? t("원문 또는 표점 기준이 변경되었습니다. 현재 기준으로 새 번역안을 만드세요.")
+        : !currentTranslation ? t("직접 번역을 입력하거나 AI 번역을 시작하세요. 표점은 선택 사항입니다.")
+        : completed ? t("내용이 승인된 번역입니다. 수정하려면 ‘새 번역안으로 수정’을 누르세요.")
+        : validate(shownBlocks()).length ? t("저장 검사에서 발견된 문제를 먼저 수정한 뒤 번역안을 확정하세요.")
+        : t("문장별 대조로 원문 대응과 번역 내용을 검토한 뒤, 상단의 ‘확정’을 누르세요.");
   const next = must<HTMLButtonElement>("#btnWorkflowTranslation");
   next.hidden = workspace === "translation" || !ready;
   next.disabled = editorMutationBusy() || workspaceSwitching;
-  next.firstChild!.textContent = workspace === "punctuation" && punctuation?.state !== "confirmed" ? "표점 없이 번역 " : "번역으로 ";
+  next.firstChild!.textContent = workspace === "punctuation" && punctuation?.state !== "confirmed" ? t("표점 없이 번역 ") : t("번역으로 ");
 }
 
 function renderWorkflow(): void {
@@ -2233,14 +2831,15 @@ function renderWorkflow(): void {
   const hasTranslation = currentTranslation !== null;
   renderWorkflowProgress();
   must("#segmentationStepState").textContent = ready
-    ? `앵커 ${view.anchors.length}개`
-    : "표점 확정 필요";
+    ? ui`앵커 ${view.anchors.length}개`
+    : t("표점 확정 필요");
   const punctuationStep = must<HTMLButtonElement>("#stepPunctuation");
   const segmentationStep = must<HTMLButtonElement>("#stepSegmentation");
   const translationStep = must<HTMLButtonElement>("#stepTranslation");
   punctuationStep.disabled = view.source.state !== "confirmed";
   segmentationStep.disabled = !ready;
   translationStep.disabled = !ready;
+  must<HTMLButtonElement>("#stepTerms").disabled = !ready;
   punctuationStep.setAttribute("aria-disabled", String(punctuationStep.disabled));
   segmentationStep.setAttribute("aria-disabled", String(segmentationStep.disabled));
   translationStep.setAttribute("aria-disabled", String(translationStep.disabled));
@@ -2282,13 +2881,13 @@ function renderWorkflow(): void {
     must<HTMLButtonElement>("#btnRevise").hidden = true;
   }
   const docTitle = view.document.originalTitle || view.document.title;
-  must("#titleSub").textContent = `— ${{ source: "원문안", punctuation: "표점 원문", segmentation: "분절", translation: "번역안" }[workspace]}`;
+  must("#titleSub").textContent = `— ${{ source: t("원문안"), punctuation: t("표점 원문"), segmentation: t("분절"), terms: "용어", translation: t("번역안") }[workspace]}`;
   must("#sbValid").textContent = workspace === "source"
-    ? `원문 ${VERSION_STATE_LABELS[view.source.state]}`
+    ? ui`원문 ${VERSION_STATE_LABELS[view.source.state]}`
     : workspace === "punctuation"
-      ? view.punctuation ? `표점 ${VERSION_STATE_LABELS[view.punctuation.state]}` : "표점 미생성"
-      : view.translation?.textLayout ? `번역 ${view.translation.textLayout.sentences.length}문장` : `${view.anchors.length}개 앵커`;
-  document.title = `${docTitle} — 문해 Munhae Studio`;
+      ? view.punctuation ? ui`표점 ${VERSION_STATE_LABELS[view.punctuation.state]}` : t("표점 미생성")
+      : view.translation?.textLayout ? ui`번역 ${view.translation.textLayout.sentences.length}문장` : ui`${view.anchors.length}개 앵커`;
+  document.title = ui`${docTitle} — 문해 Munhae Studio`;
 }
 
 function setWorkspace(next: Workspace, committedMutation = false): void {
@@ -2304,19 +2903,22 @@ function setWorkspace(next: Workspace, committedMutation = false): void {
   if (next !== "translation") reviewComments.cancelSelection();
   if (!view) return;
   if (next === "punctuation" && view.source.state !== "confirmed") {
-    notify("원문안을 먼저 확정하세요", "표점 원문");
+    notify(t("원문안을 먼저 확정하세요"), t("표점 원문"));
     return;
   }
   if (next === "segmentation" && !translationReady()) {
-    notify("표점 원문을 확정해 분절 앵커를 먼저 만드세요", "분절");
+    notify(t("표점 원문을 확정해 분절 앵커를 먼저 만드세요"), t("분절"));
     return;
   }
   if (next === "translation" && !translationReady()) {
-    notify("원문을 먼저 저장하세요", "번역");
+    notify(t("원문을 먼저 저장하세요"), t("번역"));
     return;
   }
   $$(".editor-tool-popover:popover-open").forEach((popover) => popover.hidePopover());
   workspace = next;
+  syncSentenceSelection();
+  if (next === "terms") void termReview.load(true);
+  editorAids.rememberPosition();
   must("#ws").classList.toggle("reading-layout", next === "translation" && layout === "reading");
   readingStudy.setVisible(next === "translation" && layout === "reading");
   renderWorkflow();
@@ -2349,8 +2951,8 @@ async function saveBeforeWorkspaceSwitch(next: Workspace): Promise<void> {
 }
 
 function renderSaveState(): void {
-  must("#editorSaveState").textContent = editorMutationBusy() ? "저장 중…"
-    : hasUnsavedChanges() ? "저장하지 않은 변경" : "저장됨";
+  must("#editorSaveState").textContent = editorMutationBusy() ? t("저장 중…")
+    : hasUnsavedChanges() ? t("저장하지 않은 변경") : savedLocallyLabel();
   renderWorkflowProgress();
 }
 
@@ -2361,7 +2963,7 @@ function renderFolioDocument(): void {
   const projection = view.punctuation?.state === "confirmed"
     ? createPunctuationProjection(view.source.contentText, view.punctuation.punctuatedText) : null;
   const punctuation = projection ? view.punctuation : null;
-  must("#folioSourceLabel").textContent = punctuation ? "확정 표점 원문" : "원문";
+  must("#folioSourceLabel").textContent = punctuation ? t("확정 표점 원문") : t("원문");
   const source = punctuation?.punctuatedText ?? view.source.contentText;
   const sourceElement = must("#folioSourceText");
   sourceElement.textContent = source;
@@ -2374,21 +2976,23 @@ function renderFolioDocument(): void {
   const aiButton = must("#btnPrepare");
   const actions = must("#translationWorkspace > .segmentation-actions");
   (view.translation?.isCurrentDependencies ? must("#translationCommandActions") : actions).append(aiButton);
+  aiButton.classList.toggle("is-secondary-translation", !!view.translation?.isCurrentDependencies);
   actions.classList.toggle("has-translation", !!view.translation?.isCurrentDependencies);
+  renderTranslationRunIndicator();
   renderSaveState();
 }
 
 function renderDocMeta(): void {
   if (!view) return;
   const d = view.document;
-  must("#docMeta").innerHTML = `<dt>저자</dt><dd>${esc(d.authorName ?? "—")}</dd>
+  must("#docMeta").innerHTML = ui`<dt>저자</dt><dd>${esc(d.authorName ?? "—")}</dd>
     <dt>시기</dt><dd>${esc(d.periodText ?? "—")}</dd>
     <dt>날짜</dt><dd>${esc(d.dateText ?? "—")}</dd>
     <dt>언어</dt><dd>${esc(d.language ?? "—")}</dd>
     <dt>서지</dt><dd>${esc(d.sourceReference ?? "—")}</dd>`;
   must("#anchorCount").textContent = String(view.anchors.length);
-  must("#sbPath").textContent = `${shortPath(view.project.packagePath)} › ${d.originalTitle || d.title}`;
-  must("#sbVersions").textContent = `원문 V${view.source.versionNo} · ${view.punctuation ? `표점 P${view.punctuation.versionNo}` : "표점 미생성"} · 앵커 ${view.anchors.length}`;
+  must("#sbPath").textContent = `${projectLocationLabel(view.project)} › ${d.originalTitle || d.title}`;
+  must("#sbVersions").textContent = ui`원문 V${view.source.versionNo} · ${view.punctuation ? ui`표점 P${view.punctuation.versionNo}` : t("표점 미생성")} · 앵커 ${view.anchors.length}`;
 }
 
 function clearReferencePreview(): void {
@@ -2405,10 +3009,10 @@ function clearReferencePreview(): void {
 }
 
 function referenceStateText(state: EditorView["referenceAssets"][number]["state"]): string {
-  if (state === "missing") return "패키지 안에서 파일을 찾을 수 없습니다.";
-  if (state === "unsafe_path") return "안전하지 않은 파일 경로여서 표시하지 않았습니다.";
-  if (state === "size_mismatch") return "저장된 크기와 파일 크기가 다릅니다.";
-  if (state === "hash_mismatch") return "SHA-256 검증에 실패해 파일을 표시하지 않았습니다.";
+  if (state === "missing") return t("패키지 안에서 파일을 찾을 수 없습니다.");
+  if (state === "unsafe_path") return t("안전하지 않은 파일 경로여서 표시하지 않았습니다.");
+  if (state === "size_mismatch") return t("저장된 크기와 파일 크기가 다릅니다.");
+  if (state === "hash_mismatch") return t("SHA-256 검증에 실패해 파일을 표시하지 않았습니다.");
   return "";
 }
 
@@ -2430,7 +3034,7 @@ async function loadReferencePreview(asset: EditorView["referenceAssets"][number]
   const serial = referenceLoadSerial;
   const unavailable = must<HTMLElement>("#referenceUnavailable");
   unavailable.hidden = false;
-  unavailable.textContent = "참고 자료를 확인하는 중…";
+  unavailable.textContent = t("참고 자료를 확인하는 중…");
   const result = await api.editor.readReference(documentNodeId, asset.id);
   if (serial !== referenceLoadSerial || view?.document.id !== documentNodeId || activeReferenceId !== asset.id) return;
   if (!result.ok) {
@@ -2448,7 +3052,7 @@ async function loadReferencePreview(asset: EditorView["referenceAssets"][number]
     pdf.hidden = false;
   } else {
     image.src = referenceObjectUrl;
-    image.alt = `${asset.originalFilename} 참고 이미지`;
+    image.alt = ui`${asset.originalFilename} 참고 이미지`;
     image.hidden = false;
   }
 }
@@ -2475,8 +3079,8 @@ function renderReferencePanel(): void {
   ).join("");
   const asset = assets.find((item) => item.id === activeReferenceId) ?? assets[0]!;
   must("#referenceName").textContent = asset.originalFilename;
-  const pages = asset.pageCount ? ` · ${asset.pageCount}쪽` : "";
-  must("#referenceMeta").textContent = `${asset.assetKind === "pdf" ? "PDF" : "이미지"}${pages} · ${(asset.byteSize / 1024 / 1024).toFixed(1)}MB · ${asset.sha256.slice(0, 12)}…`;
+  const pages = asset.pageCount ? ui` · ${asset.pageCount}쪽` : "";
+  must("#referenceMeta").textContent = `${asset.assetKind === "pdf" ? "PDF" : t("이미지")}${pages} · ${(asset.byteSize / 1024 / 1024).toFixed(1)}MB · ${asset.sha256.slice(0, 12)}…`;
   const unavailable = must<HTMLElement>("#referenceUnavailable");
   const openButton = must<HTMLButtonElement>("#btnOpenReference");
   openButton.disabled = asset.state !== "present";
@@ -2527,12 +3131,14 @@ function setView(v: Layout): void {
     return;
   }
   if (v !== "parallel") reviewComments.cancelSelection();
+  editorAids.rememberPosition();
   const enteringReading = v === "reading" && layout !== "reading";
   layout = v;
   must("#ws").classList.toggle("reading-layout", workspace === "translation" && v === "reading");
   $$("#viewSeg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
   $$(".view").forEach((el) => el.classList.toggle("is-open", el.id === `view${v[0]?.toUpperCase()}${v.slice(1)}`));
-  if (v === "parallel") resizeSentenceEditors();
+  if (v === "parallel" || v === "full") resizeSentenceEditors();
+  if (v === "full" && selectedSentenceId) highlightBookSource(selectedSentenceId);
   renderComparisonState();
   readingStudy.setVisible(workspace === "translation" && v === "reading", v === "reading" ? selectedSentenceId : null);
   if (enteringReading) must("#viewReading").closest(".pane-scroll")?.scrollTo({ top: 0 });
@@ -2551,7 +3157,7 @@ function selectRow(key: string): void {
 
 function togglePane(which: "ref" | "ctx", force?: boolean): void {
   if (layout === "reading") {
-    if (readingStudy.isBusy() || readingStudy.hasUnsavedDraft()) { notify("풀이를 저장한 뒤 다른 패널을 여세요.", "구절 연구"); return; }
+    if (readingStudy.isBusy() || readingStudy.hasUnsavedDraft()) { notify(t("풀이를 저장한 뒤 다른 패널을 여세요."), t("구절 연구")); return; }
     setView("parallel");
   }
   const ws = must("#ws");
@@ -2562,9 +3168,13 @@ function togglePane(which: "ref" | "ctx", force?: boolean): void {
   $(which === "ref" ? "#tbRef" : "#tbCtx")?.classList.toggle("is-on", !hide);
 }
 
-function applyView(v: EditorView): void {
+function applyView(v: EditorView, options: { saved?: boolean; preserveHistory?: boolean } = {}): void {
+  editorViewSerial += 1;
+  editorAids.beforeView();
   const documentChanged = view?.document.id !== v.document.id;
   if (documentChanged) {
+    punctuationProgressMode = false;
+    must<HTMLDialogElement>("#dlgPunctuation").close();
     selectedSentenceId = null;
     must<HTMLInputElement>("#alignmentReviewOnly").checked = false;
     must<HTMLInputElement>("#comparisonQuery").value = "";
@@ -2591,6 +3201,7 @@ function applyView(v: EditorView): void {
   sourceDirty = false;
   sourceEditingConfirmed = false;
   punctuationDirty = false;
+  punctuationEditingConfirmed = false;
   punctuationPreviewing = false;
   punctuationDraftBeforePreview = null;
   structureDrafts = (v.punctuation?.structureSpans ?? [])
@@ -2605,20 +3216,25 @@ function applyView(v: EditorView): void {
       label: span.label,
     }));
   if (documentChanged) workspace = v.source.contentText.trim() ? "translation" : "source";
+  if (workspace === "terms") void termReview.load();
   if (workspace === "segmentation") workspace = "translation";
   if (v.translation?.textLayout) {
     editingSentenceId = null;
-    sentenceDrafts = v.translation.textLayout.sentences.map((sentence) => ({ ...sentence }));
-    sentenceLinks = v.translation.textLayout.links.map((link) => ({ ...link }));
+    groupStructureDirty = false;
+    must("#bookGroups").replaceChildren();
+    sentenceDrafts = groupedTextSentences(v.translation.textContent, v.translation.textLayout.sentences, v.translation.textLayout.links);
+    sentenceLinks = v.translation.textLayout.links.filter(link => sentenceDrafts.some(sentence => sentence.id === link.sentenceId)).map((link) => ({ ...link }));
     translationDraftText = v.translation.textContent;
     must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
     if (documentChanged) layout = "parallel";
   } else { sentenceDrafts = []; sentenceLinks = []; translationDraftText = ""; }
 
   active = null;
+  editorAids.loaded(options);
   renderAll();
   readingStudy.setDocument(v);
   setView(layout);
+  editorAids.finishView();
   void reviewComments.load();
   documentMaterials.setDocument(v);
   void loadVersionHistory(v.document.id, historyKind(), historyKind() === "translation" ? "translation" : null);
@@ -2643,12 +3259,12 @@ type SaveBlocks = Array<{
   relationKinds: string[];
 }>;
 
-async function saveDraft(title = "저장"): Promise<EditorView | null> {
+async function saveDraft(title = t("저장")): Promise<EditorView | null> {
   if (!view || !editing()) return view;
   if (editorMutationBusy()) return null;
   const lockVersion = translationLockVersion();
   if (lockVersion === undefined) {
-    notify("편집 중인 번역안의 잠금 버전을 찾을 수 없습니다", title);
+    notify(t("편집 중인 번역안의 잠금 버전을 찾을 수 없습니다"), title);
     return null;
   }
   translationSaving = true;
@@ -2658,6 +3274,10 @@ async function saveDraft(title = "저장"): Promise<EditorView | null> {
     const result = await api.editor.saveDraft({
       documentNodeId: view.document.id,
       textContent: view.translation?.textLayout ? translationDraftText : joinBlocks(blocks),
+      ...(view.translation?.textLayout && sentenceLinks.some(link => link.groupId) ? { textGroups: sentenceDrafts.map(sentence => ({
+        id: sentenceLinks.find(link => link.sentenceId === sentence.id)?.groupId ?? sentence.id,
+        text: sentence.text, spans: sentenceLinks.find(link => link.sentenceId === sentence.id)?.spans ?? [],
+      })) } : {}),
       blocks: payloadBlocks(),
       expectedLockVersion: lockVersion,
     });
@@ -2665,12 +3285,12 @@ async function saveDraft(title = "저장"): Promise<EditorView | null> {
     if (data && view?.document.id === documentNodeId) {
       dirty = false;
       must("#sbSaved").textContent = nowHM();
-      applyView(data);
+      applyView(data, { saved: true, preserveHistory: true });
       return data;
     }
     return null;
   } catch (error) {
-    notify(error instanceof Error ? error.message : "번역안을 저장하지 못했습니다", title);
+    notify(error instanceof Error ? error.message : t("번역안을 저장하지 못했습니다"), title);
     return null;
   } finally {
     translationSaving = false;
@@ -2689,12 +3309,12 @@ function focusBlockOrderControl(blockKey: string, preferredDirection: "up" | "do
 async function moveBlock(i: number, direction: "up" | "down"): Promise<void> {
   if (blockOrderSaving) return;
   if (!editing()) {
-    notify("확정본은 읽기 전용입니다. 새 번역안으로 수정한 뒤 순서를 바꾸세요", "블록 순서");
+    notify(t("확정본은 읽기 전용입니다. 새 번역안으로 수정한 뒤 순서를 바꾸세요"), t("블록 순서"));
     return;
   }
   const target = direction === "up" ? i - 1 : i + 1;
   if (i < 0 || target < 0 || target >= blocks.length) {
-    notify(direction === "up" ? "첫 블록은 더 위로 옮길 수 없습니다" : "마지막 블록은 더 아래로 옮길 수 없습니다", "블록 순서");
+    notify(direction === "up" ? t("첫 블록은 더 위로 옮길 수 없습니다") : t("마지막 블록은 더 아래로 옮길 수 없습니다"), t("블록 순서"));
     return;
   }
 
@@ -2715,9 +3335,9 @@ async function moveBlock(i: number, direction: "up" | "down"): Promise<void> {
 
   let saved: EditorView | null = null;
   try {
-    saved = await saveDraft("블록 순서");
+    saved = await saveDraft(t("블록 순서"));
   } catch (error) {
-    notify(error instanceof Error ? error.message : "블록 순서를 저장하지 못했습니다", "블록 순서");
+    notify(error instanceof Error ? error.message : t("블록 순서를 저장하지 못했습니다"), t("블록 순서"));
   } finally {
     blockOrderSaving = false;
   }
@@ -2733,7 +3353,7 @@ async function moveBlock(i: number, direction: "up" | "down"): Promise<void> {
 
   renderRows();
   focusBlockOrderControl(moving.key, direction);
-  notify(`${moving.key} 블록을 ${direction === "up" ? "위" : "아래"}로 옮겨 새 번역안에 저장했습니다`, "블록 순서");
+  notify(ui`${moving.key} 블록을 ${direction === "up" ? t("위") : t("아래")}로 옮겨 새 번역안에 저장했습니다`, t("블록 순서"));
 }
 
 async function saveIfDirty(): Promise<boolean> {
@@ -2751,6 +3371,7 @@ function collectTranslationEdit(el: HTMLElement): boolean {
   block.text = text;
   dirty = true;
   pendingTranslationEdits.add(key);
+  editorAids.record(`block:${key}`);
   return true;
 }
 
@@ -2765,7 +3386,7 @@ function openCtx(i: number, x: number, y: number): void {
   const can = editing();
   const bs = shownBlocks();
   const cm = must("#ctxmenu");
-  cm.innerHTML = `<button data-cm="merge" type="button"${!can || i === bs.length - 1 ? " disabled" : ""}>다음 블록과 합치기<kbd>⌥⌘M</kbd></button><button data-cm="split" type="button"${can ? "" : " disabled"}>나누기…<kbd>⌥⌘S</kbd></button><button data-cm="link" type="button"${can ? "" : " disabled"}>앵커 연결…<kbd>⌥⌘L</kbd></button><hr><button data-cm="source" type="button">표점 전문에서 보기</button><button data-cm="diff" type="button">변경 비교<kbd>⌘D</kbd></button>${can ? "" : "<hr><button type='button' disabled>확정본은 새 번역안으로 수정해야 합니다</button>"}`;
+  cm.innerHTML = ui`<button data-cm="merge" type="button"${!can || i === bs.length - 1 ? " disabled" : ""}>다음 블록과 합치기<kbd>⌥⌘M</kbd></button><button data-cm="split" type="button"${can ? "" : " disabled"}>나누기…<kbd>⌥⌘S</kbd></button><button data-cm="link" type="button"${can ? "" : " disabled"}>앵커 연결…<kbd>⌥⌘L</kbd></button><hr><button data-cm="source" type="button">표점 전문에서 보기</button><button data-cm="diff" type="button">변경 비교<kbd>⌘D</kbd></button>${can ? "" : uiText("<hr><button type='button' disabled>확정본은 새 번역안으로 수정해야 합니다</button>")}`;
   cm.classList.add("show");
   const w = cm.offsetWidth;
   const h = cm.offsetHeight;
@@ -2784,7 +3405,7 @@ async function mergeAt(i: number): Promise<void> {
   const lockVersion = translationLockVersion();
   if (lockVersion === undefined) return;
   const documentNodeId = view.document.id;
-  const data = await runEditorViewAction("#btnSaveFullTranslation", "합치기", () => api.editor.mergeBlocks({
+  const data = await runEditorViewAction("#btnSaveFullTranslation", t("합치기"), () => api.editor.mergeBlocks({
     documentNodeId,
     leftBlockKey: left.key,
     rightBlockKey: right.key,
@@ -2792,7 +3413,7 @@ async function mergeAt(i: number): Promise<void> {
   }));
   if (data) {
     applyView(data);
-    notify("블록을 합쳤습니다", "블록");
+    notify(t("블록을 합쳤습니다"), t("블록"));
   }
 }
 
@@ -2806,10 +3427,10 @@ function openSplit(i: number): void {
         .slice(0, -1)
         .map(
           (k, j) =>
-            `<label><input type="radio" name="sa" value="${j + 1}" ${j === 0 ? "checked" : ""}> 앞 블록: ${esc(b.anchors.slice(0, j + 1).join(", "))} <span class="muted">/ 뒤 블록: ${esc(b.anchors.slice(j + 1).join(", "))}</span></label>`,
+            ui`<label><input type="radio" name="sa" value="${j + 1}" ${j === 0 ? "checked" : ""}> 앞 블록: ${esc(b.anchors.slice(0, j + 1).join(", "))} <span class="muted">/ 뒤 블록: ${esc(b.anchors.slice(j + 1).join(", "))}</span></label>`,
         )
         .join("")
-    : '<p class="muted">단일 앵커는 두 블록에 부분 대응(partial)으로 연결됩니다.</p>';
+    : uiText('<p class="muted">단일 앵커는 두 블록에 부분 대응(partial)으로 연결됩니다.</p>');
   (must("#dlgSplit") as HTMLDialogElement).showModal();
 }
 
@@ -2833,18 +3454,18 @@ function openDiff(): void {
 function openConfirm(): void {
   if (!view) return;
   if (!view.punctuation && !view.translation?.textLayout) {
-    notify("확정된 표점 원문과 분절이 필요합니다", "번역안 확정");
+    notify(t("확정된 표점 원문과 분절이 필요합니다"), t("번역안 확정"));
     return;
   }
   const translation = view.translation;
   if (!translation?.isCurrentDependencies) {
-    notify("현재 원문을 기준으로 한 번역 작업안이 필요합니다", "번역안 확정");
+    notify(t("현재 원문을 기준으로 한 번역 작업안이 필요합니다"), t("번역안 확정"));
     return;
   }
-  must("#confirmText").textContent = `번역안 v${translation.versionNo}을 확정합니다. 확정은 내용 승인이며 공유와는 별개입니다.`;
-  must("#confirmKv").innerHTML = `<dt>참조</dt><dd class="mono">원문 V${view.source.versionNo}${view.punctuation ? ` · 표점 P${view.punctuation.versionNo}` : ""}</dd><dt>저장 검사</dt><dd>${validate(blocks).length ? "needs_review" : "valid"}</dd><dt>원문 대응</dt><dd>사용자 검토 대상</dd><dt>공유</dt><dd class="muted">확정과 별개 — 이 로컬 프로젝트는 공유하지 않습니다</dd>`;
+  must("#confirmText").textContent = ui`번역안 v${translation.versionNo}을 확정합니다. 확정은 내용 승인이며 공유와는 별개입니다.`;
+  must("#confirmKv").innerHTML = ui`<dt>참조</dt><dd class="mono">원문 V${view.source.versionNo}${view.punctuation ? ui` · 표점 P${view.punctuation.versionNo}` : ""}</dd><dt>저장 검사</dt><dd>${validate(blocks).length ? "needs_review" : "valid"}</dd><dt>원문 대응</dt><dd>사용자 검토 대상</dd><dt>공유</dt><dd class="muted">확정과 별개 — 이 로컬 프로젝트는 공유하지 않습니다</dd>`;
   const checks = translationChecks.summary();
-  must("#confirmKv").insertAdjacentHTML("beforeend", `<dt>내용 점검</dt><dd>${checks.length}개 확인 항목 · 번역 점검에서 위치를 볼 수 있습니다.</dd>`);
+  must("#confirmKv").insertAdjacentHTML("beforeend", ui`<dt>내용 점검</dt><dd>${checks.length}개 확인 항목 · 번역 점검에서 위치를 볼 수 있습니다.</dd>`);
   (must("#dlgConfirm") as HTMLDialogElement).showModal();
 }
 
@@ -2881,16 +3502,16 @@ async function runEditorViewAction(
 ): Promise<EditorView | null> {
   if (!view || editorMutationBusy()) return null;
   const button = must<HTMLButtonElement>(buttonSelector);
-  setActionBusy(button, true, "처리 중…");
+  setActionBusy(button, true, t("처리 중…"));
   try {
     const result = await request();
     if (!actionResultIsCurrent(button)) return null;
     return unwrap(result, title);
   } catch (error) {
-    notify(error instanceof Error ? error.message : "작업을 마치지 못했습니다", title);
+    notify(error instanceof Error ? error.message : t("작업을 마치지 못했습니다"), title);
     return null;
   } finally {
-    setActionBusy(button, false, "처리 중…");
+    setActionBusy(button, false, t("처리 중…"));
   }
 }
 
@@ -2906,7 +3527,7 @@ function showWorkflowError(target: "source" | "punctuation", message: string): v
   notice.className = "workflow-notice is-error";
   notice.textContent = message;
   notice.hidden = false;
-  notify(message, target === "source" ? "원문" : "표점 원문");
+  notify(message, target === "source" ? t("원문") : t("표점 원문"));
 }
 
 async function saveSourceDraft(): Promise<boolean> {
@@ -2915,7 +3536,7 @@ async function saveSourceDraft(): Promise<boolean> {
   if (view.source.state === "confirmed" && !sourceEditingConfirmed) return false;
   const text = must<HTMLTextAreaElement>("#sourceDraftText").value;
   if (!text.trim()) {
-    showWorkflowError("source", "원문을 입력하세요.");
+    showWorkflowError("source", t("원문을 입력하세요."));
     return false;
   }
   const button = must<HTMLButtonElement>("#btnSaveSourceDraft");
@@ -2923,13 +3544,12 @@ async function saveSourceDraft(): Promise<boolean> {
   const savingDocumentId = view.document.id;
   must<HTMLTextAreaElement>("#sourceDraftText").readOnly = true;
   renderSaveState();
-  setActionBusy(button, true, "저장 중…");
+  setActionBusy(button, true, t("저장 중…"));
   try {
     const result = await api.editor.saveSourceDraft({
       documentNodeId: view.document.id,
       contentText: text,
       originKind: "manual",
-      changeSummary: null,
       expectedLockVersion: view.source.lockVersion,
     });
     if (view?.document.id !== savingDocumentId) return false;
@@ -2937,18 +3557,18 @@ async function saveSourceDraft(): Promise<boolean> {
       showWorkflowError("source", result.error.message);
       return false;
     }
-    applyView(result.data);
+    applyView(result.data, { saved: true });
     must("#sbSaved").textContent = nowHM();
-    notify("원문안을 새 버전으로 저장했습니다", "원문");
+    notify(t("원문안을 새 버전으로 저장했습니다"), t("원문"));
     return true;
   } catch (error) {
-    showWorkflowError("source", error instanceof Error ? error.message : "원문안을 저장하지 못했습니다.");
+    showWorkflowError("source", error instanceof Error ? error.message : t("원문안을 저장하지 못했습니다."));
     return false;
   } finally {
     workspaceSaving = false;
     renderDraftWorkspaces();
     renderSaveState();
-    setActionBusy(button, false, "저장 중…");
+    setActionBusy(button, false, t("저장 중…"));
   }
 }
 
@@ -2957,7 +3577,7 @@ async function confirmSource(): Promise<void> {
   if (view.source.state === "confirmed" && (!sourceEditingConfirmed || !sourceDirty)) return;
   if (sourceDirty && !(await saveSourceDraft())) return;
   const button = must<HTMLButtonElement>("#btnConfirmSource");
-  setActionBusy(button, true, "확정 중…");
+  setActionBusy(button, true, t("확정 중…"));
   try {
     const result = await api.editor.confirmSource({
       documentNodeId: view.document.id,
@@ -2971,11 +3591,11 @@ async function confirmSource(): Promise<void> {
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
     setWorkspace("translation", true);
-    notify("원문을 확정했습니다. 전체 번역을 시작하거나 표점을 작성할 수 있습니다", "원문 확정");
+    notify(t("원문을 확정했습니다. 전체 번역을 시작하거나 표점을 작성할 수 있습니다"), t("원문 확정"));
   } catch (error) {
-    showWorkflowError("source", error instanceof Error ? error.message : "원문안을 확정하지 못했습니다.");
+    showWorkflowError("source", error instanceof Error ? error.message : t("원문안을 확정하지 못했습니다."));
   } finally {
-    setActionBusy(button, false, "확정 중…");
+    setActionBusy(button, false, t("확정 중…"));
   }
 }
 
@@ -2986,18 +3606,18 @@ function structureValidationMessage(text: string): string | null {
   const allowed = new Set<StructureSpanKind>(mode === "poetry" ? ["stanza", "couplet", "verse_line"] : ["paragraph", "sentence"]);
   const keys = new Set<string>();
   for (const span of structureDrafts) {
-    if (!span.spanKey.trim() || keys.has(span.spanKey)) return "구조 범위의 식별자가 중복되었습니다.";
+    if (!span.spanKey.trim() || keys.has(span.spanKey)) return t("구조 범위의 식별자가 중복되었습니다.");
     keys.add(span.spanKey);
-    if (!allowed.has(span.spanKind)) return `${mode === "poetry" ? "운문" : "산문"} 구조에 맞지 않는 범위 종류가 있습니다.`;
-    if (!Number.isInteger(span.ordinal) || span.ordinal < 1) return "구조 순서는 1 이상의 정수여야 합니다.";
-    if (!Number.isInteger(span.codepointFrom) || !Number.isInteger(span.codepointTo)) return "구조 위치는 정수여야 합니다.";
+    if (!allowed.has(span.spanKind)) return ui`${mode === "poetry" ? t("운문") : t("산문")} 구조에 맞지 않는 범위 종류가 있습니다.`;
+    if (!Number.isInteger(span.ordinal) || span.ordinal < 1) return t("구조 순서는 1 이상의 정수여야 합니다.");
+    if (!Number.isInteger(span.codepointFrom) || !Number.isInteger(span.codepointTo)) return t("구조 위치는 정수여야 합니다.");
     if (span.codepointFrom < 0 || span.codepointTo <= span.codepointFrom || span.codepointTo > limit) {
-      return `구조 ${span.ordinal}의 범위가 표점문 길이(0–${limit})를 벗어났습니다.`;
+      return ui`구조 ${span.ordinal}의 범위가 표점문 길이(0–${limit})를 벗어났습니다.`;
     }
   }
   const byKey = new Map(structureDrafts.map((span) => [span.spanKey, span]));
   for (const span of structureDrafts) {
-    if (span.parentSpanKey && (!keys.has(span.parentSpanKey) || span.parentSpanKey === span.spanKey)) return `구조 ${span.ordinal}의 상위 범위를 찾을 수 없습니다.`;
+    if (span.parentSpanKey && (!keys.has(span.parentSpanKey) || span.parentSpanKey === span.spanKey)) return ui`구조 ${span.ordinal}의 상위 범위를 찾을 수 없습니다.`;
     const parent = span.parentSpanKey ? byKey.get(span.parentSpanKey) : undefined;
     const validRoot = mode === "poetry" ? span.spanKind === "stanza" : span.spanKind === "paragraph";
     const validParent = !!parent && (
@@ -3005,7 +3625,7 @@ function structureValidationMessage(text: string): string | null {
       (mode === "poetry" && span.spanKind === "couplet" && parent.spanKind === "stanza") ||
       (mode === "poetry" && span.spanKind === "verse_line" && parent.spanKind === "couplet")
     );
-    if ((!parent && !validRoot) || (parent && !validParent)) return `구조 ${span.ordinal}의 상위 범위 관계가 올바르지 않습니다.`;
+    if ((!parent && !validRoot) || (parent && !validParent)) return ui`구조 ${span.ordinal}의 상위 범위 관계가 올바르지 않습니다.`;
   }
   return null;
 }
@@ -3013,15 +3633,15 @@ function structureValidationMessage(text: string): string | null {
 async function createPunctuationDraft(): Promise<void> {
   if (!view || editorMutationBusy()) return;
   if (view.source.state !== "confirmed") {
-    showWorkflowError("punctuation", "원문안을 먼저 확정하세요.");
+    showWorkflowError("punctuation", t("원문안을 먼저 확정하세요."));
     return;
   }
   if (view.punctuation && view.punctuation.state !== "superseded") {
-    showWorkflowError("punctuation", "현재 원문에 대한 표점 작업안이 이미 있습니다.");
+    showWorkflowError("punctuation", t("현재 원문에 대한 표점 작업안이 이미 있습니다."));
     return;
   }
   const button = must<HTMLButtonElement>("#btnCreatePunctuationDraft");
-  setActionBusy(button, true, "작업안 만드는 중…");
+  setActionBusy(button, true, t("작업안 만드는 중…"));
   try {
     const result = await api.editor.createPunctuationDraft({
       documentNodeId: view.document.id,
@@ -3034,17 +3654,17 @@ async function createPunctuationDraft(): Promise<void> {
       return;
     }
     if (!result.data.punctuation) {
-      showWorkflowError("punctuation", "표점 작업안이 생성되지 않았습니다.");
+      showWorkflowError("punctuation", t("표점 작업안이 생성되지 않았습니다."));
       return;
     }
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
     must<HTMLTextAreaElement>("#punctuationDraftText").focus();
-    notify("확정 원문을 복사해 표점 작업안을 만들었습니다. 표점과 구조를 편집한 뒤 저장·확정하세요", "표점 원문");
+    notify(t("확정 원문을 복사해 표점 작업안을 만들었습니다. 표점과 구조를 편집한 뒤 저장·확정하세요"), t("표점 원문"));
   } catch (error) {
-    showWorkflowError("punctuation", error instanceof Error ? error.message : "표점 작업안을 만들지 못했습니다.");
+    showWorkflowError("punctuation", error instanceof Error ? error.message : t("표점 작업안을 만들지 못했습니다."));
   } finally {
-    setActionBusy(button, false, "작업안 만드는 중…");
+    setActionBusy(button, false, t("작업안 만드는 중…"));
   }
 }
 
@@ -3052,21 +3672,22 @@ async function savePunctuationDraft(): Promise<boolean> {
   if (editorMutationBusy()) return false;
   if (!view) return false;
   if (previewedPunctuationSuggestion()) {
-    notify("AI 제안을 먼저 적용하거나 작업안으로 전환한 뒤 저장하세요.", "표점 원문");
+    notify(t("AI 제안을 먼저 적용하거나 작업안으로 전환한 뒤 저장하세요."), t("표점 원문"));
     return false;
   }
   if (view.source.state !== "confirmed") {
-    showWorkflowError("punctuation", "원문안을 먼저 확정하세요.");
+    showWorkflowError("punctuation", t("원문안을 먼저 확정하세요."));
     return false;
   }
   const punctuation = view.punctuation;
+  if (punctuation?.state === "confirmed" && !punctuationEditingConfirmed) return false;
   if (!punctuation || punctuation.state === "superseded") {
-    showWorkflowError("punctuation", "현재 확정 원문으로 표점 작업안을 먼저 만드세요.");
+    showWorkflowError("punctuation", t("현재 확정 원문으로 표점 작업안을 먼저 만드세요."));
     return false;
   }
   const text = must<HTMLTextAreaElement>("#punctuationDraftText").value;
   if (!text.trim()) {
-    showWorkflowError("punctuation", "표점문을 입력하세요.");
+    showWorkflowError("punctuation", t("표점문을 입력하세요."));
     return false;
   }
   const structureError = structureValidationMessage(text);
@@ -3079,14 +3700,13 @@ async function savePunctuationDraft(): Promise<boolean> {
   const savingDocumentId = view.document.id;
   must<HTMLTextAreaElement>("#punctuationDraftText").readOnly = true;
   renderSaveState();
-  setActionBusy(button, true, "저장 중…");
+  setActionBusy(button, true, t("저장 중…"));
   try {
     const result = await api.editor.savePunctuationDraft({
       documentNodeId: view.document.id,
       punctuatedText: text,
       structureMode: must<HTMLSelectElement>("#punctuationMode").value as "prose" | "poetry",
       structureSpans: structureDrafts,
-      changeSummary: must<HTMLInputElement>("#punctuationChangeSummary").value.trim() || null,
       expectedLockVersion: punctuation.lockVersion,
     });
     if (view?.document.id !== savingDocumentId) return false;
@@ -3094,36 +3714,36 @@ async function savePunctuationDraft(): Promise<boolean> {
       showWorkflowError("punctuation", result.error.message);
       return false;
     }
-    must<HTMLInputElement>("#punctuationChangeSummary").value = "";
-    applyView(result.data);
+    applyView(result.data, { saved: true });
     must("#sbSaved").textContent = nowHM();
-    notify("표점 원문과 구조를 새 버전으로 저장했습니다", "표점 원문");
+    notify(t("표점 원문과 구조를 새 버전으로 저장했습니다"), t("표점 원문"));
     return true;
   } catch (error) {
-    showWorkflowError("punctuation", error instanceof Error ? error.message : "표점 원문을 저장하지 못했습니다.");
+    showWorkflowError("punctuation", error instanceof Error ? error.message : t("표점 원문을 저장하지 못했습니다."));
     return false;
   } finally {
     workspaceSaving = false;
     renderDraftWorkspaces();
     renderSaveState();
-    setActionBusy(button, false, "저장 중…");
+    setActionBusy(button, false, t("저장 중…"));
   }
 }
 
 async function confirmPunctuation(): Promise<void> {
   if (!view || editorMutationBusy()) return;
   if (previewedPunctuationSuggestion()) {
-    notify("AI 제안을 먼저 적용하거나 작업안으로 전환한 뒤 확정하세요.", "표점 원문");
+    notify(t("AI 제안을 먼저 적용하거나 작업안으로 전환한 뒤 확정하세요."), t("표점 원문"));
     return;
   }
+  if (view.punctuation?.state === "confirmed" && (!punctuationEditingConfirmed || !punctuationDirty)) return;
   if (punctuationDirty && !(await savePunctuationDraft())) return;
   const punctuation = view.punctuation;
   if (!punctuation || punctuation.state === "superseded") {
-    showWorkflowError("punctuation", "현재 확정 원문의 표점 작업안을 먼저 만드세요.");
+    showWorkflowError("punctuation", t("현재 확정 원문의 표점 작업안을 먼저 만드세요."));
     return;
   }
   const button = must<HTMLButtonElement>("#btnConfirmPunctuation");
-  setActionBusy(button, true, "확정 중…");
+  setActionBusy(button, true, t("확정 중…"));
   try {
     const result = await api.editor.confirmPunctuation({
       documentNodeId: view.document.id,
@@ -3138,16 +3758,16 @@ async function confirmPunctuation(): Promise<void> {
     must("#sbSaved").textContent = nowHM();
     if (translationReady()) setWorkspace("translation", true);
   } catch (error) {
-    showWorkflowError("punctuation", error instanceof Error ? error.message : "표점 원문을 확정하지 못했습니다.");
+    showWorkflowError("punctuation", error instanceof Error ? error.message : t("표점 원문을 확정하지 못했습니다."));
   } finally {
-    setActionBusy(button, false, "확정 중…");
+    setActionBusy(button, false, t("확정 중…"));
   }
 }
 
 async function createTranslationDraft(): Promise<void> {
   if (!view || editorMutationBusy() || !translationReady() || view.translation) return;
   const button = must<HTMLButtonElement>("#btnCreateTranslationDraft");
-  setActionBusy(button, true, "초안 만드는 중…");
+  setActionBusy(button, true, t("초안 만드는 중…"));
   try {
     const result = await api.editor.createTranslationDraft({
       documentNodeId: view.document.id,
@@ -3155,25 +3775,25 @@ async function createTranslationDraft(): Promise<void> {
       fullText: true,
       expectedPunctuationLockVersion: 0,
     });
-    const data = unwrap(result, "사람 번역 초안");
+    const data = unwrap(result, t("사람 번역 초안"));
     if (!data || !actionResultIsCurrent(button)) return;
     applyView(data);
     setWorkspace("translation", true);
     setView("full");
     must("#sbSaved").textContent = nowHM();
-    notify("빈 번역 작업안을 만들었습니다. 번역 전문을 입력하세요", "사람 번역 초안");
+    notify(t("빈 번역 작업안을 만들었습니다. 번역 전문을 입력하세요"), t("사람 번역 초안"));
   } catch (error) {
-    notify(error instanceof Error ? error.message : "사람 번역 초안을 만들지 못했습니다.", "사람 번역 초안");
+    notify(error instanceof Error ? error.message : t("사람 번역 초안을 만들지 못했습니다."), t("사람 번역 초안"));
   } finally {
-    setActionBusy(button, false, "초안 만드는 중…");
+    setActionBusy(button, false, t("초안 만드는 중…"));
   }
 }
 
 async function resetTranslationDraft(): Promise<void> {
   if (!view || editorMutationBusy() || !translationReady() || !view.translation || view.translation.isCurrentDependencies) return;
-  if (!window.confirm("이전 번역안은 이력에 보존하고, 현재 원문에 맞는 빈 번역 작업안을 새로 만드시겠습니까?")) return;
+  if (!window.confirm(t("이전 번역안은 이력에 보존하고, 현재 원문에 맞는 빈 번역 작업안을 새로 만드시겠습니까?"))) return;
   const button = must<HTMLButtonElement>("#btnResetTranslationDraft");
-  setActionBusy(button, true, "작업안 만드는 중…");
+  setActionBusy(button, true, t("작업안 만드는 중…"));
   try {
     const result = await api.editor.resetTranslationDraft({
       documentNodeId: view.document.id,
@@ -3182,21 +3802,21 @@ async function resetTranslationDraft(): Promise<void> {
       expectedPunctuationLockVersion: 0,
       expectedTranslationLockVersion: view.translation.lockVersion,
     });
-    const data = unwrap(result, "현재 원문 번역 작업안");
+    const data = unwrap(result, t("현재 원문 번역 작업안"));
     if (!data || !actionResultIsCurrent(button)) return;
     applyView(data);
     setWorkspace("translation", true);
     setView("full");
     must("#sbSaved").textContent = nowHM();
-    notify("이전 번역은 이력에 보존하고 현재 원문의 빈 번역 작업안을 만들었습니다", "번역 작업안");
+    notify(t("이전 번역은 이력에 보존하고 현재 원문의 빈 번역 작업안을 만들었습니다"), t("번역 작업안"));
   } catch (error) {
-    notify(error instanceof Error ? error.message : "현재 원문의 번역 작업안을 만들지 못했습니다.", "번역 작업안");
+    notify(error instanceof Error ? error.message : t("현재 원문의 번역 작업안을 만들지 못했습니다."), t("번역 작업안"));
   } finally {
-    setActionBusy(button, false, "작업안 만드는 중…");
+    setActionBusy(button, false, t("작업안 만드는 중…"));
   }
 }
 
-function showEditorError(msg: string, title = "편집기를 열 수 없습니다"): void {
+function showEditorError(msg: string, title = t("편집기를 열 수 없습니다")): void {
   must("#editorError").hidden = false;
   must("#ws").hidden = true;
   must("#editorErrorTitle").textContent = title;
@@ -3211,12 +3831,12 @@ async function loadEditor(id: string): Promise<void> {
   try {
     result = await api.editor.get(id);
   } catch (error) {
-    if (serial === editorLoadSerial && editSerial === editorEditSerial && !editorMutationBusy()) showEditorError(error instanceof Error ? error.message : "편집기 연결에 실패했습니다.");
+    if (serial === editorLoadSerial && editSerial === editorEditSerial && !editorMutationBusy()) showEditorError(error instanceof Error ? error.message : t("편집기 연결에 실패했습니다."));
     return;
   }
   if (serial !== editorLoadSerial || editSerial !== editorEditSerial || editorMutationBusy()) return;
   if (!result.ok) {
-    showEditorError(result.error.message || "문서 데이터를 불러오지 못했습니다.");
+    showEditorError(result.error.message || t("문서 데이터를 불러오지 못했습니다."));
     return;
   }
   const v = result.data;
@@ -3235,13 +3855,13 @@ async function attachReference(): Promise<void> {
   if (!view || editorMutationBusy()) return;
   const button = must<HTMLButtonElement>("#btnAttachReference");
   const before = new Set(view.referenceAssets.map((asset) => asset.id));
-  setActionBusy(button, true, "첨부 중…");
+  setActionBusy(button, true, t("첨부 중…"));
   must<HTMLButtonElement>("#btnAttachReferenceEmpty").disabled = true;
   try {
     const result = await api.editor.attachReference(view.document.id);
     if (!actionResultIsCurrent(button)) return;
     if (!result.ok) {
-      notify(result.error.message, "참고 자료");
+      notify(result.error.message, t("참고 자료"));
       return;
     }
     if (!result.data) return;
@@ -3250,11 +3870,11 @@ async function attachReference(): Promise<void> {
     activeReferenceId = added?.id ?? activeReferenceId ?? view.referenceAssets[0]?.id ?? null;
     clearReferencePreview();
     renderReferencePanel();
-    notify(added ? `${added.originalFilename}을 첨부했습니다` : "이미 연결된 참고 자료입니다", "참고 자료");
+    notify(added ? ui`${added.originalFilename}을 첨부했습니다` : t("이미 연결된 참고 자료입니다"), t("참고 자료"));
   } catch (error) {
-    notify(error instanceof Error ? error.message : "참고 자료를 첨부하지 못했습니다.", "참고 자료");
+    notify(error instanceof Error ? error.message : t("참고 자료를 첨부하지 못했습니다."), t("참고 자료"));
   } finally {
-    setActionBusy(button, false, "첨부 중…");
+    setActionBusy(button, false, t("첨부 중…"));
     must<HTMLButtonElement>("#btnAttachReferenceEmpty").disabled = false;
   }
 }
@@ -3262,7 +3882,7 @@ async function attachReference(): Promise<void> {
 async function openActiveReference(): Promise<void> {
   if (!view || !activeReferenceId) return;
   const result = await api.editor.openReference(view.document.id, activeReferenceId);
-  if (!result.ok) notify(result.error.message, "참고 자료");
+  if (!result.ok) notify(result.error.message, t("참고 자료"));
 }
 
 function pageCmd(id: string): boolean {
@@ -3312,12 +3932,12 @@ function pageCmd(id: string): boolean {
         return true;
       }
       if (workspace === "segmentation") {
-        notify("분절은 확정된 표점 원문에서 생성된 읽기 전용 참조입니다", "분절");
+        notify(t("분절은 확정된 표점 원문에서 생성된 읽기 전용 참조입니다"), t("분절"));
         return true;
       }
       const b = must<HTMLButtonElement>("#btnConfirm");
-      if (b.hidden) notify("이미 확정된 번역안입니다. 수정하려면 새 번역안을 만드세요", "확정");
-      else if (b.disabled) notify(b.title, "확정");
+      if (b.hidden) notify(t("이미 확정된 번역안입니다. 수정하려면 새 번역안을 만드세요"), t("확정"));
+      else if (b.disabled) notify(b.title, t("확정"));
       else openConfirm();
       return true;
     }
@@ -3325,15 +3945,15 @@ function pageCmd(id: string): boolean {
     case "split":
     case "link":
       if (!editing()) {
-        notify("확정본은 읽기 전용입니다. 새 번역안으로 수정한 뒤 편집하세요", "블록");
+        notify(t("확정본은 읽기 전용입니다. 새 번역안으로 수정한 뒤 편집하세요"), t("블록"));
         return true;
       }
       if (i < 0) {
-        notify("대조 보기에서 블록을 먼저 선택하세요", "블록");
+        notify(t("대조 보기에서 블록을 먼저 선택하세요"), t("블록"));
         return true;
       }
       if (id === "merge") {
-        if (i === blocks.length - 1) notify("마지막 블록은 다음 블록과 합칠 수 없습니다", "블록");
+        if (i === blocks.length - 1) notify(t("마지막 블록은 다음 블록과 합칠 수 없습니다"), t("블록"));
         else void mergeAt(i);
       } else if (id === "split") openSplit(i);
       else openLink(i);
@@ -3348,6 +3968,7 @@ function pageCmd(id: string): boolean {
 }
 
 function pageKeys(e: KeyboardEvent, m: boolean): void {
+  if (workspace === "translation" && layout !== "reading" && editorAids.key(e)) return;
   if (m && e.shiftKey && !e.altKey && e.code === "KeyF") { e.preventDefault(); concordance.open(selectedPhrase()); return; }
   const typing = (e.target as HTMLElement).matches("textarea,input,[contenteditable=true]");
   if (m && !e.shiftKey && !e.altKey && e.code === "KeyS") {
@@ -3380,7 +4001,7 @@ function pageKeys(e: KeyboardEvent, m: boolean): void {
     const focusedRow = (e.target as HTMLElement).closest<HTMLElement>(".brow");
     const i = focusedRow ? Number(focusedRow.dataset.i) : blocks.findIndex((b) => b.key === active);
     if (!Number.isInteger(i) || i < 0) {
-      notify("대조 보기에서 블록을 먼저 선택하세요", "블록 순서");
+      notify(t("대조 보기에서 블록을 먼저 선택하세요"), t("블록 순서"));
       return;
     }
     void moveBlock(i, e.code === "ArrowUp" ? "up" : "down");
@@ -3413,6 +4034,7 @@ must<HTMLSelectElement>("#referenceSelect").addEventListener("change", (event) =
   renderReferencePanel();
 });
 must("#btnPrepare").addEventListener("click", openPreparation);
+must("#translationRunIndicator").addEventListener("click", openPreparationDialog);
 const refPref = store.get("munhae.ref");
 togglePane("ref", refPref ? refPref === "0" : innerWidth < 1500);
 togglePane("ctx", store.get("munhae.ctx") !== "1");
@@ -3454,6 +4076,22 @@ must("#btnCancelSourceEdit").addEventListener("click", () => {
   renderDraftWorkspaces();
   must<HTMLButtonElement>("#btnEditSource").focus();
 });
+must("#btnEditPunctuation").addEventListener("click", () => {
+  if (view?.punctuation?.state !== "confirmed" || editorMutationBusy() || punctuationApplying) return;
+  if (punctuationPreviewing) showPunctuationSuggestion(false);
+  punctuationEditingConfirmed = true;
+  renderDraftWorkspaces();
+  must<HTMLTextAreaElement>("#punctuationDraftText").focus();
+});
+must("#btnCancelPunctuationEdit").addEventListener("click", () => {
+  if (!punctuationEditingConfirmed || editorMutationBusy() || punctuationApplying) return;
+  punctuationEditingConfirmed = false;
+  punctuationDirty = false;
+  structureDrafts = undefined;
+  if (punctuationPreviewing) showPunctuationSuggestion(false);
+  renderDraftWorkspaces();
+  must<HTMLButtonElement>("#btnEditPunctuation").focus();
+});
 must<HTMLTextAreaElement>("#punctuationDraftText").addEventListener("input", () => {
   if (must<HTMLTextAreaElement>("#punctuationDraftText").readOnly) return;
   editorEditSerial += 1;
@@ -3462,7 +4100,7 @@ must<HTMLTextAreaElement>("#punctuationDraftText").addEventListener("input", () 
   renderDraftWorkspaces();
 });
 must<HTMLSelectElement>("#punctuationMode").addEventListener("change", () => {
-  if (editorMutationBusy()) return;
+  if (editorMutationBusy() || (view?.punctuation?.state === "confirmed" && !punctuationEditingConfirmed)) return;
   editorEditSerial += 1;
   if (!view?.punctuation || view.punctuation.state === "superseded") {
     renderAuxiliaryRunControls();
@@ -3473,8 +4111,32 @@ must<HTMLSelectElement>("#punctuationMode").addEventListener("change", () => {
   structureDrafts = undefined;
   renderDraftWorkspaces();
 });
-must<HTMLSelectElement>("#punctuationAgent").addEventListener("change", renderAuxiliaryRunControls);
-must("#btnSuggestPunctuation").addEventListener("click", () => void startPunctuationSuggestion());
+must<HTMLSelectElement>("#punctuationAgent").addEventListener("change", () => { renderPunctuationPreparationSettings(); renderAuxiliaryRunControls(); });
+must("#btnSuggestPunctuation").addEventListener("click", openPunctuationPreparation);
+must("#punctuationPrepBack").addEventListener("click", () => {
+  punctuationProgressMode = false;
+  renderAuxiliaryRunControls();
+});
+must("#punctuationPrepRun").addEventListener("click", () => void startPunctuationSuggestion());
+for (const selector of ["#punctuationPrepClose", "#punctuationPrepCloseTop"]) {
+  must(selector).addEventListener("click", () => must<HTMLDialogElement>("#dlgPunctuation").close());
+}
+must("#dlgPunctuation").addEventListener("close", () => must<HTMLButtonElement>("#btnSuggestPunctuation").focus({ preventScroll: true }));
+must("#punctuationPrepReview").addEventListener("click", () => {
+  must<HTMLDialogElement>("#dlgPunctuation").close();
+  setWorkspace("punctuation");
+  showPunctuationSuggestion(true);
+  must<HTMLTextAreaElement>("#punctuationDraftText").focus();
+});
+must("#punctuationRetrySettings").addEventListener("click", queuePreparationSettingsSave);
+must("#punctuationModelSettings").addEventListener("change", event => {
+  const field = event.target as HTMLSelectElement;
+  if (!appConfig || !field.dataset.prepModelSetting || activeAuxiliaryKind() !== null || aiStarting || aiRun?.state === "running") return;
+  if (!changePrepModelSetting(appConfig, agentProbe(selectedPunctuationAgent()), selectedPunctuationAgent(), field.dataset.prepModelSetting, field.value)) return;
+  renderPunctuationPreparationSettings();
+  renderPreparationSettings();
+  queuePreparationSettingsSave();
+});
 must("#btnCancelPunctuation").addEventListener("click", () => void cancelAuxiliaryRun());
 must("#btnApplyPunctuationSuggestion").addEventListener("click", () => void applyCurrentPunctuationSuggestion());
 must("#btnViewPunctuationDraft").addEventListener("click", () => showPunctuationSuggestion(false));
@@ -3486,6 +4148,7 @@ must("#btnSavePunctuationDraft").addEventListener("click", () => void savePunctu
 must("#btnConfirmPunctuation").addEventListener("click", () => void confirmPunctuation());
 must("#btnCreateTranslationDraft").addEventListener("click", () => void createTranslationDraft());
 must("#btnResetTranslationDraft").addEventListener("click", () => void resetTranslationDraft());
+configureComparisonResize(must("#viewParallel"), must("#comparisonDivider"), resizeSentenceEditors);
 $$(".gutter").forEach((g) =>
   g.addEventListener("pointerdown", (e) => {
     const ws = must("#ws");
@@ -3552,16 +4215,19 @@ src.addEventListener("click", (e) => {
   }
 });
 
-must("#btnReadingSize").addEventListener("click", () => {
+const readingSizeButtons = [must("#btnReadingSize"), must("#btnToolbarReadingSize")];
+function syncReadingSizeButtons(): void {
+  const large = document.body.classList.contains("large-type");
+  readingSizeButtons.forEach(button => button.setAttribute("aria-pressed", String(large)));
+}
+readingSizeButtons.forEach(button => button.addEventListener("click", () => {
   const large = document.body.classList.toggle("large-type");
-  must("#btnReadingSize").setAttribute("aria-pressed", String(large));
+  syncReadingSizeButtons();
   store.set("munhae.reading-size", large ? "large" : "normal");
   resizeSentenceEditors();
-});
-if (store.get("munhae.reading-size") === "large") {
-  document.body.classList.add("large-type");
-  must("#btnReadingSize").setAttribute("aria-pressed", "true");
-}
+}));
+if (store.get("munhae.reading-size") === "large") document.body.classList.add("large-type");
+syncReadingSizeButtons();
 must("#alignmentReviewOnly").addEventListener("change", () => { renderComparisonState(); resizeSentenceEditors(); });
 must("#parallelSource").addEventListener("change", () => {
   parallelSource = must<HTMLSelectElement>("#parallelSource").value === "punctuation" ? "punctuation" : "source";
@@ -3569,6 +4235,11 @@ must("#parallelSource").addEventListener("change", () => {
   reviewComments.cancelSelection();
   renderRows();
   renderEditingLocks();
+  highlightBookSource(selectedSentenceId ?? sentenceDrafts[0]?.id ?? "");
+});
+must("#bookSourceMode").addEventListener("change", () => {
+  must<HTMLSelectElement>("#parallelSource").value = must<HTMLSelectElement>("#bookSourceMode").value;
+  must("#parallelSource").dispatchEvent(new Event("change"));
 });
 must("#comparisonQuery").addEventListener("input", () => { renderComparisonState(); resizeSentenceEditors(); });
 must("#comparisonFilter").addEventListener("change", () => { renderComparisonState(); resizeSentenceEditors(); });
@@ -3578,10 +4249,10 @@ $$(".editor-tool-popover").forEach((popover) => {
   }, { capture: true });
 });
 function renderComparisonFilterButton(): void {
-  const active = must<HTMLSelectElement>("#comparisonFilter").value !== "all" || must<HTMLInputElement>("#alignmentReviewOnly").checked;
+  const active = !!must<HTMLInputElement>("#comparisonQuery").value.trim() || must<HTMLSelectElement>("#comparisonFilter").value !== "all" || must<HTMLInputElement>("#alignmentReviewOnly").checked;
   const button = must("#btnComparisonFilter");
   button.classList.toggle("is-filtered", active);
-  button.setAttribute("aria-label", active ? "대조 문장 필터 · 적용 중" : "대조 문장 필터");
+  button.setAttribute("aria-label", active ? t("대조 문장 필터 · 적용 중") : t("대조 문장 필터"));
 }
 must("#btnDocumentFind").addEventListener("click", () => documentFind.open(selectedPhrase()));
 must("#btnConcordance").addEventListener("click", () => concordance.open(selectedPhrase()));
@@ -3593,7 +4264,126 @@ must("#btnTranslationChecks").addEventListener("click", () => translationChecks.
 must("#btnReviewExport").addEventListener("click", () => reviewExport.open());
 must("#btnPreviousSentence").addEventListener("click", () => moveSentence(-1));
 must("#btnNextSentence").addEventListener("click", () => moveSentence(1));
+function replaceGroupUnits(units: TextSentence[], links: typeof sentenceLinks): void {
+  let offset = 0;
+  sentenceDrafts = units.map(unit => {
+    const from = offset; offset += Array.from(unit.text).length;
+    return { ...unit, from, to: offset };
+  });
+  sentenceLinks = links;
+  translationDraftText = sentenceDrafts.map(unit => unit.text).join("");
+  must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
+  groupStructureDirty = true; dirty = true; editingSentenceId = null;
+  editorAids.record();
+  must("#bookGroups").replaceChildren();
+  renderRows(); renderFull(); renderStrip();
+}
+
+function openGroupOperation(id: string, split: boolean): void {
+  if (!editing() || editorMutationBusy() || reviewComments.isSelecting()) return;
+  const index = sentenceDrafts.findIndex(sentence => sentence.id === id);
+  const sentence = sentenceDrafts[index];
+  const link = sentenceLinks.find(link => link.sentenceId === id);
+  if (!sentence || !link?.groupId) return;
+  const field = Array.from(document.querySelectorAll<HTMLTextAreaElement>("#rows textarea, #bookGroups textarea")).find(field => field.dataset.sentenceEdit === id && field.getClientRects().length);
+  const splitAt = field?.selectionStart ?? 0;
+  if (split && (!sentence.text.slice(0, splitAt).trim() || !sentence.text.slice(splitAt).trim())) {
+    notify("번역문 안에서 나눌 위치에 커서를 놓은 다음 묶음 나누기를 누르세요."); return;
+  }
+  const cuts: number[] = [];
+  if (split && punctuationProjection && view?.punctuation?.state === "confirmed") {
+    Array.from(view.punctuation.punctuatedText).forEach((char, i) => {
+      const point = punctuationProjection!.sourceBoundaryByPunctuationBoundary[i + 1];
+      if (char === "。" && point !== undefined && link.spans.some(span => span.from < point) && link.spans.some(span => span.to > point)) cuts.push(point);
+    });
+  }
+  if (split && !cuts.length) { notify("이 묶음 안에는 나눌 수 있는 표점 경계가 없습니다. 줄바꿈은 같은 묶음 안에서 사용할 수 있습니다."); return; }
+  const next = sentenceDrafts[index + 1];
+  if (!split && !next) return;
+  const dialog = document.createElement("dialog"); dialog.className = "group-operation-dialog";
+  dialog.innerHTML = `<h2>${split ? "연결 묶음 나누기" : "연결 묶음 합치기"}</h2><p>${split ? "번역은 커서 위치에서 나눕니다. 대응 원문을 나눌 표점 경계를 선택하세요." : "다음 번역 묶음과 원문 범위를 하나로 합칩니다. 번역 내용은 그대로 유지됩니다."}</p><pre>${esc(split ? sentence.text.slice(0, splitAt) + "\n── 나눌 위치 ──\n" + sentence.text.slice(splitAt) : sentence.text + next!.text)}</pre>${split ? `<select aria-label="원문 분할 경계">${[...new Set(cuts)].map(cut => `<option value="${cut}">${esc(sourceCodepoints.slice(Math.max(link.spans[0]!.from, cut - 12), cut).join(""))} 。 | ${esc(sourceCodepoints.slice(cut, cut + 12).join(""))}</option>`).join("")}</select>` : ""}<div class="sentence-actions"><button type="button" data-cancel>취소</button><button type="button" data-apply>${split ? "나누기" : "합치기"}</button></div>`;
+  document.body.append(dialog);
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.querySelector("[data-cancel]")!.addEventListener("click", () => dialog.close());
+  dialog.querySelector("[data-apply]")!.addEventListener("click", () => {
+    const newId = crypto.randomUUID();
+    if (split) {
+      const cut = Number(dialog.querySelector("select")!.value);
+      const ranges = (left: boolean) => link.spans.flatMap(span => {
+        const from = left ? span.from : Math.max(span.from, cut);
+        const to = left ? Math.min(span.to, cut) : span.to;
+        return to > from ? [{ from, to, quote: sourceCodepoints.slice(from, to).join("") }] : [];
+      });
+      replaceGroupUnits([...sentenceDrafts.slice(0, index), { ...sentence, text: sentence.text.slice(0, splitAt) }, { ...sentence, id: newId, text: sentence.text.slice(splitAt) }, ...sentenceDrafts.slice(index + 1)],
+        [...sentenceLinks.filter(item => item.sentenceId !== id), { sentenceId: id, groupId: link.groupId, spans: ranges(true), needsReview: true }, { sentenceId: newId, groupId: newId, spans: ranges(false), needsReview: true }]);
+    } else {
+      const nextLink = sentenceLinks.find(item => item.sentenceId === next!.id);
+      const spans = [...link.spans, ...(nextLink?.spans ?? [])].sort((a, b) => a.from - b.from);
+      const combined: typeof spans = [];
+      for (const span of spans) {
+        const last = combined.at(-1);
+        if (last && span.from <= last.to) { last.to = Math.max(last.to, span.to); last.quote = sourceCodepoints.slice(last.from, last.to).join(""); }
+        else combined.push({ ...span });
+      }
+      replaceGroupUnits([...sentenceDrafts.slice(0, index), { ...sentence, text: sentence.text + next!.text }, ...sentenceDrafts.slice(index + 2)],
+        [...sentenceLinks.filter(item => item.sentenceId !== id && item.sentenceId !== next!.id), { sentenceId: id, groupId: link.groupId, spans: combined, needsReview: true }]);
+    }
+    dialog.close();
+  });
+  dialog.showModal();
+}
+for (const root of [must("#rows"), must("#bookGroups")]) root.addEventListener("click", event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-split-group], [data-merge-group]");
+  if (button && !button.disabled) {
+    openGroupOperation(button.dataset.splitGroup ?? button.dataset.mergeGroup!, !!button.dataset.splitGroup);
+    const menu = button.closest("details"); if (menu) menu.open = false;
+  }
+});
+
+const bookGroups = must("#bookGroups");
+document.addEventListener("pointerdown", event => {
+  document.querySelectorAll<HTMLDetailsElement>("#bookGroups details[open], #rows .sentence-group-menu[open]").forEach(menu => { if (!menu.contains(event.target as Node)) menu.open = false; });
+});
+bookGroups.addEventListener("keydown", event => {
+  if (event.key === "Escape") bookGroups.querySelectorAll<HTMLDetailsElement>("details[open]").forEach(menu => { menu.open = false; menu.querySelector<HTMLElement>("summary")?.focus(); });
+});
+bookGroups.addEventListener("focusin", event => {
+  const box = (event.target as HTMLElement).closest<HTMLElement>("[data-book-group]");
+  if (!box) return;
+  selectedSentenceId = box.dataset.bookGroup!;
+  highlightBookSource(selectedSentenceId);
+  renderBookGroups();
+});
+bookGroups.addEventListener("click", event => {
+  const box = (event.target as HTMLElement).closest<HTMLElement>("[data-book-group]");
+  if (box) { selectedSentenceId = box.dataset.bookGroup!; highlightBookSource(selectedSentenceId); renderBookGroups(); }
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-edit-sentence]");
+  if (!button || button.disabled) return;
+  editingSentenceId = isSentenceEditing(button.dataset.editSentence) ? null : button.dataset.editSentence!;
+  renderBookGroups(); renderEditingLocks();
+  if (editingSentenceId) Array.from(bookGroups.querySelectorAll<HTMLTextAreaElement>("textarea")).find(field => field.dataset.sentenceEdit === editingSentenceId)?.focus({ preventScroll: true });
+});
+bookGroups.addEventListener("input", event => {
+  const field = event.target as HTMLTextAreaElement;
+  if (!field.matches("textarea") || field.readOnly || !isSentenceEditing(field.dataset.sentenceEdit) || editorMutationBusy()) return;
+  editorEditSerial++;
+  updateSentenceDraft(field.dataset.sentenceEdit!, field.value + (field.dataset.trailingSeparator ?? ""));
+  const link = sentenceLinks.find(link => link.sentenceId === field.dataset.sentenceEdit);
+  if (link) { link.needsReview = true; delete link.reviewedBy; }
+  must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
+  dirty = groupStructureDirty || translationDraftText !== view?.translation?.textContent;
+  editorAids.record(`sentence:${field.dataset.sentenceEdit}`);
+  renderRows(); renderFull(); renderStrip();
+});
+
 const rows = must("#rows");
+rows.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  rows.querySelectorAll<HTMLDetailsElement>(".sentence-group-menu[open]").forEach(menu => {
+    menu.open = false;
+    menu.querySelector<HTMLElement>("summary")?.focus();
+  });
+});
 rows.addEventListener("focusin", (event) => {
   const row = (event.target as HTMLElement).closest<HTMLElement>("[data-review-sentence]");
   if (row) { selectedSentenceId = row.dataset.reviewSentence!; renderComparisonState(); }
@@ -3603,9 +4393,9 @@ rows.addEventListener("click", (event) => {
   if (row) { selectedSentenceId = row.dataset.reviewSentence!; renderComparisonState(); }
   const editButton = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-edit-sentence]");
   if (editButton && !editButton.disabled && editing() && !editorMutationBusy() && !reviewComments.isSelecting()) {
-    editingSentenceId = editingSentenceId === editButton.dataset.editSentence ? null : editButton.dataset.editSentence!;
+    editingSentenceId = isSentenceEditing(editButton.dataset.editSentence) ? null : editButton.dataset.editSentence!;
     renderEditingLocks();
-    if (editingSentenceId) row?.querySelector<HTMLTextAreaElement>(".sentence-edit")?.focus({ preventScroll: true });
+    if (editingSentenceId) editButton.closest("[data-sentence-group]")?.querySelector<HTMLTextAreaElement>(".sentence-edit")?.focus({ preventScroll: true });
     return;
   }
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-edit-sentence-link]");
@@ -3659,7 +4449,7 @@ rows.addEventListener("input", (e) => {
   if (editorMutationBusy()) return;
   editorEditSerial += 1;
   const sentenceEditor = (e.target as HTMLElement).closest<HTMLTextAreaElement>(".sentence-edit");
-  if (sentenceEditor && !sentenceEditor.readOnly && sentenceEditor.dataset.sentenceEdit === editingSentenceId && editing() && !translationSaving) {
+  if (sentenceEditor && !sentenceEditor.readOnly && isSentenceEditing(sentenceEditor.dataset.sentenceEdit) && editing() && !translationSaving) {
     const full = must<HTMLTextAreaElement>("#fullTranslationInput");
     const id = sentenceEditor.dataset.sentenceEdit!;
     const updated = updateSentenceDraft(id, sentenceEditor.value);
@@ -3668,9 +4458,10 @@ rows.addEventListener("input", (e) => {
     const savedSentence = view?.translation?.textLayout?.sentences.find((item) => item.id === id);
     const savedLink = view?.translation?.textLayout?.links.find((item) => item.sentenceId === id);
     if (link) link.needsReview = sentenceEditor.value !== savedSentence?.text || (savedLink?.needsReview ?? true);
-    const review = sentenceEditor.closest(".brow")?.querySelector<HTMLElement>("[data-sentence-review]");
+    const review = sentenceEditor.closest("[data-review-sentence]")?.querySelector<HTMLElement>("[data-sentence-review]");
     if (review) review.hidden = !!link && !link.needsReview;
-    dirty = translationDraftText !== view?.translation?.textContent;
+    dirty = groupStructureDirty || translationDraftText !== view?.translation?.textContent;
+    editorAids.record(`sentence:${id}`);
     resizeSentenceEditor(sentenceEditor);
     renderFull();
     renderStrip();
@@ -3687,7 +4478,7 @@ rows.addEventListener("focusout", (e) => {
   if (!key || !pendingTranslationEdits.has(key)) return;
   if ((e.relatedTarget as HTMLElement | null)?.closest("button[data-move]")) return;
   void saveDraft().then((saved) => {
-    if (saved) notify("번역안을 저장했습니다", "자동 저장");
+    if (saved) notify(t("번역안을 저장했습니다"), t("자동 저장"));
   });
 });
 must("#fullText").addEventListener("click", (e) => {
@@ -3734,7 +4525,7 @@ must("#splitOk").addEventListener("click", () => {
     const splitAt = utf16CaretToCodepoint(ta.value, ta.selectionStart);
     const textLength = codepointLength(ta.value);
     if (splitAt <= 0 || splitAt >= textLength) {
-      notify("나눌 위치에 커서를 두세요", "블록 나누기");
+      notify(t("나눌 위치에 커서를 두세요"), t("블록 나누기"));
       ta.focus();
       return;
     }
@@ -3746,7 +4537,7 @@ must("#splitOk").addEventListener("click", () => {
       b.anchors.length > 1 &&
       (!Number.isInteger(anchorSplitAt) || (anchorSplitAt ?? 0) < 1 || (anchorSplitAt ?? 0) >= b.anchors.length)
     ) {
-      notify("앞 블록과 뒤 블록 사이의 앵커 경계를 선택하세요", "블록 나누기");
+      notify(t("앞 블록과 뒤 블록 사이의 앵커 경계를 선택하세요"), t("블록 나누기"));
       return;
     }
     collectEdits();
@@ -3754,7 +4545,7 @@ must("#splitOk").addEventListener("click", () => {
     const lockVersion = translationLockVersion();
     if (lockVersion === undefined) return;
     const documentNodeId = view.document.id;
-    const data = await runEditorViewAction("#splitOk", "나누기", () => api.editor.splitBlock({
+    const data = await runEditorViewAction("#splitOk", t("나누기"), () => api.editor.splitBlock({
       documentNodeId,
       blockKey: b.key,
       splitAt,
@@ -3764,7 +4555,7 @@ must("#splitOk").addEventListener("click", () => {
     if (data) {
       (must("#dlgSplit") as HTMLDialogElement).close();
       applyView(data);
-      notify("블록을 나눴습니다", "블록");
+      notify(t("블록을 나눴습니다"), t("블록"));
     }
   })();
 });
@@ -3783,7 +4574,7 @@ must("#linkOk").addEventListener("click", () => {
     dirty = true;
     (must("#dlgLink") as HTMLDialogElement).close();
     const saved = await saveDraft();
-    if (saved) notify("앵커 연결을 저장했습니다", "앵커 연결");
+    if (saved) notify(t("앵커 연결을 저장했습니다"), t("앵커 연결"));
   })();
 });
 must("#btnConfirm").addEventListener("click", openConfirm);
@@ -3795,18 +4586,18 @@ must("#confirmOk").addEventListener("click", () => {
     if (!(await saveIfDirty())) return;
     const lockVersion = translationLockVersion();
     if (lockVersion === undefined) {
-      notify("편집 중인 번역안의 잠금 버전을 찾을 수 없습니다", "확정");
+      notify(t("편집 중인 번역안의 잠금 버전을 찾을 수 없습니다"), t("확정"));
       return;
     }
     const documentNodeId = view.document.id;
-    const data = await runEditorViewAction("#confirmOk", "확정", () => api.editor.confirm({
+    const data = await runEditorViewAction("#confirmOk", t("확정"), () => api.editor.confirm({
       documentNodeId,
       expectedLockVersion: lockVersion,
     }));
     if (data) {
       (must("#dlgConfirm") as HTMLDialogElement).close();
       applyView(data);
-      notify("번역안을 확정했습니다", "확정");
+      notify(t("번역안을 확정했습니다"), t("확정"));
     }
   })();
 });
@@ -3816,13 +4607,13 @@ must("#btnRevise").addEventListener("click", () => {
     const lockVersion = translationLockVersion();
     if (lockVersion === undefined) return;
     const documentNodeId = view.document.id;
-    const data = await runEditorViewAction("#btnRevise", "새 번역안", () => api.editor.revise({
+    const data = await runEditorViewAction("#btnRevise", t("새 번역안"), () => api.editor.revise({
       documentNodeId,
       expectedLockVersion: lockVersion,
     }));
     if (data) {
       applyView(data);
-      notify("새 번역안이 열렸습니다. 확정본은 유지됩니다", "새 번역안");
+      notify(t("새 번역안이 열렸습니다. 확정본은 유지됩니다"), t("새 번역안"));
     }
   })();
 });
@@ -3831,8 +4622,49 @@ must("#diffClose").addEventListener("click", () => (must("#dlgDiff") as HTMLDial
 must("#btnCtxAll").addEventListener("click", openPreparation);
 must("#prepClose").addEventListener("click", () => (must("#dlgPrepare") as HTMLDialogElement).close());
 must("#prepCloseTop").addEventListener("click", () => (must("#dlgPrepare") as HTMLDialogElement).close());
+function queuePreparationSettingsSave(): void {
+  if (!appConfig) return;
+  const patch = {
+    alignment: appConfig.alignment ? { ...appConfig.alignment } : null,
+    agentModels: {
+      claude: { ...appConfig.agentModels.claude },
+      codex: { ...appConfig.agentModels.codex },
+      antigravity: { ...appConfig.agentModels.antigravity },
+    },
+  };
+  prepSettingsPending++;
+  prepSettingsSaveError = null;
+  renderPreparationControls();
+  renderAuxiliaryRunControls();
+  prepSettingsSaveChain = prepSettingsSaveChain.then(async () => {
+    await api.app.setConfig(patch);
+    prepSettingsSaveError = null;
+  }).catch(error => { prepSettingsSaveError = error; }).finally(() => {
+    prepSettingsPending--;
+    renderAuxiliaryRunControls();
+    renderPreparationControls();
+    renderChatModelInfo();
+  });
+}
+must("#prepRetrySettings").addEventListener("click", queuePreparationSettingsSave);
+must("#prepModelSettings").addEventListener("change", event => {
+  const field = event.target as HTMLSelectElement;
+  if (!appConfig || !field.dataset.prepModelSetting || aiStarting || aiRun?.state === "running") return;
+  if (!changePrepModelSetting(appConfig, selectedAgentProbe(), selectedPrepAgent(), field.dataset.prepModelSetting, field.value)) return;
+  if (prepPreview) renderPreparation();
+  else renderPreparationSettings();
+  queuePreparationSettingsSave();
+});
+must("#prepAlignmentSettings").addEventListener("change", event => {
+  const field = event.target as HTMLSelectElement;
+  if (!appConfig || !field.dataset.alignmentSetting || aiStarting || aiRun?.state === "running") return;
+  if (!changeAlignmentSetting(appConfig, agentProbes, field.dataset.alignmentSetting, field.value, selectedPrepAgent())) return;
+  renderPreparationSettings();
+  queuePreparationSettingsSave();
+});
 must("#prepAgent").addEventListener("change", () => {
   if (prepPreview) renderPreparation();
+  else renderPreparationSettings();
   renderPreparationControls();
 });
 must("#prepAux").addEventListener("click", (e) => {
@@ -3842,22 +4674,30 @@ must("#prepAux").addEventListener("click", (e) => {
   const id = button.closest("[data-prep-id]")?.getAttribute("data-prep-id");
   const mode = button.dataset.prepMode as "auto" | "pin" | "exclude" | undefined;
   if (!id || !mode) return;
+  if (prepAuxMode.get(id) === mode && !prepPreviewError) return;
   prepAuxMode.set(id, mode);
+  button.closest("[data-prep-id]")?.querySelectorAll<HTMLElement>("[data-prep-mode]").forEach(choice => {
+    choice.setAttribute("aria-pressed", String(choice.dataset.prepMode === mode));
+  });
   void loadPreparation(true);
 });
 must("#prepRun").addEventListener("click", () => void startAiTranslation());
+must("#prepBack").addEventListener("click", () => {
+  prepProgressMode = false;
+  renderPreparation();
+  renderPreparationControls();
+});
 must("#prepCancel").addEventListener("click", () => void cancelAiTranslation());
 must<HTMLFormElement>("#chatForm").addEventListener("submit", (e) => {
   e.preventDefault();
   void startProjectChat();
 });
 must("#chatInput").addEventListener("keydown", (e) => {
-  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+  if (isChatSubmit(e)) {
     e.preventDefault();
     void startProjectChat();
   }
 });
-must("#chatInput").addEventListener("input", renderAuxiliaryRunControls);
 must<HTMLSelectElement>("#chatScope").addEventListener("change", () => {
   renderChat();
   renderAuxiliaryRunControls();
@@ -3884,21 +4724,23 @@ document.addEventListener("mouseover", (e) => {
 });
 
 function hasUnsavedChanges(): boolean {
-  return sourceDirty || punctuationDirty || dirty || reviewComments.hasUnsavedDraft() || readingStudy.hasUnsavedDraft() || documentMaterials.hasUnsavedDraft();
+  return termReview.hasUnsavedChanges() || sourceDirty || punctuationDirty || dirty || reviewComments.hasUnsavedDraft() || readingStudy.hasUnsavedDraft() || documentMaterials.hasUnsavedDraft();
 }
 
 function canLeaveEditor(): boolean {
   if (editorMutationBusy() || workspaceSwitching) {
-    notify("저장이 끝난 뒤 이동할 수 있습니다", "저장 중");
+    notify(t("저장이 끝난 뒤 이동할 수 있습니다"), t("저장 중"));
     return false;
   }
   collectEdits();
-  return !hasUnsavedChanges() || window.confirm("저장하지 않은 변경이 있습니다. 이 화면을 떠나시겠습니까?");
+  return !hasUnsavedChanges() || window.confirm(t("저장하지 않은 변경이 있습니다. 이 화면을 떠나시겠습니까?"));
 }
 
 function clearUnsavedChanges(): void {
+  editorAids.beforeView();
   sourceDirty = false;
   punctuationDirty = false;
+  punctuationEditingConfirmed = false;
   dirty = false;
   pendingTranslationEdits.clear();
   readingStudy.discard();
@@ -3907,6 +4749,7 @@ function clearUnsavedChanges(): void {
 
 window.addEventListener("beforeunload", (event) => {
   collectEdits();
+  editorAids.flush();
   if (hasUnsavedChanges() || editorMutationBusy()) event.preventDefault();
 });
 
@@ -3927,7 +4770,7 @@ bindSidebar(
     if (!canLeaveEditor()) return;
     const document = docs.find((item) => item.id === id);
     if (document?.nodeRole === "container") {
-      notify(`${document.originalTitle || document.title}: 원문·표점안이 없는 목차 폴더입니다`, "목차 폴더");
+      notify(ui`${document.originalTitle || document.title}: 원문·표점안이 없는 목차 폴더입니다`, t("목차 폴더"));
       return;
     }
     void loadEditor(id);
@@ -3944,7 +4787,7 @@ async function boot(): Promise<void> {
   if (home.ok) {
     docs = home.data.documents;
     agentProbes = home.data.agents;
-    setSelfTitle(`편집 — ${home.data.project.title}`);
+    setSelfTitle(ui`편집 — ${home.data.project.title}`);
   }
   if (config) {
     appConfig = config;
@@ -3955,7 +4798,7 @@ async function boot(): Promise<void> {
   renderPreparationControls();
   renderAuxiliaryRunControls();
   let id = readPersistedDoc();
-  if (!id) id = findDefaultDoc(docs);
+  if (!id || !docs.some(doc => doc.id === id)) id = findDefaultDoc(docs);
   renderSidebar(tree(), { currentDocId: id });
   try {
     const kn = await api.knowledge.get();
@@ -3979,7 +4822,7 @@ async function boot(): Promise<void> {
     /* optional */
   }
   if (!id) {
-    showEditorError("열 문서가 없습니다. 프로젝트 홈에서 원문 문서를 만드세요.", "편집할 문서가 없습니다");
+    showEditorError(t("열 문서가 없습니다. 프로젝트 홈에서 원문 문서를 만드세요."), t("편집할 문서가 없습니다"));
     return;
   }
   await loadEditor(id);
@@ -4014,8 +4857,70 @@ window.addEventListener("pagehide", () => {
 
 await boot();
 
-function applyFullTranslationText(text: string): void {
+registerProjectRefresh({
+  blocked: () => hasUnsavedChanges() || editorMutationBusy() || workspaceSwitching || blockOrderSaving
+    || punctuationApplying || aiStarting || aiRun?.state === "running" || !!auxiliaryStarting || auxiliaryRun?.state === "running"
+    || termReview.isBusy() || finalizingAiTerminals.size > 0 || prepSettingsPending > 0 || prepPreviewPending,
+  version: () => `${editorLoadSerial}:${editorEditSerial}:${editorViewSerial}`,
+  async prepare(change) {
+    const id = view?.document.id;
+    const home = await api.home.get();
+    if (!home.ok) throw new Error(home.error.message);
+    if (!id || !home.data.documents.some(doc => doc.id === id)) return () => { location.href = "home.html"; };
+    const affectsDocument = change.reason === "resync" || !change.documentIds.length || change.documentIds.includes(id)
+      || change.scopes.some(scope => ["terms", "materials", "comments", "project"].includes(scope));
+    if (!affectsDocument) return () => { docs = home.data.documents; renderSidebar(tree(), { currentDocId: id }); };
+    const [editor, nextKnowledge, suggestion] = await Promise.all([api.editor.get(id), api.knowledge.get(), api.ai.getPunctuationSuggestion(id)]);
+    if (!editor.ok) throw new Error(editor.error.message);
+    if (!nextKnowledge.ok) throw new Error(nextKnowledge.error.message);
+    if (!suggestion.ok) throw new Error(suggestion.error.message);
+    const applyTerms = await termReview.prepareRefresh(editor.data);
+    return () => {
+      const position = editorPosition();
+      const previewingSuggestion = punctuationPreviewing;
+      docs = home.data.documents; knowledge = nextKnowledge.data;
+      const nextTerms: Record<string, TermInfo> = {};
+      for (const item of knowledge.glossary) if (!nextTerms[item.sourceTerm] || item.usageStatus === "preferred") {
+        nextTerms[item.sourceTerm] = { target: item.targetTerm, kind: item.termKind, status: item.usageStatus, note: item.noteMd ?? "" };
+      }
+      terms = nextTerms;
+      applyView(editor.data);
+      punctuationSuggestion = suggestion.data;
+      if (previewingSuggestion && suggestion.data && !suggestion.data.applied) showPunctuationSuggestion(true);
+      applyTerms();
+      restoreEditorPosition(position);
+      renderSidebar(tree(), { currentDocId: id });
+    };
+  },
+});
+
+function applyFullTranslationText(text: string, edits?: Array<{ from: number; to: number; text: string }>): void {
   if (!editing() || editorMutationBusy() || !view?.translation?.textLayout) return;
+  if (sentenceLinks.some(link => link.groupId)) {
+    if (!edits) { notify("번역 묶음 안에서 편집하세요."); return; }
+    const points = Array.from(translationDraftText);
+    const changes = edits.map(edit => {
+      const sentence = sentenceDrafts.find(sentence => {
+        const from = points.slice(0, sentence.from).join("").length;
+        const to = points.slice(0, sentence.to).join("").length;
+        return edit.from >= from && edit.to <= to;
+      });
+      return { edit, sentence, from: sentence ? points.slice(0, sentence.from).join("").length : 0 };
+    });
+    if (changes.some(change => !change.sentence)) { notify("묶음 경계를 넘는 바꾸기는 먼저 묶음을 합친 뒤 실행하세요."); return; }
+    for (const { edit, sentence, from } of changes.reverse()) {
+      const current = sentenceDrafts.find(item => item.id === sentence!.id)!;
+      updateSentenceDraft(current.id, current.text.slice(0, edit.from - from) + edit.text + current.text.slice(edit.to - from));
+      const link = sentenceLinks.find(item => item.sentenceId === current.id);
+      if (link) { link.needsReview = true; delete link.reviewedBy; }
+    }
+    editorEditSerial++;
+    must<HTMLTextAreaElement>("#fullTranslationInput").value = translationDraftText;
+    dirty = groupStructureDirty || translationDraftText !== view.translation.textContent;
+    editorAids.record();
+    renderRows(); renderFull(); renderStrip();
+    return;
+  }
   editorEditSerial += 1;
   must<HTMLTextAreaElement>("#fullTranslationInput").value = text;
   translationDraftText = text;
@@ -4023,10 +4928,13 @@ function applyFullTranslationText(text: string): void {
   sentenceDrafts=textSentences(text);
   const savedLayout = view?.translation?.textLayout;
   const matches = matchUnchangedTextSentences(savedLayout?.sentences ?? [], sentenceDrafts);
+  const retainedIds = new Set(matches.values());
+  const brokenGroups = new Set(savedLayout?.links.filter(link => link.groupId && !retainedIds.has(link.sentenceId)).map(link => link.groupId));
   sentenceLinks = dirty ? sentenceDrafts.flatMap((sentence) => {
     const previous = savedLayout?.links.find((link) => link.sentenceId === matches.get(sentence.id));
-    return previous ? [{ ...previous, sentenceId: sentence.id }] : [];
+    return previous && !brokenGroups.has(previous.groupId) ? [{ ...previous, sentenceId: sentence.id }] : [];
   }) : (savedLayout?.links ?? []).map((link) => ({ ...link }));
+  editorAids.record();
   renderRows();
   renderFull();
   renderStrip();
@@ -4036,7 +4944,9 @@ must("#btnSaveFullTranslation").addEventListener("click",()=>void saveDraft());
 
 must("#btnRetryAlignment").addEventListener("click",()=>void (async()=>{
   if(!view?.translation?.textLayout || hasUnsavedChanges() || aiRun?.state==="running") return;
+  await prepSettingsSaveChain;
+  if (prepSettingsSaveError) { notify("문장 연결 설정을 저장한 뒤 다시 실행하세요."); return; }
   const result=await api.ai.startTranslation({documentNodeId:view.document.id,agentId:selectedPrepAgent(),alignmentVersionId:view.translation.versionId});
-  const run=unwrap(result,"원문 연결");
+  const run=unwrap(result,t("원문 연결"));
   if(run){aiRun=run;renderFull();scheduleAiPoll(run.messageId);}
 })());

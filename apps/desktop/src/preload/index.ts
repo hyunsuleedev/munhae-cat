@@ -5,6 +5,11 @@ import { IPC_CHANNELS, type MunhaeApi } from "../shared/munhae-api";
 import { STARTUP_CHANNELS, type StartupApi } from "../shared/startup-api";
 
 const api = {
+  billing: {
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.billingGetStatus),
+    openCheckout: () => ipcRenderer.invoke(IPC_CHANNELS.billingOpenCheckout),
+    openPortal: () => ipcRenderer.invoke(IPC_CHANNELS.billingOpenPortal),
+  },
   dictionary: {
     search: (input) => ipcRenderer.invoke(IPC_CHANNELS.dictionarySearch, input),
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.dictionaryGetStatus),
@@ -36,6 +41,8 @@ const api = {
     quit: () => ipcRenderer.invoke(IPC_CHANNELS.appQuit),
     checkUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.appCheckUpdates),
     openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.appOpenExternal, url),
+    copyText: (text) => ipcRenderer.invoke(IPC_CHANNELS.appCopyText, text),
+    openChatSource: (url) => ipcRenderer.invoke(IPC_CHANNELS.appOpenChatSource, url),
     onCommand: (handler) => {
       const listen = (_event: unknown, id: unknown) => {
         if (typeof id === "string") handler(id);
@@ -46,7 +53,27 @@ const api = {
       };
     },
   },
+  onlineProjects: {
+      sharing: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsSharing, input),
+      invitations: () => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsInvitations),
+      invite: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsInvite, input),
+      respond: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsRespond, input),
+      cancelInvitation: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsCancelInvitation, input),
+      updateMember: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsUpdateMember, input),
+    open: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsOpen, input),
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsStatus),
+    sync: () => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsSync),
+    exportRecovery: (id) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsExportRecovery, id),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsCreate, input),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsList),
+    get: (id) => ipcRenderer.invoke(IPC_CHANNELS.onlineProjectsGet, id),
+  },
   project: {
+    onChanged: (handler) => {
+      const listener = (_event: unknown, change: Parameters<typeof handler>[0]) => handler(change);
+      ipcRenderer.on(IPC_CHANNELS.projectChanged, listener);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.projectChanged, listener);
+    },
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectCreate, input),
     open: (packagePath) => ipcRenderer.invoke(IPC_CHANNELS.projectOpen, packagePath),
     close: () => ipcRenderer.invoke(IPC_CHANNELS.projectClose),
@@ -66,6 +93,7 @@ const api = {
     pickTextFile: () => ipcRenderer.invoke(IPC_CHANNELS.documentPickText),
     getDocumentMetadata: (documentNodeId) =>
       ipcRenderer.invoke(IPC_CHANNELS.documentGetMetadata, documentNodeId),
+    moveDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.documentMove, input),
     updateDocumentMetadata: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.documentUpdateMetadata, input),
   },
@@ -109,10 +137,28 @@ const api = {
       ipcRenderer.invoke(IPC_CHANNELS.editorOpenReference, documentNodeId, assetId),
   },
   research: {
+    startReadingAnalysis: input => ipcRenderer.invoke(IPC_CHANNELS.researchStartReadingAnalysis, input),
+    getReadingAnalysis: id => ipcRenderer.invoke(IPC_CHANNELS.researchGetReadingAnalysis, id),
+    latestReadingAnalysis: input => ipcRenderer.invoke(IPC_CHANNELS.researchLatestReadingAnalysis, input),
+    cancelReadingAnalysis: id => ipcRenderer.invoke(IPC_CHANNELS.researchCancelReadingAnalysis, id),
+    applyReadingAnalysis: input => ipcRenderer.invoke(IPC_CHANNELS.researchApplyReadingAnalysis, input),
+      startMaterialRefinement: input => ipcRenderer.invoke(IPC_CHANNELS.researchStartMaterialRefinement, input),
+      getMaterialRefinement: id => ipcRenderer.invoke(IPC_CHANNELS.researchGetMaterialRefinement, id),
+      cancelMaterialRefinement: id => ipcRenderer.invoke(IPC_CHANNELS.researchCancelMaterialRefinement, id),
     searchFootnotes: (input) => ipcRenderer.invoke(IPC_CHANNELS.researchSearchFootnotes, input),
     startFootnoteAnalysis: (input) => ipcRenderer.invoke(IPC_CHANNELS.researchStartFootnoteAnalysis, input),
     getFootnoteAnalysis: (id) => ipcRenderer.invoke(IPC_CHANNELS.researchGetFootnoteAnalysis, id),
     cancelFootnoteAnalysis: (id) => ipcRenderer.invoke(IPC_CHANNELS.researchCancelFootnoteAnalysis, id),
+  },
+  terms: {
+    list: documentId => ipcRenderer.invoke(IPC_CHANNELS.termsList, documentId),
+    delete: input => ipcRenderer.invoke(IPC_CHANNELS.termsDelete, input),
+    save: input => ipcRenderer.invoke(IPC_CHANNELS.termsSave, input),
+    promote: input => ipcRenderer.invoke(IPC_CHANNELS.termsPromote, input),
+    start: (documentId, excludedMaterialIds, glossarySelection) => ipcRenderer.invoke(IPC_CHANNELS.termsStart, documentId, excludedMaterialIds, glossarySelection),
+    getRun: id => ipcRenderer.invoke(IPC_CHANNELS.termsGetRun, id),
+    latestRun: id => ipcRenderer.invoke(IPC_CHANNELS.termsLatestRun, id),
+    cancel: id => ipcRenderer.invoke(IPC_CHANNELS.termsCancel, id),
   },
   knowledge: {
     getMaterials: (documentNodeId) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeGetMaterials, documentNodeId),
@@ -124,7 +170,7 @@ const api = {
     updateContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpdateContext, input),
     setContextEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetContextEnabled, input),
     setContextPriority: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetContextPriority, input),
-    archiveContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeArchiveContext, input),
+    deleteContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeDeleteContext, input),
     createUncertainty: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeCreateUncertainty, input),
     versionUncertainty: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeVersionUncertainty, input),
     resolveUncertainty: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeResolveUncertainty, input),

@@ -8,6 +8,10 @@ import {
 } from "@munhae/domain";
 import { contextItemContentHash, materialOriginFromJson } from "./knowledge-content.ts";
 import type { ProjectActors } from "./bootstrap.ts";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import { allRows, getRow, insertRow } from "./rows.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type {
@@ -296,32 +300,18 @@ export function setContextItemPriority(
   });
 }
 
-export function archiveContextItem(context: MutableKnowledgeContext, input: ContextItemCasInput): void {
+export function deleteContextItem(context: MutableKnowledgeContext, input: ContextItemCasInput): void {
   const { db, projectId } = context;
   db.transaction(() => {
-    const current = requireContextCas(db, projectId, input);
-    const now = nowIso();
+    requireContextCas(db, projectId, input);
+    // Remove live references, while retaining immutable request/origin snapshots.
+    db.prepare(`DELETE FROM material_preferences
+      WHERE project_id = ? AND source_kind = 'context_item' AND source_id = ?`)
+      .run(projectId, input.id);
     const info = db.prepare(
-      `UPDATE context_items
-       SET archived_at = ?, enabled = 0, content_hash = ?,
-           lock_version = lock_version + 1, updated_at = ?
+      `DELETE FROM context_items
        WHERE id = ? AND project_id = ? AND archived_at IS NULL AND lock_version = ?`,
-    ).run(
-      now,
-      contextItemContentHash({
-        scopeId: current.scopeId,
-        title: current.title,
-        contentMd: current.contentMd,
-        priority: current.priority,
-        enabled: false,
-        inheritToChildren: current.inheritToChildren,
-        conditionMd: current.conditionMd,
-      }),
-      now,
-      input.id,
-      projectId,
-      input.expectedLockVersion,
-    );
+    ).run(input.id, projectId, input.expectedLockVersion);
     if (info.changes !== 1) throw new MunhaeError("cas_conflict", "문맥 카드가 다른 창에서 변경되었습니다");
   })();
 }
@@ -339,52 +329,38 @@ function loadAnchorTarget(
       return { text: null, canonicalQuote: null };
     }
     case "source_text_version": {
-      const row = getRow<{ content_text: string }>(
-        db,
-        `SELECT content_text FROM src_text_versions WHERE id = ? AND project_id = ?`,
-        input.targetVersionId,
-        projectId,
-      );
+      const versions = schema.src_text_versions;
+      const row = orm(db).select({ content_text: versions.content_text }).from(versions)
+        .where(and(eq(versions.id, input.targetVersionId), eq(versions.project_id, projectId))).get();
       if (!row) throw new MunhaeError("invalid_anchor", "원문 version을 찾을 수 없습니다");
       return { text: row.content_text, canonicalQuote: null };
     }
     case "punctuation_version": {
-      const row = getRow<{ punctuated_text: string }>(
-        db,
-        `SELECT punctuated_text FROM punctuation_versions WHERE id = ? AND project_id = ?`,
-        input.targetVersionId,
-        projectId,
-      );
+      const versions = schema.punctuation_versions;
+      const row = orm(db).select({ punctuated_text: versions.punctuated_text }).from(versions)
+        .where(and(eq(versions.id, input.targetVersionId), eq(versions.project_id, projectId))).get();
       if (!row) throw new MunhaeError("invalid_anchor", "표점 version을 찾을 수 없습니다");
       return { text: row.punctuated_text, canonicalQuote: null };
     }
     case "translation_anchor": {
-      const row = getRow<{ punctuated_quote: string }>(
-        db,
-        `SELECT punctuated_quote FROM translation_anchors WHERE id = ? AND project_id = ?`,
-        input.targetVersionId,
-        projectId,
-      );
+      const anchors = schema.translation_anchors;
+      const row = orm(db).select({ punctuated_quote: anchors.punctuated_quote }).from(anchors)
+        .where(and(eq(anchors.id, input.targetVersionId), eq(anchors.project_id, projectId))).get();
       if (!row) throw new MunhaeError("invalid_anchor", "번역 앵커를 찾을 수 없습니다");
       return { text: null, canonicalQuote: row.punctuated_quote };
     }
     case "document_translation": {
-      const row = getRow<{ id: string }>(
-        db,
-        `SELECT id FROM document_translations WHERE id = ? AND project_id = ? AND tombstoned_at IS NULL`,
-        input.targetVersionId,
-        projectId,
-      );
+      const translations = schema.document_translations;
+      const row = orm(db).select({ id: translations.id }).from(translations)
+        .where(and(eq(translations.id, input.targetVersionId), eq(translations.project_id, projectId),
+          isNull(translations.tombstoned_at))).get();
       if (!row) throw new MunhaeError("invalid_anchor", "번역 작업을 찾을 수 없습니다");
       return { text: null, canonicalQuote: null };
     }
     case "document_translation_version": {
-      const row = getRow<{ text_content: string }>(
-        db,
-        `SELECT text_content FROM document_translation_versions WHERE id = ? AND project_id = ?`,
-        input.targetVersionId,
-        projectId,
-      );
+      const versions = schema.document_translation_versions;
+      const row = orm(db).select({ text_content: versions.text_content }).from(versions)
+        .where(and(eq(versions.id, input.targetVersionId), eq(versions.project_id, projectId))).get();
       if (!row) throw new MunhaeError("invalid_anchor", "번역 version을 찾을 수 없습니다");
       return { text: row.text_content, canonicalQuote: null };
     }
@@ -680,92 +656,97 @@ export function loadOpenUncertaintyIdsForDocument(
   documentNodeId: string,
   options: { blockingOnly?: boolean } = {},
 ): string[] {
-  const blockingClause = options.blockingOnly ? "AND uncertainty.blocking = 1" : "";
-  return allRows<{ id: string }>(
-    db,
-    `WITH RECURSIVE lineage(id, parent_node_id) AS (
-       SELECT id, parent_node_id
-       FROM document_nodes
-       WHERE id = ? AND project_id = ? AND archived_at IS NULL
+  const parent = alias(schema.document_nodes, "parent");
+  const version = alias(schema.uncertainty_versions, "version");
+  const newer = alias(schema.uncertainty_versions, "newer");
+  const uncertainty = alias(schema.uncertainties, "uncertainty");
+  const anchor = alias(schema.uncertainty_anchors, "anchor");
+  const sourceVersion = alias(schema.src_text_versions, "source_version");
+  const source = alias(schema.src_texts, "source");
+  const sourceHead = alias(schema.src_text_heads, "source_head");
+  const punctuationVersion = alias(schema.punctuation_versions, "punctuation_version");
+  const punctuation = alias(schema.punctuation_sets, "punctuation");
+  const punctuationHead = alias(schema.punctuation_heads, "punctuation_head");
+  const translationAnchor = alias(schema.translation_anchors, "translation_anchor");
+  const anchorSet = alias(schema.translation_anchor_sets, "anchor_set");
+  const translation = alias(schema.document_translations, "translation");
+  const translationVersion = alias(schema.document_translation_versions, "translation_version");
+  const translationHead = alias(schema.document_translation_heads, "translation_head");
+  const blockingClause = options.blockingOnly ? sql`AND ${uncertainty.blocking} = 1` : sql.empty();
+  // SQLite recursive lineage and current-head matching preserve the confirmation boundary.
+  return orm(db).all<{ id: string }>(sql`WITH RECURSIVE lineage(id, parent_node_id) AS (
+       SELECT ${schema.document_nodes.id}, ${schema.document_nodes.parent_node_id}
+       FROM ${schema.document_nodes}
+       WHERE ${schema.document_nodes.id} = ${documentNodeId} AND ${schema.document_nodes.project_id} = ${projectId}
+         AND ${schema.document_nodes.archived_at} IS NULL
        UNION ALL
-       SELECT parent.id, parent.parent_node_id
-       FROM document_nodes parent
-       JOIN lineage child ON child.parent_node_id = parent.id
-       WHERE parent.project_id = ? AND parent.archived_at IS NULL
+       SELECT ${parent.id}, ${parent.parent_node_id}
+       FROM ${schema.document_nodes} AS ${parent}
+       JOIN lineage child ON child.parent_node_id = ${parent.id}
+       WHERE ${parent.project_id} = ${projectId} AND ${parent.archived_at} IS NULL
      ), latest AS (
-       SELECT version.id
-       FROM uncertainty_versions version
-       WHERE version.project_id = ?
+       SELECT ${version.id}
+       FROM ${schema.uncertainty_versions} AS ${version}
+       WHERE ${version.project_id} = ${projectId}
          AND NOT EXISTS (
-           SELECT 1 FROM uncertainty_versions newer
-           WHERE newer.uncertainty_id = version.uncertainty_id
-             AND newer.version_no > version.version_no
+           SELECT 1 FROM ${schema.uncertainty_versions} AS ${newer}
+           WHERE ${newer.uncertainty_id} = ${version.uncertainty_id}
+             AND ${newer.version_no} > ${version.version_no}
          )
      )
-     SELECT DISTINCT uncertainty.id
-     FROM uncertainties uncertainty
+     SELECT DISTINCT ${uncertainty.id}
+     FROM ${schema.uncertainties} AS ${uncertainty}
      JOIN latest ON 1 = 1
-     JOIN uncertainty_versions version
-       ON version.id = latest.id AND version.uncertainty_id = uncertainty.id
-     JOIN uncertainty_anchors anchor ON anchor.uncertainty_version_id = version.id
-     WHERE uncertainty.project_id = ? AND uncertainty.state = 'open'
+     JOIN ${schema.uncertainty_versions} AS ${version}
+       ON ${version.id} = latest.id AND ${version.uncertainty_id} = ${uncertainty.id}
+     JOIN ${schema.uncertainty_anchors} AS ${anchor} ON ${anchor.uncertainty_version_id} = ${version.id}
+     WHERE ${uncertainty.project_id} = ${projectId} AND ${uncertainty.state} = 'open'
        ${blockingClause}
        AND (
-         (anchor.target_kind = 'document_node' AND anchor.target_version_id IN (SELECT id FROM lineage))
-         OR (anchor.target_kind = 'source_text_version' AND EXISTS (
-           SELECT 1 FROM src_text_versions source_version
-           JOIN src_texts source ON source.id = source_version.source_text_id
-           JOIN src_text_heads source_head
-             ON source_head.source_text_id = source.id
-            AND source_head.current_version_id = source_version.id
-           WHERE source_version.id = anchor.target_version_id AND source.document_node_id = ?
+         (${anchor.target_kind} = 'document_node' AND ${anchor.target_version_id} IN (SELECT id FROM lineage))
+         OR (${anchor.target_kind} = 'source_text_version' AND EXISTS (
+           SELECT 1 FROM ${schema.src_text_versions} AS ${sourceVersion}
+           JOIN ${schema.src_texts} AS ${source} ON ${source.id} = ${sourceVersion.source_text_id}
+           JOIN ${schema.src_text_heads} AS ${sourceHead}
+             ON ${sourceHead.source_text_id} = ${source.id}
+            AND ${sourceHead.current_version_id} = ${sourceVersion.id}
+           WHERE ${sourceVersion.id} = ${anchor.target_version_id} AND ${source.document_node_id} = ${documentNodeId}
          ))
-         OR (anchor.target_kind = 'punctuation_version' AND EXISTS (
-           SELECT 1 FROM punctuation_versions punctuation_version
-           JOIN punctuation_sets punctuation ON punctuation.id = punctuation_version.punctuation_set_id
-           JOIN punctuation_heads punctuation_head
-             ON punctuation_head.punctuation_set_id = punctuation.id
-            AND punctuation_head.current_version_id = punctuation_version.id
-           JOIN src_texts source ON source.id = punctuation.source_text_id
-           WHERE punctuation_version.id = anchor.target_version_id AND source.document_node_id = ?
+         OR (${anchor.target_kind} = 'punctuation_version' AND EXISTS (
+           SELECT 1 FROM ${schema.punctuation_versions} AS ${punctuationVersion}
+           JOIN ${schema.punctuation_sets} AS ${punctuation} ON ${punctuation.id} = ${punctuationVersion.punctuation_set_id}
+           JOIN ${schema.punctuation_heads} AS ${punctuationHead}
+             ON ${punctuationHead.punctuation_set_id} = ${punctuation.id}
+            AND ${punctuationHead.current_version_id} = ${punctuationVersion.id}
+           JOIN ${schema.src_texts} AS ${source} ON ${source.id} = ${punctuation.source_text_id}
+           WHERE ${punctuationVersion.id} = ${anchor.target_version_id} AND ${source.document_node_id} = ${documentNodeId}
          ))
-         OR (anchor.target_kind = 'translation_anchor' AND EXISTS (
-           SELECT 1 FROM translation_anchors translation_anchor
-           JOIN translation_anchor_sets anchor_set ON anchor_set.id = translation_anchor.anchor_set_id
-           JOIN src_text_versions source_version ON source_version.id = anchor_set.source_text_version_id
-           JOIN src_text_heads source_head
-             ON source_head.source_text_id = source_version.source_text_id
-            AND source_head.current_version_id = anchor_set.source_text_version_id
-           JOIN punctuation_versions punctuation_version ON punctuation_version.id = anchor_set.punctuation_version_id
-           JOIN punctuation_heads punctuation_head
-             ON punctuation_head.punctuation_set_id = punctuation_version.punctuation_set_id
-            AND punctuation_head.current_version_id = anchor_set.punctuation_version_id
-           WHERE translation_anchor.id = anchor.target_version_id AND anchor_set.document_node_id = ?
+         OR (${anchor.target_kind} = 'translation_anchor' AND EXISTS (
+           SELECT 1 FROM ${schema.translation_anchors} AS ${translationAnchor}
+           JOIN ${schema.translation_anchor_sets} AS ${anchorSet} ON ${anchorSet.id} = ${translationAnchor.anchor_set_id}
+           JOIN ${schema.src_text_versions} AS ${sourceVersion} ON ${sourceVersion.id} = ${anchorSet.source_text_version_id}
+           JOIN ${schema.src_text_heads} AS ${sourceHead}
+             ON ${sourceHead.source_text_id} = ${sourceVersion.source_text_id}
+            AND ${sourceHead.current_version_id} = ${anchorSet.source_text_version_id}
+           JOIN ${schema.punctuation_versions} AS ${punctuationVersion} ON ${punctuationVersion.id} = ${anchorSet.punctuation_version_id}
+           JOIN ${schema.punctuation_heads} AS ${punctuationHead}
+             ON ${punctuationHead.punctuation_set_id} = ${punctuationVersion.punctuation_set_id}
+            AND ${punctuationHead.current_version_id} = ${anchorSet.punctuation_version_id}
+           WHERE ${translationAnchor.id} = ${anchor.target_version_id} AND ${anchorSet.document_node_id} = ${documentNodeId}
          ))
-         OR (anchor.target_kind = 'document_translation' AND EXISTS (
-           SELECT 1 FROM document_translations translation
-           WHERE translation.id = anchor.target_version_id AND translation.document_node_id = ?
+         OR (${anchor.target_kind} = 'document_translation' AND EXISTS (
+           SELECT 1 FROM ${schema.document_translations} AS ${translation}
+           WHERE ${translation.id} = ${anchor.target_version_id} AND ${translation.document_node_id} = ${documentNodeId}
          ))
-         OR (anchor.target_kind = 'document_translation_version' AND EXISTS (
-           SELECT 1 FROM document_translation_versions translation_version
-           JOIN document_translations translation ON translation.id = translation_version.document_translation_id
-           JOIN document_translation_heads translation_head
-             ON translation_head.document_translation_id = translation.id
-            AND translation_head.current_version_id = translation_version.id
-           WHERE translation_version.id = anchor.target_version_id AND translation.document_node_id = ?
+         OR (${anchor.target_kind} = 'document_translation_version' AND EXISTS (
+           SELECT 1 FROM ${schema.document_translation_versions} AS ${translationVersion}
+           JOIN ${schema.document_translations} AS ${translation} ON ${translation.id} = ${translationVersion.document_translation_id}
+           JOIN ${schema.document_translation_heads} AS ${translationHead}
+             ON ${translationHead.document_translation_id} = ${translation.id}
+            AND ${translationHead.current_version_id} = ${translationVersion.id}
+           WHERE ${translationVersion.id} = ${anchor.target_version_id} AND ${translation.document_node_id} = ${documentNodeId}
          ))
-       )`,
-    documentNodeId,
-    projectId,
-    projectId,
-    projectId,
-    projectId,
-    documentNodeId,
-    documentNodeId,
-    documentNodeId,
-    documentNodeId,
-    documentNodeId,
-  ).map((row) => row.id);
+       )`).map((row) => row.id);
 }
 
 export function assertNoOpenBlockingUncertainty(

@@ -75,3 +75,23 @@ export function matchUnchangedTextSentences(
   }
   return matches;
 }
+
+/** Collapse contiguous members without changing a single character of the text. */
+export function groupedTextSentences(text: string, sentences: TextSentence[], links: Array<{ sentenceId: string; groupId?: string }>): TextSentence[] {
+  const points = Array.from(text);
+  const result: TextSentence[] = [];
+  const group = (id: string) => links.find(link => link.sentenceId === id)?.groupId;
+  for (const sentence of sentences) {
+    const last = result.at(-1);
+    if (last && group(sentence.id) && group(last.id) === group(sentence.id)) {
+      last.to = sentence.to;
+      last.text = points.slice(last.from, last.to).join("");
+    } else result.push({ ...sentence });
+  }
+  // Assign inter-segment whitespace to the preceding editing unit.
+  return result.map((sentence, i) => {
+    const from = i === 0 ? 0 : sentence.from;
+    const to = result[i + 1]?.from ?? points.length;
+    return { ...sentence, from, to, text: points.slice(from, to).join("") };
+  });
+}

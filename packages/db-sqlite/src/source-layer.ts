@@ -8,7 +8,9 @@ import {
   sliceCodepoints,
 } from "@munhae/domain";
 import type { ProjectActors } from "./bootstrap.ts";
-import { getRow, insertRow } from "./rows.ts";
+import { and, eq } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type {
   PunctuationSpanKind,
@@ -234,7 +236,6 @@ export function insertPunctuationVersionWithAnchors(opts: {
   punctuatedText: string;
   structureMode: PunctuationStructureMode;
   structureSpans?: PunctuationStructureSpanInput[];
-  changeSummary?: string | null;
   actorId: string;
   anchorActorId: string;
   originKind?: "manual" | "rule" | "ai" | "import";
@@ -242,16 +243,17 @@ export function insertPunctuationVersionWithAnchors(opts: {
   createAnchors?: boolean;
   now: string;
 }): { punctuationVersionId: string; anchorSetId: string | null; contentHash: string } {
-  const dependency = getRow<{ source_text_id: string; project_id: string }>(
-    opts.db,
-    `SELECT source_text_id, project_id FROM src_text_versions WHERE id = ?`,
-    opts.sourceVersionId,
-  );
-  const punctuationSet = getRow<{ source_text_id: string; project_id: string }>(
-    opts.db,
-    `SELECT source_text_id, project_id FROM punctuation_sets WHERE id = ?`,
-    opts.punctuationSetId,
-  );
+  const sourceVersions = schema.src_text_versions;
+  const punctuationSets = schema.punctuation_sets;
+  const punctuationVersions = schema.punctuation_versions;
+  const dependency = orm(opts.db).select({
+    source_text_id: sourceVersions.source_text_id,
+    project_id: sourceVersions.project_id,
+  }).from(sourceVersions).where(eq(sourceVersions.id, opts.sourceVersionId)).get();
+  const punctuationSet = orm(opts.db).select({
+    source_text_id: punctuationSets.source_text_id,
+    project_id: punctuationSets.project_id,
+  }).from(punctuationSets).where(eq(punctuationSets.id, opts.punctuationSetId)).get();
   if (
     !dependency ||
     !punctuationSet ||
@@ -264,11 +266,8 @@ export function insertPunctuationVersionWithAnchors(opts: {
     throw new MunhaeError("invalid_dependency", "원문·표점안의 project/version 의존성이 일치하지 않습니다");
   }
   if (opts.parentVersionId) {
-    const parent = getRow<{ punctuation_set_id: string }>(
-      opts.db,
-      `SELECT punctuation_set_id FROM punctuation_versions WHERE id = ?`,
-      opts.parentVersionId,
-    );
+    const parent = orm(opts.db).select({ punctuation_set_id: punctuationVersions.punctuation_set_id })
+      .from(punctuationVersions).where(eq(punctuationVersions.id, opts.parentVersionId)).get();
     if (parent?.punctuation_set_id !== opts.punctuationSetId) {
       throw new MunhaeError("invalid_dependency", "표점안 parent version이 같은 표점 집합에 속하지 않습니다");
     }
@@ -294,7 +293,7 @@ export function insertPunctuationVersionWithAnchors(opts: {
     spans: spanManifest,
   });
   const punctuationVersionId = createId();
-  insertRow(opts.db, "punctuation_versions", {
+  orm(opts.db).insert(schema.punctuation_versions).values({
     id: punctuationVersionId,
     project_id: opts.projectId,
     punctuation_set_id: opts.punctuationSetId,
@@ -303,18 +302,17 @@ export function insertPunctuationVersionWithAnchors(opts: {
     version_no: opts.versionNo,
     punctuated_text: opts.punctuatedText,
     structure_json: structureJson,
-    change_summary: opts.changeSummary ?? null,
     state: "draft",
     content_hash: contentHash,
     created_by_actor_id: opts.actorId,
     created_at: opts.now,
-  });
+  }).run();
 
   const spanIdByKey = new Map<string, string>();
   for (const span of spans) {
     const id = createId();
     spanIdByKey.set(span.spanKey, id);
-    insertRow(opts.db, "punctuation_structure_spans", {
+    orm(opts.db).insert(schema.punctuation_structure_spans).values({
       id,
       project_id: opts.projectId,
       punctuation_version_id: punctuationVersionId,
@@ -330,7 +328,7 @@ export function insertPunctuationVersionWithAnchors(opts: {
       label: span.label,
       created_by_actor_id: opts.actorId,
       created_at: opts.now,
-    });
+    }).run();
   }
 
   if (opts.createAnchors === false) {
@@ -374,13 +372,13 @@ function insertPreparedTranslationAnchors(opts: {
   now: string;
 }): string {
   const strategyKey = opts.structureMode === "poetry" ? "poetry-verse-line-v1" : "prose-sentence-v1";
-  const existing = getRow<{ id: string }>(
-    opts.db,
-    `SELECT id FROM translation_anchor_sets
-     WHERE punctuation_version_id = ? AND strategy_key = ? AND strategy_version = 1 AND coverage_policy = 'full_text'`,
-    opts.punctuationVersionId,
-    strategyKey,
-  );
+  const anchorSets = schema.translation_anchor_sets;
+  const existing = orm(opts.db).select({ id: anchorSets.id }).from(anchorSets).where(and(
+    eq(anchorSets.punctuation_version_id, opts.punctuationVersionId),
+    eq(anchorSets.strategy_key, strategyKey),
+    eq(anchorSets.strategy_version, 1),
+    eq(anchorSets.coverage_policy, "full_text"),
+  )).get();
   if (existing) return existing.id;
 
   const leafKind: PunctuationSpanKind = opts.structureMode === "poetry" ? "verse_line" : "sentence";
@@ -433,7 +431,7 @@ function insertPreparedTranslationAnchors(opts: {
     anchors: anchors.map(({ spanKeys: _spanKeys, punctuatedQuote: _punctuatedQuote, sourceQuote: _sourceQuote, ...anchor }) => anchor),
   });
   const anchorSetId = createId();
-  insertRow(opts.db, "translation_anchor_sets", {
+  orm(opts.db).insert(schema.translation_anchor_sets).values({
     id: anchorSetId,
     project_id: opts.projectId,
     document_node_id: opts.documentNodeId,
@@ -445,10 +443,10 @@ function insertPreparedTranslationAnchors(opts: {
     anchor_set_hash: anchorSetHash,
     created_by_actor_id: opts.anchorActorId,
     created_at: opts.now,
-  });
+  }).run();
   for (const anchor of anchors) {
     const id = createId();
-    insertRow(opts.db, "translation_anchors", {
+    orm(opts.db).insert(schema.translation_anchors).values({
       id,
       project_id: opts.projectId,
       anchor_set_id: anchorSetId,
@@ -468,14 +466,14 @@ function insertPreparedTranslationAnchors(opts: {
       display_label: anchor.anchorKey,
       required: 1,
       created_at: opts.now,
-    });
+    }).run();
     anchor.spanKeys.forEach((spanKey, ordinal) => {
-      insertRow(opts.db, "translation_anchor_structure_spans", {
+      orm(opts.db).insert(schema.translation_anchor_structure_spans).values({
         project_id: opts.projectId,
         anchor_id: id,
-        punctuation_structure_span_id: opts.spanIdByKey.get(spanKey),
+        punctuation_structure_span_id: opts.spanIdByKey.get(spanKey)!,
         ordinal: ordinal + 1,
-      });
+      }).run();
     });
   }
 
@@ -490,31 +488,31 @@ export function ensureTranslationAnchorsForPunctuationVersion(opts: {
   anchorActorId: string;
   now: string;
 }): string {
-  const dependency = getRow<{
-    source_version_id: string;
-    source_text: string;
-    source_hash: string;
-    punctuated_text: string;
-    punctuation_hash: string;
-    structure_json: string | null;
-  }>(
-    opts.db,
-    `SELECT punctuation.source_text_version_id AS source_version_id,
-            source.content_text AS source_text, source.content_hash AS source_hash,
-            punctuation.punctuated_text, punctuation.content_hash AS punctuation_hash,
-            punctuation.structure_json
-     FROM punctuation_versions punctuation
-     JOIN punctuation_sets set_row ON set_row.id = punctuation.punctuation_set_id
-     JOIN src_texts source_row ON source_row.id = set_row.source_text_id
-     JOIN src_text_versions source ON source.id = punctuation.source_text_version_id
-       AND source.source_text_id = source_row.id
-     WHERE punctuation.id = ? AND punctuation.project_id = ?
-       AND set_row.project_id = ? AND source_row.document_node_id = ?`,
-    opts.punctuationVersionId,
-    opts.projectId,
-    opts.projectId,
-    opts.documentNodeId,
-  );
+  const punctuationVersions = schema.punctuation_versions;
+  const punctuationSets = schema.punctuation_sets;
+  const sourceTexts = schema.src_texts;
+  const sourceVersions = schema.src_text_versions;
+  const structureSpans = schema.punctuation_structure_spans;
+  const dependency = orm(opts.db).select({
+    source_version_id: punctuationVersions.source_text_version_id,
+    source_text: sourceVersions.content_text,
+    source_hash: sourceVersions.content_hash,
+    punctuated_text: punctuationVersions.punctuated_text,
+    punctuation_hash: punctuationVersions.content_hash,
+    structure_json: punctuationVersions.structure_json,
+  }).from(punctuationVersions)
+    .innerJoin(punctuationSets, eq(punctuationSets.id, punctuationVersions.punctuation_set_id))
+    .innerJoin(sourceTexts, eq(sourceTexts.id, punctuationSets.source_text_id))
+    .innerJoin(sourceVersions, and(
+      eq(sourceVersions.id, punctuationVersions.source_text_version_id),
+      eq(sourceVersions.source_text_id, sourceTexts.id),
+    ))
+    .where(and(
+      eq(punctuationVersions.id, opts.punctuationVersionId),
+      eq(punctuationVersions.project_id, opts.projectId),
+      eq(punctuationSets.project_id, opts.projectId),
+      eq(sourceTexts.document_node_id, opts.documentNodeId),
+    )).get();
   if (!dependency) throw new MunhaeError("invalid_dependency", "표점안의 원문 의존성을 찾을 수 없습니다");
   let structureMode: PunctuationStructureMode = "prose";
   if (dependency.structure_json) {
@@ -525,22 +523,21 @@ export function ensureTranslationAnchorsForPunctuationVersion(opts: {
       throw new MunhaeError("invalid_structure", "표점 구조 설정이 올바른 JSON이 아닙니다");
     }
   }
-  const stored = opts.db.prepare(
-    `SELECT id, span_kind, parent_span_id, ordinal, codepoint_from, codepoint_to, label
-     FROM punctuation_structure_spans
-     WHERE project_id = ? AND punctuation_version_id = ?`,
-  ).all(opts.projectId, opts.punctuationVersionId) as Array<{
-    id: string;
-    span_kind: PunctuationSpanKind;
-    parent_span_id: string | null;
-    ordinal: number;
-    codepoint_from: number;
-    codepoint_to: number;
-    label: string | null;
-  }>;
+  const stored = orm(opts.db).select({
+    id: structureSpans.id,
+    span_kind: structureSpans.span_kind,
+    parent_span_id: structureSpans.parent_span_id,
+    ordinal: structureSpans.ordinal,
+    codepoint_from: structureSpans.codepoint_from,
+    codepoint_to: structureSpans.codepoint_to,
+    label: structureSpans.label,
+  }).from(structureSpans).where(and(
+    eq(structureSpans.project_id, opts.projectId),
+    eq(structureSpans.punctuation_version_id, opts.punctuationVersionId),
+  )).all();
   const supplied = stored.map((span) => ({
     spanKey: span.id,
-    spanKind: span.span_kind,
+    spanKind: punctuationSpanKind(span.span_kind),
     parentSpanKey: span.parent_span_id,
     ordinal: span.ordinal,
     codepointFrom: span.codepoint_from,
@@ -585,7 +582,7 @@ export function insertSourceLayer(opts: {
   const sourceTextId = createId();
   const sourceVersionId = createId();
   const sourceHash = sha256Hex(text);
-  insertRow(opts.db, "src_texts", {
+  orm(opts.db).insert(schema.src_texts).values({
     id: sourceTextId,
     project_id: opts.projectId,
     document_node_id: opts.documentNodeId,
@@ -593,8 +590,8 @@ export function insertSourceLayer(opts: {
     status: "active",
     created_at: opts.now,
     tombstoned_at: null,
-  });
-  insertRow(opts.db, "src_text_versions", {
+  }).run();
+  orm(opts.db).insert(schema.src_text_versions).values({
     id: sourceVersionId,
     project_id: opts.projectId,
     source_text_id: sourceTextId,
@@ -606,20 +603,19 @@ export function insertSourceLayer(opts: {
     page_from: null,
     page_to: null,
     locator_text: null,
-    change_summary: null,
     state: "draft",
     content_hash: sourceHash,
     created_by_actor_id: opts.actors.humanId,
     created_at: opts.now,
-  });
-  insertRow(opts.db, "src_text_heads", {
+  }).run();
+  orm(opts.db).insert(schema.src_text_heads).values({
     project_id: opts.projectId,
     source_text_id: sourceTextId,
     current_version_id: sourceVersionId,
     confirmed_version_id: null,
     lock_version: 1,
     updated_at: opts.now,
-  });
+  }).run();
 
   return { sourceTextId, sourceVersionId };
 }
@@ -629,6 +625,20 @@ function deriveStructureSpans(
   mode: PunctuationStructureMode,
 ): PunctuationStructureSpanInput[] {
   return mode === "poetry" ? derivePoetrySpans(punctuatedText) : deriveProseSpans(punctuatedText);
+}
+
+export function punctuationSpanKind(value: string): PunctuationSpanKind {
+  switch (value) {
+    case "paragraph":
+    case "sentence":
+    case "verse_line":
+    case "couplet":
+    case "stanza":
+    case "clause":
+      return value;
+    default:
+      throw new MunhaeError("invalid_structure", `알 수 없는 structure span kind: ${value}`);
+  }
 }
 
 function deriveProseSpans(text: string): PunctuationStructureSpanInput[] {

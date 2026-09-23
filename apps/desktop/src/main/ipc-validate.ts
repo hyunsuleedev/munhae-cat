@@ -44,6 +44,7 @@ import {
   type UpdateContextItemInput,
   type UpdateReviewCommentInput,
   type UpdateDocumentMetadataInput,
+  type MoveDocumentInput,
   type VersionDiffInput,
 } from "../shared/munhae-api";
 import { AppError } from "./errors";
@@ -187,13 +188,6 @@ function parseExpectedLockVersion(value: unknown, field = "expectedLockVersion")
   return lockVersion;
 }
 
-function parseNullableSummary(value: unknown, field: string): string | null | undefined {
-  if (value === undefined) return undefined;
-  if (value === null) return null;
-  const summary = asString(value, field, { max: 2_000 }).trim();
-  return summary || null;
-}
-
 export function parseSaveSourceDraftInput(value: unknown): SaveSourceDraftInput {
   const rec = asRecord(value, "input");
   const contentText = asString(rec.contentText, "contentText", { max: 20_000_000 });
@@ -202,7 +196,6 @@ export function parseSaveSourceDraftInput(value: unknown): SaveSourceDraftInput 
     documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
     contentText,
     originKind: asOneOf(rec.originKind, "originKind", ORIGIN_KINDS),
-    changeSummary: parseNullableSummary(rec.changeSummary, "changeSummary"),
     expectedLockVersion: parseExpectedLockVersion(rec.expectedLockVersion),
   };
 }
@@ -264,7 +257,6 @@ export function parseSavePunctuationDraftInput(value: unknown): SavePunctuationD
     punctuatedText,
     structureMode: asOneOf(rec.structureMode, "structureMode", STRUCTURE_MODES),
     structureSpans: parseStructureSpans(rec.structureSpans, punctuatedText),
-    changeSummary: parseNullableSummary(rec.changeSummary, "changeSummary"),
     expectedLockVersion: parseExpectedLockVersion(rec.expectedLockVersion),
   };
 }
@@ -322,6 +314,19 @@ export function parseSaveDraftInput(value: unknown): SaveTranslationDraftInput {
   return {
     documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
     textContent: asString(rec.textContent, "textContent", { max: 20_000_000 }),
+    ...(rec.textGroups === undefined ? {} : { textGroups: (() => {
+      if (!Array.isArray(rec.textGroups)) fail("textGroups");
+      return rec.textGroups.map((value, index) => {
+        const group = asRecord(value, `textGroups[${index}]`);
+        if (!Array.isArray(group.spans)) fail("spans");
+        return { id: asNonEmptyString(group.id, "id", 160), text: asString(group.text, "text", { max: 20_000_000 }),
+          spans: group.spans.map(value => {
+            const span = asRecord(value, "span");
+            if (!Number.isSafeInteger(span.from) || !Number.isSafeInteger(span.to)) fail("span range");
+            return { from: span.from as number, to: span.to as number, quote: asString(span.quote, "quote", { max: 20_000_000 }) };
+          }) };
+      });
+    })() }),
     blocks: rec.blocks.map((block, index) => {
       const row = asRecord(block, `blocks[${index}]`);
       return {
@@ -643,14 +648,14 @@ export function parseUpdateDocumentMetadataInput(value: unknown): UpdateDocument
   };
 }
 
-function parseContextItemBody(value: unknown, field: string): CreateContextItemInput {
+function parseContextItemBody(value: unknown, field: string, allowEmpty = false): CreateContextItemInput {
   const rec = asRecord(value, field);
   const priority = asInt(rec.priority, `${field}.priority`);
   if (priority < -1_000_000 || priority > 1_000_000) fail(`${field}.priority`);
   return {
     scopeId: asNonEmptyString(rec.scopeId, `${field}.scopeId`, 80),
     title: asNonEmptyString(rec.title, `${field}.title`, 500),
-    contentMd: asNonEmptyString(rec.contentMd, `${field}.contentMd`, 200_000),
+    contentMd: allowEmpty ? asString(rec.contentMd, `${field}.contentMd`, { max: 200_000 }) : asNonEmptyString(rec.contentMd, `${field}.contentMd`, 200_000),
     ...(rec.inheritToChildren === undefined ? {} : { inheritToChildren: asBoolean(rec.inheritToChildren, `${field}.inheritToChildren`) }),
     ...(rec.conditionMd === undefined ? {} : { conditionMd: asString(rec.conditionMd, `${field}.conditionMd`, { max: 20_000 }) }),
     priority,
@@ -664,7 +669,7 @@ export function parseSetMaterialPreferenceInput(value: unknown): SetMaterialPref
   if (expectedLockVersion !== undefined && expectedLockVersion < 0) fail("input.expectedLockVersion");
   return {
     documentNodeId: parseDocumentNodeId(rec.documentNodeId),
-    source: asOneOf(rec.source, "input.source", ["context_item", "document_description"] as const),
+    source: asOneOf(rec.source, "input.source", ["context_item", "document_description", "comment_reference"] as const),
     sourceId: asNonEmptyString(rec.sourceId, "input.sourceId", 80),
     mode: asOneOf(rec.mode, "input.mode", ["include", "exclude", "reset"] as const),
     ...(expectedLockVersion === undefined ? {} : { expectedLockVersion }),
@@ -674,7 +679,7 @@ export function parseSetMaterialPreferenceInput(value: unknown): SetMaterialPref
 export function parseReuseCommentAsMaterialInput(value: unknown): ReuseCommentAsMaterialInput {
   const rec = asRecord(value, "input");
   return {
-    ...parseContextItemBody(value, "input"),
+    ...parseContextItemBody(value, "input", true),
     commentId: asNonEmptyString(rec.commentId, "input.commentId", 80),
     expectedCommentLockVersion: parseExpectedLockVersion(rec.expectedCommentLockVersion, "input.expectedCommentLockVersion"),
   };
@@ -687,7 +692,9 @@ export function parseCreateContextItemInput(value: unknown): CreateContextItemIn
 export function parseUpdateContextItemInput(value: unknown): UpdateContextItemInput {
   const rec = asRecord(value, "input");
   return {
-    ...parseContextItemBody(value, "input"),
+    ...parseContextItemBody(value, "input", true),
+    ...(rec.expectedCommentLockVersion === undefined ? {} : { expectedCommentLockVersion: parseExpectedLockVersion(rec.expectedCommentLockVersion) }),
+    ...(rec.keepAsContext === undefined ? {} : { keepAsContext: asBoolean(rec.keepAsContext, "input.keepAsContext") }),
     id: asNonEmptyString(rec.id, "input.id", 80),
     expectedLockVersion: parseExpectedLockVersion(rec.expectedLockVersion, "input.expectedLockVersion"),
   };
@@ -841,4 +848,27 @@ export function parseReviewExportInput(value: unknown): ReviewExportInput {
   return { format: asOneOf(rec.format, "input.format", ["html", "markdown"] as const),
     state: asOneOf(rec.state, "input.state", ["current", "confirmed"] as const),
     documentNodeId: nullableString(rec.documentNodeId, "input.documentNodeId", 80), includeComments: rec.includeComments as boolean | undefined };
+}
+
+export function parseTermMaterialExclusions(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 10000) throw new AppError("invalid_input", "제외할 참고 자료 목록을 확인하세요.");
+  return [...new Set(value.map(id => asNonEmptyString(id, "excludedMaterialId", 200)))];
+}
+
+export function parseTermGlossarySelection(value: unknown): import("../shared/term-glossary").TermGlossarySelection {
+  if (value === undefined) return { enabled: true, excludedIds: [] };
+  const rec = asRecord(value, "glossarySelection");
+  if (typeof rec.enabled !== "boolean") throw new AppError("invalid_input", "공통 용어집 참고 여부를 확인하세요.");
+  return { enabled: rec.enabled, excludedIds: parseTermMaterialExclusions(rec.excludedIds) };
+}
+
+export function parseMoveDocumentInput(value: unknown): MoveDocumentInput {
+  const rec = asRecord(value, "input");
+  return {
+    documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    parentId: asNonEmptyString(rec.parentId, "parentId", 80),
+    beforeDocumentNodeId: rec.beforeDocumentNodeId === null ? null : asNonEmptyString(rec.beforeDocumentNodeId, "beforeDocumentNodeId", 80),
+    expectedLockVersion: parseExpectedLockVersion(rec.expectedLockVersion),
+  };
 }

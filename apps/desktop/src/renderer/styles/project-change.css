@@ -1,0 +1,5 @@
+.project-change-status { display: inline-flex; align-items: center; gap: 5px; padding: 0 7px; margin-inline: 5px; border: 0; border-inline-start: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--accent); font: inherit; cursor: pointer; white-space: nowrap; }
+.project-change-status:hover { background: var(--fg-soft); }
+.project-change-status:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.project-change-status[hidden] { display: none; }
+.project-change-status:disabled { color: var(--muted); cursor: default; }

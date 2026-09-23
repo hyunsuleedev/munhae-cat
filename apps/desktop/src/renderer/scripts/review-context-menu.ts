@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export type SelectionRect = { left: number; right: number; top: number; bottom: number };
 export type ReviewSourceSnapshot = {
   documentNodeId: string;
@@ -46,7 +47,7 @@ export function configureReviewContextMenu(root: HTMLElement, capture: (invocati
   menu.id = "reviewSelectionMenu";
   menu.className = "review-selection-menu";
   menu.setAttribute("role", "menu");
-  menu.setAttribute("aria-label", "선택한 원문 구절 작업");
+  menu.setAttribute("aria-label", t("선택한 원문 구절 작업"));
   menu.tabIndex = -1;
   menu.hidden = true;
   document.body.append(menu);

@@ -1,165 +1,99 @@
-import { checkAppUpdates } from "./app-updates";
-import { Menu, app, type MenuItemConstructorOptions } from "electron";
+import { Menu, app, webContents, type MenuItemConstructorOptions, type WebContents } from "electron";
 import { IPC_CHANNELS } from "../shared/munhae-api";
 import { getMainWindow } from "./window";
+import { translateUi, type UiLanguage } from "../shared/ui-translations";
 
-function accelerator(kbd: string): string | undefined {
-  if (!kbd) return undefined;
-  const mods: string[] = [];
-  if (kbd.includes("⌃")) mods.push("Control");
-  if (kbd.includes("⌥")) mods.push("Alt");
-  if (kbd.includes("⇧")) mods.push("Shift");
-  if (kbd.includes("⌘")) mods.push("CommandOrControl");
-  let key = kbd.replace(/[⌃⌥⇧⌘]/g, "");
-  if (key === "↩") key = "Return";
-  if (key === ",") key = ",";
-  if (!key) return undefined;
-  return [...mods, key].join("+");
-}
+let menuLanguage: UiLanguage = "ko";
+const editingMenus = new WeakSet<WebContents>();
+let watchingContents = false;
 
-function dispatch(id: string): void {
-  const win = getMainWindow();
-  if (id === "updates") { void checkAppUpdates(); return; }
-  if (id === "quit") {
-    app.quit();
-    return;
-  }
-  if (id === "min") {
-    win?.minimize();
-    return;
-  }
-  if (id === "zoom") {
-    if (!win) return;
-    if (win.isMaximized()) win.unmaximize();
-    else win.maximize();
-    return;
-  }
-  if (id === "about") {
-    app.showAboutPanel();
-    return;
-  }
-  win?.webContents.send(IPC_CHANNELS.menuCommand, id);
-}
-
-function item(label: string, kbd: string, id: string, extra?: Partial<MenuItemConstructorOptions>): MenuItemConstructorOptions {
+function shortcut(label: string, accelerator: string, id: string): MenuItemConstructorOptions {
   return {
-    label,
-    id,
-    accelerator: accelerator(kbd),
-    click: () => dispatch(id),
-    ...extra,
+    label, id, accelerator, visible: false, acceleratorWorksWhenHidden: true,
+    click: () => getMainWindow()?.webContents.send(IPC_CHANNELS.menuCommand, id),
   };
 }
 
-export function installApplicationMenu(): void {
-  app.setAboutPanelOptions({
-    applicationName: "Munhae Studio",
-    applicationVersion: app.getVersion(),
-    copyright: "Copyright © 2026 Munhae",
+function attachEditingMenu(contents: WebContents): void {
+  if (editingMenus.has(contents)) return;
+  editingMenus.add(contents);
+  contents.on("context-menu", (_event, params) => {
+    const win = getMainWindow();
+    // Document rows have their own contextual actions. Native editing belongs
+    // only to editable fields and keeps the selection/focus in that field.
+    if (!params.isEditable || !win || win.webContents !== contents) return;
+    const edit = (label: string, role: MenuItemConstructorOptions["role"], enabled: boolean): MenuItemConstructorOptions => ({
+      label: translateUi(label, menuLanguage), role, enabled,
+    });
+    Menu.buildFromTemplate([
+      edit("실행 취소", "undo", params.editFlags.canUndo),
+      edit("다시 실행", "redo", params.editFlags.canRedo),
+      { type: "separator" },
+      edit("잘라내기", "cut", params.editFlags.canCut),
+      edit("복사", "copy", params.editFlags.canCopy),
+      edit("붙여넣기", "paste", params.editFlags.canPaste),
+      { type: "separator" },
+      edit("전체 선택", "selectAll", params.editFlags.canSelectAll),
+    ]).popup({ window: win });
   });
+}
 
-  const template: MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin"
-      ? [
-          {
-            label: app.name,
-            submenu: [
-              { role: "about" as const },
-              { type: "separator" as const },
-              item("설정…", "⌘,", "prefs"),
-              item("AI 연결 상태…", "", "ai"),
-              { type: "separator" as const },
-              { role: "hide" as const },
-              { role: "hideOthers" as const },
-              { role: "unhide" as const },
-              { type: "separator" as const },
-              { role: "quit" as const },
-            ],
-          },
-        ]
-      : []),
-    {
-      label: "파일",
-      submenu: [
-        item("새 프로젝트…", "⇧⌘N", "newproj"),
-        item("프로젝트 열기…", "⌘O", "open"),
-        { type: "separator" },
-        item("새 문서 node…", "⌘N", "newdoc"),
-        item("원문 가져오기…", "", "import"),
-        { type: "separator" },
-        item("백업 만들기…", "", "backup"),
-        item("내보내기…", "⌘E", "export"),
-        { type: "separator" },
-        item("프로젝트 닫기", "⌘W", "close"),
-        ...(process.platform === "darwin" ? [] : [{ type: "separator" as const }, { role: "quit" as const }]),
-      ],
-    },
-    {
-      label: "편집",
-      submenu: [
-        { role: "undo" },
-        { role: "redo" },
-        { type: "separator" },
-        { role: "cut" },
-        { role: "copy" },
-        { role: "paste" },
-        { role: "selectAll" },
-        { type: "separator" },
-        item("찾기…", "⌘F", "find"),
-      ],
-    },
-    {
-      label: "보기",
-      submenu: [
-        item("사이드바 보기/가리기", "⌃⌘S", "sidebar"),
-        item("참고 자료 패널", "⌥⌘R", "refpane"),
-        item("참고 자료·AI 패널", "⌥⌘I", "ctxpane"),
-        { type: "separator" },
-        item("표점 전문", "⌘1", "v-source"),
-        item("대조", "⌘2", "v-parallel"),
-        item("번역 전문", "⌘3", "v-full"),
-        { type: "separator" },
-        item("구조 표시", "", "struct"),
-        item("앵커 ID 표시", "", "keys"),
-      ],
-    },
-    {
-      label: "번역",
-      submenu: [
-        item("AI 번역…", "⌥⌘K", "prepare"),
-        { type: "separator" },
-        item("다음 블록과 합치기", "⌥⌘M", "merge"),
-        item("블록 나누기…", "⌥⌘S", "split"),
-        item("앵커 연결…", "⌥⌘L", "link"),
-        { type: "separator" },
-        item("변경 비교", "⌘D", "diff"),
-        item("번역안 확정", "⇧⌘↩", "confirm"),
-      ],
-    },
-    {
-      label: "이동",
-      submenu: [
-        item("프로젝트 홈", "⇧⌘1", "home"),
-        item("편집", "⇧⌘2", "editor"),
-        item("번역 자료", "⇧⌘3", "knowledge"),
-        { type: "separator" },
-        item("명령 검색…", "⌘K", "palette"),
-      ],
-    },
-    {
-      label: "창",
-      role: "windowMenu",
-    },
-    {
-      label: "도움말",
-      submenu: [
-        item("문해 도움말", "", "help"),
-        item("업데이트 확인…", "", "updates"),
-        item("plan.md 보기", "", "plan"),
-        item("schema.md 보기", "", "schema"),
-      ],
-    },
+export function installApplicationMenu(language: UiLanguage = "ko"): void {
+  menuLanguage = language;
+  app.setAboutPanelOptions({ applicationName: "Munhae Studio", applicationVersion: app.getVersion(), copyright: "Copyright © 2026 Munhae" });
+  // Keep native accelerators registered after removing their visible menus.
+  // In particular, macOS text editing relies on the native edit roles.
+  const hidden: MenuItemConstructorOptions[] = [
+    ...(["undo", "redo", "cut", "copy", "paste", "selectAll", "minimize", "togglefullscreen"] as const)
+      .map(role => ({ role, visible: false, acceleratorWorksWhenHidden: true })),
+    shortcut("새 프로젝트…", "CommandOrControl+Shift+N", "newproj"),
+    shortcut("프로젝트 열기…", "CommandOrControl+O", "open"),
+    shortcut("새 문서", "CommandOrControl+N", "newdoc"),
+    shortcut("내보내기…", "CommandOrControl+E", "export"),
+    shortcut("프로젝트 닫기", "CommandOrControl+W", "close"),
+    shortcut("찾기…", "CommandOrControl+F", "find"),
+    shortcut("사이드바 보기/가리기", "Control+CommandOrControl+S", "sidebar"),
+    shortcut("참고 자료 패널", "Alt+CommandOrControl+R", "refpane"),
+    shortcut("참고 자료·AI 패널", "Alt+CommandOrControl+I", "ctxpane"),
+    shortcut("원문 전문", "CommandOrControl+1", "v-source"),
+    shortcut("문장별 대조", "CommandOrControl+2", "v-parallel"),
+    shortcut("서책 보기", "CommandOrControl+3", "v-full"),
+    shortcut("AI 번역…", "Alt+CommandOrControl+K", "prepare"),
+    shortcut("다음 블록과 합치기", "Alt+CommandOrControl+M", "merge"),
+    shortcut("블록 나누기…", "Alt+CommandOrControl+S", "split"),
+    shortcut("앵커 연결…", "Alt+CommandOrControl+L", "link"),
+    shortcut("변경 비교", "CommandOrControl+D", "diff"),
+    shortcut("번역안 확정", "Shift+CommandOrControl+Return", "confirm"),
+    shortcut("프로젝트 홈", "Shift+CommandOrControl+1", "home"),
+    shortcut("편집", "Shift+CommandOrControl+2", "editor"),
+    shortcut("번역 자료", "Shift+CommandOrControl+3", "knowledge"),
+    shortcut("명령 검색…", "CommandOrControl+K", "palette"),
   ];
-
+  const prefs = shortcut("설정…", "CommandOrControl+,", "prefs");
+  const template: MenuItemConstructorOptions[] = process.platform === "darwin" ? [{
+    label: app.name,
+    submenu: [
+      { role: "about" }, { type: "separator" }, { ...prefs, visible: true },
+      { type: "separator" }, { role: "hide" }, { role: "hideOthers" }, { role: "unhide" },
+      { type: "separator" }, { role: "quit" }, ...hidden,
+    ],
+  }] : [...hidden, prefs, { role: "quit", visible: false }];
+  const localize = (items: MenuItemConstructorOptions[]): void => {
+    for (const entry of items) {
+      if (language === "en" && entry.role && !entry.label) {
+        const labels: Record<string, string> = { about: "About Munhae Studio", hide: "Hide Munhae Studio", hideOthers: "Hide Others", unhide: "Show All", quit: "Quit Munhae Studio" };
+        entry.label = labels[entry.role];
+      }
+      if (entry.label) entry.label = translateUi(entry.label, language);
+      if (Array.isArray(entry.submenu)) localize(entry.submenu);
+    }
+  };
+  localize(template);
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  if (process.platform !== "darwin") getMainWindow()?.setMenuBarVisibility(false);
+  webContents.getAllWebContents().forEach(attachEditingMenu);
+  if (!watchingContents) {
+    watchingContents = true;
+    app.on("web-contents-created", (_event, contents) => attachEditingMenu(contents));
+  }
 }

@@ -1,8 +1,14 @@
+import { READING_ANALYSIS_CHANNELS, dispatchReadingAnalysis } from "./reading-analysis-handlers";
+import { onlineSaveRequestKey, withOnlineProjectSave } from "./session";
+import { latestTermExtraction, startTermExtraction, getTermExtraction, cancelTermExtraction } from "./term-review";
+import { startMaterialRefinement, getMaterialRefinement, cancelMaterialRefinement } from "./material-refinement";
+import { translateUi } from "../shared/ui-translations";
+import { installApplicationMenu } from "./menu";
 import { checkAppUpdates } from "./app-updates";
 import { MATERIAL_CHANNELS, dispatchMaterial } from "./translation-materials";
-import { parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
+import { parseTermGlossarySelection, parseTermMaterialExclusions, parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
 import { exportReviewTranslations } from "./session";
-import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { app, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
 import { probeAgentsCached } from "./agents";
 import { searchItkcFootnotes } from "./itkc-footnotes";
@@ -52,10 +58,11 @@ import {
   parseUpdateContextItemInput,
   parseUpdateReviewCommentInput,
   parseUpdateDocumentMetadataInput,
+  parseMoveDocumentInput,
   parseVersionDiffInput,
 } from "./ipc-validate";
 import { attachReferenceInteractive, openReference, readReference } from "./reference-assets";
-import { openHttpsExternal } from "./security";
+import { openHttpsExternal, openChatSource } from "./security";
 import {
   backupProject,
   closeProject,
@@ -87,6 +94,9 @@ import {
 import { getAgentLoginInstruction } from "./agent-runtime-client";
 import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
 import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
+import { ONLINE_PROJECT_CHANNELS, dispatchOnlineProject } from "./online-project-handlers";
+import { BILLING_CHANNELS, dispatchBilling } from "./billing-handlers";
+import { leaveOnlineWorkspace } from "./session";
 
 const runtimeSessionStore = {
   get: getRuntimeSessionRef,
@@ -116,7 +126,7 @@ function toIpcError(error: unknown): IpcResult<never> {
   } else {
     log.warn("ipc rejected", { code });
   }
-  return { ok: false, error: { code, message: safeMessage(error) } };
+  return { ok: false, error: { code, message: translateUi(safeMessage(error), getAppConfig().language) } };
 }
 
 function handleRaw(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown): void {
@@ -125,7 +135,9 @@ function handleRaw(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...args:
   }
   ipcMain.handle(channel, async (event, ...args) => {
     assertSender(event);
-    return fn(event, ...args);
+    try { return await fn(event, ...args); } catch (error) {
+      throw new AppError(errorCode(error), translateUi(safeMessage(error), getAppConfig().language));
+    }
   });
 }
 
@@ -136,7 +148,7 @@ function handleResult(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...ar
   ipcMain.handle(channel, async (event, ...args): Promise<IpcResult<unknown>> => {
     try {
       assertSender(event);
-      return { ok: true, data: await fn(event, ...args) };
+      return { ok: true, data: await withOnlineProjectSave(() => fn(event, ...args), channel.startsWith("munhae:auth:") || new Set<IpcChannel>([IPC_CHANNELS.projectOpen, IPC_CHANNELS.projectClose, IPC_CHANNELS.projectCreate, IPC_CHANNELS.projectCreateFromPaste, IPC_CHANNELS.projectSeedDemo, IPC_CHANNELS.onlineProjectsOpen]).has(channel), onlineSaveRequestKey(channel, args)) };
     } catch (error) {
       return toIpcError(error);
     }
@@ -144,8 +156,17 @@ function handleResult(channel: IpcChannel, fn: (event: IpcMainInvokeEvent, ...ar
 }
 
 export function registerIpcHandlers(): void {
+  for (const channel of BILLING_CHANNELS) {
+    handleResult(channel, () => dispatchBilling(channel));
+  }
+  for (const channel of ONLINE_PROJECT_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchOnlineProject(channel, input));
+  }
   for (const channel of MATERIAL_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchMaterial(channel, input));
+  }
+  for (const channel of READING_ANALYSIS_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchReadingAnalysis(channel, input));
   }
   for (const channel of READING_ANNOTATION_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchReadingAnnotation(channel, input));
@@ -154,6 +175,17 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.dictionaryGetStatus, () => dictionaryGetStatus());
   handleResult(IPC_CHANNELS.dictionarySetKey, (_event, input) => dictionarySetKey(input));
   handleResult(IPC_CHANNELS.researchSearchFootnotes, (_event, input) => searchItkcFootnotes(input));
+  handleResult(IPC_CHANNELS.termsList, (_event, id) => requireRepo().getTerms(id == null ? undefined : parseMessageId(id)));
+  handleResult(IPC_CHANNELS.termsDelete, (_event, input) => requireRepo().deleteTerm(input as { id: string; expectedLockVersion: number }));
+  handleResult(IPC_CHANNELS.termsSave, (_event, input) => requireRepo().saveTerm(input as import("@munhae/db-sqlite").SaveTermInput));
+  handleResult(IPC_CHANNELS.termsPromote, (_event, input) => requireRepo().promoteTerm(input as import("@munhae/db-sqlite").SaveTermInput));
+  handleResult(IPC_CHANNELS.termsStart, (_event, id, exclusions, glossarySelection) => startTermExtraction(requireRepo(), getAppConfig(), parseMessageId(id), parseTermMaterialExclusions(exclusions), parseTermGlossarySelection(glossarySelection)));
+  handleResult(IPC_CHANNELS.termsGetRun, (_event, id) => getTermExtraction(requireRepo(), parseMessageId(id)));
+  handleResult(IPC_CHANNELS.termsLatestRun, (_event, id) => latestTermExtraction(requireRepo(), parseMessageId(id)));
+  handleResult(IPC_CHANNELS.termsCancel, (_event, id) => cancelTermExtraction(requireRepo(), parseMessageId(id)));
+  handleResult(IPC_CHANNELS.researchStartMaterialRefinement, (_event, input) => startMaterialRefinement(requireRepo(), getAppConfig(), input));
+  handleResult(IPC_CHANNELS.researchGetMaterialRefinement, (_event, id) => getMaterialRefinement(requireRepo(), parseMessageId(id)));
+  handleResult(IPC_CHANNELS.researchCancelMaterialRefinement, (_event, id) => cancelMaterialRefinement(requireRepo(), parseMessageId(id)));
   handleResult(IPC_CHANNELS.researchStartFootnoteAnalysis, (_event, input) => startFootnoteAnalysis(requireRepo(), getAppConfig(), input));
   handleResult(IPC_CHANNELS.researchGetFootnoteAnalysis, (_event, id) => getFootnoteAnalysis(requireRepo(), parseMessageId(id)));
   handleResult(IPC_CHANNELS.researchCancelFootnoteAnalysis, (_event, id) => cancelFootnoteAnalysis(requireRepo(), parseMessageId(id)));
@@ -163,7 +195,12 @@ export function registerIpcHandlers(): void {
   handleRaw(IPC_CHANNELS.appCheckUpdates, () => { void checkAppUpdates(); });
   handleRaw(IPC_CHANNELS.appGetVersion, () => app.getVersion());
   handleRaw(IPC_CHANNELS.appGetConfig, () => getAppConfig());
-  handleRaw(IPC_CHANNELS.appSetConfig, (_event, patch) => setAppConfig(patch));
+  handleRaw(IPC_CHANNELS.appSetConfig, (_event, patch) => {
+    const previous = getAppConfig().language;
+    const config = setAppConfig(patch);
+    if (config.language !== previous) installApplicationMenu(config.language);
+    return config;
+  });
   handleRaw(IPC_CHANNELS.appProbeAgents, () => probeAgentsCached());
   handleRaw(IPC_CHANNELS.appGetLoginInstruction, (_event, agentId) => {
     return getAgentLoginInstruction(parseAgentId(agentId));
@@ -185,6 +222,14 @@ export function registerIpcHandlers(): void {
     }
     app.showAboutPanel();
   });
+  handleRaw(IPC_CHANNELS.appCopyText, (_event, text) => {
+    if (typeof text !== "string") throw new AppError("invalid_text", "복사할 텍스트가 올바르지 않습니다.");
+    clipboard.writeText(text);
+  });
+  handleRaw(IPC_CHANNELS.appOpenChatSource, async (_event, url) => {
+    if (typeof url !== "string") throw new AppError("invalid_url", "올바른 웹 주소가 아닙니다.");
+    await openChatSource(url);
+  });
   handleRaw(IPC_CHANNELS.appOpenExternal, async (_event, url) => {
     if (typeof url !== "string") {
       throw new AppError("invalid_url", "https 주소만 열 수 있습니다.");
@@ -205,7 +250,8 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.projectOpen, async (_event, packagePath) => {
     return openProjectInteractive(parseOptionalPath(packagePath));
   });
-  handleResult(IPC_CHANNELS.projectClose, () => {
+  handleResult(IPC_CHANNELS.projectClose, async () => {
+    await leaveOnlineWorkspace();
     closeProject();
   });
   handleRaw(IPC_CHANNELS.projectGetCurrent, () => getCurrentSummary());
@@ -222,7 +268,7 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.projectCreateFromPaste, async (_event, input) => {
     return createFromPaste(parseCreateFromPasteInput(input));
   });
-  handleResult(IPC_CHANNELS.projectSeedDemo, () => seedDemo());
+  handleResult(IPC_CHANNELS.projectSeedDemo, async () => { await leaveOnlineWorkspace(); return seedDemo(); });
 
   handleResult(IPC_CHANNELS.homeGet, () => getHome());
   handleResult(IPC_CHANNELS.documentCreate, (_event, input) => {
@@ -232,6 +278,7 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.documentGetMetadata, (_event, documentNodeId) => {
     return requireRepo().getDocumentMetadata(parseDocumentNodeId(documentNodeId));
   });
+  handleResult(IPC_CHANNELS.documentMove, (_event, input) => requireRepo().moveDocument(parseMoveDocumentInput(input)));
   handleResult(IPC_CHANNELS.documentUpdateMetadata, (_event, input) => {
     return requireRepo().updateDocumentMetadata(parseUpdateDocumentMetadataInput(input));
   });
@@ -322,8 +369,8 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.knowledgeSetContextPriority, (_event, input) => {
     return requireRepo().setContextItemPriority(parseSetContextItemPriorityInput(input));
   });
-  handleResult(IPC_CHANNELS.knowledgeArchiveContext, (_event, input) => {
-    return requireRepo().archiveContextItem(parseContextItemCasInput(input));
+  handleResult(IPC_CHANNELS.knowledgeDeleteContext, (_event, input) => {
+    return requireRepo().deleteContextItem(parseContextItemCasInput(input));
   });
   handleResult(IPC_CHANNELS.knowledgeCreateUncertainty, (_event, input) => {
     return requireRepo().createUncertainty(parseCreateUncertaintyInput(input));

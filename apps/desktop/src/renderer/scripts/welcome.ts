@@ -1,4 +1,6 @@
+import { t, uiText, ui } from "./i18n";
 import type { RecentProject } from "../../shared/munhae-api";
+import { configureOnlineProjects } from "./online-projects-ui";
 import {
   $,
   $$,
@@ -29,7 +31,7 @@ function renderRecent(): void {
   const seed = $("#btnSeedDemo");
   if (seed) seed.hidden = recent.length > 0;
   if (!recent.length) {
-    box.innerHTML = '<p class="muted" style="padding:8px 10px;font-size:12px">최근 프로젝트가 없습니다. 새 프로젝트를 만들거나 훈민정음 데모를 여세요.</p>';
+    box.innerHTML = uiText('<p class="muted" style="padding:8px 10px;font-size:12px">최근 프로젝트가 없습니다. 새 프로젝트를 만들거나 훈민정음 데모를 여세요.</p>');
     bindItems();
     return;
   }
@@ -39,7 +41,7 @@ function renderRecent(): void {
       const selCls = i === 0 ? " is-sel" : "";
       return `<button class="w-item${selCls}${missing}" type="button" data-recent="${esc(r.packagePath)}" data-od-id="recent-project">
         <div class="w-ico" aria-hidden="true">文</div>
-        <div><b>${esc(r.displayName)}</b><span class="muted mono">${esc(shortPath(r.packagePath))}${r.missing ? " · 없음" : ""}</span></div>
+        <div><b>${esc(r.displayName)}</b><span class="muted mono">${esc(shortPath(r.packagePath))}${r.missing ? t(" · 없음") : ""}</span></div>
         <span class="w-meta">${esc(fmtWhen(r.lastOpenedAt))}</span>
       </button>`;
     })
@@ -48,7 +50,7 @@ function renderRecent(): void {
 }
 
 function bindItems(): void {
-  items = $$(".w-item");
+  items = $$("#recentList .w-item");
   items.forEach((it, i) => {
     it.addEventListener("mouseenter", () => setSel(i));
   });
@@ -63,12 +65,12 @@ function setSel(i: number): void {
 
 async function openRecent(path: string, missing: boolean): Promise<void> {
   if (missing) {
-    notify("이 경로의 프로젝트를 찾을 수 없습니다", "최근 프로젝트");
+    notify(t("이 경로의 프로젝트를 찾을 수 없습니다"), t("최근 프로젝트"));
     return;
   }
   const result = await api.project.open(path);
   if (!result.ok) {
-    notify(result.error.message, "프로젝트 열기");
+    notify(result.error.message, t("프로젝트 열기"));
     return;
   }
   if (result.data) location.href = "home.html";
@@ -76,7 +78,7 @@ async function openRecent(path: string, missing: boolean): Promise<void> {
 
 function pageKeys(e: KeyboardEvent, _m: boolean): void {
   const pal = $("#dlgPalette") as HTMLDialogElement | null;
-  if (pal?.open) return;
+  if (pal?.open || document.querySelector("dialog[open]")) return;
   if (e.target instanceof HTMLElement && e.target.matches("input,textarea,button,[contenteditable=true]")) return;
   if (e.key === "ArrowDown") {
     e.preventDefault();
@@ -91,25 +93,39 @@ function pageKeys(e: KeyboardEvent, _m: boolean): void {
 }
 
 async function boot(): Promise<void> {
+  const onlineProjects = configureOnlineProjects(api.onlineProjects);
   const renderAccount = (state: Awaited<ReturnType<typeof api.auth.getState>>) => {
-    if (!state.ok) return;
+    if (!state.ok) {
+      onlineProjects.accountUnavailable(state.error.message);
+      return;
+    }
+    onlineProjects.accountChanged(state.data);
     const user = state.data.user;
     const label = $("#welcomeAccountLabel");
     const link = $("#welcomeAccountLink");
     const signup = $("#welcomeSignUpLink");
-    if (label) label.textContent = user ? `${user.displayName || user.email} · 로그인됨` : "문해 계정";
+    if (label) label.textContent = user ? ui`${user.displayName || user.email} · 로그인됨` : t("문해 계정");
     if (link) {
-      link.textContent = user ? "계정 설정" : "로그인";
+      link.textContent = user ? t("계정 설정") : t("로그인");
       link.setAttribute("href", user ? "settings.html#account" : "account.html");
     }
     if (signup) signup.hidden = !!user;
   };
-  void api.auth.getState().then(renderAccount).catch(() => undefined);
-  api.auth.onStateChanged((state) => renderAccount({ ok: true, data: state }));
+  let accountEvent = 0;
+  const accountRequest = accountEvent;
+  api.auth.onStateChanged((state) => {
+    accountEvent += 1;
+    renderAccount({ ok: true, data: state });
+  });
+  void api.auth.getState().then(state => {
+    if (accountRequest === accountEvent) renderAccount(state);
+  }).catch(() => {
+    if (accountRequest === accountEvent) onlineProjects.accountUnavailable(t("계정을 확인하지 못했습니다."));
+  });
   const ver = $("#verLine");
   try {
     const v = await api.app.getVersion();
-    if (ver) ver.textContent = `버전 ${v}`;
+    if (ver) ver.textContent = ui`버전 ${v}`;
   } catch {
     /* keep fallback */
   }
@@ -119,7 +135,7 @@ async function boot(): Promise<void> {
     recent = [];
   }
   renderRecent();
-  $$(".w-act").forEach((b) => {
+  $$(".w-act[data-cmd]").forEach((b) => {
     b.addEventListener("click", () => {
       void run(b.dataset.cmd ?? "");
     });

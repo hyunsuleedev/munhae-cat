@@ -34,6 +34,16 @@
 .account-setting-row p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .account-setting-row > div { flex: 1 1 180px; }
 .account-setting-row > button { flex: 0 0 auto; }
+.account-billing { width: 100%; padding: 18px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.account-billing[hidden] { display: none; }
+.account-billing-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.account-billing h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.account-billing-price { margin: 8px 0 0; font-size: 13px; }
+.account-billing-detail, .account-billing-error { margin: 8px 0 0; font-size: 11px; line-height: 1.7; color: var(--muted); }
+.account-billing-error { color: var(--danger); }
+.account-billing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.account-billing-actions .account-link { margin-left: auto; }
+.account-billing + .account-setting-row { border-top: 0; }
 #accountUserEmail { color: var(--muted); overflow-wrap: anywhere; max-width: 100%; }
 .account-profile > .btn { width: 100%; min-height: 36px; }
 .account-google { display: grid; gap: 12px; }
@@ -44,3 +54,6 @@
 .account-divider::before, .account-divider::after { content: ""; height: 1px; flex: 1; background: var(--border); }
 #accountContinue { margin-top: 12px; }
 @media (max-width: 520px) { .account-layout { padding: 52px 16px 24px; } .account-card { padding: 24px; } }
+
+.account-language { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-bottom: 20px; color: var(--muted); font-size: 12px; }
+.account-language .select { width: auto; min-width: 112px; }

@@ -1038,7 +1038,6 @@ describe("AI punctuation proposals", () => {
       documentNodeId: value.document.id,
       punctuatedText: "天地玄黃；宇宙洪荒。",
       structureMode: "prose",
-      changeSummary: "사용자 변경",
       expectedLockVersion: current.punctuation.lockVersion,
     });
     const beforeApply = counts(value.db);

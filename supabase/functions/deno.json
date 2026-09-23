@@ -1,0 +1,11 @@
+{
+  "imports": {
+    "stripe": "npm:stripe@22.6.2",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.116.0"
+  },
+  "compilerOptions": { "strict": true },
+  "tasks": {
+    "check": "deno check billing/index.ts stripe-webhook/index.ts",
+    "test": "deno test tests/"
+  }
+}

@@ -4,74 +4,91 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
-<title>문맥 편집 — 문해 Munhae Studio</title>
+<title data-i18n="문맥 편집 — 문해 Munhae Studio">문맥 편집 — 문해 Munhae Studio</title>
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
 <link rel="stylesheet" href="./styles/context.css">
 <script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
 </head>
 <body data-auth-pending>
-<nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
 <div class="win" id="win">
-  <aside class="sidebar" id="sidebar" aria-label="탐색">
+  <aside class="sidebar" id="sidebar" aria-label="탐색" data-i18n-aria-label="탐색">
     <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
     <div class="sb-scroll" id="sbTree"></div>
-    <div class="sb-foot"><a class="sb-account" href="settings.html#account" aria-label="계정 설정 열기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></svg><span class="sb-account-label">문해 계정</span></a></div>
+    <div class="sb-foot"><a class="sb-account" href="settings.html#account" aria-label="계정 설정 열기" data-i18n-aria-label="계정 설정 열기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></svg><span class="sb-account-label" data-i18n="문해 계정">문해 계정</span></a></div>
   </aside>
   <div class="main">
     <header class="titlebar">
-      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" aria-label="사이드바 토글"></button></div>
-      <div class="tb-c"><span>문맥 편집</span><small id="contextNodeName"></small></div>
-      <div class="tb-r"><button class="btn" id="openSource" type="button" hidden>원문 열기</button></div>
+      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" data-i18n-title="사이드바 (⌃⌘S)" aria-label="사이드바 토글" data-i18n-aria-label="사이드바 토글"></button></div>
+      <div class="tb-c"><span data-i18n="문맥 편집">문맥 편집</span><small id="contextNodeName"></small></div>
+      <div class="tb-r"><button class="btn" id="openSource" type="button" hidden data-i18n="원문 열기">원문 열기</button><button class="tb is-on" id="tbCtx" type="button" title="문맥·AI 패널 (⌥⌘I)" aria-label="문맥·AI 패널 토글" aria-controls="contextInspector" aria-expanded="true" data-i18n-title="문맥·AI 패널 (⌥⌘I)" data-i18n-aria-label="문맥·AI 패널 토글"></button></div>
     </header>
-    <main class="content context-content">
+    <div class="context-workspace"><main class="content context-content">
       <div class="context-page" id="contextPage" hidden>
-        <header class="context-heading">
-          <p class="context-path" id="contextPath"></p>
-        </header>
         <div class="context-layout">
-          <section class="context-writing" aria-label="직접 문맥">
-            <div class="context-section-head"><h2 id="directContextTitle">이 문서의 문맥</h2><span>직접 작성</span></div>
+          <section class="context-writing" aria-label="직접 문맥" data-i18n-aria-label="직접 문맥">
+            <header class="context-heading">
+              <div class="context-heading-title"><h2 id="directContextTitle" data-i18n="이 문서의 문맥">이 문서의 문맥</h2><p class="context-path" id="contextPath"></p></div>
+              <nav class="context-pagination" aria-label="문맥 넘기기" data-i18n-aria-label="문맥 넘기기">
+                <button class="btn btn-ghost" id="previousContext" type="button" aria-label="이전 문맥" data-i18n-aria-label="이전 문맥" aria-controls="contextEditors" disabled><span aria-hidden="true">‹</span></button>
+                <span class="context-page-count" id="contextPageCount" role="status" aria-live="polite" aria-atomic="true">1 / 1</span>
+                <button class="btn btn-ghost" id="nextContext" type="button" aria-label="다음 문맥" data-i18n-aria-label="다음 문맥" aria-controls="contextEditors" disabled><span aria-hidden="true">›</span></button>
+              </nav>
+              <button class="btn context-add" id="addContext" type="button"><span aria-hidden="true">＋</span><span data-i18n="문맥 추가">문맥 추가</span></button>
+            </header>
             <div id="contextEditors" class="context-editors"></div>
-            <button class="btn context-add" id="addContext" type="button"><span aria-hidden="true">＋</span> 문맥 추가</button>
           </section>
-          <aside class="context-rail" aria-label="문맥 적용 안내와 상속">
+          <aside class="context-rail" aria-label="문맥 적용 안내와 상속" data-i18n-aria-label="문맥 적용 안내와 상속">
             <section class="context-scope">
-              <span class="context-eyebrow">적용 범위</span>
-              <h2>이곳의 배경을 쓰고,<br>필요한 곳에 이어 주세요.</h2>
-              <div class="context-scope-tree" aria-hidden="true"><span><i></i><span id="currentScopeLabel">현재 문서</span></span><span><i></i>하위 폴더·문서</span></div>
-              <p>문맥마다 하위 적용 여부와 참고 조건을 정할 수 있습니다. 문서별 참고 패널에서 제외한 자료는 해당 문서의 AI 요청에 포함되지 않습니다.</p>
+              <span class="context-eyebrow" data-i18n="적용 범위">적용 범위</span>
+              <h2><span data-i18n="이곳의 배경을 쓰고,">이곳의 배경을 쓰고,</span><br><span data-i18n="필요한 곳에 이어 주세요.">필요한 곳에 이어 주세요.</span></h2>
+              <div class="context-scope-tree" aria-hidden="true"><span><i></i><span id="currentScopeLabel" data-i18n="현재 문서">현재 문서</span></span><span><i></i><span data-i18n="하위 폴더·문서">하위 폴더·문서</span></span></div>
+              <p data-i18n="문맥마다 하위 적용 여부와 참고 조건을 정할 수 있습니다. 문서별 참고 패널에서 제외한 자료는 해당 문서의 AI 요청에 포함되지 않습니다.">문맥마다 하위 적용 여부와 참고 조건을 정할 수 있습니다. 문서별 참고 패널에서 제외한 자료는 해당 문서의 AI 요청에 포함되지 않습니다.</p>
             </section>
-            <section class="context-reference-section" id="documentDescriptions" hidden aria-label="문서 설명"></section>
+            <section class="context-reference-section" id="documentDescriptions" hidden aria-label="문서 설명" data-i18n-aria-label="문서 설명"></section>
             <section class="context-reference-section" aria-labelledby="inheritedTitle">
-              <h2 id="inheritedTitle">상속된 문맥 <span id="inheritedCount">0</span></h2>
-              <p class="muted context-help">상위 폴더·문서에서 하위 적용을 켠 문맥입니다. 현재 문서에서의 포함 상태를 함께 표시합니다.</p>
+              <h2 id="inheritedTitle"><span data-i18n="상속된 문맥 ">상속된 문맥 </span><span id="inheritedCount">0</span></h2>
+              <p class="muted context-help" data-i18n="상위 폴더·문서에서 하위 적용을 켠 문맥입니다. 현재 문서에서의 포함 상태를 함께 표시합니다.">상위 폴더·문서에서 하위 적용을 켠 문맥입니다. 현재 문서에서의 포함 상태를 함께 표시합니다.</p>
               <div id="inheritedContexts"></div>
             </section>
             <section class="context-reference-section" id="selectedReferences" hidden aria-labelledby="selectedTitle">
-              <h2 id="selectedTitle">직접 가져온 참고 자료 <span id="selectedCount">0</span></h2>
-              <p class="muted context-help">문서별 참고 패널에서 따로 선택한 자료입니다.</p>
+              <h2 id="selectedTitle"><span data-i18n="직접 가져온 참고 자료 ">직접 가져온 참고 자료 </span><span id="selectedCount">0</span></h2>
+              <p class="muted context-help" data-i18n="문서별 참고 패널에서 따로 선택한 자료입니다.">문서별 참고 패널에서 따로 선택한 자료입니다.</p>
               <div id="selectedContexts"></div>
             </section>
-            <section class="context-reference-section context-materials-link" aria-label="프로젝트 자료 관리">
-              <p class="muted context-help">프로젝트 전체의 문맥·코멘트·용어집을 모아 보려면</p>
-              <button class="btn btn-ghost" id="openMaterials" type="button">번역 자료에서 전체 보기</button>
+            <section class="context-reference-section context-materials-link" aria-label="프로젝트 자료 관리" data-i18n-aria-label="프로젝트 자료 관리">
+              <p class="muted context-help" data-i18n="프로젝트 전체의 문맥·코멘트·용어집을 모아 보려면">프로젝트 전체의 문맥·코멘트·용어집을 모아 보려면</p>
+              <button class="btn btn-ghost" id="openMaterials" type="button" data-i18n="번역 자료에서 전체 보기">번역 자료에서 전체 보기</button>
             </section>
           </aside>
         </div>
       </div>
-      <p class="context-loading muted" id="contextLoading" role="status">문맥을 불러오는 중…</p>
+      <p class="context-loading muted" id="contextLoading" role="status" data-i18n="문맥을 불러오는 중…">문맥을 불러오는 중…</p>
     </main>
+    <aside id="contextInspector" class="context-inspector" aria-label="문맥 AI 채팅" data-i18n-aria-label="문맥 AI 채팅">
+      <div class="context-inspector-tabs" role="tablist"><button type="button" role="tab" data-context-tab="chat" aria-selected="true" data-i18n="AI 채팅">AI 채팅</button><button type="button" role="tab" data-context-tab="references" aria-selected="false" data-i18n="참고 문맥">참고 문맥</button></div>
+      <section id="contextChatPanel" class="context-chat-panel" role="tabpanel">
+        <div class="context-chat-heading"><label for="contextChatNote" data-i18n="대화할 문맥">대화할 문맥</label><select class="select" id="contextChatNote"></select><button class="btn btn-ghost btn-sm" id="contextChatClear" type="button" data-i18n="새 대화">새 대화</button></div>
+        <div id="contextChatList" class="context-chat-list" role="log" aria-live="polite"></div>
+        <form id="contextChatForm" class="context-chat-compose">
+          <span class="muted" id="contextChatModel"></span><details class="chat-scope-info"><summary data-i18n="참고하는 자료">참고하는 자료</summary><p class="muted" data-i18n="선택한 노트의 현재 편집 내용을 참고합니다. 저장하지 않은 내용도 포함됩니다.">선택한 노트의 현재 편집 내용을 참고합니다. 저장하지 않은 내용도 포함됩니다.</p></details>
+          <textarea class="textarea" id="contextChatInput" rows="3" maxlength="4000" aria-label="문맥에 대한 질문" data-i18n-aria-label="문맥에 대한 질문" placeholder="이 문맥에 대해 질문하거나 수정을 요청하세요" data-i18n-placeholder="이 문맥에 대해 질문하거나 수정을 요청하세요"></textarea>
+          <p id="contextChatStatus" role="status"></p><button class="btn btn-sm" id="contextChatReview" type="button" hidden data-i18n="수정안 검토">수정안 검토</button>
+          <div class="context-chat-actions"><button class="btn btn-sm" id="contextChatRefine" type="button" data-i18n="AI로 다듬기">AI로 다듬기</button><span class="sp"></span><button class="btn btn-sm" id="contextChatCancel" type="button" hidden data-i18n="취소">취소</button><button class="btn btn-primary btn-sm" id="contextChatSend" type="submit"><span data-i18n="보내기">보내기</span> <kbd>⌘↩</kbd></button></div>
+        </form>
+      </section>
+      <section id="contextReferencesPanel" class="context-references-panel" role="tabpanel" hidden></section>
+    </aside></div>
   </div>
   <footer class="statusbar">
     <span class="mono" id="sbPath"></span>
     <span id="contextSaveStatus" role="status" aria-live="polite"></span>
     <span class="sp"></span>
     <span id="sbAgent"><i class="dot"></i>AI</span>
-    <button id="sbPalette" type="button" title="명령 검색">⌘K</button>
+    <button id="sbPalette" type="button" title="명령 검색" data-i18n-title="명령 검색">⌘K</button>
   </footer>
 </div>
-<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle" data-i18n="문해">문해</b><span id="nMsg"></span></div></div>
 
 </body>
 </html>

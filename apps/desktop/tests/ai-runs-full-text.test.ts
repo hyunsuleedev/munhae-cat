@@ -18,6 +18,7 @@ import {
   getTranslationRun,
   cancelAllAiRuns,
   hasActiveAiRuns,
+  registerAiPersistenceHook,
 } from "../src/main/ai-runs";
 import { stopAgentToolBridge } from "../src/main/agent-tool-bridge";
 const dirs: string[] = [];
@@ -55,7 +56,9 @@ function fixture() {
     })),
     completeFullTextRun: vi.fn(() => ({ version: { versionId: "v1" } })),
     prepareAlignment: vi.fn(() => "alignment skill"),
-    completeAlignment: vi.fn(),
+    submitAlignment: vi.fn(),
+    checkAlignment: vi.fn(() => ({ revision: "r1", issues: [], sentences: [], canFinish: true })),
+    finishAlignment: vi.fn(() => ({ state: "ready" })),
     finishFullTextRun: vi.fn(),
     failAlignment: vi.fn(),
     failTranslationRun: vi.fn(),
@@ -91,9 +94,9 @@ function result(): AgentRunResult {
     usage: { inputTokens: 1, outputTokens: 1 },
   };
 }
-async function submit(request: AgentRunRequest, body: string) {
+async function submit(request: AgentRunRequest, body: string, command?: string) {
   const e = request.appTool!.env;
-  return fetch(e.MUNHAE_TOOL_URL!, {
+  return fetch(command ? e.MUNHAE_TOOL_URL!.replace(/[^/]+$/, command) : e.MUNHAE_TOOL_URL!, {
     method: "POST",
     headers: {
       authorization: `Bearer ${e.MUNHAE_TOOL_GRANT}`,
@@ -102,6 +105,12 @@ async function submit(request: AgentRunRequest, body: string) {
     },
     body,
   });
+}
+async function finish(request: AgentRunRequest) {
+  const checked = await submit(request, "{}", "check-alignment");
+  expect(checked.status).toBe(200);
+  const report = await checked.json();
+  expect((await submit(request, JSON.stringify({ revision: report.revision, outcome: "complete" }), "finish-alignment")).status).toBe(200);
 }
 async function done() {
   const until = Date.now() + 3000;
@@ -117,7 +126,7 @@ afterEach(async () => {
   while (repos.length) repos.pop()!.close();
   while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true });
 });
-it.each(["codex", "antigravity"] as const)("%s saves whole translation before a separate fresh alignment request with a new one-use grant", async (agentId) => {
+it.each(["codex", "antigravity"] as const)("%s saves whole translation before a separate fresh alignment request with a new interactive alignment grant", async (agentId) => {
   const repo = fixture();
   let first: AgentRunRequest | undefined;
   runtime.runAgentRuntime.mockImplementation(
@@ -141,6 +150,8 @@ it.each(["codex", "antigravity"] as const)("%s saves whole translation before a 
         );
         expect((await submit(first, text)).status).not.toBe(200);
         expect((await submit(request, alignment)).status).toBe(200);
+        expect((await submit(request, alignment)).status).toBe(200);
+        await finish(request);
         expect((await submit(request, alignment)).status).toBe(409);
       }
       return { ...result(), agentId };
@@ -155,7 +166,7 @@ it.each(["codex", "antigravity"] as const)("%s saves whole translation before a 
   await done();
   expect(runtime.runAgentRuntime).toHaveBeenCalledTimes(2);
   expect(runtime.resumeAgentRuntime).not.toHaveBeenCalled();
-  expect(repo.completeAlignment).toHaveBeenCalledWith("v1", alignment);
+  expect(repo.submitAlignment).toHaveBeenCalledWith("v1", alignment);
   expect(repo.finishFullTextRun).toHaveBeenCalledWith(
     expect.objectContaining({ rawResponse: text, resolvedModel: "test-model" }),
   );
@@ -187,6 +198,28 @@ it("preserves submitted translation when the second request fails", async () => 
   );
   expect(getTranslationRun("run").detail).toContain("번역은 저장");
 });
+it("does not launch alignment before PostgreSQL accepts the newly submitted translation", async () => {
+  const repo = fixture();
+  const persist = vi.fn(async () => {});
+  persist.mockImplementationOnce(async () => {}).mockRejectedValueOnce(new Error("online save rejected"));
+  const unregister = registerAiPersistenceHook(persist, { beforeLaunch: true });
+  runtime.runAgentRuntime.mockImplementation(async (_agent: string, request: AgentRunRequest) => {
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect((await submit(request, text)).status).toBe(200);
+    return result();
+  });
+  try {
+    await startTranslationRun(repo as unknown as ProjectRepo, config, { documentNodeId: "doc", agentId: "codex" }, sessions);
+    await done();
+    expect(runtime.runAgentRuntime).toHaveBeenCalledTimes(1);
+    expect(repo.completeFullTextRun).toHaveBeenCalledTimes(1);
+    expect(repo.failAlignment).toHaveBeenCalledWith("v1", expect.any(String));
+    expect(repo.failTranslationRun).not.toHaveBeenCalled();
+    expect(repo.finishFullTextRun).toHaveBeenCalledWith(expect.objectContaining({ rawResponse: text }));
+    expect(getTranslationRun("run").detail).toContain("번역은 저장");
+    expect(persist).toHaveBeenCalledTimes(3);
+  } finally { unregister(); }
+});
 it("does not start alignment without a submitted translation", async () => {
   const repo = fixture();
   runtime.runAgentRuntime.mockResolvedValue(result());
@@ -202,6 +235,7 @@ it("does not start alignment without a submitted translation", async () => {
   expect(repo.failTranslationRun).toHaveBeenCalled();
   expect(getTranslationRun("run").state).toBe("failed");
 });
+
 it("retries only alignment and closes a failed retry without replacing translation", async () => {
   const repo = fixture();
   runtime.runAgentRuntime.mockRejectedValue(Error("retry failed"));
@@ -255,6 +289,7 @@ it.skipIf(!process.versions.electron)("revises from selected comments through th
       expect(request.prompt).toContain(revised);
       expect((await submit(request, JSON.stringify({ schemaVersion: 1, versionId: current.versionId,
         links: [{ sentenceId: "T1", quotes: [{ text: original, occurrence: 1 }], needsReview: false }] }))).status).toBe(200);
+      await finish(request);
     }
     return result();
   });
@@ -273,4 +308,38 @@ it.skipIf(!process.versions.electron)("revises from selected comments through th
   const diff = repo.compareVersions({ documentNodeId: doc.id, kind: "translation", stage: "translation", baseVersionId, targetVersionId: current.versionId });
   expect(diff.chunks.some(chunk => chunk.type === "add" && chunk.text.includes("화자"))).toBe(true);
   expect(repo.listReviewComments(doc.id).map(comment => comment.translationVersionId)).toEqual([baseVersionId, baseVersionId]);
+});
+
+it.each([false, true])("uses separate alignment provider, model and effort (retry=%s)", async (retry) => {
+  const repo = fixture();
+  const settings = { ...config, alignment: { agentId: "claude" as const, model: "claude-sonnet-4-6", reasoning: "low", serviceTier: null } };
+  runtime.runAgentRuntime.mockImplementation(async (agentId: string, request: AgentRunRequest) => {
+    const isAlignment = request.appTool?.env.MUNHAE_TOOL_COMMAND === "submit-alignment";
+    expect(agentId).toBe(isAlignment ? "claude" : "codex");
+    expect(request.reasoningEffort).toBe(isAlignment ? "low" : "medium");
+    if (isAlignment) expect(request.model).toBe("claude-sonnet-4-6");
+    expect((await submit(request, isAlignment ? alignment : text)).status).toBe(200);
+    if (isAlignment) await finish(request);
+    return { ...result(), agentId };
+  });
+  await startTranslationRun(repo as unknown as ProjectRepo, settings, { documentNodeId: "doc", agentId: "codex", ...(retry ? { alignmentVersionId: "v1" } : {}) }, sessions);
+  await done();
+  expect(runtime.runAgentRuntime).toHaveBeenCalledTimes(retry ? 1 : 2);
+  expect(repo.submitAlignment).toHaveBeenCalled();
+  if (retry) expect(repo.beginFullTextRun).toHaveBeenCalledWith(expect.objectContaining({ agentId: "claude", requestedModel: "claude-sonnet-4-6", reasoningLevel: "low" }));
+});
+
+it("does not declare alignment complete when a provider only inputs links without checking and finishing", async () => {
+  const repo = fixture();
+  runtime.runAgentRuntime.mockImplementation(async (_a: string, request: AgentRunRequest) => {
+    const isAlignment = request.appTool?.env.MUNHAE_TOOL_COMMAND === "submit-alignment";
+    expect((await submit(request, isAlignment ? alignment : text)).status).toBe(200);
+    return result();
+  });
+  await startTranslationRun(repo as unknown as ProjectRepo, config, { documentNodeId: "doc", agentId: "codex" }, sessions);
+  await done();
+  expect(repo.submitAlignment).toHaveBeenCalled();
+  expect(repo.finishAlignment).not.toHaveBeenCalled();
+  expect(repo.failAlignment).toHaveBeenCalled();
+  expect(getTranslationRun("run").detail).toContain("원문 연결은 완료하지 못해");
 });

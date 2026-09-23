@@ -15,6 +15,7 @@ const fakeProjects = vi.hoisted(() => {
       title,
       packagePath,
       close: vi.fn(),
+      setTranslationLanguage: vi.fn(),
       getHome: () => ({ project: { id: projectId } }),
     };
   }

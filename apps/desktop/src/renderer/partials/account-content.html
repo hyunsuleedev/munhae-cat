@@ -1,42 +1,53 @@
-    <button class="btn account-back" type="button" id="accountBack" hidden>← 프로젝트로 돌아가기</button>
-      <header><p class="account-eyebrow">문해 계정</p><h1 id="accountTitle">계정을 확인하고 있습니다</h1><p id="accountDescription">잠시만 기다려 주세요.</p></header>
+    <button class="btn account-back" type="button" id="accountBack" hidden data-i18n="← 프로젝트로 돌아가기">← 프로젝트로 돌아가기</button>
+      <header><p class="account-eyebrow" data-i18n="문해 계정">문해 계정</p><h1 id="accountTitle" data-i18n="계정을 확인하고 있습니다">계정을 확인하고 있습니다</h1><p id="accountDescription" data-i18n="잠시만 기다려 주세요.">잠시만 기다려 주세요.</p></header>
       <div id="accountStatus" class="account-status" role="status" aria-live="polite" hidden></div>
-      <p id="accountPersistence" class="account-notice" hidden>이 기기에서는 로그인 정보를 안전하게 저장할 수 없어 앱을 종료하면 다시 로그인해야 합니다.</p>
+      <p id="accountPersistence" class="account-notice" hidden data-i18n="이 기기에서는 로그인 정보를 안전하게 저장할 수 없어 앱을 종료하면 다시 로그인해야 합니다.">이 기기에서는 로그인 정보를 안전하게 저장할 수 없어 앱을 종료하면 다시 로그인해야 합니다.</p>
       <div id="accountGoogle" class="account-google" hidden>
-        <button class="btn account-google-button" id="accountGoogleSignIn" type="button"><img alt="">Google로 계속하기</button>
-        <button class="account-link" id="accountGoogleCancel" type="button" hidden>구글 로그인 취소</button>
-        <div class="account-divider"><span>또는 이메일로 계속</span></div>
+        <button class="btn account-google-button" id="accountGoogleSignIn" type="button"><img alt=""><span data-i18n="Google로 계속하기">Google로 계속하기</span></button>
+        <button class="account-link" id="accountGoogleCancel" type="button" hidden data-i18n="구글 로그인 취소">구글 로그인 취소</button>
+        <div class="account-divider"><span data-i18n="또는 이메일로 계속">또는 이메일로 계속</span></div>
       </div>
       <form id="accountForm" hidden>
-        <div class="field" id="accountNameField"><label for="accountName">이름</label><input class="input" id="accountName" name="name" autocomplete="name" maxlength="80" required></div>
-        <div class="field" id="accountEmailField"><label for="accountEmail">이메일</label><input class="input" id="accountEmail" name="email" type="email" autocomplete="username" maxlength="254" required></div>
-        <div class="field" id="accountCurrentPasswordField"><label for="accountCurrentPassword">현재 비밀번호</label><input class="input" id="accountCurrentPassword" name="current-password" type="password" autocomplete="current-password" maxlength="256" required></div>
-        <div class="field" id="accountPasswordField"><div class="account-password-label"><label for="accountPassword" id="accountPasswordLabel">비밀번호</label><button class="account-link" type="button" id="accountTogglePassword" aria-controls="accountPassword" aria-pressed="false">표시</button></div><input class="input" id="accountPassword" name="password" type="password" autocomplete="current-password" maxlength="256" required><span class="field-help" id="accountPasswordHelp" hidden>8자 이상으로 입력하세요.</span></div>
-        <div class="field" id="accountPasswordConfirmField"><label for="accountPasswordConfirm">비밀번호 확인</label><input class="input" id="accountPasswordConfirm" name="password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="256" required></div>
-        <div class="field" id="accountCodeField"><label for="accountCode">이메일 인증번호</label><input class="input account-code" id="accountCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="10" pattern="[0-9]{6,10}" required><span class="field-help">받은 메일의 인증번호를 그대로 입력하세요.</span></div>
-        <button class="btn btn-primary account-submit" type="submit" id="accountSubmit">로그인</button>
+        <div class="field" id="accountNameField"><label for="accountName" data-i18n="이름">이름</label><input class="input" id="accountName" name="name" autocomplete="name" maxlength="80" required></div>
+        <div class="field" id="accountEmailField"><label for="accountEmail" data-i18n="이메일">이메일</label><input class="input" id="accountEmail" name="email" type="email" autocomplete="username" maxlength="254" required></div>
+        <div class="field" id="accountCurrentPasswordField"><label for="accountCurrentPassword" data-i18n="현재 비밀번호">현재 비밀번호</label><input class="input" id="accountCurrentPassword" name="current-password" type="password" autocomplete="current-password" maxlength="256" required></div>
+        <div class="field" id="accountPasswordField"><div class="account-password-label"><label for="accountPassword" id="accountPasswordLabel" data-i18n="비밀번호">비밀번호</label><button class="account-link" type="button" id="accountTogglePassword" aria-controls="accountPassword" aria-pressed="false" data-i18n="표시">표시</button></div><input class="input" id="accountPassword" name="password" type="password" autocomplete="current-password" maxlength="256" required><span class="field-help" id="accountPasswordHelp" hidden data-i18n="8자 이상으로 입력하세요.">8자 이상으로 입력하세요.</span></div>
+        <div class="field" id="accountPasswordConfirmField"><label for="accountPasswordConfirm" data-i18n="비밀번호 확인">비밀번호 확인</label><input class="input" id="accountPasswordConfirm" name="password-confirm" type="password" autocomplete="new-password" minlength="8" maxlength="256" required></div>
+        <div class="field" id="accountCodeField"><label for="accountCode" data-i18n="이메일 인증번호">이메일 인증번호</label><input class="input account-code" id="accountCode" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" minlength="6" maxlength="10" pattern="[0-9]{6,10}" required><span class="field-help" data-i18n="받은 메일의 인증번호를 그대로 입력하세요.">받은 메일의 인증번호를 그대로 입력하세요.</span></div>
+        <button class="btn btn-primary account-submit" type="submit" id="accountSubmit" data-i18n="로그인">로그인</button>
       </form>
       <div class="account-links" id="accountModeLinks" hidden>
-        <button class="account-link" type="button" data-account-mode="signup" id="accountSignUpLink">회원가입</button>
-        <button class="account-link" type="button" data-account-mode="signin" id="accountSignInLink">로그인으로 돌아가기</button>
-        <button class="account-link" type="button" data-account-mode="reset" id="accountResetLink">비밀번호를 잊으셨나요?</button>
-        <button class="account-link" type="button" id="accountResend" hidden>인증번호 다시 받기</button>
+        <button class="account-link" type="button" data-account-mode="signup" id="accountSignUpLink" data-i18n="회원가입">회원가입</button>
+        <button class="account-link" type="button" data-account-mode="signin" id="accountSignInLink" data-i18n="로그인으로 돌아가기">로그인으로 돌아가기</button>
+        <button class="account-link" type="button" data-account-mode="reset" id="accountResetLink" data-i18n="비밀번호를 잊으셨나요?">비밀번호를 잊으셨나요?</button>
+        <button class="account-link" type="button" id="accountResend" hidden data-i18n="인증번호 다시 받기">인증번호 다시 받기</button>
       </div>
-      <section id="accountProfile" class="account-profile" aria-label="내 계정" hidden>
+      <section id="accountProfile" class="account-profile" aria-label="내 계정" data-i18n-aria-label="내 계정" hidden>
         <div class="account-identity">
           <div class="account-avatar" id="accountAvatar" aria-hidden="true">文</div>
           <div class="account-identity-copy"><b id="accountDisplayName"></b><span id="accountUserEmail"></span></div>
-          <span class="tag tag-ok">로그인됨</span>
+          <span class="tag tag-ok" data-i18n="로그인됨">로그인됨</span>
         </div>
-        <button class="btn btn-primary" type="button" id="accountContinue">프로젝트로 돌아가기</button>
+        <button class="btn btn-primary" type="button" id="accountContinue" data-i18n="프로젝트로 돌아가기">프로젝트로 돌아가기</button>
+        <section class="account-billing" id="accountBilling" aria-labelledby="accountBillingTitle" hidden>
+          <div class="account-billing-heading"><h2 id="accountBillingTitle">Premium</h2><span class="tag" id="accountBillingPlan"></span></div>
+          <p class="account-billing-price" data-i18n="월 ₩19,000">월 ₩19,000</p>
+          <p class="account-billing-detail" id="accountBillingDetail" aria-live="polite"></p>
+          <p class="account-billing-error" id="accountBillingError" role="alert" hidden></p>
+          <div class="account-billing-actions">
+            <button class="btn btn-primary" type="button" id="accountBillingCheckout" data-i18n="Premium 구독">Premium 구독</button>
+            <button class="btn" type="button" id="accountBillingPortal" data-i18n="구독 · 청구서 관리">구독 · 청구서 관리</button>
+            <button class="account-link" type="button" id="accountBillingRefresh" data-i18n="새로고침">새로고침</button>
+          </div>
+        </section>
         <div class="account-setting-row">
-          <div><h2>비밀번호</h2><p class="field-help" id="accountGooglePasswordHelp" hidden>비밀번호는 Google 계정에서 관리합니다.</p></div>
-          <button class="btn" type="button" id="accountChangePassword">비밀번호 변경</button>
+          <div><h2 data-i18n="비밀번호">비밀번호</h2><p class="field-help" id="accountGooglePasswordHelp" hidden data-i18n="비밀번호는 Google 계정에서 관리합니다.">비밀번호는 Google 계정에서 관리합니다.</p></div>
+          <button class="btn" type="button" id="accountChangePassword" data-i18n="비밀번호 변경">비밀번호 변경</button>
         </div>
         <div class="account-setting-row">
-          <div><h2>로그인 세션</h2><p>로그아웃하면 다음 사용 시 다시 로그인합니다.</p></div>
-          <button class="btn" type="button" id="accountSignOut">로그아웃</button>
+          <div><h2 data-i18n="로그인 세션">로그인 세션</h2><p data-i18n="로그아웃하면 다음 사용 시 다시 로그인합니다.">로그아웃하면 다음 사용 시 다시 로그인합니다.</p></div>
+          <button class="btn" type="button" id="accountSignOut" data-i18n="로그아웃">로그아웃</button>
         </div>
       </section>
-      <button class="btn" type="button" id="accountRetry" hidden>다시 연결</button>
-      <p class="account-footnote">문해 공식 서비스 계정입니다.<br>AI 실행에 사용하는 Codex·Claude 계정과 별도로 관리됩니다.</p>
+      <button class="btn" type="button" id="accountRetry" hidden data-i18n="다시 연결">다시 연결</button>
+      <p class="account-footnote"><span data-i18n="문해 공식 서비스 계정입니다.">문해 공식 서비스 계정입니다.</span><br><span data-i18n="AI 실행에 사용하는 Codex·Claude 계정과 별도로 관리됩니다.">AI 실행에 사용하는 Codex·Claude 계정과 별도로 관리됩니다.</span></p>

@@ -18,7 +18,9 @@ import {
   migrateProjectDb,
   PROJECT_SCHEMA_VERSION,
 } from "./migrate.ts";
-import { getRow, insertRow } from "./rows.ts";
+import { eq } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import { assertSqliteIntegrity, openSqlite, type SqliteDb } from "./sqlite.ts";
 
 export type ProjectActors = {
@@ -42,8 +44,9 @@ export function bootstrapEmptyProject(opts: {
   title: string;
   parentDir: string;
   actorDisplayName?: string;
+  projectId?: string;
 }): BootstrappedProject {
-  const projectId = createId();
+  const projectId = opts.projectId ?? createId();
   const createdAt = nowIso();
   const { packagePath } = createPackageDir({
     parentDir: opts.parentDir,
@@ -84,33 +87,29 @@ export function openProjectDb(packagePath: string): BootstrappedProject {
   try {
     assertProjectDbBaseline(dbPath);
     db = openSqlite(dbPath);
-    const schema = db.prepare("SELECT max(version) AS version FROM meta_schema_migrations").get() as {version:number};
+    const migration = db.prepare("SELECT max(version) AS version FROM meta_schema_migrations").get() as {version:number};
     // Retain backups for older translation/schema upgrades. The v4 knowledge
     // removal intentionally discards person/place data without an archive.
-    const upgrade = schema.version === 1 ? "full-text" : schema.version === 2 ? "context-without-kind" : schema.version === 3 ? "review-comments" : schema.version === 5 ? "reading-annotations" : schema.version === 6 ? "translation-materials" : null;
-    if (schema.version < PROJECT_SCHEMA_VERSION && upgrade) {
+    const upgrade = migration.version === 1 ? "full-text" : migration.version === 2 ? "context-without-kind" : migration.version === 3 ? "review-comments" : migration.version === 5 ? "reading-annotations" : migration.version === 6 ? "translation-materials" : migration.version === 7 ? "term-review" : migration.version === 8 ? "comment-references" : null;
+    if (migration.version < PROJECT_SCHEMA_VERSION && upgrade) {
       const backupPath = `${dbPath}.before-${upgrade}-${Date.now()}.bak`;
       db.exec(`VACUUM INTO '${backupPath.replaceAll("'", "''")}'`);
     }
     migrateProjectDb(db);
 
     assertSqliteIntegrity(db);
-    const project = getRow<{ id: string; title: string; created_at: string }>(
-      db,
-      `SELECT id, title, created_at FROM core_projects WHERE id = ?`,
-      manifest.projectId,
-    );
+    const project = orm(db).select({
+      id: schema.core_projects.id,
+      title: schema.core_projects.title,
+      created_at: schema.core_projects.created_at,
+    }).from(schema.core_projects).where(eq(schema.core_projects.id, manifest.projectId)).get();
     if (!project) throw new MunhaeError("invalid_project", "core_projects row missing");
     const actors = loadActors(db);
-    const policy = getRow<{ policy_id: string; current_version_id: string }>(
-      db,
-      `SELECT h.policy_id, h.current_version_id
-       FROM core_translation_policy_heads h
-       JOIN core_translation_policies p ON p.id = h.policy_id
-       WHERE p.project_id = ?
-       LIMIT 1`,
-      project.id,
-    );
+    const heads = schema.core_translation_policy_heads;
+    const policies = schema.core_translation_policies;
+    const policy = orm(db).select({ policy_id: heads.policy_id, current_version_id: heads.current_version_id })
+      .from(heads).innerJoin(policies, eq(policies.id, heads.policy_id))
+      .where(eq(policies.project_id, project.id)).limit(1).get();
     if (!policy) throw new MunhaeError("invalid_project", "translation policy missing");
     return {
       db,
@@ -140,10 +139,8 @@ export function openProjectDb(packagePath: string): BootstrappedProject {
 }
 
 export function loadActors(db: SqliteDb): ProjectActors {
-  const rows = db.prepare(`SELECT id, actor_kind FROM core_actors`).all() as Array<{
-    id: string;
-    actor_kind: string;
-  }>;
+  const rows = orm(db).select({ id: schema.core_actors.id, actor_kind: schema.core_actors.actor_kind })
+    .from(schema.core_actors).all();
   const human = rows.find((r) => r.actor_kind === "human");
   const system = rows.find((r) => r.actor_kind === "system");
   const llm = rows.find((r) => r.actor_kind === "llm");
@@ -158,32 +155,32 @@ function seedCore(
   const humanId = createId();
   const systemId = createId();
   const llmId = createId();
-  insertRow(db, "core_actors", {
+  orm(db).insert(schema.core_actors).values({
     id: systemId,
     actor_kind: "system",
     display_name: "Munhae Studio",
     subject_uri: "munhae:system",
     metadata_json: null,
     created_at: opts.createdAt,
-  });
-  insertRow(db, "core_actors", {
+  }).run();
+  orm(db).insert(schema.core_actors).values({
     id: humanId,
     actor_kind: "human",
     display_name: opts.actorDisplayName,
     subject_uri: "munhae:local-user",
     metadata_json: null,
     created_at: opts.createdAt,
-  });
-  insertRow(db, "core_actors", {
+  }).run();
+  orm(db).insert(schema.core_actors).values({
     id: llmId,
     actor_kind: "llm",
     display_name: "Claude",
     subject_uri: "munhae:agent:claude",
     metadata_json: null,
     created_at: opts.createdAt,
-  });
+  }).run();
 
-  insertRow(db, "core_projects", {
+  orm(db).insert(schema.core_projects).values({
     id: opts.projectId,
     title: opts.title,
     slug: slugify(opts.title),
@@ -194,15 +191,15 @@ function seedCore(
     created_at: opts.createdAt,
     updated_at: opts.createdAt,
     archived_at: null,
-  });
+  }).run();
 
-  insertRow(db, "meta_project_state", {
+  orm(db).insert(schema.meta_project_state).values({
     project_id: opts.projectId,
     schema_version: PROJECT_SCHEMA_VERSION,
     format_version: 1,
     last_compacted_at: null,
     integrity_hash: sha256Hex(opts.projectId),
-  });
+  }).run();
 
   const policyId = createId();
   const policyVersionId = createId();
@@ -214,13 +211,13 @@ function seedCore(
     supplementPolicy: "원문 밖 보충은 별도 표시한다.",
     uncertaintyPolicy: "textual uncertainty와 interpretive uncertainty를 분리한다.",
   };
-  insertRow(db, "core_translation_policies", {
+  orm(db).insert(schema.core_translation_policies).values({
     id: policyId,
     project_id: opts.projectId,
     name: "기본 번역 원칙",
     created_at: opts.createdAt,
-  });
-  insertRow(db, "core_translation_policy_versions", {
+  }).run();
+  orm(db).insert(schema.core_translation_policy_versions).values({
     id: policyVersionId,
     policy_id: policyId,
     parent_version_id: null,
@@ -237,14 +234,14 @@ function seedCore(
     content_hash: canonicalJsonHash(policyBody),
     created_by_actor_id: humanId,
     created_at: opts.createdAt,
-  });
-  insertRow(db, "core_translation_policy_heads", {
+  }).run();
+  orm(db).insert(schema.core_translation_policy_heads).values({
     policy_id: policyId,
     current_version_id: policyVersionId,
     confirmed_version_id: policyVersionId,
     lock_version: 1,
     updated_at: opts.createdAt,
-  });
+  }).run();
 
   return {
     actors: { humanId, systemId, llmId },

@@ -153,3 +153,11 @@ export function lockSession(session: Session): void {
   });
   session.setPermissionCheckHandler(() => false);
 }
+
+/** User-clicked research citations may point beyond the curated dictionary list. */
+export async function openChatSource(value: string): Promise<void> {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new AppError("invalid_url", "올바른 웹 주소가 아닙니다."); }
+  if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) throw new AppError("invalid_url", "웹 출처 주소만 열 수 있습니다.");
+  await shell.openExternal(url.toString());
+}

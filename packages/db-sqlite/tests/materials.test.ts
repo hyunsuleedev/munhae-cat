@@ -1,3 +1,4 @@
+import { restoreV9SummaryFixture } from "./legacy-materials-fixture.ts";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,6 +73,49 @@ it("persists independent direct references and exclusions, respects CAS and prev
   expect(reopened.getMaterials(other).resolved).toEqual([]);
 });
 
+it("deletes a context and all live references with CAS, preserving comments and historical requests", () => {
+  const { repo, a, one, two, other } = setup();
+  const origin = comment(repo, one);
+  const item = repo.reuseCommentAsMaterial({ commentId: origin.id, expectedCommentLockVersion: origin.lockVersion,
+    scopeId: a, title: "코멘트 자료", contentMd: origin.bodyMd, priority: 0, enabled: true });
+  repo.setMaterialPreference({ documentNodeId: other, source: "comment_reference", sourceId: item.id, mode: "include" });
+  repo.setMaterialPreference({ documentNodeId: one, source: "comment_reference", sourceId: item.id, mode: "exclude" });
+  const run = repo.beginFullTextRun({ documentNodeId: two, agentId: "codex", requestedModel: null,
+    reasoningLevel: null, serviceTier: null, runtimeVersion: null });
+  repo.completeFullTextRun({ messageId: run.messageId,
+    rawResponse: JSON.stringify({ schemaVersion: 1, translation: "태상에 관한 글이다." }),
+    eventsJsonl: "", usage: null, resolvedModel: null, runtimeVersion: null });
+  const history = () => inspect(repo, db => Object.fromEntries(
+    ["chat_messages", "provenance_artifacts", "review_comments", "document_translation_versions"]
+      .map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY id`).all()]),
+  ));
+  const before = history();
+  const beforeMaterials = repo.getMaterials(other);
+  expect(() => repo.deleteContextItem({ id: item.id, expectedLockVersion: item.lockVersion + 1 })).toThrow(/변경/);
+  expect(repo.getMaterials(other)).toEqual(beforeMaterials);
+
+  repo.deleteContextItem({ id: item.id, expectedLockVersion: item.lockVersion });
+  for (const documentNodeId of [a, one, two, other]) {
+    expect(repo.getMaterials(documentNodeId).resolved!.some(row => row.id === item.id)).toBe(false);
+  }
+  for (const documentNodeId of [one, two, other]) {
+    expect(repo.previewContext({ documentNodeId, selections: [{ id: item.id, mode: "pin" }] })
+      .auxiliary.some(row => row.id === item.id)).toBe(false);
+  }
+  inspect(repo, db => {
+    expect(db.prepare("SELECT id FROM context_items WHERE id = ?").get(item.id)).toBeUndefined();
+    expect(db.prepare("SELECT * FROM material_preferences WHERE source_kind = 'comment_reference' AND source_id = ?").all(item.id)).toEqual([]);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    expect(db.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
+  });
+  expect(history()).toEqual(before);
+  expect(repo.getMaterials().comments.find(row => row.id === origin.id)?.materialIds).toEqual([]);
+  expect(() => repo.deleteContextItem({ id: item.id, expectedLockVersion: item.lockVersion })).toThrow(/찾을 수/);
+  repo.close();
+  const reopened = track(openProject(repo.packagePath));
+  expect(reopened.getKnowledge().contextItems.some(row => row.id === item.id)).toBe(false);
+});
+
 it("supports virtual document descriptions and per-document includes for globally disabled cards", () => {
   const { repo, a, one, two, other } = setup();
   const metadata = repo.getDocumentMetadata(a);
@@ -89,32 +133,33 @@ it("supports virtual document descriptions and per-document includes for globall
   expect(() => repo.setMaterialPreference({ documentNodeId: one, source: "document_description", sourceId: `document:${a}:description`, mode: "include" })).toThrow(/찾을 수/);
 });
 
-it("copies an exact source comment snapshot without changing the original, even after edits and archive", () => {
+it("links live comments, blocks changed originals until reviewed, and keeps archived originals out of AI", () => {
   const { repo, one, other } = setup();
   const original = comment(repo, one);
-  const request = { commentId: original.id, expectedCommentLockVersion: original.lockVersion, scopeId: other,
-    title: "채택한 판단", contentMd: "확인된 조건에 한해 참고한다.", conditionMd: "다른 시대 인용은 제외", inheritToChildren: false, enabled: true, priority: 0 };
-  const first = repo.reuseCommentAsMaterial(request), second = repo.reuseCommentAsMaterial(request);
-  expect(first.id).not.toBe(second.id);
-  expect(repo.listReviewComments(one)).toEqual([original]);
-  expect(first.origin).toMatchObject({ commentId: original.id, quote: "𠮷", codepointFrom: 3, bodyMd: original.bodyMd, lockVersion: 1 });
-  expect(repo.getMaterials().comments[0]).toMatchObject({ id: original.id, authorName: expect.any(String), materialIds: expect.arrayContaining([first.id, second.id]) });
-  const changed = repo.updateReviewComment({ id: original.id, expectedLockVersion: 1, bodyMd: "새 검토 내용" });
-  expect(() => repo.reuseCommentAsMaterial(request)).toThrow(/변경/);
-  repo.archiveReviewComment({ id: original.id, expectedLockVersion: changed.lockVersion });
-  const edited = repo.updateContextItem({ ...first, title: "자료만 수정", expectedLockVersion: first.lockVersion });
-  expect(edited.origin).toEqual(first.origin);
-  expect(edited.origin!.bodyMd).toBe(original.bodyMd);
-  const preview = repo.previewContext({ documentNodeId: other });
-  expect(preview.requestText).toContain("다른 시대 인용은 제외");
-  expect(JSON.parse(preview.manifestJson).sources.find((source: { id: string }) => source.id === first.id).material.origin).toEqual(first.origin);
-  inspect(repo, db => {
-    expect(db.prepare("SELECT COUNT(*) AS n FROM provenance_artifacts WHERE artifact_kind='material_comment_origin'").get()).toEqual({ n: 1 });
-    expect(() => db.prepare("UPDATE context_items SET source_comment_id=NULL,origin_artifact_id=NULL WHERE id=?").run(first.id)).toThrow(/immutable/);
-    expect(db.pragma("foreign_key_check")).toEqual([]);
-  });
-  repo.close(); const reopened = track(openProject(repo.packagePath));
-  expect(reopened.getMaterials().items.find(item => item.id === first.id)?.origin).toEqual(first.origin);
+  const first = repo.reuseCommentAsMaterial({ commentId: original.id, expectedCommentLockVersion: 1, scopeId: other,
+    title: "참고 연결", contentMd: "", conditionMd: "조건", inheritToChildren: false, enabled: true, priority: 0 });
+  expect(first.source).toBe("comment_reference");
+  inspect(repo,db=>expect(db.prepare("SELECT id FROM context_items WHERE id=?").get(first.id)).toBeUndefined());
+  const history=repo.previewContext({documentNodeId:other});
+  expect(history.auxiliary.find(c=>c.id===first.id)?.kind).toBe("reference_comment");
+  expect(history.requestText).toContain(original.bodyMd);
+  repo.updateReviewComment({id:original.id,expectedLockVersion:1,bodyMd:"새 검토 내용"});
+  const changed=repo.getMaterials(other).items.find(c=>c.id===first.id)!;
+  expect(changed.reference?.sourceChanged).toBe(true);
+  expect(changed.origin?.bodyMd).toBe("새 검토 내용");
+  expect(repo.previewContext({documentNodeId:other,selections:[{id:first.id,mode:"pin"}]}).requestText).not.toContain("새 검토 내용");
+  expect(()=>repo.updateContextItem({...changed,expectedLockVersion:1,expectedCommentLockVersion:1})).toThrow(/변경/);
+  const reviewed=repo.updateContextItem({...changed,expectedLockVersion:1,expectedCommentLockVersion:2});
+  expect(repo.previewContext({documentNodeId:other}).requestText).toContain("새 검토 내용");
+  expect(repo.getTermContext(other).some(c=>c.id===first.id)).toBe(false);
+  expect(repo.getTermReferenceComments(other).some(c=>c.id===first.id)).toBe(true);
+  repo.archiveReviewComment({id:original.id,expectedLockVersion:2});
+  expect(repo.getMaterials(other).items.find(c=>c.id===first.id)?.reference?.sourceUnavailable).toBe(true);
+  expect(repo.previewContext({documentNodeId:other}).requestText).not.toContain("새 검토 내용");
+  const converted=repo.updateContextItem({...reviewed,expectedLockVersion:reviewed.lockVersion,keepAsContext:true,contentMd:"독립 해제"});
+  expect(converted.source).toBe("context_item");
+  expect(repo.getMaterials().items.some(c=>c.id===first.id)).toBe(false);
+  expect(history.requestText).toContain(original.bodyMd);
 });
 
 it("passes explicitly selected historical comments as examples and rejects missing, duplicate or foreign IDs", () => {
@@ -169,7 +214,7 @@ it("upgrades v6 with one backup, preserves existing rows and checksums, and reop
   db.close();
   const opened = track(openProject(path));
   inspect(opened, check => {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 7 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 10 });
     expect(check.prepare("SELECT * FROM context_items ORDER BY id").all()).toEqual(cards.map(row => ({ ...(row as object), inherit_to_children: 1, condition_md: "", source_comment_id: null, origin_artifact_id: null })));
     expect(check.prepare("SELECT * FROM chat_messages ORDER BY id").all()).toEqual(messages);
     expect(check.prepare("SELECT * FROM provenance_artifacts ORDER BY id").all()).toEqual(artifacts);
@@ -183,4 +228,71 @@ it("upgrades v6 with one backup, preserves existing rows and checksums, and reop
   try { expect(backup.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 6 }); }
   finally { backup.close(); }
   opened.close(); track(openProject(path)); expect(backups()).toHaveLength(1);
+});
+
+it("supplies terminology with the same selected and inherited context rules as translation", () => {
+  const { repo, master, a, one, other } = setup();
+  const common = card(repo, master, "공통", { conditionMd: "서문에 한함" });
+  const inherited = card(repo, a, "상위 문맥");
+  card(repo, a, "상위 전용", { inheritToChildren: false });
+  card(repo, one, "비활성", { enabled: false });
+  const selected = card(repo, other, "명시적 참조");
+  repo.setMaterialPreference({ documentNodeId: one, source: "context_item", sourceId: inherited.id, mode: "exclude" });
+  repo.setMaterialPreference({ documentNodeId: one, source: "context_item", sourceId: selected.id, mode: "include" });
+  const terms = repo.getTermContext(one);
+  expect(terms.map(c => c.id).sort()).toEqual([common.id, selected.id].sort());
+  expect(terms.find(c => c.id === common.id)?.content).toContain("적용 조건·예외: 서문에 한함");
+  expect(terms.map(c => c.id).sort()).toEqual(repo.previewContext({ documentNodeId: one }).auxiliary.filter(c => c.kind === "context_item" && c.included).map(c => c.id).sort());
+});
+
+it("migrates legacy copied comments without losing edits, preferences or original rows", () => {
+  const { repo, one, other } = setup();
+  const original = comment(repo, one);
+  const same = card(repo, one, "같은 내용", { contentMd: original.bodyMd, inheritToChildren: false });
+  const edited = card(repo, one, "편집본", { contentMd: "독립적으로 편집된 내용", conditionMd: "문맥 한정", inheritToChildren: false });
+  repo.setMaterialPreference({documentNodeId:other,source:"context_item",sourceId:edited.id,mode:"include"});
+  const packagePath=repo.packagePath;
+  inspect(repo, db => {
+    const origin={...original,commentId:original.id};
+    db.prepare(`INSERT INTO provenance_artifacts(id,project_id,artifact_kind,media_type,payload_json,raw_sha256,canonical_sha256,byte_size,created_at)
+      VALUES(?,?,'material_comment_origin','application/json',?,'legacy-hash','legacy-hash',1,?)`).run("legacy-origin",repo.projectId,JSON.stringify(origin),original.createdAt);
+    for(const id of [same.id,edited.id]) db.prepare("UPDATE context_items SET source_comment_id=?,origin_artifact_id='legacy-origin' WHERE id=?").run(original.id,id);
+    restoreV9SummaryFixture(db);
+    db.exec("DROP TABLE comment_references; DELETE FROM meta_schema_migrations WHERE version=9; UPDATE meta_project_state SET schema_version=8;");
+  });
+  repo.close();
+  const migrated=track(openProject(packagePath));
+  const items=migrated.getMaterials().items;
+  const a=items.find(item=>item.id===same.id)!,b=items.find(item=>item.id===edited.id)!;
+  expect(a).toMatchObject({source:"comment_reference",contentMd:"",reference:{needsReview:false}});
+  expect(b).toMatchObject({source:"comment_reference",contentMd:"독립적으로 편집된 내용",conditionMd:"문맥 한정",reference:{needsReview:true}});
+  expect(migrated.getMaterials(other).preferences.find(p=>p.sourceId===edited.id)?.source).toBe("comment_reference");
+  expect(migrated.previewContext({documentNodeId:other,selections:[{id:edited.id,mode:"pin"}]}).requestText).not.toContain("독립적으로 편집된 내용");
+  const acknowledged=migrated.updateContextItem({...b,expectedLockVersion:b.lockVersion,expectedCommentLockVersion:original.lockVersion});
+  expect(acknowledged.reference?.needsReview).toBe(false);
+  expect(migrated.previewContext({documentNodeId:other}).requestText).toContain("독립적으로 편집된 내용");
+  const standalone=migrated.updateContextItem({...acknowledged,expectedLockVersion:acknowledged.lockVersion,keepAsContext:true});
+  expect(standalone.source).toBe("context_item");
+  expect(migrated.getMaterials(other).resolved?.find(item=>item.id===standalone.id)?.included).toBe(true);
+  inspect(migrated,db=>{
+    expect(db.prepare("SELECT content_md,archived_at FROM context_items WHERE id=?").get(edited.id)).toMatchObject({content_md:"독립적으로 편집된 내용",archived_at:expect.any(String)});
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+  });
+  expect(readdirSync(packagePath).some(name=>name.includes("before-comment-references"))).toBe(true);
+});
+
+it("keeps reference comments separate from factual context in project chat", () => {
+  const { repo, master, one } = setup();
+  card(repo, master, "프로젝트 배경");
+  const origin = comment(repo, one);
+  const reference = repo.reuseCommentAsMaterial({ commentId: origin.id, expectedCommentLockVersion: origin.lockVersion,
+    scopeId: master, title: "검토 질문", contentMd: "", priority: 0, enabled: true });
+  const run = repo.beginProjectChatRun({ documentNodeId: one, scopeKind: "project", question: "자료를 검토해줘",
+    agentId: "codex", requestedModel: "gpt-test", reasoningLevel: null, serviceTier: null, runtimeVersion: null });
+  const contextSection = run.requestText.split("[ENABLED CONTEXT INHERITED FROM PROJECT MASTER]")[1]!.split("[REFERENCE COMMENTS:")[0];
+  expect(contextSection).toContain("프로젝트 배경");
+  expect(contextSection).not.toContain(reference.id);
+  expect(run.requestText.split("[REFERENCE COMMENTS:")[1]).toContain(reference.id);
+  expect(run.requestText).toContain("[REFERENCE COMMENTS:");
+  expect(run.requestText).toContain(origin.bodyMd);
 });

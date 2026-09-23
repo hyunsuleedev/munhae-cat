@@ -1,4 +1,8 @@
 import { MunhaeError } from "@munhae/domain";
+import { and, desc, eq, isNull, notExists, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
+import { orm } from "./drizzle-db.ts";
+import { schema as tables } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
 
 export type ConcordanceInput = {
@@ -40,7 +44,7 @@ type Row = {
   document_node_id: string; title: string;
   source_id: string; source_no: number; source_text: string; source_current: number;
   translation_id: string | null; translation_no: number | null; translation_state: string | null;
-  translation_text: string | null; is_current: number; is_confirmed: number;
+  translation_text: string | null; is_current: number; is_confirmed: number | null;
   sentences_json: string | null; links_json: string | null;
 };
 type Span = { from: number; to: number; quote: string };
@@ -133,45 +137,198 @@ export function searchConcordance(db: SqliteDb, projectId: string, input: Concor
     || !Number.isSafeInteger(limit) || limit < 1 || limit > 100
     || (input.documentNodeId != null && (typeof input.documentNodeId !== "string" || !input.documentNodeId || input.documentNodeId.length > 100)))
     throw new MunhaeError("invalid_search", "검색 범위와 결과 수를 확인하세요");
-  const head = state === "confirmed" ? "confirmed_version_id" : "current_version_id";
-  const common = `WITH RECURSIVE visible_nodes(id,title) AS (
-    SELECT id,title FROM document_nodes WHERE project_id=@projectId AND parent_node_id IS NULL AND archived_at IS NULL
-    UNION ALL SELECT n.id,n.title FROM document_nodes n JOIN visible_nodes p ON p.id=n.parent_node_id
-    WHERE n.project_id=@projectId AND n.archived_at IS NULL
-  )`;
-  const translationSql = `${common}
-    SELECT n.id AS document_node_id,n.title,s.id AS source_id,s.version_no AS source_no,s.content_text AS source_text,
-      s.id=sh.current_version_id AS source_current,v.id AS translation_id,v.version_no AS translation_no,
-      v.state AS translation_state,v.text_content AS translation_text,v.id=h.current_version_id AS is_current,
-      v.id=h.confirmed_version_id AS is_confirmed,l.sentences_json,l.links_json
-    FROM document_translations t JOIN visible_nodes n ON n.id=t.document_node_id
-    JOIN document_translation_heads h ON h.document_translation_id=t.id
-    JOIN document_translation_versions v ON v.id=h.${head}
-    JOIN src_text_versions s ON s.id=v.source_text_version_id
-    JOIN src_texts st ON st.id=s.source_text_id AND st.project_id=@projectId AND st.tombstoned_at IS NULL
-    JOIN src_text_heads sh ON sh.source_text_id=st.id
-    LEFT JOIN translation_text_layouts l ON l.version_id=v.id
-    WHERE t.project_id=@projectId AND t.tombstoned_at IS NULL
-      AND (@documentNodeId IS NULL OR n.id=@documentNodeId)
-      AND ((@scope<>'translation' AND instr(s.content_text,@query)>0) OR (@scope<>'source' AND instr(v.text_content,@query)>0))
-    ORDER BY is_confirmed DESC,n.title,n.id,v.id`;
-  const sourceSql = `${common}
-    SELECT n.id AS document_node_id,n.title,s.id AS source_id,s.version_no AS source_no,s.content_text AS source_text,
-      s.id=h.current_version_id AS source_current,NULL AS translation_id,NULL AS translation_no,NULL AS translation_state,
-      NULL AS translation_text,s.id=h.current_version_id AS is_current,s.id=h.confirmed_version_id AS is_confirmed,
-      NULL AS sentences_json,NULL AS links_json
-    FROM src_texts st JOIN visible_nodes n ON n.id=st.document_node_id
-    JOIN src_text_heads h ON h.source_text_id=st.id JOIN src_text_versions s ON s.id=h.${head}
-    WHERE st.project_id=@projectId AND st.tombstoned_at IS NULL AND @scope<>'translation'
-      AND (@documentNodeId IS NULL OR n.id=@documentNodeId) AND instr(s.content_text,@query)>0
-      AND NOT EXISTS (SELECT 1 FROM document_translations t JOIN document_translation_heads th ON th.document_translation_id=t.id
-        JOIN document_translation_versions v ON v.id=th.${head}
-        WHERE t.document_node_id=n.id AND t.project_id=@projectId AND t.tombstoned_at IS NULL AND v.source_text_version_id=s.id)
-    ORDER BY is_confirmed DESC,n.title,n.id,s.id`;
-  const params = { projectId, query, scope, documentNodeId: input.documentNodeId ?? null };
+  const {
+    document_nodes: nodes,
+    document_translations: translations,
+    document_translation_heads: translationHeads,
+    document_translation_versions: translationVersions,
+    src_texts: sourceTexts,
+    src_text_heads: sourceHeads,
+    src_text_versions: sourceVersions,
+    translation_text_layouts: layouts,
+  } = tables;
+  const child = alias(nodes, "child");
+  const branches = orm(db)
+    .select({ id: nodes.id, title: nodes.title })
+    .from(nodes)
+    .where(
+      and(
+        eq(nodes.project_id, projectId),
+        isNull(nodes.parent_node_id),
+        isNull(nodes.archived_at),
+      ),
+    )
+    .unionAll(
+      orm(db)
+        .select({ id: child.id, title: child.title })
+        .from(child)
+        .innerJoin(
+          sql`visible_branch`,
+          eq(child.parent_node_id, sql<string>`visible_branch.id`),
+        )
+        .where(and(eq(child.project_id, projectId), isNull(child.archived_at))),
+    );
+  // Drizzle's CTE builder does not expose WITH RECURSIVE. Keep that SQLite
+  // construct as a fragment while schema columns and project values stay bound.
+  const visibleNodes = orm(db).$with("visible_nodes", {
+    id: nodes.id,
+    title: nodes.title,
+  }).as(sql`
+      WITH RECURSIVE visible_branch(id, title) AS (${branches.getSQL()})
+      SELECT id, title FROM visible_branch
+    `);
+  const translationHead = state === "confirmed" ? translationHeads.confirmed_version_id : translationHeads.current_version_id;
+  const sourceHead = state === "confirmed" ? sourceHeads.confirmed_version_id : sourceHeads.current_version_id;
+  const translationConfirmed = sql<number | null>`${translationVersions.id} = ${translationHeads.confirmed_version_id}`;
+  const sourceConfirmed = sql<number | null>`${sourceVersions.id} = ${sourceHeads.confirmed_version_id}`;
+  const translationQuery = orm(db)
+    .with(visibleNodes)
+    .select({
+      document_node_id: sql<string>`${visibleNodes.id}`.as("document_node_id"),
+      title: sql<string>`${visibleNodes.title}`.as("title"),
+      source_id: sql<string>`${sourceVersions.id}`.as("source_id"),
+      source_no: sql<number>`${sourceVersions.version_no}`.as("source_no"),
+      source_text: sql<string>`${sourceVersions.content_text}`.as("source_text"),
+      source_current:
+        sql<number>`${sourceVersions.id} = ${sourceHeads.current_version_id}`.as(
+          "source_current",
+        ),
+      translation_id: sql<string>`${translationVersions.id}`.as("translation_id"),
+      translation_no: sql<number>`${translationVersions.version_no}`.as(
+        "translation_no",
+      ),
+      translation_state: sql<string>`${translationVersions.state}`.as(
+        "translation_state",
+      ),
+      translation_text: sql<string>`${translationVersions.text_content}`.as(
+        "translation_text",
+      ),
+      is_current:
+        sql<number>`${translationVersions.id} = ${translationHeads.current_version_id}`.as(
+          "is_current",
+        ),
+      is_confirmed: translationConfirmed.as("is_confirmed"),
+      sentences_json: sql<string | null>`${layouts.sentences_json}`.as(
+        "sentences_json",
+      ),
+      links_json: sql<string | null>`${layouts.links_json}`.as("links_json"),
+    })
+    .from(translations)
+    .innerJoin(visibleNodes, eq(visibleNodes.id, translations.document_node_id))
+    .innerJoin(
+      translationHeads,
+      eq(translationHeads.document_translation_id, translations.id),
+    )
+    .innerJoin(translationVersions, eq(translationVersions.id, translationHead))
+    .innerJoin(
+      sourceVersions,
+      eq(sourceVersions.id, translationVersions.source_text_version_id),
+    )
+    .innerJoin(
+      sourceTexts,
+      and(
+        eq(sourceTexts.id, sourceVersions.source_text_id),
+        eq(sourceTexts.project_id, projectId),
+        isNull(sourceTexts.tombstoned_at),
+      ),
+    )
+    .innerJoin(sourceHeads, eq(sourceHeads.source_text_id, sourceTexts.id))
+    .leftJoin(layouts, eq(layouts.version_id, translationVersions.id))
+    .where(
+      and(
+        eq(translations.project_id, projectId),
+        isNull(translations.tombstoned_at),
+        input.documentNodeId == null
+          ? undefined
+          : eq(visibleNodes.id, input.documentNodeId),
+        or(
+          scope !== "translation"
+            ? sql`instr(${sourceVersions.content_text}, ${query}) > 0`
+            : undefined,
+          scope !== "source"
+            ? sql`instr(${translationVersions.text_content}, ${query}) > 0`
+            : undefined,
+        ),
+      ),
+    )
+    .orderBy(
+      desc(translationConfirmed),
+      visibleNodes.title,
+      visibleNodes.id,
+      translationVersions.id,
+    );
+  const sourceQuery = orm(db)
+    .with(visibleNodes)
+    .select({
+      document_node_id: sql<string>`${visibleNodes.id}`.as("document_node_id"),
+      title: sql<string>`${visibleNodes.title}`.as("title"),
+      source_id: sql<string>`${sourceVersions.id}`.as("source_id"),
+      source_no: sql<number>`${sourceVersions.version_no}`.as("source_no"),
+      source_text: sql<string>`${sourceVersions.content_text}`.as("source_text"),
+      source_current:
+        sql<number>`${sourceVersions.id} = ${sourceHeads.current_version_id}`.as(
+          "source_current",
+        ),
+      translation_id: sql<null>`NULL`.as("translation_id"),
+      translation_no: sql<null>`NULL`.as("translation_no"),
+      translation_state: sql<null>`NULL`.as("translation_state"),
+      translation_text: sql<null>`NULL`.as("translation_text"),
+      is_current:
+        sql<number>`${sourceVersions.id} = ${sourceHeads.current_version_id}`.as(
+          "is_current",
+        ),
+      is_confirmed: sourceConfirmed.as("is_confirmed"),
+      sentences_json: sql<null>`NULL`.as("sentences_json"),
+      links_json: sql<null>`NULL`.as("links_json"),
+    })
+    .from(sourceTexts)
+    .innerJoin(visibleNodes, eq(visibleNodes.id, sourceTexts.document_node_id))
+    .innerJoin(sourceHeads, eq(sourceHeads.source_text_id, sourceTexts.id))
+    .innerJoin(sourceVersions, eq(sourceVersions.id, sourceHead))
+    .where(
+      and(
+        eq(sourceTexts.project_id, projectId),
+        isNull(sourceTexts.tombstoned_at),
+        input.documentNodeId == null
+          ? undefined
+          : eq(visibleNodes.id, input.documentNodeId),
+        sql`instr(${sourceVersions.content_text}, ${query}) > 0`,
+        notExists(
+          orm(db)
+            .select({ present: sql`1` })
+            .from(translations)
+            .innerJoin(
+              translationHeads,
+              eq(translationHeads.document_translation_id, translations.id),
+            )
+            .innerJoin(
+              translationVersions,
+              eq(translationVersions.id, translationHead),
+            )
+            .where(
+              and(
+                eq(translations.document_node_id, visibleNodes.id),
+                eq(translations.project_id, projectId),
+                isNull(translations.tombstoned_at),
+                eq(translationVersions.source_text_version_id, sourceVersions.id),
+              ),
+            ),
+        ),
+      ),
+    )
+    .orderBy(
+      desc(sourceConfirmed),
+      visibleNodes.title,
+      visibleNodes.id,
+      sourceVersions.id,
+    );
   const results: ConcordanceResult[] = [];
-  for (const sql of [translationSql, sourceSql]) {
-    for (const row of db.prepare(sql).iterate(params) as Iterable<Row>) {
+  for (const selection of scope === "translation" ? [translationQuery] : [translationQuery, sourceQuery]) {
+    const statement = selection.toSQL();
+    // Drizzle's better-sqlite3 driver has no iterator API. Stream the typed,
+    // parameterized query through the same connection instead of loading every
+    // matching document before the result limit can stop the search.
+    for (const row of db.prepare(statement.sql).iterate(...statement.params) as Iterable<Row>) {
       for (const result of pairs(row, query, scope)) {
         if (results.length === limit) return { query, scope, state, results, hasMore: true };
         results.push(result);

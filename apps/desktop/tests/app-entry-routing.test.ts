@@ -47,10 +47,10 @@ it("preserves the current Account settings section when authentication ends afte
   const location = { pathname: "/settings.html", search: "", hash: "", replace: vi.fn() };
   vi.stubGlobal("location", location);
   vi.stubGlobal("window", Object.assign(new EventTarget(), {
-    munhae: { auth: {} }, setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
+    munhae: { auth: {}, app: { getConfig: async () => ({ language: "ko" }) } }, setTimeout: vi.fn(() => 1), clearTimeout: vi.fn(),
   }));
   vi.stubGlobal("document", {
-    documentElement: {}, body,
+    documentElement: {}, body, querySelectorAll: () => [],
     createElement: () => panel,
     querySelector: () => panel,
   });
@@ -58,7 +58,7 @@ it("preserves the current Account settings section when authentication ends afte
   // Run production boot and its registered callbacks. The settings module
   // stays outside this route test; its authenticated reveal is simulated.
   await import("../src/renderer/scripts/app-entry");
-  expect(gate.start).toHaveBeenCalledOnce();
+  await vi.waitFor(() => expect(gate.start).toHaveBeenCalledOnce());
   gate.view!.reveal();
   expect(body.dataset.authPending).toBeUndefined();
   expect(location.replace).not.toHaveBeenCalled();

@@ -1,0 +1,48 @@
+/* Online projects are a separate account workspace, never a local recent file. */
+.w-project-section { min-width: 0; }
+.w-project-section + .w-project-section { margin-top: 24px; }
+.w-project-heading { display: flex; align-items: center; min-height: 36px; gap: 10px; padding: 0 10px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.w-project-heading h2 { margin: 0; font-size: 12px; font-weight: 600; }
+.w-project-heading > span { color: var(--muted); font-size: 11px; }
+.w-project-heading > button { margin-left: auto; width: 28px; min-width: 28px; height: 28px; padding: 0; }
+.w-project-empty { margin: 0; padding: 18px 10px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.w-project-empty a { color: var(--accent-ink); margin-left: 6px; }
+.online-project-item { width: 100%; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; background: transparent; border: 0; border-bottom: 1px solid var(--border); padding: 14px 10px; text-align: left; color: var(--fg); }
+.online-project-item:hover { background: var(--fg-soft); }
+.online-project-item:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+.online-project-icon { display: grid; place-items: center; width: 36px; height: 36px; color: var(--accent-ink); }
+.online-project-icon .ic { width: 24px; height: 24px; stroke-width: 1.3; }
+.online-project-copy { min-width: 0; }
+.online-project-copy b { display: block; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.online-project-copy small { display: block; font-size: 11.5px; margin-top: 3px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.online-project-meta { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
+.online-project-meta > span { color: var(--accent-ink); }
+.online-project-meta > span > span { margin-left: 4px; }
+.online-project-list-error { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 12px 10px; font-size: 12px; color: var(--accent-ink); }
+.online-project-list-error p { flex: 1 1 180px; overflow-wrap: anywhere; margin: 0; }
+.online-project-dialog { max-height: calc(100dvh - 64px); overflow: auto; }
+.online-project-dialog .field label { display: flex; align-items: center; gap: 6px; }
+.online-project-dialog .field label .muted { font-size: 11px; font-weight: 400; }
+.online-project-dialog .textarea { min-height: 104px; resize: vertical; }
+.online-project-account { margin: 2px 0 0; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+.online-project-error { margin: 0; font-size: 12px; color: var(--accent-ink); overflow-wrap: anywhere; }
+.online-project-loading { margin: 0; color: var(--muted); }
+.online-project-detail-name { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.online-project-detail-name .ic { width: 24px; height: 24px; flex: 0 0 24px; color: var(--accent-ink); }
+.online-project-detail-name h2 { margin: 0; font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.online-project-description { margin: 0 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.online-project-facts { margin: 0; border-top: 1px solid var(--border); }
+.online-project-facts > div { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 12px; min-height: 36px; align-items: center; border-bottom: 1px solid var(--border); }
+.online-project-facts dt { color: var(--muted); }
+.online-project-facts dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .w-project-heading > span { display: none; }
+  .online-project-item { grid-template-columns: 28px minmax(0, 1fr); gap: 8px; }
+  .online-project-icon { width: 28px; }
+  .online-project-meta { grid-column: 2; flex-direction: row; justify-content: space-between; }
+}
+.online-project-row { position: relative; }
+.online-project-row .online-project-item { padding-right: 48px; }
+.online-project-info-button { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; min-width: 28px; padding: 0; color: var(--muted); }
+.online-project-item:disabled { cursor: progress; opacity: 0.6; }
+.online-project-open-actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -1,3 +1,6 @@
+import { createAlignmentToolSession } from "./alignment-tool-session";
+import { alignmentPreferences } from "../shared/alignment-preferences";
+import { appendChatActivity } from "../shared/chat-activity";
 import {
   containsSensitiveProviderData,
   sanitizeEnv,
@@ -68,20 +71,85 @@ export type RuntimeSessionStore = {
 
 const runs = new Map<string, AiRunView>();
 const active = new Map<string, ActiveRun>();
+const launches = new Set<{ projectId: string; canceled: boolean; completion: Promise<void> }>();
+const persistenceHooks = new Set<(projectId: string) => void | Promise<void>>();
+const launchPersistenceHooks = new Set<(projectId: string) => void | Promise<void>>();
+const pendingPersistence = new Set<Promise<void>>();
+let cancelingActivities = 0;
+
+/** Terminal persistence runs after the event log and database result are complete. */
+export function registerAiPersistenceHook(hook: (projectId: string) => void | Promise<void>, options: { beforeLaunch?: boolean } = {}): () => void {
+  persistenceHooks.add(hook);
+  if (options.beforeLaunch) launchPersistenceHooks.add(hook);
+  return () => { persistenceHooks.delete(hook); launchPersistenceHooks.delete(hook); };
+}
+
+/** Provider execution must not start before an online reservation/input is accepted. */
+export async function persistAiBeforeLaunch(projectId: string): Promise<void> {
+  for (const hook of launchPersistenceHooks) await hook(projectId);
+}
+
+async function persistReservedRunBeforeLaunch(repo: ProjectRepo, assertNotCanceled: () => void,
+  failRun: (failure: { code: string; message: string }) => void): Promise<void> {
+  try { await persistAiBeforeLaunch(repo.projectId); assertNotCanceled(); }
+  catch (error) {
+    const canceled = error instanceof AppError && error.code === "canceled";
+    try { failRun({ code: canceled ? "canceled" : "online_persistence_failed",
+      message: canceled ? "AI 실행 준비를 취소했습니다." : "온라인 저장을 확인하지 못해 AI를 실행하지 않았습니다. 다시 저장한 뒤 실행하세요." }); }
+    catch { log.warn("AI launch failure remains pending in local recovery", { projectId: repo.projectId }); }
+    await persistAiCompletion(repo.projectId);
+    throw error;
+  }
+}
+
+function persistAiCompletion(projectId: string): Promise<void> {
+  const completion = Promise.resolve().then(async () => {
+    for (const hook of persistenceHooks) {
+      try { await hook(projectId); }
+      catch { log.warn("AI result persistence pending", { projectId }); }
+    }
+  }).finally(() => { pendingPersistence.delete(completion); });
+  pendingPersistence.add(completion);
+  return completion;
+}
+
+async function finishRun(messageId: string, entry: ActiveRun): Promise<void> {
+  try { closeRunEventLog(entry.eventLog); }
+  finally {
+    active.delete(messageId);
+    await persistAiCompletion(entry.projectId);
+  }
+}
+
+async function withAiLaunch<T>(projectId: string, launch: (assertNotCanceled: () => void) => Promise<T>): Promise<T> {
+  if (cancelingActivities || hasActiveAiRuns(projectId)) throw new AppError("thread_busy", "AI 작업이 진행 중입니다");
+  let finish!: () => void;
+  const reservation = { projectId, canceled: false, completion: new Promise<void>((resolve) => { finish = resolve; }) };
+  launches.add(reservation);
+  try {
+    return await launch(() => {
+      if (reservation.canceled) throw new AppError("canceled", "AI 실행 준비를 취소했습니다.");
+    });
+  } finally {
+    launches.delete(reservation);
+    finish();
+  }
+}
 
 type ExternalAiActivity = { id: string; projectId: string; cancel(): void | Promise<void>; completion: Promise<void> };
 const externalActivities = new Map<string, ExternalAiActivity>();
 
 /** Reserve before the first await so collection and inference share app lifecycle guards. */
 export function registerExternalAiActivity(activity: ExternalAiActivity): void {
-  if (hasActiveAiRuns(activity.projectId) || externalActivities.has(activity.id)) {
+  if (cancelingActivities || hasActiveAiRuns(activity.projectId) || externalActivities.has(activity.id)) {
     throw new AppError("thread_busy", "AI 작업이 진행 중입니다");
   }
-  externalActivities.set(activity.id, activity);
-  void activity.completion.then(
-    () => { if (externalActivities.get(activity.id) === activity) externalActivities.delete(activity.id); },
-    () => { if (externalActivities.get(activity.id) === activity) externalActivities.delete(activity.id); },
-  );
+  const finish = async () => {
+    if (externalActivities.get(activity.id) === registered) externalActivities.delete(activity.id);
+    await persistAiCompletion(activity.projectId);
+  };
+  const registered = { ...activity, completion: activity.completion.then(finish, finish) };
+  externalActivities.set(activity.id, registered);
 }
 
 function readRuntimeSessionRef(
@@ -231,6 +299,9 @@ export function publicRunError(error: { code: string; message: string }): { code
 }
 
 export function updateFromEvent(view: AiRunView, event: AgentRunEvent): void {
+  if (view.taskKind === "chat" || (view.taskKind === "translation" && (event.type === "thinking_delta" || event.type === "tool_call"))) {
+    appendChatActivity(view.activity ??= [], event, view.agentId);
+  }
   if (event.type === "status") {
     view.phase = event.phase;
     view.detail = {
@@ -253,6 +324,9 @@ export function updateFromEvent(view: AiRunView, event: AgentRunEvent): void {
     }
   } else if (event.type === "thinking_delta") {
     view.phase = "thinking";
+    if ((view.taskKind === "chat" || view.taskKind === "translation") && (view.agentId === "codex" || view.agentId === "claude")) {
+      view.thinkingText = `${view.thinkingText ?? ""}${event.text}`.slice(0, MAX_PARTIAL_TEXT);
+    }
   } else if (event.type === "tool_call") {
     view.phase = "validating";
     view.detail = event.state === "failed" ? "응답 처리에 실패했습니다." : "응답 처리 중…";
@@ -289,6 +363,7 @@ async function executeProjectTask(
   sessionStore: RuntimeSessionStore,
 ): Promise<void> {
   const request = requestFromPreferences(prepared.messageId, prepared.requestText, config, view.agentId);
+  request.streamText = view.taskKind === "chat";
   if (view.agentId === "antigravity" && view.taskKind === "punctuation_suggest") {
     request.antigravitySkipPermissions = true;
   }
@@ -348,7 +423,7 @@ async function executeProjectTask(
     }
 
     const rawResponse = result.outputText;
-    if (!view.partialText && rawResponse) view.partialText = rawResponse.slice(-MAX_PARTIAL_TEXT);
+    if (view.taskKind === "chat" || !view.partialText) view.partialText = rawResponse.slice(-MAX_PARTIAL_TEXT);
     if (view.taskKind === "chat") {
       entry.repo.completeProjectChatRun({
         messageId: prepared.messageId,
@@ -423,8 +498,7 @@ async function executeProjectTask(
       code,
     });
   } finally {
-    closeRunEventLog(entry.eventLog);
-    active.delete(prepared.messageId);
+    await finishRun(prepared.messageId, entry);
   }
 }
 
@@ -741,8 +815,7 @@ async function executePrepared(
   } finally {
     grant?.revoke();
     entry.translationToolGrant = null;
-    closeRunEventLog(entry.eventLog);
-    active.delete(prepared.messageId);
+    await finishRun(prepared.messageId, entry);
   }
 }
 
@@ -751,18 +824,42 @@ async function executeFullText(
   view: AiRunView, entry: ActiveRun, config: AppConfig, alignmentVersionId?: string,
 ): Promise<void> {
   let versionId: string | null = alignmentVersionId ?? null;
-  const prefs = config.agentModels[view.agentId];
+  const translationAgent = view.agentId;
   const providerEnv = sanitizeEnv(process.env);
   let savedResponse: string | null = null;
+  let alignmentNeedsReview = false;
   let firstResult: Awaited<ReturnType<typeof runAgentRuntime>> | null = null;
   const wrapperPath = join(mainDir, "agent-tool-cli.js");
-  const execute = async (prompt: string, phase: "translation" | "alignment", accept: (raw: string) => void) => {
+  const execute = async (prompt: string, phase: "translation" | "alignment", accept?: (raw: string) => void) => {
+    const stagePrefs = phase === "alignment" ? alignmentPreferences(config, translationAgent) : { agentId: translationAgent, ...config.agentModels[translationAgent] };
+    const { agentId: stageAgent, ...prefs } = stagePrefs;
+    view.agentId = stageAgent;
     let grant: TranslationToolGrant | null = null;
     try {
+      if (phase === "alignment") {
+        const probe = await probeAgentRuntime(stageAgent);
+        if (!probe.installed) throw new AppError("cli_not_found", `${stageAgent} CLI가 설치되어 있지 않습니다.`);
+        if (probe.loggedIn === false) throw new AppError("auth_required", `${stageAgent} CLI 로그인이 필요합니다.`);
+        if (probe.loggedIn === null && stageAgent !== "antigravity") throw new AppError("auth_unknown", `${stageAgent} CLI 로그인 상태를 확인할 수 없습니다.`);
+        await persistAiBeforeLaunch(entry.projectId);
+        if (entry.cancelRequested) throw new AppError("canceled", "실행을 취소했습니다");
+      }
+      const alignmentTools = phase === "alignment" ? createAlignmentToolSession(entry.repo, versionId!) : null;
       grant = await createTranslationToolGrant({ projectId:entry.projectId, runId:prepared.messageId,
+        ...(alignmentTools ? { onAlignment(command, raw) {
+          if (entry.cancelRequested || !grant || containsSensitiveProviderData(raw, providerEnv, [grant.token])) return { ok: false, error: "submission_rejected" };
+          const result = alignmentTools(command, raw);
+          if (result.ok && command === "submit-alignment") publish(view, "alignment");
+          if (result.ok && command === "finish-alignment") {
+            alignmentNeedsReview = result.state === "needs_review";
+            if (alignmentVersionId) savedResponse = grant.inspect().rawBody ?? raw;
+          }
+          return result;
+        } } : {}),
         onSubmit(raw) {
           if(entry.cancelRequested) throw new AppError("canceled", "실행을 취소했습니다");
           if(!grant || containsSensitiveProviderData(raw, providerEnv, [grant.token])) throw new AppError("submission_rejected", "저장할 수 없는 제출입니다");
+          if (!accept) throw new AppError("submission_rejected", "이 실행은 연결 도구만 사용할 수 있습니다");
           accept(raw);
         },
       });
@@ -770,7 +867,7 @@ async function executeFullText(
       if(entry.cancelRequested) throw new AppError("canceled", "실행을 취소했습니다");
       const command = phase === "translation" ? "submit-translation" : "submit-alignment";
       const request: AgentRunRequest = {
-        runId:prepared.messageId, prompt, outputContract:phase === "translation" ? "translation-text.v1" : "translation-alignment.v1",
+        runId:prepared.messageId, prompt, outputContract:phase === "translation" ? "translation-text.v1" : prompt.includes("## Alignment mode\nboundary-groups.v3") ? "translation-alignment.v3" : "translation-alignment.v1",
         appTool:{command:process.execPath,args:[wrapperPath,"tools",command],env:{
           ELECTRON_RUN_AS_NODE:"1",MUNHAE_NODE_BIN:process.execPath,MUNHAE_BIN:wrapperPath,
           MUNHAE_TOOL_URL:grant.endpoint,MUNHAE_TOOL_GRANT:grant.token,MUNHAE_TOOL_RUN_ID:prepared.messageId,
@@ -783,11 +880,11 @@ async function executeFullText(
       // Each stage is a fresh CLI request, never a continuation of translation deliberation.
       const result=await runAgentRuntime(view.agentId,request,event=>{
         appendEvent(entry,event);
-        if(phase==="translation") updateFromEvent(view,event);
-        else { view.phase="aligning"; view.detail="번역을 저장했습니다. 문장별 원문을 연결하고 있습니다."; }
+        updateFromEvent(view, event.type === "tool_call" && event.id ? { ...event, id: `${phase}:${event.id}` } : event);
+        if(phase!=="translation") { view.phase="aligning"; view.detail="번역을 저장했습니다. 문장별 원문을 연결하고 있습니다."; }
         publish(view);
       });
-      if(!grant.inspect().committed) throw new AppError(result.ok?"app_submission_missing":result.error.code,result.ok?"AI가 결과를 제출하지 않았습니다":publicRunError(result.error).message);
+      if(!grant.inspect().committed) throw new AppError(result.ok?"app_submission_missing":result.error.code,result.ok?(phase === "alignment" ? "연결 작업이 finish-alignment로 완료되지 않았습니다" : "AI가 결과를 제출하지 않았습니다"):publicRunError(result.error).message);
       return result;
     } finally {grant?.revoke();entry.translationToolGrant=null;}
   };
@@ -803,13 +900,10 @@ async function executeFullText(
     });
     if(!versionId) throw new AppError("app_submission_missing","번역 전문을 제출하지 않았습니다");
     view.phase="aligning";view.detail="번역을 저장했습니다. 문장별 원문을 연결하고 있습니다.";publish(view);
-    const alignmentResult=await execute(alignmentVersionId ? prepared.requestText : entry.repo.prepareAlignment(versionId),"alignment",raw=>{
-      entry.repo.completeAlignment(versionId!,raw);
-      if(alignmentVersionId) savedResponse=raw;
-    });
+    const alignmentResult=await execute(alignmentVersionId ? prepared.requestText : entry.repo.prepareAlignment(versionId),"alignment");
     const meta=firstResult??alignmentResult;
     if(savedResponse) entry.repo.finishFullTextRun({messageId:prepared.messageId,rawResponse:savedResponse,eventsJsonl:collectedEvents(entry),usage:meta.usage,resolvedModel:meta.model,runtimeVersion:meta.cliVersion});
-    view.state="completed";view.phase="completed";view.detail="번역과 문장별 원문 연결을 저장했습니다. 대응 내용을 검토하세요.";
+    view.state="completed";view.phase="completed";view.detail=alignmentNeedsReview ? "번역과 원문 연결을 저장했습니다. 해결하지 못한 대응과 사유를 확인하세요." : "번역과 문장별 원문 연결을 저장하고 누락 검사를 마쳤습니다. 대응 내용을 검토하세요.";
     view.completedAt=new Date().toISOString();publish(view, "alignment");
   } catch(error) {
     const message=publicRunError({code: error instanceof AppError ? error.code : "provider_failed", message:""}).message;
@@ -824,7 +918,7 @@ async function executeFullText(
       view.state=entry.cancelRequested?"canceled":"failed";view.phase=view.state;view.error={code,message};view.detail=message;
     }
     view.completedAt=new Date().toISOString();publish(view);
-  } finally {closeRunEventLog(entry.eventLog);active.delete(prepared.messageId);}
+  } finally { await finishRun(prepared.messageId, entry); }
 }
 
 export async function startLegacyTranslationRun(
@@ -833,65 +927,69 @@ export async function startLegacyTranslationRun(
   input: StartTranslationInput,
   sessionStore: RuntimeSessionStore,
 ): Promise<AiRunView> {
-  const probe = await probeAgentRuntime(input.agentId);
-  if (!probe.installed) throw new AppError("cli_not_found", `${input.agentId} CLI가 설치되어 있지 않습니다.`);
-  if (probe.loggedIn === false) throw new AppError("auth_required", `${input.agentId} CLI 로그인이 필요합니다.`);
-  if (probe.loggedIn === null && probe.agentId !== "antigravity") throw new AppError("auth_unknown", `${input.agentId} CLI 로그인 상태를 확인할 수 없습니다.`);
-  if (input.alignmentVersionId) {
-    const current=repo.getEditor(input.documentNodeId).translation;
-    if(current?.versionId!==input.alignmentVersionId || !current.textLayout || !current.isCurrentDependencies) throw new AppError("stale_request", "현재 번역의 연결만 실행할 수 있습니다");
-  }
-  const prefs = config.agentModels[input.agentId];
-  const prepared = repo.beginTranslationRun({
-    ...input,
-    requestedModel: prefs.model.trim() || "default",
-    reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
-    serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
-    runtimeVersion: probe.version,
-  });
-  let eventLog: RunEventLog;
-  try {
-    eventLog = openRunEventLog(repo.packagePath, prepared.messageId);
-  } catch (error) {
-    repo.failTranslationRun(prepared.messageId, {
-      code: "event_log_unavailable",
-      message: "AI 실행 event 기록 파일을 만들 수 없습니다",
+  return withAiLaunch(repo.projectId, async (assertNotCanceled) => {
+    const probe = await probeAgentRuntime(input.agentId);
+    assertNotCanceled();
+    if (!probe.installed) throw new AppError("cli_not_found", `${input.agentId} CLI가 설치되어 있지 않습니다.`);
+    if (probe.loggedIn === false) throw new AppError("auth_required", `${input.agentId} CLI 로그인이 필요합니다.`);
+    if (probe.loggedIn === null && probe.agentId !== "antigravity") throw new AppError("auth_unknown", `${input.agentId} CLI 로그인 상태를 확인할 수 없습니다.`);
+    if (input.alignmentVersionId) {
+      const current=repo.getEditor(input.documentNodeId).translation;
+      if(current?.versionId!==input.alignmentVersionId || !current.textLayout || !current.isCurrentDependencies) throw new AppError("stale_request", "현재 번역의 연결만 실행할 수 있습니다");
+    }
+    const prefs = config.agentModels[input.agentId];
+    const prepared = repo.beginTranslationRun({
+      ...input,
+      requestedModel: prefs.model.trim() || "default",
+      reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
+      serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
+      runtimeVersion: probe.version,
     });
-    throw new AppError(
-      "event_log_unavailable",
-      error instanceof Error ? error.message : "AI 실행 event 기록 파일을 만들 수 없습니다.",
-    );
-  }
-  const view: AiRunView = {
-    messageId: prepared.messageId,
-    documentNodeId: input.documentNodeId,
-    agentId: input.agentId,
-    taskKind: "translation",
-    state: "running",
-    phase: "starting",
-    detail: "CLI 실행을 준비하고 있습니다.",
-    partialText: "",
-    error: null,
-    validationState: null,
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-  };
-  const entry: ActiveRun = {
-    projectId: repo.projectId,
-    repo,
-    events: [],
-    eventBytes: 0,
-    eventsTruncated: false,
-    eventLog,
-    completion: null,
-    translationToolGrant: null,
-    cancelRequested: false,
-  };
-  active.set(prepared.messageId, entry);
-  publish(view);
-  entry.completion = executePrepared(prepared, view, entry, config, sessionStore);
-  void entry.completion;
-  return cloneRun(view);
+    await persistReservedRunBeforeLaunch(repo, assertNotCanceled, failure => repo.failTranslationRun(prepared.messageId, failure));
+    let eventLog: RunEventLog;
+    try {
+      eventLog = openRunEventLog(repo.packagePath, prepared.messageId);
+    } catch (error) {
+      repo.failTranslationRun(prepared.messageId, {
+        code: "event_log_unavailable",
+        message: "AI 실행 event 기록 파일을 만들 수 없습니다",
+      });
+      throw new AppError(
+        "event_log_unavailable",
+        error instanceof Error ? error.message : "AI 실행 event 기록 파일을 만들 수 없습니다.",
+      );
+    }
+    const view: AiRunView = {
+      messageId: prepared.messageId,
+      documentNodeId: input.documentNodeId,
+      agentId: input.agentId,
+      taskKind: "translation",
+      state: "running",
+      phase: "starting",
+      detail: "CLI 실행을 준비하고 있습니다.",
+      partialText: "",
+      error: null,
+      validationState: null,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+    };
+    const entry: ActiveRun = {
+      projectId: repo.projectId,
+      repo,
+      events: [],
+      eventBytes: 0,
+      eventsTruncated: false,
+      eventLog,
+      completion: null,
+      translationToolGrant: null,
+      cancelRequested: false,
+    };
+    active.set(prepared.messageId, entry);
+    publish(view);
+    entry.completion = executePrepared(prepared, view, entry, config, sessionStore);
+    void entry.completion;
+    return cloneRun(view);
+  });
 }
 
 export async function startTranslationRun(
@@ -900,66 +998,74 @@ export async function startTranslationRun(
   input: StartTranslationInput,
   sessionStore: RuntimeSessionStore,
 ): Promise<AiRunView> {
-  const probe = await probeAgentRuntime(input.agentId);
-  if (!probe.installed) throw new AppError("cli_not_found", `${input.agentId} CLI가 설치되어 있지 않습니다.`);
-  if (probe.loggedIn === false) throw new AppError("auth_required", `${input.agentId} CLI 로그인이 필요합니다.`);
-  if (probe.loggedIn === null && probe.agentId !== "antigravity") throw new AppError("auth_unknown", `${input.agentId} CLI 로그인 상태를 확인할 수 없습니다.`);
-  if (input.alignmentVersionId) {
-    const current=repo.getEditor(input.documentNodeId).translation;
-    if(current?.versionId!==input.alignmentVersionId || !current.textLayout || !current.isCurrentDependencies) throw new AppError("stale_request", "현재 번역의 연결만 실행할 수 있습니다");
-  }
-  if (hasActiveAiRuns(repo.projectId)) throw new AppError("thread_busy", "AI 작업이 진행 중입니다");
-  const prefs = config.agentModels[input.agentId];
-  const prepared = repo.beginFullTextRun({
-    ...input,
-    requestedModel: prefs.model.trim() || "default",
-    reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
-    serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
-    runtimeVersion: probe.version,
-  });
-  let eventLog: RunEventLog;
-  try {
-    eventLog = openRunEventLog(repo.packagePath, prepared.messageId);
-  } catch (error) {
-    repo.failTranslationRun(prepared.messageId, {
-      code: "event_log_unavailable",
-      message: "AI 실행 event 기록 파일을 만들 수 없습니다",
+  return withAiLaunch(repo.projectId, async (assertNotCanceled) => {
+    const stagePrefs = input.alignmentVersionId ? alignmentPreferences(config, input.agentId) : { agentId: input.agentId, ...config.agentModels[input.agentId] };
+    input = { ...input, agentId: stagePrefs.agentId };
+    const probe = await probeAgentRuntime(input.agentId);
+    assertNotCanceled();
+    if (!probe.installed) throw new AppError("cli_not_found", `${input.agentId} CLI가 설치되어 있지 않습니다.`);
+    if (probe.loggedIn === false) throw new AppError("auth_required", `${input.agentId} CLI 로그인이 필요합니다.`);
+    if (probe.loggedIn === null && probe.agentId !== "antigravity") throw new AppError("auth_unknown", `${input.agentId} CLI 로그인 상태를 확인할 수 없습니다.`);
+    if (input.alignmentVersionId) {
+      const current=repo.getEditor(input.documentNodeId).translation;
+      if(current?.versionId!==input.alignmentVersionId || !current.textLayout || !current.isCurrentDependencies) throw new AppError("stale_request", "현재 번역의 연결만 실행할 수 있습니다");
+    }
+    const prefs = stagePrefs;
+    const prepared = repo.beginFullTextRun({
+      ...input,
+      requestedModel: prefs.model.trim() || "default",
+      reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
+      serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
+      runtimeVersion: probe.version,
     });
-    throw new AppError(
-      "event_log_unavailable",
-      error instanceof Error ? error.message : "AI 실행 event 기록 파일을 만들 수 없습니다.",
-    );
-  }
-  const view: AiRunView = {
-    messageId: prepared.messageId,
-    documentNodeId: input.documentNodeId,
-    agentId: input.agentId,
-    taskKind: "translation",
-    state: "running",
-    phase: "starting",
-    detail: "CLI 실행을 준비하고 있습니다.",
-    partialText: "",
-    error: null,
-    validationState: null,
-    startedAt: new Date().toISOString(),
-    completedAt: null,
-  };
-  const entry: ActiveRun = {
-    projectId: repo.projectId,
-    repo,
-    events: [],
-    eventBytes: 0,
-    eventsTruncated: false,
-    eventLog,
-    completion: null,
-    translationToolGrant: null,
-    cancelRequested: false,
-  };
-  active.set(prepared.messageId, entry);
-  publish(view);
-  entry.completion = executeFullText(prepared, view, entry, config, input.alignmentVersionId);
-  void entry.completion;
-  return cloneRun(view);
+    await persistReservedRunBeforeLaunch(repo, assertNotCanceled, failure => {
+      if (input.alignmentVersionId) repo.failAlignment(input.alignmentVersionId, failure.message);
+      repo.failTranslationRun(prepared.messageId, failure);
+    });
+    let eventLog: RunEventLog;
+    try {
+      eventLog = openRunEventLog(repo.packagePath, prepared.messageId);
+    } catch (error) {
+      repo.failTranslationRun(prepared.messageId, {
+        code: "event_log_unavailable",
+        message: "AI 실행 event 기록 파일을 만들 수 없습니다",
+      });
+      throw new AppError(
+        "event_log_unavailable",
+        error instanceof Error ? error.message : "AI 실행 event 기록 파일을 만들 수 없습니다.",
+      );
+    }
+    const view: AiRunView = {
+      messageId: prepared.messageId,
+      documentNodeId: input.documentNodeId,
+      agentId: input.agentId,
+      taskKind: "translation",
+      state: "running",
+      phase: "starting",
+      detail: "CLI 실행을 준비하고 있습니다.",
+      partialText: "",
+      error: null,
+      validationState: null,
+      startedAt: new Date().toISOString(),
+      completedAt: null,
+    };
+    const entry: ActiveRun = {
+      projectId: repo.projectId,
+      repo,
+      events: [],
+      eventBytes: 0,
+      eventsTruncated: false,
+      eventLog,
+      completion: null,
+      translationToolGrant: null,
+      cancelRequested: false,
+    };
+    active.set(prepared.messageId, entry);
+    publish(view);
+    entry.completion = executeFullText(prepared, view, entry, config, input.alignmentVersionId);
+    void entry.completion;
+    return cloneRun(view);
+  });
 }
 
 export async function startProjectChatRun(
@@ -968,38 +1074,41 @@ export async function startProjectChatRun(
   input: StartProjectChatInput,
   sessionStore: RuntimeSessionStore,
 ): Promise<AiRunView> {
-  const probe = await requireAvailableAgent(input.agentId);
-  if (hasActiveAiRuns(repo.projectId)) throw new AppError("thread_busy", "AI 작업이 진행 중입니다");
-  const prefs = config.agentModels[input.agentId];
-  const prepared = repo.beginProjectChatRun({
-    ...input,
-    requestedModel: prefs.model.trim() || "default",
-    reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
-    serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
-    runtimeVersion: probe.version,
+  return withAiLaunch(repo.projectId, async (assertNotCanceled) => {
+    const probe = await requireAvailableAgent(input.agentId);
+    assertNotCanceled();
+    const prefs = config.agentModels[input.agentId];
+    const prepared = repo.beginProjectChatRun({
+      ...input,
+      requestedModel: prefs.model.trim() || "default",
+      reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
+      serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
+      runtimeVersion: probe.version,
+    });
+    await persistReservedRunBeforeLaunch(repo, assertNotCanceled, failure => repo.failProjectTaskRun(prepared.messageId, failure));
+    const entry = createRunEntry(repo, prepared.messageId, (error) => {
+      repo.failProjectTaskRun(prepared.messageId, error);
+    });
+    const view = initialRunView({
+      messageId: prepared.messageId,
+      documentNodeId: input.documentNodeId,
+      chatScopeKind: input.scopeKind,
+      agentId: input.agentId,
+      taskKind: "chat",
+      detail: prepared.resumeCompatible && readRuntimeSessionRef(sessionStore, {
+        providerKind: input.agentId,
+        projectId: repo.projectId,
+        threadId: prepared.threadId,
+      })
+        ? "기존 CLI 대화를 이어 답변을 준비합니다."
+        : "새 프로젝트 채팅 답변을 준비합니다.",
+    });
+    active.set(prepared.messageId, entry);
+    publish(view);
+    entry.completion = executeProjectTask(prepared, view, entry, config, sessionStore);
+    void entry.completion;
+    return cloneRun(view);
   });
-  const entry = createRunEntry(repo, prepared.messageId, (error) => {
-    repo.failProjectTaskRun(prepared.messageId, error);
-  });
-  const view = initialRunView({
-    messageId: prepared.messageId,
-    documentNodeId: input.documentNodeId,
-    chatScopeKind: input.scopeKind,
-    agentId: input.agentId,
-    taskKind: "chat",
-    detail: prepared.resumeCompatible && readRuntimeSessionRef(sessionStore, {
-      providerKind: input.agentId,
-      projectId: repo.projectId,
-      threadId: prepared.threadId,
-    })
-      ? "기존 CLI 대화를 이어 답변을 준비합니다."
-      : "새 프로젝트 채팅 답변을 준비합니다.",
-  });
-  active.set(prepared.messageId, entry);
-  publish(view);
-  entry.completion = executeProjectTask(prepared, view, entry, config, sessionStore);
-  void entry.completion;
-  return cloneRun(view);
 }
 
 export async function startPunctuationSuggestionRun(
@@ -1008,31 +1117,34 @@ export async function startPunctuationSuggestionRun(
   input: StartPunctuationSuggestionInput,
   sessionStore: RuntimeSessionStore,
 ): Promise<AiRunView> {
-  const probe = await requireAvailableAgent(input.agentId);
-  if (hasActiveAiRuns(repo.projectId)) throw new AppError("thread_busy", "AI 작업이 진행 중입니다");
-  const prefs = config.agentModels[input.agentId];
-  const prepared = repo.beginPunctuationSuggestionRun({
-    ...input,
-    requestedModel: prefs.model.trim() || "default",
-    reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
-    serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
-    runtimeVersion: probe.version,
+  return withAiLaunch(repo.projectId, async (assertNotCanceled) => {
+    const probe = await requireAvailableAgent(input.agentId);
+    assertNotCanceled();
+    const prefs = config.agentModels[input.agentId];
+    const prepared = repo.beginPunctuationSuggestionRun({
+      ...input,
+      requestedModel: prefs.model.trim() || "default",
+      reasoningLevel: reasoningArg(prefs.reasoning) ?? null,
+      serviceTier: input.agentId === "codex" ? (serviceTierArg(prefs.serviceTier) ?? null) : null,
+      runtimeVersion: probe.version,
+    });
+    await persistReservedRunBeforeLaunch(repo, assertNotCanceled, failure => repo.failProjectTaskRun(prepared.messageId, failure));
+    const entry = createRunEntry(repo, prepared.messageId, (error) => {
+      repo.failProjectTaskRun(prepared.messageId, error);
+    });
+    const view = initialRunView({
+      messageId: prepared.messageId,
+      documentNodeId: input.documentNodeId,
+      agentId: input.agentId,
+      taskKind: "punctuation_suggest",
+      detail: "원문 전체에서 표점·구조 제안을 준비합니다.",
+    });
+    active.set(prepared.messageId, entry);
+    publish(view);
+    entry.completion = executeProjectTask(prepared, view, entry, config, sessionStore);
+    void entry.completion;
+    return cloneRun(view);
   });
-  const entry = createRunEntry(repo, prepared.messageId, (error) => {
-    repo.failProjectTaskRun(prepared.messageId, error);
-  });
-  const view = initialRunView({
-    messageId: prepared.messageId,
-    documentNodeId: input.documentNodeId,
-    agentId: input.agentId,
-    taskKind: "punctuation_suggest",
-    detail: "원문 전체에서 표점·구조 제안을 준비합니다.",
-  });
-  active.set(prepared.messageId, entry);
-  publish(view);
-  entry.completion = executeProjectTask(prepared, view, entry, config, sessionStore);
-  void entry.completion;
-  return cloneRun(view);
 }
 
 export function getTranslationRun(messageId: string): AiRunView {
@@ -1056,6 +1168,9 @@ export async function cancelTranslationRun(messageId: string): Promise<AiRunView
 }
 
 export function hasActiveAiRuns(projectId?: string): boolean {
+  for (const entry of launches) {
+    if (!projectId || entry.projectId === projectId) return true;
+  }
   for (const entry of active.values()) {
     if (!projectId || entry.projectId === projectId) return true;
   }
@@ -1066,12 +1181,18 @@ export function hasActiveAiRuns(projectId?: string): boolean {
 }
 
 export async function cancelAllAiRuns(): Promise<void> {
-  const entries = [...active.entries()];
-  const external = [...externalActivities.values()];
-  for (const [, entry] of entries) {
-    entry.cancelRequested = true;
-    entry.translationToolGrant?.revoke();
-  }
-  await Promise.allSettled([...entries.map(([messageId]) => cancelAgentRuntime(messageId)), ...external.map(entry => Promise.resolve().then(() => entry.cancel()))]);
-  await Promise.allSettled([...entries.map(([, entry]) => entry.completion), ...external.map(entry => entry.completion)]);
+  cancelingActivities += 1;
+  try {
+    const preparing = [...launches];
+    for (const entry of preparing) entry.canceled = true;
+    const entries = [...active.entries()];
+    const external = [...externalActivities.values()];
+    for (const [, entry] of entries) {
+      entry.cancelRequested = true;
+      entry.translationToolGrant?.revoke();
+    }
+    await Promise.allSettled([...entries.map(([messageId]) => cancelAgentRuntime(messageId)), ...external.map(entry => Promise.resolve().then(() => entry.cancel()))]);
+    await Promise.allSettled([...entries.map(([, entry]) => entry.completion), ...external.map(entry => entry.completion), ...preparing.map(entry => entry.completion)]);
+    await Promise.allSettled([...pendingPersistence]);
+  } finally { cancelingActivities -= 1; }
 }

@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { AppConfig, MunhaeApi } from "../../shared/munhae-api";
 import { completionCue } from "./notification-sound-model";
 
@@ -34,7 +35,7 @@ export function initNotificationSounds(api: MunhaeApi): void {
     void audio.play().catch(() => {
       clean();
       const status = document.getElementById("notificationSoundStatus");
-      if (status) status.textContent = "알림음을 재생하지 못했습니다. 미리듣기를 다시 눌러 주세요.";
+      if (status) status.textContent = t("알림음을 재생하지 못했습니다. 미리듣기를 다시 눌러 주세요.");
     });
   };
   const play = (kind: "chat" | "stage") => {

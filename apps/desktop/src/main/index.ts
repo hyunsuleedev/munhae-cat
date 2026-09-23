@@ -27,7 +27,8 @@ import {
   prepareMainWindowForQuit,
   showProjectHome,
 } from "./window";
-import { cancelAllAiRuns } from "./ai-runs";
+import { cancelAllAiRuns, registerAiPersistenceHook } from "./ai-runs";
+import { flushOnlineWorkspace, leaveOnlineWorkspace, getOnlineWorkspaceStatus } from "./session";
 import { shutdownAgentRuntime } from "./agent-runtime-client";
 import { stopAgentToolBridge } from "./agent-tool-bridge";
 import { initAccount, shutdownAccount } from "./auth";
@@ -103,8 +104,9 @@ function boot(): void {
       // macOS can reopen the app after its first window is closed mid-transition.
       if (startupPrepared) acceptExternalOpens();
     });
-    installApplicationMenu();
     initSession(app.getPath("userData"));
+    registerAiPersistenceHook(flushOnlineWorkspace, { beforeLaunch: true });
+    installApplicationMenu(getAppConfig().language);
     await initAccount();
     if (stopping) return;
     startBrowserBridge();
@@ -162,8 +164,25 @@ function boot(): void {
         await dialog.showMessageBox({ message: "AI 작업이 끝난 뒤 업데이트를 설치해 주세요." });
         return false;
       }
+      const win = getMainWindow();
+      const previousUrl = win?.webContents.getURL();
       const accepted = await prepareMainWindowForQuit();
       if (!accepted) cancelUpdateInstall();
+      if (accepted && getOnlineWorkspaceStatus()) {
+        await cancelAllAiRuns();
+        try { await flushOnlineWorkspace(); }
+        catch {
+          const result = await dialog.showMessageBox({ type: "warning", title: "온라인 저장 대기",
+            message: "온라인 저장을 마치지 못했습니다.",
+            detail: "작업본은 이 기기에 보관되어 있습니다. 연결을 확인해 다시 저장하거나, 작업본을 보관한 채 종료할 수 있습니다.",
+            buttons: ["계속 작업", "이 기기에 보관하고 종료"], defaultId: 0, cancelId: 0 });
+          if (result.response === 0) {
+            cancelUpdateInstall();
+            if (win && previousUrl) { await win.loadURL(previousUrl); win.show(); }
+            return false;
+          }
+        }
+      }
       return accepted;
     },
     shutdown: async () => {
@@ -172,6 +191,7 @@ function boot(): void {
       startup?.dispose();
       stopBrowserBridge();
       await cancelAllAiRuns();
+      await leaveOnlineWorkspace(true);
       await shutdownAgentRuntime();
       await stopAgentToolBridge();
       shutdownSession();

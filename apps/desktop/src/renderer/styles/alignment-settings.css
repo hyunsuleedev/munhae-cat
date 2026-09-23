@@ -1,0 +1,9 @@
+
+.alignment-settings { margin-top: 20px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; }
+.alignment-settings > .field { max-width: 320px; }
+.alignment-settings .field label { display: block; margin-bottom: 6px; font-size: 12px; }
+.alignment-settings .select { width: 100%; }
+.alignment-settings .cli-controls { display: flex; flex-wrap: wrap; gap: 14px; padding: 14px 0 0; }
+.alignment-settings .cli-controls .field { flex: 1; min-width: 160px; }
+.alignment-settings > .muted { margin: 12px 0 0; font-size: 11px; line-height: 1.6; }
+#prepAlignmentSettings .alignment-settings { margin-top: 0; margin-bottom: 20px; }

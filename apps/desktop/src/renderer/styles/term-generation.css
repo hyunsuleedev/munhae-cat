@@ -1,0 +1,62 @@
+.term-generation-dialog { width:min(760px,calc(100vw - 40px)); max-height:calc(100dvh - 64px); padding:0; border:1px solid var(--border); border-radius:18px; background:var(--surface); color:var(--fg); }
+.term-generation-dialog[open] { display:flex; flex-direction:column; }
+.term-generation-dialog::backdrop { background:#25272355; }
+.term-generation-dialog .ai-run-head { display:flex; align-items:center; padding:24px 28px; border-bottom:1px solid var(--border); }
+.term-generation-dialog .prep-heading-copy { flex:1; }.term-generation-dialog .ai-run-head h2 { margin:6px 0; font-size:22px; }.term-generation-dialog .ai-run-head p { margin:0; color:var(--muted); font-size:12px; }
+.term-generation-dialog .ai-run-body { display:block; overflow:auto; min-height:0; }.term-generation-dialog [data-setup] { padding:24px 28px; }
+.term-generation-dialog [data-model-fields] { display:contents; }.term-generation-dialog .term-generation-materials { margin-top:24px; }.term-generation-materials h3 { font-size:13px; }.term-generation-materials>p { font-size:12px; color:var(--muted); line-height:1.8; }
+.term-generation-dialog [data-source] { white-space:pre-wrap; overflow-wrap:anywhere; max-height:200px; overflow:auto; margin:0; padding:16px; font:14px/1.9 var(--font-ui); border-top:1px solid var(--border); }
+.term-generation-dialog .ai-run-foot { display:flex; align-items:center; gap:8px; padding:16px 28px; border-top:1px solid var(--border); background:var(--bg); }
+.term-generation-dialog [hidden] { display:none!important; }
+.term-generation-dialog .prep-run-steps { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.term-generation-dialog [data-particles] { position:absolute; inset:0; width:100%; height:100%; z-index:-1; pointer-events:none; mask-image:linear-gradient(transparent,#000 8%,#000 92%,transparent); }
+.term-generation-state { border:1px solid var(--border); border-radius:30px; padding:5px 9px; margin-bottom:16px; color:var(--accent); background:var(--surface); font-size:11px; }
+.term-generation-dialog [data-activity] { margin:0 14px 14px; max-height:300px; overflow:auto; }.term-generation-dialog [data-latest] { margin-left:auto; font-size:11px; }.term-generation-dialog [data-error] { margin:0 28px 18px; color:var(--danger); font-size:12px; }
+.term-generation-dialog .ai-run-close { flex-shrink:0; }.term-generation-dialog .prep-background-note { max-width:260px; }
+
+/* Compact resource index; long context stays inside its own readable disclosure. */
+.term-generation-dialog[data-mode="setup"] { width:min(660px,calc(100vw - 32px)); }
+.term-generation-dialog .ai-run-head,
+.term-generation-dialog .ai-run-foot { flex-shrink:0; }
+.term-generation-dialog .ai-run-body { overflow-x:hidden; }
+.term-generation-dialog .term-generation-materials { margin-top:22px; min-width:0; }
+.term-materials-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.term-materials-heading h3 { margin:0; font-size:13px; font-weight:600; }
+.term-materials-heading>span { color:var(--muted); font-size:10px; }
+.term-generation-dialog .term-generation-materials>p[data-materials] { margin:6px 0 14px; font-size:11px; line-height:1.6; }
+.term-materials-stack { display:grid; gap:10px; min-width:0; }
+.term-generation-dialog .term-materials-stack>.prep-disclosure { margin:0; overflow:hidden; border-radius:10px; }
+.term-generation-dialog .term-materials-stack>.prep-disclosure>summary { min-height:44px; padding:12px 14px; gap:10px; }
+.term-count { margin-left:auto; padding:2px 7px; border-radius:5px; background:var(--bg); color:var(--muted); font-size:10px; font-variant-numeric:tabular-nums; }
+.term-generation-dialog [data-context-list] { border-top:1px solid var(--border); padding:0 14px; }
+.term-context-item+ .term-context-item { border-top:1px solid var(--border); }
+.term-context-item>summary { display:flex; align-items:center; gap:9px; padding:12px 2px; cursor:pointer; list-style:none; border-radius:4px; }
+.term-context-item>summary::-webkit-details-marker { display:none; }
+.term-context-title { min-width:0; flex:1; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.term-context-origin { flex-shrink:0; color:var(--muted); font-size:10px; }
+.term-context-mark { flex-shrink:0; color:var(--muted); font-size:17px; line-height:1; width:10px; text-align:center; }
+.term-context-item[open]>summary .term-context-mark { transform:rotate(90deg); }
+.term-context-body { white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; padding:12px 14px; margin:0 0 12px; border-radius:6px; background:var(--bg); font:12px/1.85 var(--font-ui); color:var(--fg); scrollbar-width:thin; }
+.term-generation-dialog .term-generation-hint { margin:14px 0 0; font-size:11px; line-height:1.6; color:var(--muted); }
+.term-generation-dialog summary:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+@media (hover:hover) { .term-context-item>summary:hover { background:var(--bg); } }
+@media (max-width:520px) {
+  .term-generation-dialog [data-setup],
+  .term-generation-dialog[data-mode="setup"] .ai-run-head,
+  .term-generation-dialog .ai-run-foot { padding:18px; }
+  .term-generation-dialog .prep-background-note { max-width:140px; font-size:10px; }
+}
+
+.term-generation-dialog [data-reference-disclosure] { margin-top:10px; }
+.term-generation-dialog [data-reference-list] { border-top:1px solid var(--border); padding:0 14px; }
+
+.term-context-item [data-material-id] { width:15px; height:15px; flex-shrink:0; margin:0 3px 0 0; accent-color:var(--accent); cursor:pointer; }
+.term-context-item [data-material-id]:disabled { cursor:default; }
+.term-context-item.is-excluded .term-context-title { color:var(--muted); }
+.term-context-item [data-material-id]:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+
+.term-generation-dialog [data-glossary-disclosure] { margin-top:10px; }
+.term-generation-dialog [data-glossary-list] { padding:0 14px; }
+.term-generation-dialog .term-glossary-hint { padding:0 14px; }
+.term-generation-dialog [data-glossary-id], .term-generation-dialog [data-glossary-enabled] { width:15px; height:15px; flex-shrink:0; margin:0 3px 0 0; accent-color:var(--accent); cursor:pointer; }
+.term-generation-dialog [data-glossary-id]:disabled { cursor:default; }

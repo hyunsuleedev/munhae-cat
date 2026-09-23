@@ -1,11 +1,12 @@
+import { t } from "./i18n";
 import type { DocumentListItem } from "../../shared/munhae-api";
 
 export const HOME_STAGES = [
-  { key: "source", label: "원문" },
-  { key: "punctuation", label: "표점" },
-  { key: "translation", label: "번역안" },
-  { key: "review", label: "재검토" },
-  { key: "confirmed", label: "확정" },
+  { key: "source", label: t("원문") },
+  { key: "punctuation", label: t("표점") },
+  { key: "translation", label: t("번역안") },
+  { key: "review", label: t("재검토") },
+  { key: "confirmed", label: t("확정") },
 ] as const;
 
 export type HomeStage = (typeof HOME_STAGES)[number]["key"];
@@ -99,7 +100,7 @@ export function buildHomeGroups(documents: readonly DocumentListItem[]): HomeGro
   if (direct.length) {
     result.push({
       id: "home-direct-sources",
-      title: result.length ? "직접 연결된 원문" : "원문 문서",
+      title: result.length ? t("직접 연결된 원문") : t("원문 문서"),
       containerId: null,
       documents: direct,
     });

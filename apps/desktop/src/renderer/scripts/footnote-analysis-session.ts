@@ -1,3 +1,4 @@
+import { t, ui } from "./i18n";
 import type { FootnoteAnalysisInput, FootnoteAnalysisRun, MunhaeApi } from "../../shared/munhae-api";
 
 export type FootnoteAnalysisState = {
@@ -39,7 +40,7 @@ export function configureFootnoteAnalysisSession(
   }
   function stale(): void {
     invalidate();
-    publish({ phase: "stale", run: null, error: "문서나 검색 조건이 바뀌었습니다. 현재 내용으로 다시 추천받으세요." });
+    publish({ phase: "stale", run: null, error: t("문서나 검색 조건이 바뀌었습니다. 현재 내용으로 다시 추천받으세요.") });
   }
   function accept(run: FootnoteAnalysisRun, current: number): void {
     publish({ phase: run.state, run, error: run.error?.message ?? "" });
@@ -58,7 +59,7 @@ export function configureFootnoteAnalysisSession(
     } catch (cause) {
       if (current !== generation) return;
       cancelRun(state.run);
-      publish({ phase: "failed", run: state.run, error: cause instanceof Error ? cause.message : "AI 추천 상태를 확인하지 못했습니다." });
+      publish({ phase: "failed", run: state.run, error: cause instanceof Error ? cause.message : t("AI 추천 상태를 확인하지 못했습니다.") });
     }
   }
   async function start(input: FootnoteAnalysisInput): Promise<void> {
@@ -79,7 +80,7 @@ export function configureFootnoteAnalysisSession(
       if (!response.ok) throw new Error(response.error.message);
       accept(response.data, current);
     } catch (cause) {
-      if (current === generation) publish({ phase: "failed", run: null, error: cause instanceof Error ? cause.message : "AI 추천을 시작하지 못했습니다." });
+      if (current === generation) publish({ phase: "failed", run: null, error: cause instanceof Error ? cause.message : t("AI 추천을 시작하지 못했습니다.") });
       else if (userCancelGeneration === generation && canceledStartGeneration === current && state.phase === "canceling") publish({ phase: "canceled", run: null, error: "" });
     } finally {
       if (pendingStartGeneration === current) pendingStartGeneration = null;
@@ -91,11 +92,11 @@ export function configureFootnoteAnalysisSession(
         const response = await api.cancelFootnoteAnalysis(run.id);
         if (current !== generation) return;
         if (!response.ok) throw new Error(response.error.message);
-        if (active(response.data)) throw new Error("AI 작업이 아직 실행 중입니다. 다시 중지해 주세요.");
+        if (active(response.data)) throw new Error(t("AI 작업이 아직 실행 중입니다. 다시 중지해 주세요."));
       }
       if (current === generation) publish({ phase: "canceled", run: null, error: "" });
     } catch (cause) {
-      if (current === generation) publish({ phase: "failed", run, error: `중지를 확인하지 못했습니다. ${cause instanceof Error ? cause.message : "다시 중지해 주세요."}` });
+      if (current === generation) publish({ phase: "failed", run, error: ui`중지를 확인하지 못했습니다. ${cause instanceof Error ? cause.message : t("다시 중지해 주세요.")}` });
     }
   }
   function cancel(): void {

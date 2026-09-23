@@ -1,3 +1,4 @@
+import { t, ui } from "./i18n";
 import type { ItkcFootnote, ItkcFootnoteSearchInput, ItkcFootnoteSearchResult, MunhaeApi } from "../../shared/munhae-api";
 import { footnoteCitation } from "./footnote-citation";
 import { configureFootnoteAnalysisUi, type FootnoteAnalysisContext, type FootnoteAnalysisViewDeps } from "./footnote-analysis-ui";
@@ -24,7 +25,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   rawResults.className = "footnote-raw-results";
   rawResults.id = "footnoteRawResults";
   const rawSummary = document.createElement("summary");
-  rawSummary.textContent = "검색 결과 직접 살펴보기";
+  rawSummary.textContent = t("검색 결과 직접 살펴보기");
   rawResults.append(rawSummary);
   const resultsHead = el("footnoteSearchStatus").parentElement!;
   resultsHead.before(rawResults);
@@ -52,8 +53,8 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
   }
   function renderHelp(): void {
     el("footnoteSearchHelp").textContent = mode.value === "target"
-      ? "각주가 붙은 표현에서 찾습니다. 한문 표현은 한국어 번역어로도 바꿔 찾아보세요."
-      : "각주 대상과 설명을 함께 검색합니다. 검색어가 대상 구절에 없는 결과도 나올 수 있습니다.";
+      ? t("각주가 붙은 표현에서 찾습니다. 한문 표현은 한국어 번역어로도 바꿔 찾아보세요.")
+      : t("각주 대상과 설명을 함께 검색합니다. 검색어가 대상 구절에 없는 결과도 나올 수 있습니다.");
   }
   function renderDetail(): void {
     const note = selectedNote();
@@ -65,14 +66,14 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
       button.setAttribute("aria-pressed", String(!recommendationNote && Number(button.dataset.footnoteIndex) === selected));
     }
     if (!note) {
-      el("footnoteDetail").innerHTML = `<p class="muted">${loading ? "각주 자료를 불러오고 있습니다." : "각주 대상 구절과 설명, 출처를 함께 확인할 수 있습니다."}</p>`;
+      el("footnoteDetail").innerHTML = `<p class="muted">${loading ? t("각주 자료를 불러오고 있습니다.") : t("각주 대상 구절과 설명, 출처를 함께 확인할 수 있습니다.")}</p>`;
       return;
     }
-    const metadata = [["서명", note.bookTitle], ["역자", note.translator], ["간행처", note.publisher], ["간행년도", note.year]]
+    const metadata = [[t("서명"), note.bookTitle], [t("역자"), note.translator], [t("간행처"), note.publisher], [t("간행년도"), note.year]]
       .filter(([, value]) => value).map(([label, value]) => `<div><dt>${label}</dt><dd>${escape(value)}</dd></div>`).join("");
-    el("footnoteDetail").innerHTML = `<p class="footnote-label">각주 대상 구절</p><h3>${escape(note.annotatedText)}</h3>
-      ${note.displayTitle && note.displayTitle !== note.annotatedText ? `<p class="footnote-display-title">표시 제목 · ${escape(note.displayTitle)}</p>` : ""}
-      <p class="footnote-label">각주 설명</p><div class="footnote-body">${escape(note.bodyText || "제공된 각주 설명이 없습니다.")}</div>
+    el("footnoteDetail").innerHTML = ui`<p class="footnote-label">각주 대상 구절</p><h3>${escape(note.annotatedText)}</h3>
+      ${note.displayTitle && note.displayTitle !== note.annotatedText ? ui`<p class="footnote-display-title">표시 제목 · ${escape(note.displayTitle)}</p>` : ""}
+      <p class="footnote-label">각주 설명</p><div class="footnote-body">${escape(note.bodyText || t("제공된 각주 설명이 없습니다."))}</div>
       <dl class="footnote-bibliography">${metadata}</dl>
       <button class="btn btn-sm" type="button" id="footnoteOpenSource">한국고전종합DB에서 보기 ↗</button>
       <p class="footnote-origin-note">다른 문헌의 용례입니다. 현재 구절과 문맥이 맞는지 확인한 뒤 활용하세요.</p>`;
@@ -82,14 +83,14 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
     el("footnoteResults").setAttribute("aria-busy", String(loading));
     el<HTMLButtonElement>("footnotePrevious").disabled = loading || !result || result.start === 0;
     el<HTMLButtonElement>("footnoteNext").disabled = loading || !result?.hasMore;
-    el<HTMLButtonElement>("footnoteSearchSubmit").textContent = loading ? "다시 검색" : "검색";
+    el<HTMLButtonElement>("footnoteSearchSubmit").textContent = loading ? t("다시 검색") : t("검색");
     const items = result?.items ?? [];
     el("footnoteResultsList").innerHTML = items.map((note, index) => `<li><button type="button" data-footnote-index="${index}" aria-pressed="${index === selected}"${loading ? " disabled" : ""}>
-      <strong>${escape(note.annotatedText || note.displayTitle)}</strong><span class="footnote-result-book">${escape(note.bookTitle || "서명 정보 없음")}</span><span class="footnote-preview">${escape(Array.from(note.bodyText).slice(0, 130).join(""))}${Array.from(note.bodyText).length > 130 ? "…" : ""}</span></button></li>`).join("");
-    el("footnoteSearchStatus").textContent = loading ? "한국고전종합DB에서 검색 중…" : result
-      ? result.total ? `‘${result.query}’ · ${result.total.toLocaleString()}건 중 ${result.start + 1}–${result.start + items.length} · ${result.mode === "target" ? "각주 대상 구절" : "대상·설명 전체"}`
-        : `‘${result.query}’ 검색 결과가 없습니다. 검색어를 짧게 바꾸거나 검색 범위를 넓혀 보세요.`
-      : "검색어를 입력해 각주 용례를 찾아보세요.";
+      <strong>${escape(note.annotatedText || note.displayTitle)}</strong><span class="footnote-result-book">${escape(note.bookTitle || t("서명 정보 없음"))}</span><span class="footnote-preview">${escape(Array.from(note.bodyText).slice(0, 130).join(""))}${Array.from(note.bodyText).length > 130 ? "…" : ""}</span></button></li>`).join("");
+    el("footnoteSearchStatus").textContent = loading ? t("한국고전종합DB에서 검색 중…") : result
+      ? result.total ? ui`‘${result.query}’ · ${result.total.toLocaleString()}건 중 ${result.start + 1}–${result.start + items.length} · ${result.mode === "target" ? t("각주 대상 구절") : t("대상·설명 전체")}`
+        : ui`‘${result.query}’ 검색 결과가 없습니다. 검색어를 짧게 바꾸거나 검색 범위를 넓혀 보세요.`
+      : t("검색어를 입력해 각주 용례를 찾아보세요.");
     renderDetail();
   }
 
@@ -109,7 +110,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
       if (!response.ok) throw new Error(response.error.message);
       result = response.data;
     } catch (cause) {
-      if (current === request && dialog.open) error(cause instanceof Error ? cause.message : "각주 검색에 실패했습니다. 다시 검색해 주세요.");
+      if (current === request && dialog.open) error(cause instanceof Error ? cause.message : t("각주 검색에 실패했습니다. 다시 검색해 주세요."));
     } finally {
       if (current === request) { loading = false; render(); }
     }
@@ -132,7 +133,7 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
     error("");
     el("footnoteActionStatus").textContent = "";
     el("footnoteContext").hidden = !next.quote;
-    el("footnoteContext").textContent = next.quote ? `검토 중인 구절 · ${next.quote}` : "";
+    el("footnoteContext").textContent = next.quote ? ui`검토 중인 구절 · ${next.quote}` : "";
     renderHelp();
     render();
     if (!dialog.open) dialog.showModal();
@@ -167,23 +168,23 @@ export function configureFootnoteSearch(api: MunhaeApi, escape: (value: unknown)
     const note = selectedNote();
     const current = request;
     if (note) void api.app.openExternal(note.sourceUrl).catch(cause => {
-      if (dialog.open && current === request) error(cause instanceof Error ? cause.message : "DB 링크를 열지 못했습니다.");
+      if (dialog.open && current === request) error(cause instanceof Error ? cause.message : t("DB 링크를 열지 못했습니다."));
     });
   });
   el("footnoteCopy").addEventListener("click", () => {
     const note = selectedNote();
     const current = request;
     if (note && (!recommendationNote || analysis.isCurrent())) void navigator.clipboard.writeText(footnoteCitation(note)).then(() => {
-      if (dialog.open && current === request) el("footnoteActionStatus").textContent = "출처와 함께 복사했습니다.";
+      if (dialog.open && current === request) el("footnoteActionStatus").textContent = t("출처와 함께 복사했습니다.");
     }).catch(() => {
-      if (dialog.open && current === request) error("클립보드에 복사하지 못했습니다. 다시 시도해 주세요.");
+      if (dialog.open && current === request) error(t("클립보드에 복사하지 못했습니다. 다시 시도해 주세요."));
     });
   });
   el("footnoteInsert").addEventListener("click", () => {
     const note = selectedNote();
     if (!note || !context.insert || loading || recommendationNote && !analysis.isCurrent()) return;
     try { context.insert(note); dialog.close(); }
-    catch (cause) { error(cause instanceof Error ? cause.message : "코멘트에 자료를 넣지 못했습니다."); }
+    catch (cause) { error(cause instanceof Error ? cause.message : t("코멘트에 자료를 넣지 못했습니다.")); }
   });
   el("footnoteCloseTop").addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", () => {

@@ -1,3 +1,6 @@
+import { fixedGeminiEffort } from "../../shared/agent-model-preferences";
+import { alignmentSettingsMarkup, changeAlignmentSetting } from "./alignment-settings-ui";
+import { t, ui, uiText } from "./i18n";
 import { previewNotificationSound } from "./notification-sounds";
 import { BUNDLED_SKILLS } from "@munhae/db-sqlite/bundled-skills";
 import { mountAccount } from "./account-ui";
@@ -12,12 +15,13 @@ import {
   notify,
   renderSidebar,
   setAgentChrome,
+  setSidebarProject,
 } from "./shared";
 
 type AgentId = AppConfig["agentId"];
 type SectionId = "account" | "models" | "skills" | "general";
 
-const shell = initShell({ page: "settings", selfTitle: "설정" });
+const shell = initShell({ page: "settings", selfTitle: t("설정") });
 const api = shell.api;
 let accountPanel: ReturnType<typeof mountAccount> | undefined;
 let activeSection: SectionId | undefined;
@@ -46,7 +50,7 @@ function agentName(agentId: AgentId): string {
 }
 
 function providerName(agentId: AgentId): string {
-  return agentId === "antigravity" ? "Google 공식 CLI" : agentId === "codex" ? "OpenAI 공식 CLI" : "Anthropic 공식 CLI";
+  return agentId === "antigravity" ? t("Google 공식 CLI") : agentId === "codex" ? t("OpenAI 공식 CLI") : t("Anthropic 공식 CLI");
 }
 
 function agentMark(agentId: AgentId): string {
@@ -54,19 +58,19 @@ function agentMark(agentId: AgentId): string {
 }
 
 function statusMeta(probe: AgentProbe | undefined): { label: string; cls: string } {
-  if (!probe) return { label: agentProbePending ? "확인 중" : "확인 불가", cls: "" };
-  if (!probe.installed) return { label: "미설치", cls: "warn" };
-  if (probe.loggedIn === true) return { label: "로그인됨", cls: "ok" };
-  if (probe.loggedIn === false) return { label: "로그인 필요", cls: "warn" };
-  return { label: "설치됨", cls: "" };
+  if (!probe) return { label: agentProbePending ? t("확인 중") : t("확인 불가"), cls: "" };
+  if (!probe.installed) return { label: t("미설치"), cls: "warn" };
+  if (probe.loggedIn === true) return { label: t("로그인됨"), cls: "ok" };
+  if (probe.loggedIn === false) return { label: t("로그인 필요"), cls: "warn" };
+  return { label: t("설치됨"), cls: "" };
 }
 
 function agentDescription(probe: AgentProbe | undefined): string {
-  if (!probe) return agentProbePending ? "AI 연결 상태를 확인하고 있습니다." : "CLI 설치 상태를 확인하지 못했습니다.";
-  if (!probe.installed) return "이 기기의 PATH에서 실행 파일을 찾지 못했습니다.";
-  if (probe.agentId === "antigravity" && probe.modelSource !== "live") return "agy에서 로그인하고 모델을 선택하세요. 실행할 때 연결 상태를 확인합니다.";
-  if (probe.modelSource === "live") return "사용 가능한 모델과 실행 옵션을 CLI에서 확인했습니다.";
-  return "CLI가 제공하는 기본 모델 또는 호환 모델을 사용합니다.";
+  if (!probe) return agentProbePending ? t("AI 연결 상태를 확인하고 있습니다.") : t("CLI 설치 상태를 확인하지 못했습니다.");
+  if (!probe.installed) return t("이 기기의 PATH에서 실행 파일을 찾지 못했습니다.");
+  if (probe.agentId === "antigravity" && probe.modelSource !== "live") return t("agy에서 로그인하고 모델을 선택하세요. 실행할 때 연결 상태를 확인합니다.");
+  if (probe.modelSource === "live") return t("사용 가능한 모델과 실행 옵션을 CLI에서 확인했습니다.");
+  return t("CLI가 제공하는 기본 모델 또는 호환 모델을 사용합니다.");
 }
 
 function optionHtml(id: string, label: string, selected: string | null): string {
@@ -84,14 +88,14 @@ function uniqueOptions(options: ReadonlyArray<{ id: string; label: string }>): A
 
 function modelOptions(probe: AgentProbe | undefined, selected: string): Array<{ id: string; label: string }> {
   const options = uniqueOptions([
-    { id: "default", label: "CLI 기본값" },
+    { id: "default", label: t("CLI 기본값") },
     ...(probe?.models ?? []).map((model) => ({
       id: model.id,
-      label: model.id === "default" ? "CLI 기본값" : model.label,
+      label: model.id === "default" ? t("CLI 기본값") : model.label,
     })),
   ]);
   if (selected && !options.some((option) => option.id === selected)) {
-    options.push({ id: selected, label: `${selected} · 저장된 값` });
+    options.push({ id: selected, label: ui`${selected} · 저장된 값` });
   }
   return options;
 }
@@ -113,7 +117,7 @@ function selectOptions(
 ): string {
   const all = [{ id: "", label: firstLabel }, ...options];
   if (selected && !all.some((option) => option.id === selected)) {
-    all.push({ id: selected, label: `${selected} · 저장된 값` });
+    all.push({ id: selected, label: ui`${selected} · 저장된 값` });
   }
   return all.map((option) => optionHtml(option.id, option.label, selected)).join("");
 }
@@ -126,12 +130,13 @@ function renderAgentCard(agentId: AgentId): string {
   const status = statusMeta(probe);
   const models = modelOptions(probe, prefs.model || "default");
   const model = probe?.models.find((item) => item.id === prefs.model);
-  const modelLabel = prefs.model === "default" ? "CLI 기본값" : (model?.label ?? prefs.model);
-  const reasoning = capabilityOptions(probe, prefs.model, "reasoning");
+  const modelLabel = prefs.model === "default" ? t("CLI 기본값") : (model?.label ?? prefs.model);
+  const fixedEffort = agentId === "antigravity" ? fixedGeminiEffort(prefs.model) : null;
+  const reasoning = fixedEffort ? [{ id: fixedEffort, label: fixedEffort }] : capabilityOptions(probe, prefs.model, "reasoning");
   const tiers = capabilityOptions(probe, prefs.model, "tier");
   const instruction = loginInstructions.get(agentId);
   const modelDisabled = probe ? !probe.installed || !probe.capabilities.modelSelection : false;
-  const reasoningDisabled = probe ? !probe.installed || !probe.capabilities.reasoningEffort : false;
+  const reasoningDisabled = !!fixedEffort || (probe ? !probe.installed || !probe.capabilities.reasoningEffort : false);
   const tierDisabled = agentId === "claude" || (probe ? !probe.installed || !probe.capabilities.serviceTier : false);
   const version = probe?.version ? `<span class="tag tag-line mono">${esc(probe.version)}</span>` : "";
 
@@ -140,12 +145,12 @@ function renderAgentCard(agentId: AgentId): string {
       <input type="radio" name="defaultAgent" value="${agentId}"${selected ? " checked" : ""}${probe && !probe.installed ? " disabled" : ""}>
       <span class="cli-mark ${agentId}" aria-hidden="true">${agentMark(agentId)}</span>
       <span class="cli-copy"><b>${agentName(agentId)} <span class="provider-name">· ${providerName(agentId)}</span></b><p>${esc(agentDescription(probe))}</p></span>
-      <span class="cli-meta">${selected ? '<span class="tag tag-draft">기본</span>' : ""}${version}<span class="cli-status"><i class="dot ${status.cls}"></i>${status.label}</span></span>
+      <span class="cli-meta">${selected ? uiText('<span class="tag tag-draft">기본</span>') : ""}${version}<span class="cli-status"><i class="dot ${status.cls}"></i>${status.label}</span></span>
     </label>
-    ${selected ? `<div class="cli-controls">
+    ${selected ? ui`<div class="cli-controls">
       <div class="field"><label for="model-${agentId}">모델</label><select class="select mono" id="model-${agentId}" data-agent-model="${agentId}"${modelDisabled ? " disabled" : ""}>${models.map((option) => optionHtml(option.id, option.label, prefs.model)).join("")}</select></div>
-      <div class="field"><label for="reasoning-${agentId}">추론 강도</label><select class="select" id="reasoning-${agentId}" data-agent-reasoning="${agentId}"${reasoningDisabled ? " disabled" : ""}>${selectOptions(reasoning, prefs.reasoning, reasoningDisabled ? "지원하지 않음" : "CLI 기본값")}</select></div>
-      <div class="field"><label for="tier-${agentId}">서비스 등급</label><select class="select" id="tier-${agentId}" data-agent-tier="${agentId}"${tierDisabled ? " disabled" : ""}>${selectOptions(tiers, prefs.serviceTier, tierDisabled ? "지원하지 않음" : "CLI 기본값")}</select></div>
+      <div class="field"><label for="reasoning-${agentId}">추론 강도</label><select class="select" id="reasoning-${agentId}" data-agent-reasoning="${agentId}"${reasoningDisabled ? " disabled" : ""}>${selectOptions(reasoning, prefs.reasoning, fixedEffort ? t("모델에 포함된 강도") : reasoningDisabled ? t("지원하지 않음") : t("CLI 기본값"))}</select></div>
+      <div class="field"><label for="tier-${agentId}">서비스 등급</label><select class="select" id="tier-${agentId}" data-agent-tier="${agentId}"${tierDisabled ? " disabled" : ""}>${selectOptions(tiers, prefs.serviceTier, tierDisabled ? t("지원하지 않음") : t("CLI 기본값"))}</select></div>
     </div>
     <div class="cli-actions">
       <span class="login-instruction">현재 모델: <b>${esc(modelLabel)}</b>${instruction ? `<code class="mono">${esc(instruction.command)}</code><span>${esc(instruction.detail)}</span>` : ""}</span>
@@ -157,12 +162,12 @@ function renderAgentCard(agentId: AgentId): string {
 function renderAgents(): void {
   if (!config) return;
   must("#cliList").innerHTML = agentProbePending && !agents.length
-    ? '<p class="empty" role="status">AI 연결 상태를 확인하고 있습니다.</p>'
-    : (["claude", "codex", "antigravity"] as const).map(renderAgentCard).join("");
+    ? uiText('<p class="empty" role="status">AI 연결 상태를 확인하고 있습니다.</p>')
+    : (["claude", "codex", "antigravity"] as const).map(renderAgentCard).join("") + alignmentSettingsMarkup(config, agents, "settings-alignment");
   const installed = agents.filter((agent) => agent.installed).length;
   must("#installedCount").textContent = agentProbePending
-    ? agents.length ? `${installed}개 설치됨 · 확인 중` : "확인 중"
-    : agentProbeFailed ? "확인 실패" : agents.length ? `${installed}개 설치됨` : "상태 확인 불가";
+    ? agents.length ? ui`${installed}개 설치됨 · 확인 중` : t("확인 중")
+    : agentProbeFailed ? t("확인 실패") : agents.length ? ui`${installed}개 설치됨` : t("상태 확인 불가");
   const selected = agents.find((agent) => agent.agentId === config?.agentId);
   const selectedStatus = statusMeta(selected);
   must("#settingsAgent").innerHTML = `<i class="dot ${selectedStatus.cls}"></i>${esc(agentName(config.agentId))} · ${esc(selectedStatus.label)}`;
@@ -179,11 +184,14 @@ function setSaveState(label: string, state: "idle" | "saved" | "error" = "idle")
 function scheduleSave(): void {
   if (!config) return;
   const revision = ++saveRevision;
-  setSaveState("저장 중…");
+  setSaveState(t("저장 중…"));
   saveChain = saveChain.then(async () => {
     if (!config || revision !== saveRevision) return;
     const snapshot: AppConfig = {
+      language: config.language,
+      translationLanguage: config.translationLanguage,
       agentId: config.agentId,
+      alignment: config.alignment ? { ...config.alignment } : null,
       agentModels: {
         codex: { ...config.agentModels.codex },
         claude: { ...config.agentModels.claude },
@@ -199,13 +207,18 @@ function scheduleSave(): void {
       const saved = await api.app.setConfig(snapshot);
       if (revision !== saveRevision) return;
       config = saved;
-      setSaveState("저장됨", "saved");
+      if (saved.language !== document.documentElement.lang) { location.reload(); return; }
+      setSaveState(t("저장됨"), "saved");
       window.dispatchEvent(new CustomEvent<AppConfig>("munhae:config-changed", { detail: saved }));
       renderAgents();
     } catch (error) {
       if (revision !== saveRevision) return;
-      setSaveState("저장 실패", "error");
-      notify(error instanceof Error ? error.message : "설정을 저장하지 못했습니다.", "설정");
+      try { config = await api.app.getConfig(); } catch { /* Keep the current form if reading settings also fails. */ }
+      if (config) config.language = document.documentElement.lang === "en" ? "en" : "ko";
+      must<HTMLSelectElement>("#translationLanguage").value = config?.translationLanguage ?? "ko";
+      must<HTMLSelectElement>("#displayLanguage").value = config?.language ?? "ko";
+      setSaveState(t("저장 실패"), "error");
+      notify(error instanceof Error ? error.message : t("설정을 저장하지 못했습니다."), t("설정"));
     }
   });
 }
@@ -213,21 +226,21 @@ function scheduleSave(): void {
 function renderSkills(): void {
   const descriptions = {
     "translate-document": {
-      title: "전문 번역",
-      description: "원문 전체를 읽고 의미 흐름에 따라 한국어 문단을 구성합니다. 번역을 제출하기 전에 누락·용어·불확실성을 검토합니다.",
-      timing: "첫 번째 요청 · 번역 생성",
+      title: t("전문 번역"),
+      description: t("원문 전체를 읽고 선택한 번역 언어로 문단을 구성합니다. 번역을 제출하기 전에 누락·용어·불확실성을 검토합니다."),
+      timing: t("첫 번째 요청 · 번역 생성"),
     },
     "align-translation": {
-      title: "원문 연결",
-      description: "저장된 번역을 바꾸지 않고 한국어 문장과 정확한 원문 범위를 연결합니다. 불확실한 대응은 확인이 필요하다고 표시합니다.",
-      timing: "두 번째 요청 · 번역 저장 후",
+      title: t("원문 연결"),
+      description: t("저장된 번역을 바꾸지 않고 번역 문장과 정확한 원문 범위를 연결합니다. 불확실한 대응은 확인이 필요하다고 표시합니다."),
+      timing: t("두 번째 요청 · 번역 저장 후"),
     },
   } satisfies Record<keyof typeof BUNDLED_SKILLS, { title: string; description: string; timing: string }>;
 
   must("#skillList").innerHTML = Object.entries(BUNDLED_SKILLS).map(([id, content]) => {
     const meta = descriptions[id as keyof typeof descriptions];
     const version = content.match(/^version:\s*(.+)$/m)?.[1]?.trim() ?? "—";
-    return `<article class="skill-card" aria-labelledby="skill-${esc(id)}">
+    return ui`<article class="skill-card" aria-labelledby="skill-${esc(id)}">
       <div class="skill-card-head"><div><p class="skill-timing">${esc(meta.timing)}</p><h2 id="skill-${esc(id)}">${esc(meta.title)}</h2></div><span class="tag tag-line mono">v${esc(version)}</span></div>
       <p class="skill-description">${esc(meta.description)}</p>
       <p class="skill-name mono">${esc(id)}</p>
@@ -252,9 +265,10 @@ function setSection(section: SectionId): void {
     page.classList.toggle("is-open", section === id);
     page.hidden = section !== id;
   }
+  if (section === "account") accountPanel?.activate();
   history.replaceState(null, "", section === "models" ? "settings.html" : `settings.html#${section}`);
   must("#saveState").hidden = section === "account";
-  must("#settingsPath").textContent = section === "account" ? "문해 계정" : "앱 설정 · 프로젝트 밖에 저장";
+  must("#settingsPath").textContent = section === "account" ? t("문해 계정") : t("앱 설정 · 프로젝트 밖에 저장");
 }
 
 function sectionFromHash(): SectionId {
@@ -269,39 +283,39 @@ async function rescanAgents(showFailure = true): Promise<void> {
   agentProbeFailed = false;
   const button = must<HTMLButtonElement>("#btnRescan");
   button.disabled = true;
-  button.textContent = "확인 중…";
+  button.textContent = t("확인 중…");
   renderAgents();
   try {
     agents = await api.app.probeAgents();
     hasFreshAgentProbes = true;
   } catch (error) {
     agentProbeFailed = true;
-    if (showFailure) notify(error instanceof Error ? error.message : "CLI 상태를 확인하지 못했습니다.", "로컬 CLI");
+    if (showFailure) notify(error instanceof Error ? error.message : t("CLI 상태를 확인하지 못했습니다."), t("로컬 CLI"));
   } finally {
     agentProbePending = false;
     button.disabled = false;
-    button.textContent = "다시 확인";
+    button.textContent = t("다시 확인");
     renderAgents();
   }
 }
 
 async function showLoginInstruction(agentId: AgentId, button: HTMLButtonElement): Promise<void> {
   button.disabled = true;
-  button.textContent = "확인 중…";
+  button.textContent = t("확인 중…");
   try {
     const instruction = await api.app.getLoginInstruction(agentId);
     loginInstructions.set(agentId, {
       command: instruction.displayCommand,
       detail: instruction.available
-        ? "이 명령을 터미널에서 실행해 CLI 로그인을 완료하세요."
-        : `${instruction.detail} CLI를 설치한 뒤 이 명령을 실행하세요.`,
+        ? t("이 명령을 터미널에서 실행해 CLI 로그인을 완료하세요.")
+        : ui`${instruction.detail} CLI를 설치한 뒤 이 명령을 실행하세요.`,
     });
     renderAgents();
   } catch (error) {
-    notify(error instanceof Error ? error.message : "로그인 안내를 불러오지 못했습니다.", agentName(agentId));
+    notify(error instanceof Error ? error.message : t("로그인 안내를 불러오지 못했습니다."), agentName(agentId));
   } finally {
     button.disabled = false;
-    button.textContent = "로그인 안내";
+    button.textContent = t("로그인 안내");
   }
 }
 
@@ -322,6 +336,9 @@ must("#cliList").addEventListener("change", (event) => {
   if (!config) return;
   const target = event.target;
   if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+  if (target.dataset.alignmentSetting && changeAlignmentSetting(config, agents, target.dataset.alignmentSetting, target.value)) {
+    renderAgents(); scheduleSave(); return;
+  }
   if (target instanceof HTMLInputElement && target.name === "defaultAgent") {
     config.agentId = target.value as AgentId;
     renderAgents();
@@ -331,6 +348,7 @@ must("#cliList").addEventListener("change", (event) => {
   const modelAgent = target.dataset.agentModel as AgentId | undefined;
   if (modelAgent) {
     config.agentModels[modelAgent].model = target.value || "default";
+    if (modelAgent === "antigravity") config.agentModels.antigravity.reasoning = fixedGeminiEffort(target.value);
     renderAgents();
     scheduleSave();
     return;
@@ -346,6 +364,18 @@ must("#cliList").addEventListener("change", (event) => {
     config.agentModels[tierAgent].serviceTier = target.value || null;
     scheduleSave();
   }
+});
+
+must<HTMLSelectElement>("#translationLanguage").addEventListener("change", event => {
+  if (!config) return;
+  config.translationLanguage = (event.currentTarget as HTMLSelectElement).value === "en" ? "en" : "ko";
+  scheduleSave();
+});
+
+must<HTMLSelectElement>("#displayLanguage").addEventListener("change", event => {
+  if (!config) return;
+  config.language = (event.currentTarget as HTMLSelectElement).value === "en" ? "en" : "ko";
+  scheduleSave();
 });
 
 must<HTMLInputElement>("#showWelcome").addEventListener("change", (event) => {
@@ -395,6 +425,10 @@ async function load(): Promise<void> {
     api.project.getCurrent().catch(() => null),
   ]);
   config = loadedConfig;
+  must<HTMLSelectElement>("#translationLanguage").value = config.translationLanguage;
+  must<HTMLSelectElement>("#translationLanguage").disabled = false;
+  must<HTMLSelectElement>("#displayLanguage").value = config.language;
+  must<HTMLSelectElement>("#displayLanguage").disabled = false;
   must<HTMLInputElement>("#notificationSound").checked = config.notificationSoundEnabled;
   must<HTMLInputElement>("#notificationVolume").value = String(config.notificationSoundVolume);
   must<HTMLOutputElement>("#notificationVolumeValue").value = `${config.notificationSoundVolume}%`;
@@ -406,7 +440,8 @@ async function load(): Promise<void> {
   must<HTMLInputElement>("#backgroundMusic").disabled = false;
   must<HTMLInputElement>("#showWelcome").checked = config.showWelcomeOnLaunch;
   if (project) {
-    document.querySelector(".titlebar .tb-c small")!.textContent = `${project.title} · 앱 전체`;
+    setSidebarProject(project);
+    document.querySelector(".titlebar .tb-c small")!.textContent = ui`${project.title} · 앱 전체`;
     const home = await api.home.get();
     if (home.ok) {
       docs = home.data.documents;
@@ -422,7 +457,7 @@ async function load(): Promise<void> {
     tree,
   );
   renderAgents();
-  setSaveState("저장됨", "saved");
+  setSaveState(t("저장됨"), "saved");
 }
 
 renderSkills();

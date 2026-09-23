@@ -4,22 +4,26 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
-  <title>문해 계정 — Munhae Studio</title>
+  <title data-i18n="문해 계정 — Munhae Studio">문해 계정 — Munhae Studio</title>
   <link rel="stylesheet" href="./styles/tokens.css">
   <link rel="stylesheet" href="./styles/chrome.css">
   <link rel="stylesheet" href="./styles/account.css">
 </head>
 <body class="account-page">
-  <nav class="menubar" id="menubar" aria-label="메뉴 막대"></nav>
   <div class="account-drag" aria-hidden="true"></div>
   <main class="account-layout">
     <section class="account-card" aria-labelledby="accountTitle">
-      <div class="account-brand munhae-brand" role="img" aria-label="문해 Munhae Studio"><strong aria-hidden="true">文解</strong><small aria-hidden="true">MUNHAE<br>STUDIO</small></div>
+      <div class="account-brand munhae-brand" role="img" aria-label="문해 Munhae Studio" data-i18n-aria-label="문해 Munhae Studio"><strong aria-hidden="true">文解</strong><small aria-hidden="true">MUNHAE<br>STUDIO</small></div>
+      <label class="account-language"><span data-i18n="Language / 언어
+        ">Language / 언어
+        </span><select class="select" data-language-picker aria-label="Language / 언어" data-i18n-aria-label="Language / 언어"><option value="ko" data-i18n="한국어">한국어</option><option value="en">English</option></select>
+      </label>
+      <p data-language-error role="alert" hidden></p>
       <div id="accountContent"></div>
     </section>
   </main>
-  <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle">문해</b><span id="nMsg"></span></div></div>
-  <dialog id="dlgPalette" class="palette"><input class="input" id="palIn" placeholder="명령 검색…" aria-label="명령 검색"><div class="pl-list" id="palList"></div></dialog>
+  <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle" data-i18n="문해">문해</b><span id="nMsg"></span></div></div>
+  <dialog id="dlgPalette" class="palette"><input class="input" id="palIn" placeholder="명령 검색…" data-i18n-placeholder="명령 검색…" aria-label="명령 검색" data-i18n-aria-label="명령 검색"><div class="pl-list" id="palList"></div></dialog>
   <script type="module" src="./scripts/app-entry.ts"></script>
 </body>
 </html>

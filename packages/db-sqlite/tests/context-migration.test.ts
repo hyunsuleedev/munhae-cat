@@ -14,11 +14,15 @@ it("upgrades v2 context without classifications, preserving text, scopes, settin
   const path = repo.packagePath;
   const cards = repo.getKnowledge().contextItems.filter((item) => item.source === "context_item");
   repo.setContextItemEnabled({ id: cards[0]!.id, enabled: false, expectedLockVersion: cards[0]!.lockVersion });
-  repo.archiveContextItem({ id: cards[1]!.id, expectedLockVersion: cards[1]!.lockVersion });
   repo.close();
   const dbPath = join(path, "project.sqlite3");
   const db = openSqlite(dbPath);
   try {
+    // Legacy archive fixture: the current API only supports deletion.
+    const archived = cards[1]!;
+    db.prepare(`UPDATE context_items SET archived_at = ?, enabled = 0,
+      content_hash = ?, lock_version = lock_version + 1 WHERE id = ?`)
+      .run(new Date().toISOString(), contextItemContentHash({ ...archived, enabled: false }), archived.id);
     restoreV4KnowledgeFixture(db);
     // Restore the previous column and migration state to exercise the real upgrade path.
     db.exec(`ALTER TABLE context_items ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'external_evidence';
@@ -61,7 +65,7 @@ it("upgrades v2 context without classifications, preserving text, scopes, settin
       expect(check.prepare("SELECT * FROM provenance_artifacts ORDER BY id").all()).toEqual(artifacts);
       expect(check.pragma("foreign_key_check")).toEqual([]);
       expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
-      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 7 });
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 10 });
       const backups = readdirSync(path).filter((name) => name.includes(".before-context-without-kind-"));
       expect(backups).toHaveLength(1);
       const backup = openSqlite(join(path, backups[0]!));

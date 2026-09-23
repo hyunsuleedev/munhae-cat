@@ -10,13 +10,16 @@
     "./bundled-skills": "./src/bundled-skills.ts"
   },
   "scripts": {
-    "test": "node ./scripts/run-tests.mjs",
+    "generate:schema": "node ./scripts/generate-drizzle-schema.mjs",
+    "check:schema": "node ./scripts/generate-drizzle-schema.mjs --check",
+    "test": "node ./scripts/generate-drizzle-schema.mjs --check && node ./scripts/run-tests.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@munhae/domain": "workspace:*",
     "@munhae/project-format": "workspace:*",
-    "better-sqlite3": "^11.10.0"
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "0.45.3"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

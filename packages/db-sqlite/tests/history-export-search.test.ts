@@ -56,7 +56,7 @@ describe("version history and lineage-bound diff", () => {
       documentNodeId,
       contentText: `${editor.source.contentText}天地`,
       originKind: "manual",
-      changeSummary: "시험 변경",
+
       expectedLockVersion: editor.source.lockVersion,
     });
 
@@ -66,7 +66,7 @@ describe("version history and lineage-bound diff", () => {
     const translation = history.entries.filter((entry) => entry.kind === "translation" && entry.stage === "translation");
 
     expect(sources).toHaveLength(2);
-    expect(sources[0]).toMatchObject({ versionNo: 2, isCurrent: true, changeSummary: "시험 변경" });
+    expect(sources[0]).toMatchObject({ versionNo: 2, isCurrent: true, });
     expect(sources[0]!.parentVersionId).toBe(sources[1]!.versionId);
     expect(sources.every((entry) => /^[a-f0-9]{64}$/.test(entry.contentHash))).toBe(true);
     expect(punctuation[0]).toMatchObject({ anchorSetId: expect.any(String), structureSpanCount: expect.any(Number) });

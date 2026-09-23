@@ -5,8 +5,33 @@ import {
   sha256Hex,
   sliceCodepoints,
 } from "@munhae/domain";
-import { allRows, getRow } from "./rows.ts";
+import { and, asc, count, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
+
+const {
+  document_nodes: nodes,
+  core_projects: projects,
+  core_actors: actors,
+  core_translation_policy_versions: policyVersions,
+  src_texts: sources,
+  src_text_heads: sourceHeads,
+  src_text_versions: sourceVersions,
+  punctuation_sets: punctuationSets,
+  punctuation_heads: punctuationHeads,
+  punctuation_versions: punctuationVersions,
+  punctuation_structure_spans: structureSpans,
+  document_translations: translations,
+  document_translation_heads: translationHeads,
+  document_translation_versions: translationVersions,
+  translation_blocks: translationBlocks,
+  translation_block_anchors: blockAnchors,
+  translation_anchors: anchors,
+  translation_anchor_sets: anchorSets,
+  translation_text_layouts: layouts,
+  glossary_entries: glossary,
+} = schema;
 
 export type VersionHistoryKind = "source" | "punctuation" | "translation";
 
@@ -51,7 +76,6 @@ export type VersionHistoryEntry = {
   createdAt: string;
   createdBy: string;
   originKind: string;
-  changeSummary: string | null;
   validationState: "valid" | "needs_review" | null;
   sourceTextVersionId: string | null;
   sourceTextHash: string | null;
@@ -175,7 +199,6 @@ type BaseHistoryRow = {
   created_at: string;
   created_by: string;
   origin_kind: string;
-  change_summary: string | null;
   validation_state: "valid" | "needs_review" | null;
   source_text_version_id: string | null;
   source_text_hash: string | null;
@@ -190,13 +213,8 @@ type BaseHistoryRow = {
 };
 
 function requireSourceUnit(db: SqliteDb, projectId: string, documentNodeId: string): { title: string } {
-  const row = getRow<{ title: string; node_role: string }>(
-    db,
-    `SELECT title, node_role FROM document_nodes
-     WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-    documentNodeId,
-    projectId,
-  );
+  const row = orm(db).select({ title: nodes.title, node_role: nodes.node_role }).from(nodes)
+    .where(and(eq(nodes.id, documentNodeId), eq(nodes.project_id, projectId), isNull(nodes.archived_at))).get();
   if (!row) throw new MunhaeError("not_found", "문서를 찾을 수 없습니다");
   if (row.node_role !== "source_unit") {
     throw new MunhaeError("invalid_document", "원문 작업 단위만 이력·검색 범위로 선택할 수 있습니다");
@@ -205,28 +223,18 @@ function requireSourceUnit(db: SqliteDb, projectId: string, documentNodeId: stri
 }
 
 function loadHistoryBlocks(db: SqliteDb, versionId: string): HistoryBlock[] {
-  const blocks = allRows<{
-    id: string;
-    block_key: string;
-    ordinal: number;
-    block_kind: string;
-    target_codepoint_from: number;
-    target_codepoint_to: number;
-    target_hash: string;
-    validation_state: "valid" | "needs_review";
-    text_content: string;
-  }>(
-    db,
-    `SELECT b.id, b.block_key, b.ordinal, b.block_kind, b.target_codepoint_from,
-            b.target_codepoint_to, b.target_hash, b.validation_state, v.text_content
-     FROM translation_blocks b
-     JOIN document_translation_versions v ON v.id = b.document_translation_version_id
-     WHERE b.document_translation_version_id = ?
-     ORDER BY b.ordinal`,
-    versionId,
-  );
+  const blocks = orm(db).select({
+    id: translationBlocks.id, block_key: translationBlocks.block_key, ordinal: translationBlocks.ordinal,
+    block_kind: translationBlocks.block_kind, target_codepoint_from: translationBlocks.target_codepoint_from,
+    target_codepoint_to: translationBlocks.target_codepoint_to, target_hash: translationBlocks.target_hash,
+    validation_state: translationBlocks.validation_state, text_content: translationVersions.text_content,
+  }).from(translationBlocks)
+    .innerJoin(translationVersions, eq(translationVersions.id, translationBlocks.document_translation_version_id))
+    .where(eq(translationBlocks.document_translation_version_id, versionId)).orderBy(asc(translationBlocks.ordinal)).all();
   if (!blocks.length) {
-    const full = getRow<{text_content:string;content_hash:string;validation_state:"valid"|"needs_review"}>(db, "SELECT v.text_content,v.content_hash,v.validation_state FROM document_translation_versions v JOIN translation_text_layouts l ON l.version_id=v.id WHERE v.id=?",versionId);
+    const full = orm(db).select({ text_content: translationVersions.text_content, content_hash: translationVersions.content_hash,
+      validation_state: translationVersions.validation_state }).from(translationVersions)
+      .innerJoin(layouts, eq(layouts.version_id, translationVersions.id)).where(eq(translationVersions.id, versionId)).get();
     if(full) return [{blockKey:"text",ordinal:1,blockKind:"text",translation:full.text_content,targetHash:full.content_hash,validationState:full.validation_state,anchors:[]}];
   }
   return blocks.map((block) => ({
@@ -236,32 +244,15 @@ function loadHistoryBlocks(db: SqliteDb, versionId: string): HistoryBlock[] {
     translation: sliceCodepoints(block.text_content, block.target_codepoint_from, block.target_codepoint_to),
     targetHash: block.target_hash,
     validationState: block.validation_state,
-    anchors: allRows<{
-      anchor_id: string;
-      anchor_key: string;
-      ordinal: number;
-      relation_kind: string;
-      boundary_kind: string;
-      source_codepoint_from: number;
-      source_codepoint_to: number;
-      source_quote: string;
-      source_quote_hash: string;
-      punctuation_codepoint_from: number;
-      punctuation_codepoint_to: number;
-      punctuated_quote: string;
-      punctuated_quote_hash: string;
-    }>(
-      db,
-      `SELECT a.id AS anchor_id, a.anchor_key, ba.ordinal, ba.relation_kind, a.boundary_kind,
-              a.source_codepoint_from, a.source_codepoint_to, a.source_quote, a.source_quote_hash,
-              a.punctuation_codepoint_from, a.punctuation_codepoint_to,
-              a.punctuated_quote, a.punctuated_quote_hash
-       FROM translation_block_anchors ba
-       JOIN translation_anchors a ON a.id = ba.translation_anchor_id
-       WHERE ba.translation_block_id = ?
-       ORDER BY ba.ordinal`,
-      block.id,
-    ).map((anchor) => ({
+    anchors: orm(db).select({
+      anchor_id: anchors.id, anchor_key: anchors.anchor_key, ordinal: blockAnchors.ordinal,
+      relation_kind: blockAnchors.relation_kind, boundary_kind: anchors.boundary_kind,
+      source_codepoint_from: anchors.source_codepoint_from, source_codepoint_to: anchors.source_codepoint_to,
+      source_quote: anchors.source_quote, source_quote_hash: anchors.source_quote_hash,
+      punctuation_codepoint_from: anchors.punctuation_codepoint_from, punctuation_codepoint_to: anchors.punctuation_codepoint_to,
+      punctuated_quote: anchors.punctuated_quote, punctuated_quote_hash: anchors.punctuated_quote_hash,
+    }).from(blockAnchors).innerJoin(anchors, eq(anchors.id, blockAnchors.translation_anchor_id))
+      .where(eq(blockAnchors.translation_block_id, block.id)).orderBy(asc(blockAnchors.ordinal)).all().map((anchor) => ({
       anchorId: anchor.anchor_id,
       anchorKey: anchor.anchor_key,
       ordinal: anchor.ordinal,
@@ -295,7 +286,6 @@ function toHistoryEntry(db: SqliteDb, row: BaseHistoryRow): VersionHistoryEntry 
     createdAt: row.created_at,
     createdBy: row.created_by,
     originKind: row.origin_kind,
-    changeSummary: row.change_summary,
     validationState: row.validation_state,
     sourceTextVersionId: row.source_text_version_id,
     sourceTextHash: row.source_text_hash,
@@ -317,79 +307,65 @@ export function loadDocumentHistory(
   documentNodeId: string,
 ): DocumentHistoryView {
   const document = requireSourceUnit(db, projectId, documentNodeId);
-  const sourceRows = allRows<BaseHistoryRow>(
-    db,
-    `SELECT 'source' AS kind, s.id AS aggregate_id, NULL AS stage, v.id AS version_id,
-            v.parent_version_id, v.version_no, v.state, h.current_version_id,
-            h.confirmed_version_id, v.content_hash, v.content_text, v.created_at,
-            actor.display_name AS created_by, v.origin_kind, v.change_summary,
-            NULL AS validation_state, v.id AS source_text_version_id,
-            v.content_hash AS source_text_hash, NULL AS punctuation_version_id,
-            NULL AS punctuation_hash, NULL AS anchor_set_id, NULL AS anchor_set_hash,
-            NULL AS translation_policy_version_id, NULL AS translation_policy_hash,
-            NULL AS structure_json, 0 AS structure_span_count
-     FROM src_texts s
-     JOIN src_text_heads h ON h.source_text_id = s.id
-     JOIN src_text_versions v ON v.source_text_id = s.id
-     JOIN core_actors actor ON actor.id = v.created_by_actor_id
-     WHERE s.project_id = ? AND s.document_node_id = ? AND s.tombstoned_at IS NULL
-     ORDER BY v.version_no DESC, v.created_at DESC`,
-    projectId,
-    documentNodeId,
-  );
-  const punctuationRows = allRows<BaseHistoryRow>(
-    db,
-    `SELECT 'punctuation' AS kind, p.id AS aggregate_id, NULL AS stage, v.id AS version_id,
-            v.parent_version_id, v.version_no, v.state, h.current_version_id,
-            h.confirmed_version_id, v.content_hash, v.punctuated_text AS content_text,
-            v.created_at, actor.display_name AS created_by, 'punctuation' AS origin_kind,
-            v.change_summary, NULL AS validation_state, v.source_text_version_id,
-            source_v.content_hash AS source_text_hash, v.id AS punctuation_version_id,
-            v.content_hash AS punctuation_hash,
-            (SELECT a.id FROM translation_anchor_sets a
-             WHERE a.punctuation_version_id = v.id ORDER BY a.created_at DESC LIMIT 1) AS anchor_set_id,
-            (SELECT a.anchor_set_hash FROM translation_anchor_sets a
-             WHERE a.punctuation_version_id = v.id ORDER BY a.created_at DESC LIMIT 1) AS anchor_set_hash,
-            NULL AS translation_policy_version_id, NULL AS translation_policy_hash,
-            v.structure_json,
-            (SELECT COUNT(*) FROM punctuation_structure_spans span
-             WHERE span.punctuation_version_id = v.id) AS structure_span_count
-     FROM src_texts s
-     JOIN punctuation_sets p ON p.source_text_id = s.id
-     JOIN punctuation_heads h ON h.punctuation_set_id = p.id
-     JOIN punctuation_versions v ON v.punctuation_set_id = p.id
-     JOIN src_text_versions source_v ON source_v.id = v.source_text_version_id
-     JOIN core_actors actor ON actor.id = v.created_by_actor_id
-     WHERE s.project_id = ? AND s.document_node_id = ? AND s.tombstoned_at IS NULL
-     ORDER BY p.created_at DESC, v.version_no DESC, v.created_at DESC`,
-    projectId,
-    documentNodeId,
-  );
-  const translationRows = allRows<BaseHistoryRow>(
-    db,
-    `SELECT 'translation' AS kind, t.id AS aggregate_id, 'translation' AS stage, v.id AS version_id,
-            v.parent_version_id, v.version_no, v.state, h.current_version_id,
-            h.confirmed_version_id, v.content_hash, v.text_content AS content_text, v.created_at,
-            actor.display_name AS created_by, v.origin_kind, NULL AS change_summary,
-            v.validation_state, v.source_text_version_id,
-            source_v.content_hash AS source_text_hash, v.punctuation_version_id,
-            punctuation_v.content_hash AS punctuation_hash, v.translation_anchor_set_id AS anchor_set_id,
-            anchor_set.anchor_set_hash, v.translation_policy_version_id,
-            policy_v.content_hash AS translation_policy_hash, NULL AS structure_json,
-            0 AS structure_span_count
-     FROM document_translations t
-     JOIN document_translation_heads h ON h.document_translation_id = t.id
-     JOIN document_translation_versions v ON v.document_translation_id = t.id
-     JOIN src_text_versions source_v ON source_v.id = v.source_text_version_id
-     LEFT JOIN punctuation_versions punctuation_v ON punctuation_v.id = v.punctuation_version_id
-     LEFT JOIN translation_anchor_sets anchor_set ON anchor_set.id = v.translation_anchor_set_id
-     JOIN core_translation_policy_versions policy_v ON policy_v.id = v.translation_policy_version_id
-     JOIN core_actors actor ON actor.id = v.created_by_actor_id
-     WHERE t.project_id = ? AND t.document_node_id = ? AND t.tombstoned_at IS NULL
-     ORDER BY v.version_no DESC, v.created_at DESC`,
-    projectId,
-    documentNodeId,
-  );
+  const sourceRows = orm(db).select({
+    kind: sql<"source">`'source'`, aggregate_id: sources.id, stage: sql<null>`NULL`, version_id: sourceVersions.id,
+    parent_version_id: sourceVersions.parent_version_id, version_no: sourceVersions.version_no, state: sourceVersions.state,
+    current_version_id: sourceHeads.current_version_id, confirmed_version_id: sourceHeads.confirmed_version_id,
+    content_hash: sourceVersions.content_hash, content_text: sourceVersions.content_text, created_at: sourceVersions.created_at,
+    created_by: actors.display_name, origin_kind: sourceVersions.origin_kind,
+    validation_state: sql<null>`NULL`, source_text_version_id: sourceVersions.id, source_text_hash: sourceVersions.content_hash,
+    punctuation_version_id: sql<null>`NULL`, punctuation_hash: sql<null>`NULL`,
+    anchor_set_id: sql<null>`NULL`, anchor_set_hash: sql<null>`NULL`,
+    translation_policy_version_id: sql<null>`NULL`, translation_policy_hash: sql<null>`NULL`,
+    structure_json: sql<null>`NULL`, structure_span_count: sql<number>`0`,
+  }).from(sources).innerJoin(sourceHeads, eq(sourceHeads.source_text_id, sources.id))
+    .innerJoin(sourceVersions, eq(sourceVersions.source_text_id, sources.id))
+    .innerJoin(actors, eq(actors.id, sourceVersions.created_by_actor_id))
+    .where(and(eq(sources.project_id, projectId), eq(sources.document_node_id, documentNodeId), isNull(sources.tombstoned_at)))
+    .orderBy(desc(sourceVersions.version_no), desc(sourceVersions.created_at)).all();
+  const punctuationRows = orm(db).select({
+    kind: sql<"punctuation">`'punctuation'`, aggregate_id: punctuationSets.id, stage: sql<null>`NULL`, version_id: punctuationVersions.id,
+    parent_version_id: punctuationVersions.parent_version_id, version_no: punctuationVersions.version_no, state: punctuationVersions.state,
+    current_version_id: punctuationHeads.current_version_id, confirmed_version_id: punctuationHeads.confirmed_version_id,
+    content_hash: punctuationVersions.content_hash, content_text: punctuationVersions.punctuated_text,
+    created_at: punctuationVersions.created_at, created_by: actors.display_name, origin_kind: sql<string>`'punctuation'`,
+    validation_state: sql<null>`NULL`, source_text_version_id: punctuationVersions.source_text_version_id,
+    source_text_hash: sourceVersions.content_hash, punctuation_version_id: punctuationVersions.id, punctuation_hash: punctuationVersions.content_hash,
+    anchor_set_id: sql<string | null>`(${orm(db).select({ id: anchorSets.id }).from(anchorSets)
+      .where(eq(anchorSets.punctuation_version_id, punctuationVersions.id)).orderBy(desc(anchorSets.created_at)).limit(1)})`,
+    anchor_set_hash: sql<string | null>`(${orm(db).select({ hash: anchorSets.anchor_set_hash }).from(anchorSets)
+      .where(eq(anchorSets.punctuation_version_id, punctuationVersions.id)).orderBy(desc(anchorSets.created_at)).limit(1)})`,
+    translation_policy_version_id: sql<null>`NULL`, translation_policy_hash: sql<null>`NULL`,
+    structure_json: punctuationVersions.structure_json,
+    structure_span_count: sql<number>`(${orm(db).select({ count: count() }).from(structureSpans)
+      .where(eq(structureSpans.punctuation_version_id, punctuationVersions.id))})`,
+  }).from(sources).innerJoin(punctuationSets, eq(punctuationSets.source_text_id, sources.id))
+    .innerJoin(punctuationHeads, eq(punctuationHeads.punctuation_set_id, punctuationSets.id))
+    .innerJoin(punctuationVersions, eq(punctuationVersions.punctuation_set_id, punctuationSets.id))
+    .innerJoin(sourceVersions, eq(sourceVersions.id, punctuationVersions.source_text_version_id))
+    .innerJoin(actors, eq(actors.id, punctuationVersions.created_by_actor_id))
+    .where(and(eq(sources.project_id, projectId), eq(sources.document_node_id, documentNodeId), isNull(sources.tombstoned_at)))
+    .orderBy(desc(punctuationSets.created_at), desc(punctuationVersions.version_no), desc(punctuationVersions.created_at)).all();
+  const translationRows = orm(db).select({
+    kind: sql<"translation">`'translation'`, aggregate_id: translations.id, stage: sql<string>`'translation'`, version_id: translationVersions.id,
+    parent_version_id: translationVersions.parent_version_id, version_no: translationVersions.version_no, state: translationVersions.state,
+    current_version_id: translationHeads.current_version_id, confirmed_version_id: translationHeads.confirmed_version_id,
+    content_hash: translationVersions.content_hash, content_text: translationVersions.text_content, created_at: translationVersions.created_at,
+    created_by: actors.display_name, origin_kind: translationVersions.origin_kind, validation_state: translationVersions.validation_state,
+    source_text_version_id: translationVersions.source_text_version_id, source_text_hash: sourceVersions.content_hash,
+    punctuation_version_id: translationVersions.punctuation_version_id, punctuation_hash: punctuationVersions.content_hash,
+    anchor_set_id: translationVersions.translation_anchor_set_id, anchor_set_hash: anchorSets.anchor_set_hash,
+    translation_policy_version_id: translationVersions.translation_policy_version_id, translation_policy_hash: policyVersions.content_hash,
+    structure_json: sql<null>`NULL`, structure_span_count: sql<number>`0`,
+  }).from(translations).innerJoin(translationHeads, eq(translationHeads.document_translation_id, translations.id))
+    .innerJoin(translationVersions, eq(translationVersions.document_translation_id, translations.id))
+    .innerJoin(sourceVersions, eq(sourceVersions.id, translationVersions.source_text_version_id))
+    .leftJoin(punctuationVersions, eq(punctuationVersions.id, translationVersions.punctuation_version_id))
+    .leftJoin(anchorSets, eq(anchorSets.id, translationVersions.translation_anchor_set_id))
+    .innerJoin(policyVersions, eq(policyVersions.id, translationVersions.translation_policy_version_id))
+    .innerJoin(actors, eq(actors.id, translationVersions.created_by_actor_id))
+    .where(and(eq(translations.project_id, projectId), eq(translations.document_node_id, documentNodeId), isNull(translations.tombstoned_at)))
+    .orderBy(desc(translationVersions.version_no), desc(translationVersions.created_at)).all();
   return {
     documentNodeId,
     documentTitle: document.title,
@@ -462,30 +438,6 @@ export function compareDocumentVersions(
   };
 }
 
-type ExportRow = {
-  document_node_id: string;
-  title: string;
-  original_title: string | null;
-  stage: string;
-  target_locale: string;
-  translation_version_id: string;
-  translation_version_no: number;
-  translation_hash: string;
-  translation_text: string;
-  source_version_id: string;
-  source_version_no: number;
-  source_hash: string;
-  source_text: string;
-  punctuation_version_id: string;
-  punctuation_version_no: number;
-  punctuation_hash: string;
-  punctuation_text: string;
-  anchor_set_id: string;
-  anchor_set_hash: string;
-  policy_version_id: string;
-  policy_hash: string;
-  version_created_at: string;
-};
 
 type ExportDocument = {
   alignment?: { state: string; sentences: unknown[]; links: unknown[] };
@@ -494,19 +446,15 @@ type ExportDocument = {
   targetLocale: string;
   confirmedTranslation: { versionId: string; versionNo: number; contentHash: string; contentText: string; versionCreatedAt: string };
   source: { versionId: string; versionNo: number; contentHash: string; contentText: string };
-  punctuation: { versionId: string; versionNo: number; contentHash: string; contentText: string };
-  anchorSet: { id: string; contentHash: string };
+  punctuation: { versionId: string | null; versionNo: number | null; contentHash: string | null; contentText: string | null };
+  anchorSet: { id: string | null; contentHash: string | null };
   translationPolicy: { versionId: string; contentHash: string };
   blocks: HistoryBlock[];
 };
 
 function documentPaths(db: SqliteDb, projectId: string): Map<string, string[]> {
-  const rows = allRows<{ id: string; parent_node_id: string | null; title: string }>(
-    db,
-    `SELECT id, parent_node_id, title FROM document_nodes
-     WHERE project_id = ? AND archived_at IS NULL`,
-    projectId,
-  );
+  const rows = orm(db).select({ id: nodes.id, parent_node_id: nodes.parent_node_id, title: nodes.title }).from(nodes)
+    .where(and(eq(nodes.project_id, projectId), isNull(nodes.archived_at))).all();
   const byId = new Map(rows.map((row) => [row.id, row]));
   const result = new Map<string, string[]>();
   for (const row of rows) {
@@ -525,36 +473,27 @@ function documentPaths(db: SqliteDb, projectId: string): Map<string, string[]> {
 
 function loadConfirmedExportDocuments(db: SqliteDb, projectId: string, documentNodeId?: string | null): ExportDocument[] {
   if (documentNodeId) requireSourceUnit(db, projectId, documentNodeId);
-  const rows = allRows<ExportRow>(
-    db,
-    `SELECT n.id AS document_node_id, n.title, n.original_title,
-            'translation' AS stage, t.target_locale,
-            v.id AS translation_version_id, v.version_no AS translation_version_no,
-            v.content_hash AS translation_hash, v.text_content AS translation_text,
-            source_v.id AS source_version_id, source_v.version_no AS source_version_no,
-            source_v.content_hash AS source_hash, source_v.content_text AS source_text,
-            punctuation_v.id AS punctuation_version_id,
-            punctuation_v.version_no AS punctuation_version_no,
-            punctuation_v.content_hash AS punctuation_hash,
-            punctuation_v.punctuated_text AS punctuation_text,
-            anchor_set.id AS anchor_set_id, anchor_set.anchor_set_hash,
-            policy_v.id AS policy_version_id, policy_v.content_hash AS policy_hash,
-            v.created_at AS version_created_at
-     FROM document_translation_heads h
-     JOIN document_translations t ON t.id = h.document_translation_id
-     JOIN document_translation_versions v ON v.id = h.confirmed_version_id
-     JOIN document_nodes n ON n.id = t.document_node_id
-     JOIN src_text_versions source_v ON source_v.id = v.source_text_version_id
-     LEFT JOIN punctuation_versions punctuation_v ON punctuation_v.id = v.punctuation_version_id
-     LEFT JOIN translation_anchor_sets anchor_set ON anchor_set.id = v.translation_anchor_set_id
-     JOIN core_translation_policy_versions policy_v ON policy_v.id = v.translation_policy_version_id
-     WHERE t.project_id = ? AND t.tombstoned_at IS NULL AND n.archived_at IS NULL
-       AND v.state = 'confirmed' AND (? IS NULL OR n.id = ?)
-     ORDER BY n.ordinal, n.id`,
-    projectId,
-    documentNodeId ?? null,
-    documentNodeId ?? null,
-  );
+  const rows = orm(db).select({
+    document_node_id: nodes.id, title: nodes.title, original_title: nodes.original_title,
+    stage: sql<string>`'translation'`, target_locale: translations.target_locale,
+    translation_version_id: translationVersions.id, translation_version_no: translationVersions.version_no,
+    translation_hash: translationVersions.content_hash, translation_text: translationVersions.text_content,
+    source_version_id: sourceVersions.id, source_version_no: sourceVersions.version_no,
+    source_hash: sourceVersions.content_hash, source_text: sourceVersions.content_text,
+    punctuation_version_id: punctuationVersions.id, punctuation_version_no: punctuationVersions.version_no,
+    punctuation_hash: punctuationVersions.content_hash, punctuation_text: punctuationVersions.punctuated_text,
+    anchor_set_id: anchorSets.id, anchor_set_hash: anchorSets.anchor_set_hash,
+    policy_version_id: policyVersions.id, policy_hash: policyVersions.content_hash, version_created_at: translationVersions.created_at,
+  }).from(translationHeads).innerJoin(translations, eq(translations.id, translationHeads.document_translation_id))
+    .innerJoin(translationVersions, eq(translationVersions.id, translationHeads.confirmed_version_id))
+    .innerJoin(nodes, eq(nodes.id, translations.document_node_id))
+    .innerJoin(sourceVersions, eq(sourceVersions.id, translationVersions.source_text_version_id))
+    .leftJoin(punctuationVersions, eq(punctuationVersions.id, translationVersions.punctuation_version_id))
+    .leftJoin(anchorSets, eq(anchorSets.id, translationVersions.translation_anchor_set_id))
+    .innerJoin(policyVersions, eq(policyVersions.id, translationVersions.translation_policy_version_id))
+    .where(and(eq(translations.project_id, projectId), isNull(translations.tombstoned_at), isNull(nodes.archived_at),
+      eq(translationVersions.state, "confirmed"), documentNodeId == null ? undefined : eq(nodes.id, documentNodeId)))
+    .orderBy(asc(nodes.ordinal), asc(nodes.id)).all();
   const paths = documentPaths(db, projectId);
   return rows.map((row) => ({
     document: {
@@ -587,7 +526,8 @@ function loadConfirmedExportDocuments(db: SqliteDb, projectId: string, documentN
     anchorSet: { id: row.anchor_set_id, contentHash: row.anchor_set_hash },
     translationPolicy: { versionId: row.policy_version_id, contentHash: row.policy_hash },
     blocks: loadHistoryBlocks(db, row.translation_version_id),
-    ...(() => { const layout=getRow<{alignment_state:string;sentences_json:string;links_json:string}>(db,'SELECT alignment_state,sentences_json,links_json FROM translation_text_layouts WHERE version_id=?',row.translation_version_id); return layout ? {alignment:{state:layout.alignment_state,sentences:JSON.parse(layout.sentences_json),links:JSON.parse(layout.links_json)}} : {}; })(),
+    ...(() => { const layout=orm(db).select({ alignment_state: layouts.alignment_state, sentences_json: layouts.sentences_json, links_json: layouts.links_json })
+      .from(layouts).where(eq(layouts.version_id, row.translation_version_id)).get(); return layout ? {alignment:{state:layout.alignment_state,sentences:JSON.parse(layout.sentences_json),links:JSON.parse(layout.links_json)}} : {}; })(),
   }));
 }
 
@@ -618,7 +558,7 @@ function renderMarkdown(projectTitle: string, generatedAt: string, manifestHash:
     if(item.punctuation.versionId) out.push(`| 표점 | v${item.punctuation.versionNo} · \`${item.punctuation.versionId}\`<br>\`${item.punctuation.contentHash}\` |`);
     if(item.anchorSet.id) out.push(`| 앵커 집합 | \`${item.anchorSet.id}\`<br>\`${item.anchorSet.contentHash}\` |`);
     out.push(`| 번역 원칙 | \`${item.translationPolicy.versionId}\`<br>\`${item.translationPolicy.contentHash}\` |`, "");
-    out.push("### 무표점 원문", "", item.source.contentText, "", ...(item.punctuation.versionId ? ["### 표점 원문", "", item.punctuation.contentText] : []), "", "### 확정 번역", "");
+    out.push("### 무표점 원문", "", item.source.contentText, "", ...(item.punctuation.versionId ? ["### 표점 원문", "", item.punctuation.contentText ?? ""] : []), "", "### 확정 번역", "");
     for (const block of item.blocks) {
       const anchors = block.anchors.map((anchor) => anchor.anchorKey).join(", ");
       const quotes = block.anchors.map((anchor) => anchor.punctuatedQuote).join("");
@@ -706,7 +646,7 @@ export function createConfirmedExport(
   if (!(["markdown", "json", "csv"] as const).includes(input.format)) {
     throw new MunhaeError("invalid_export", "지원하지 않는 내보내기 형식입니다");
   }
-  const project = getRow<{ title: string }>(db, `SELECT title FROM core_projects WHERE id = ?`, projectId);
+  const project = orm(db).select({ title: projects.title }).from(projects).where(eq(projects.id, projectId)).get();
   if (!project) throw new MunhaeError("invalid_project", "프로젝트를 찾을 수 없습니다");
   const documents = loadConfirmedExportDocuments(db, projectId, input.documentNodeId);
   if (!documents.length) {
@@ -751,37 +691,37 @@ export function createConfirmedExport(
 }
 
 function rebuildSearchIndex(db: SqliteDb, projectId: string): void {
-  db.transaction(() => {
-    db.prepare(`DELETE FROM search_documents_fts WHERE project_id = ?`).run(projectId);
-    db.prepare(
-      `INSERT INTO search_documents_fts
-         (project_id, document_node_id, result_kind, aggregate_id, version_id, content_hash,
-          stage, state, is_current, is_confirmed, title, content)
-       SELECT s.project_id, s.document_node_id, 'source', s.id, v.id, v.content_hash,
-              '', v.state, CASE WHEN h.current_version_id = v.id THEN '1' ELSE '0' END,
-              CASE WHEN h.confirmed_version_id = v.id THEN '1' ELSE '0' END,
-              n.title, v.content_text
-       FROM src_texts s
-       JOIN src_text_heads h ON h.source_text_id = s.id
-       JOIN src_text_versions v ON v.source_text_id = s.id
-       JOIN document_nodes n ON n.id = s.document_node_id
-       WHERE s.project_id = ? AND s.tombstoned_at IS NULL AND n.archived_at IS NULL`,
-    ).run(projectId);
-    db.prepare(
-      `INSERT INTO search_documents_fts
-         (project_id, document_node_id, result_kind, aggregate_id, version_id, content_hash,
-          stage, state, is_current, is_confirmed, title, content)
-       SELECT t.project_id, t.document_node_id, 'translation', t.id, v.id, v.content_hash,
-              'translation', v.state, CASE WHEN h.current_version_id = v.id THEN '1' ELSE '0' END,
-              CASE WHEN h.confirmed_version_id = v.id THEN '1' ELSE '0' END,
-              n.title, v.text_content
-       FROM document_translations t
-       JOIN document_translation_heads h ON h.document_translation_id = t.id
-       JOIN document_translation_versions v ON v.document_translation_id = t.id
-       JOIN document_nodes n ON n.id = t.document_node_id
-       WHERE t.project_id = ? AND t.tombstoned_at IS NULL AND n.archived_at IS NULL`,
-    ).run(projectId);
-  })();
+  orm(db).transaction(() => {
+    // FTS5 remains a SQL-managed virtual table; its ledger inputs are typed queries.
+    orm(db).run(sql`DELETE FROM search_documents_fts WHERE project_id = ${projectId}`);
+    const sourceRows = orm(db).select({
+      project_id: sources.project_id, document_node_id: sources.document_node_id,
+      result_kind: sql<string>`'source'`, aggregate_id: sources.id, version_id: sourceVersions.id,
+      content_hash: sourceVersions.content_hash, stage: sql<string>`''`, state: sourceVersions.state,
+      is_current: sql<string>`case when ${sourceHeads.current_version_id} = ${sourceVersions.id} then '1' else '0' end`,
+      is_confirmed: sql<string>`case when ${sourceHeads.confirmed_version_id} = ${sourceVersions.id} then '1' else '0' end`,
+      title: nodes.title, content: sourceVersions.content_text,
+    }).from(sources).innerJoin(sourceHeads, eq(sourceHeads.source_text_id, sources.id))
+      .innerJoin(sourceVersions, eq(sourceVersions.source_text_id, sources.id))
+      .innerJoin(nodes, eq(nodes.id, sources.document_node_id))
+      .where(and(eq(sources.project_id, projectId), isNull(sources.tombstoned_at), isNull(nodes.archived_at)));
+    const translationRows = orm(db).select({
+      project_id: translations.project_id, document_node_id: translations.document_node_id,
+      result_kind: sql<string>`'translation'`, aggregate_id: translations.id, version_id: translationVersions.id,
+      content_hash: translationVersions.content_hash, stage: sql<string>`'translation'`, state: translationVersions.state,
+      is_current: sql<string>`case when ${translationHeads.current_version_id} = ${translationVersions.id} then '1' else '0' end`,
+      is_confirmed: sql<string>`case when ${translationHeads.confirmed_version_id} = ${translationVersions.id} then '1' else '0' end`,
+      title: nodes.title, content: translationVersions.text_content,
+    }).from(translations).innerJoin(translationHeads, eq(translationHeads.document_translation_id, translations.id))
+      .innerJoin(translationVersions, eq(translationVersions.document_translation_id, translations.id))
+      .innerJoin(nodes, eq(nodes.id, translations.document_node_id))
+      .where(and(eq(translations.project_id, projectId), isNull(translations.tombstoned_at), isNull(nodes.archived_at)));
+    for (const query of [sourceRows, translationRows]) {
+      orm(db).run(sql`INSERT INTO search_documents_fts
+        (project_id, document_node_id, result_kind, aggregate_id, version_id, content_hash,
+         stage, state, is_current, is_confirmed, title, content) ${query.getSQL()}`);
+    }
+  });
 }
 
 type SearchRow = {
@@ -832,18 +772,8 @@ function resolveSearchEntityFilter(
     throw new MunhaeError("invalid_search", "지식 엔티티 ID가 올바르지 않습니다");
   }
 
-  const row = getRow<{
-    source_term: string;
-    target_term: string;
-    reading: string | null;
-  }>(
-    db,
-    `SELECT source_term, target_term, reading
-     FROM glossary_entries
-     WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-    entityId,
-    projectId,
-  );
+  const row = orm(db).select({ source_term: glossary.source_term, target_term: glossary.target_term, reading: glossary.reading })
+    .from(glossary).where(and(eq(glossary.id, entityId), eq(glossary.project_id, projectId), isNull(glossary.archived_at))).get();
   if (!row) throw new MunhaeError("not_found", "이 프로젝트에서 용어 항목을 찾을 수 없습니다");
   return {
     entityType: input.entityType,
@@ -853,16 +783,14 @@ function resolveSearchEntityFilter(
   };
 }
 
-function stateWhere(state: SearchState): string {
-  if (state === "current") return "AND is_current = '1'";
-  if (state === "confirmed") return "AND is_confirmed = '1'";
-  return "";
+function stateWhere(state: SearchState): SQL | undefined {
+  if (state === "current") return sql`is_current = '1'`;
+  if (state === "confirmed") return sql`is_confirmed = '1'`;
+  return undefined;
 }
 
-function scopeWhere(scope: SearchScope): string {
-  if (scope === "source") return "AND result_kind = 'source'";
-  if (scope === "translation") return "AND result_kind = 'translation'";
-  return "";
+function scopeWhere(scope: SearchScope): SQL | undefined {
+  return scope === "all" ? undefined : sql`result_kind = ${scope}`;
 }
 
 function snippet(content: string, query: string): string {
@@ -882,9 +810,9 @@ function snippet(content: string, query: string): string {
 
 function versionNumber(db: SqliteDb, row: SearchRow): number {
   if (row.result_kind === "source") {
-    return getRow<{ version_no: number }>(db, `SELECT version_no FROM src_text_versions WHERE id = ?`, row.version_id)?.version_no ?? 0;
+    return orm(db).select({ version_no: sourceVersions.version_no }).from(sourceVersions).where(eq(sourceVersions.id, row.version_id)).get()?.version_no ?? 0;
   }
-  return getRow<{ version_no: number }>(db, `SELECT version_no FROM document_translation_versions WHERE id = ?`, row.version_id)?.version_no ?? 0;
+  return orm(db).select({ version_no: translationVersions.version_no }).from(translationVersions).where(eq(translationVersions.id, row.version_id)).get()?.version_no ?? 0;
 }
 
 export function searchProject(db: SqliteDb, projectId: string, input: SearchQueryInput): SearchView {
@@ -903,44 +831,31 @@ export function searchProject(db: SqliteDb, projectId: string, input: SearchQuer
   const usedShortHanPrefix = isShortHanQuery(query);
   const limit = Math.max(1, Math.min(200, input.limit ?? 80));
   rebuildSearchIndex(db, projectId);
-  const entityWhere = entityFilter
-    ? `AND (${entityFilter.terms.map((_, index) => `instr(content, @entityTerm${index}) > 0`).join(" OR ")})`
-    : "";
-  const common = `${scopeWhere(scope)} ${stateWhere(state)} ${input.documentNodeId ? "AND document_node_id = @documentNodeId" : ""} ${entityWhere}`;
-  const params: Record<string, unknown> = {
-    projectId,
-    query,
-    documentNodeId: input.documentNodeId ?? null,
-    limit,
-  };
-  entityFilter?.terms.forEach((term, index) => {
-    params[`entityTerm${index}`] = term;
-  });
-  const exactRows = allRows<SearchRow>(
-    db,
-    `SELECT result_kind, document_node_id, title, aggregate_id, version_id, content_hash,
+  const common = and(
+    sql`project_id = ${projectId}`,
+    scopeWhere(scope), stateWhere(state),
+    input.documentNodeId ? sql`document_node_id = ${input.documentNodeId}` : undefined,
+    entityFilter ? or(...entityFilter.terms.map((term) => sql`instr(content, ${term}) > 0`)) : undefined,
+  )!;
+  const exactRows = orm(db).all<SearchRow>(sql`
+     SELECT result_kind, document_node_id, title, aggregate_id, version_id, content_hash,
             stage, state, is_current, is_confirmed, content, 0 AS score
      FROM search_documents_fts
-     WHERE project_id = @projectId AND instr(content, @query) > 0 ${common}
+     WHERE ${common} AND instr(content, ${query}) > 0
      ORDER BY CAST(is_current AS INTEGER) DESC, CAST(is_confirmed AS INTEGER) DESC, title, version_id
-     LIMIT @limit`,
-    params,
-  );
+     LIMIT ${limit}`);
   let ftsRows: SearchRow[] = [];
   const expression = matchExpression(query, usedShortHanPrefix);
   if (expression) {
     try {
-      ftsRows = allRows<SearchRow>(
-        db,
-        `SELECT result_kind, document_node_id, title, aggregate_id, version_id, content_hash,
+      ftsRows = orm(db).all<SearchRow>(sql`
+         SELECT result_kind, document_node_id, title, aggregate_id, version_id, content_hash,
                 stage, state, is_current, is_confirmed, content,
                 bm25(search_documents_fts) AS score
          FROM search_documents_fts
-         WHERE search_documents_fts MATCH @expression AND project_id = @projectId ${common}
+         WHERE search_documents_fts MATCH ${expression} AND ${common}
          ORDER BY score, CAST(is_current AS INTEGER) DESC, CAST(is_confirmed AS INTEGER) DESC
-         LIMIT @limit`,
-        { ...params, expression },
-      );
+         LIMIT ${limit}`);
     } catch {
       // Exact substring search still returns useful results for punctuation-only
       // or tokenizer-specific input. A malformed MATCH expression never escapes.

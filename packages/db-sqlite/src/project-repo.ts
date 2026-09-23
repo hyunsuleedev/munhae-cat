@@ -1,3 +1,10 @@
+import { and, eq, ne, isNull, inArray, sql, getTableColumns } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema as tables } from "./drizzle-schema.ts";
+import { moveDocument as moveStoredDocument } from "./document-organization.ts";
+import * as commentReferences from "./comment-references.ts";
+import { termSource } from "@munhae/domain/term-source";
+import * as termReview from "./term-review.ts";
 import { searchConcordance, type ConcordanceInput } from "./concordance.ts";
 import { buildReviewExport, type ReviewExportInput } from "./review-export.ts";
 import * as fullText from "./full-text.ts";
@@ -21,14 +28,15 @@ import {
   utf8ByteLength,
 } from "@munhae/domain";
 import { checkpointAndZip, releaseLock, resolvePackagePath } from "@munhae/project-format";
-import { bootstrapEmptyProject, openProjectDb, type ProjectActors } from "./bootstrap.ts";
-import { allRows, getRow, insertRow } from "./rows.ts";
+import { bootstrapEmptyProject, openProjectDb, loadActors, type ProjectActors } from "./bootstrap.ts";
+import { readOnlineRows, hydrateOnlineRows, type OnlineTableData } from "./online-data.ts";
 import { seedDemoContents } from "./seed-demo.ts";
 import {
   ensureTranslationAnchorsForPunctuationVersion,
   insertPunctuationVersionWithAnchors,
   insertSourceLayer,
   prepareStructureSpans,
+  punctuationSpanKind,
   validatePunctuationText,
 } from "./source-layer.ts";
 import { assertSqliteIntegrity, type SqliteDb } from "./sqlite.ts";
@@ -100,7 +108,7 @@ import {
   glossaryContentJson,
 } from "./knowledge-content.ts";
 import {
-  archiveContextItem as archiveStoredContextItem,
+  deleteContextItem as deleteStoredContextItem,
   assertNoOpenBlockingUncertainty,
   createContextItem as createStoredContextItem,
   createUncertainty as createStoredUncertainty,
@@ -168,10 +176,108 @@ import type {
   UpsertGlossaryInput,
   UpdateContextItemInput,
   UpdateDocumentMetadataInput,
+  MoveDocumentInput,
   VersionUiState,
 } from "./views.ts";
 
 const TRANSLATION_STAGE = "translation";
+
+export type WorkspaceConfiguration = {
+  summary?: ProjectSummary;
+  beforeOperation?: (method: string, mutating: boolean) => void;
+  onChange?: () => void;
+};
+
+type PublicOperation = { [K in keyof ProjectRepo]: ProjectRepo[K] extends (...args: never[]) => unknown ? K : never }[keyof ProjectRepo];
+type GuardedOperation = Exclude<PublicOperation, "configureWorkspace" | "close" | "backupTo" | "exportOnlineRows" | "applyOnlineRows">;
+
+// This exhaustive public-method map makes every new operation choose its access
+// policy. Reads may update derived FTS/verified_at data, which is not a user edit.
+const WORKSPACE_OPERATIONS = {
+  setTranslationLanguage: true,
+  checkpoint: false,
+  getHome: false,
+  createDocument: true,
+  getEditor: false,
+  getChat: false,
+  getLatestPunctuationSuggestion: false,
+  attachReferenceAsset: true,
+  readReferenceAsset: false,
+  referenceAssetPath: false,
+  saveSourceDraft: true,
+  confirmSource: true,
+  createPunctuationDraftFromConfirmedSource: true,
+  savePunctuationDraft: true,
+  confirmPunctuation: true,
+  createTranslationDraft: true,
+  resetTranslationDraft: true,
+  saveTranslationDraft: true,
+  confirmTranslation: true,
+  reviseTranslation: true,
+  mergeBlocks: true,
+  splitBlock: true,
+  getDocumentHistory: false,
+  compareVersions: false,
+  createConfirmedExport: false,
+  concordance: false,
+  createReviewExport: false,
+  search: false,
+  getTermContext: false,
+  getTermReferenceComments: false,
+  getTerms: false,
+  deleteTerm: true,
+  saveTerm: true,
+  promoteTerm: true,
+  storeTermCandidates: true,
+  getKnowledge: false,
+  upsertGlossary: true,
+  moveDocument: true,
+  getDocumentMetadata: false,
+  updateDocumentMetadata: true,
+  getMaterials: false,
+  setMaterialPreference: true,
+  reuseCommentAsMaterial: true,
+  createContextItem: true,
+  updateContextItem: true,
+  setContextItemEnabled: true,
+  setContextItemPriority: true,
+  deleteContextItem: true,
+  createUncertainty: true,
+  createUncertaintyVersion: true,
+  resolveUncertainty: true,
+  previewContext: false,
+  listReviewComments: false,
+  saveSentenceLink: true,
+  createReviewComment: true,
+  updateReviewComment: true,
+  archiveReviewComment: true,
+  listReadingAnnotations: false,
+  saveReadingAnnotation: true,
+  archiveReadingAnnotation: true,
+  beginFullTextRun: true,
+  finishFullTextRun: true,
+  completeFullTextRun: true,
+  prepareAlignment: true,
+  completeAlignment: true,
+  submitAlignment: true,
+  checkAlignment: false,
+  finishAlignment: true,
+  failAlignment: true,
+  previewLegacyContext: false,
+  beginProjectChatRun: true,
+  beginPunctuationSuggestionRun: true,
+  completeProjectChatRun: true,
+  completePunctuationSuggestionRun: true,
+  applyPunctuationSuggestionRun: true,
+  failProjectTaskRun: true,
+  recordProjectAgentSession: true,
+  invalidateProjectAgentSession: true,
+  beginTranslationRun: true,
+  completeTranslationRun: true,
+  recordInvalidTranslationResponse: true,
+  failTranslationRun: true,
+  recordTranslationAgentSession: true,
+} satisfies Record<GuardedOperation, boolean>;
 
 function translationPolicyRulesForPrompt(raw: string | null): unknown {
   if (!raw) return null;
@@ -198,14 +304,26 @@ function throwKnowledgeCasFailure(
   table: "glossary_entries",
   id: string,
 ): never {
-  const row = getRow<{ lock_version: number }>(
-    db,
-    `SELECT lock_version FROM ${table} WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-    id,
-    projectId,
-  );
+  const target = tables[table];
+  const row = orm(db)
+    .select({ lock_version: target.lock_version })
+    .from(target)
+    .where(
+      and(
+        eq(target.id, id),
+        eq(target.project_id, projectId),
+        isNull(target.archived_at),
+      ),
+    )
+    .get();
   if (!row) throw new MunhaeError("not_found", "지식 항목을 찾을 수 없습니다");
   throw new MunhaeError("cas_conflict", `지식 항목이 다른 편집에서 변경되었습니다 (현재 lock_version ${row.lock_version})`);
+}
+
+function unresolvedStalenessCount() {
+  return sql<number>`(SELECT COUNT(*) FROM ${tables.translation_staleness}
+    WHERE ${tables.translation_staleness.document_translation_version_id} = ${tables.document_translation_versions.id}
+      AND ${tables.translation_staleness.resolved_by_document_translation_version_id} IS NULL)`;
 }
 
 export class ProjectRepo {
@@ -215,8 +333,13 @@ export class ProjectRepo {
   readonly openedAt: string;
   private readonly db: SqliteDb;
   private readonly actors: ProjectActors;
-  private readonly policyVersionId: string;
+  private policyVersionId: string;
+  private basePolicyVersionId: string;
+  private translationLanguage: "ko" | "en" = "ko";
   private closed = false;
+  private workspace: WorkspaceConfiguration | null = null;
+  private workspaceDepth = 0;
+  private workspaceChanged = false;
 
   constructor(boot: {
     db: SqliteDb;
@@ -225,24 +348,138 @@ export class ProjectRepo {
     title: string;
     actors: ProjectActors;
     policyVersionId: string;
-  }) {
+  }, options: { onlineCache?: boolean } = {}) {
     this.db = boot.db;
     this.packagePath = boot.packagePath;
     this.projectId = boot.projectId;
     this.title = boot.title;
     this.actors = boot.actors;
     this.policyVersionId = boot.policyVersionId;
+    this.basePolicyVersionId = boot.policyVersionId;
     this.openedAt = nowIso();
-    this.db.prepare("UPDATE translation_text_layouts SET alignment_state='failed',alignment_error='앱이 종료되어 연결이 중단되었습니다. 다시 실행할 수 있습니다.' WHERE alignment_state='running'").run();
-    this.recoverInterruptedTranslationRuns();
-    recoverInterruptedProjectTasks(
-      this.db,
-      this.projectId,
-      (messageId) => this.readInterruptedRunEvents(messageId),
-    );
+    if (!options.onlineCache) {
+      orm(this.db)
+        .update(tables.translation_text_layouts)
+        .set({
+          alignment_state: "failed",
+          alignment_error:
+            "앱이 종료되어 연결이 중단되었습니다. 다시 실행할 수 있습니다.",
+        })
+        .where(eq(tables.translation_text_layouts.alignment_state, "running"))
+        .run();
+      this.recoverInterruptedTranslationRuns();
+      recoverInterruptedProjectTasks(
+        this.db,
+        this.projectId,
+        (messageId) => this.readInterruptedRunEvents(messageId),
+      );
+    }
+  }
+
+  /** Main-owned sync adapter; renderer operations still use the guarded domain methods. */
+  exportOnlineRows(): OnlineTableData {
+    if (this.closed) throw new MunhaeError("project_closed", "프로젝트가 닫혔습니다");
+    return readOnlineRows(this.db);
+  }
+
+  applyOnlineRows(rows: OnlineTableData): void {
+    if (this.closed) throw new MunhaeError("project_closed", "프로젝트가 닫혔습니다");
+    hydrateOnlineRows(this.db, this.projectId, rows);
+    Object.assign(this.actors, loadActors(this.db));
+    const policy = this.db.prepare(`SELECT heads.current_version_id FROM core_translation_policy_heads heads
+      JOIN core_translation_policies policies ON policies.id=heads.policy_id WHERE policies.project_id=? LIMIT 1`).get(this.projectId) as { current_version_id: string } | undefined;
+    if (policy) this.basePolicyVersionId = this.policyVersionId = policy.current_version_id;
+    const localized = this.db.prepare(`SELECT id FROM core_translation_policy_versions WHERE parent_version_id=? AND target_locale=? ORDER BY version_no DESC LIMIT 1`).get(this.basePolicyVersionId, this.translationLanguage) as { id: string } | undefined;
+    if (localized) this.policyVersionId = localized.id;
+  }
+
+  configureWorkspace(configuration: WorkspaceConfiguration): void {
+    if (!this.workspace) {
+      for (const method of Object.keys(WORKSPACE_OPERATIONS) as GuardedOperation[]) {
+        const original = this[method];
+        Object.defineProperty(this, method, {
+          configurable: true,
+          value: (...args: unknown[]) => this.workspaceOperation(method, WORKSPACE_OPERATIONS[method], () => Reflect.apply(original, this, args)),
+        });
+      }
+    }
+    this.workspace = { ...configuration, summary: configuration.summary ? { ...configuration.summary } : undefined };
+  }
+
+  private workspaceOperation<T>(method: string, mutating: boolean, operation: () => T): T {
+    this.workspace?.beforeOperation?.(method, mutating);
+    const before = mutating ? this.totalChanges() : 0;
+    this.workspaceDepth += 1;
+    try { return operation(); }
+    finally {
+      if (mutating && this.totalChanges() !== before) this.workspaceChanged = true;
+      this.workspaceDepth -= 1;
+      if (!this.workspaceDepth && this.workspaceChanged) {
+        this.workspaceChanged = false;
+        this.workspace?.onChange?.();
+      }
+    }
+  }
+
+  private totalChanges(): number {
+    return orm(this.db).get<{ changes: number }>(
+      sql`SELECT total_changes() AS changes`,
+    )!.changes;
+  }
+
+  setTranslationLanguage(language: "ko" | "en"): void {
+    if (language !== "ko" && language !== "en") throw new MunhaeError("invalid_payload", "Unsupported translation language");
+    const base = orm(this.db)
+      .select({ ...getTableColumns(tables.core_translation_policy_versions) })
+      .from(tables.core_translation_policy_versions)
+      .where(
+        sql`${tables.core_translation_policy_versions.id} = ${this.basePolicyVersionId}`,
+      )
+      .get()!;
+    if (base.target_locale === language) {
+      this.policyVersionId = this.basePolicyVersionId;
+    } else {
+      const existing = orm(this.db)
+        .select({ id: tables.core_translation_policy_versions.id })
+        .from(tables.core_translation_policy_versions)
+        .where(
+          sql`${tables.core_translation_policy_versions.parent_version_id} = ${this.basePolicyVersionId} AND ${tables.core_translation_policy_versions.target_locale} = ${language}`,
+        )
+        .orderBy(sql`${tables.core_translation_policy_versions.version_no} DESC`)
+        .limit(1)
+        .get();
+      if (existing) this.policyVersionId = existing.id;
+      else {
+        const name = language === "en" ? "English" : "Korean";
+        const rules = { ...JSON.parse(String(base.rules_json ?? "{}")), targetLocale: language,
+          audience: `${name}-speaking readers and researchers`,
+          hanjaPolicy: `Translate terms into ${name}; preserve original Chinese characters in parentheses where useful.` };
+        const body = { ...base, content_hash: "", id: createId(), parent_version_id: this.basePolicyVersionId,
+          version_no: orm(this.db)
+            .select({
+              n: sql<number>`MAX(${tables.core_translation_policy_versions.version_no}) + 1`,
+            })
+            .from(tables.core_translation_policy_versions)
+            .where(
+              sql`${tables.core_translation_policy_versions.policy_id} = ${base.policy_id}`,
+            )
+            .get()!.n,
+          target_locale: language, audience: rules.audience, hanja_policy: rules.hanjaPolicy,
+          style_guide_md: `${String(base.style_guide_md ?? "")}\nTarget language override: produce the complete translation in ${name}. This overrides any language-specific wording above.`,
+          rules_json: JSON.stringify(rules), created_at: nowIso() };
+        body.content_hash = sha256Hex(canonicalJson(body));
+        orm(this.db)
+          .insert(tables.core_translation_policy_versions)
+          .values(body)
+          .run();
+        this.policyVersionId = body.id;
+      }
+    }
+    this.translationLanguage = language;
   }
 
   private summary(): ProjectSummary {
+    if (this.workspace?.summary) return { ...this.workspace.summary };
     return {
       projectId: this.projectId,
       title: this.title,
@@ -298,24 +535,30 @@ export class ProjectRepo {
         locator: uncertainty.locator,
       }));
 
-    const recent = allRows<{
-      title: string;
-      version_no: number;
-      state: string;
-      validation_state: string;
-      origin_kind: string;
-      created_at: string;
-    }>(
-      this.db,
-      `SELECT n.title, v.version_no, v.state, v.validation_state, v.origin_kind, v.created_at
-       FROM document_translation_versions v
-       JOIN document_translations t ON t.id = v.document_translation_id
-       JOIN document_nodes n ON n.id = t.document_node_id
-       WHERE v.project_id = ?
-       ORDER BY v.created_at DESC
-       LIMIT 8`,
-      this.projectId,
-    ).map((r) => {
+    const recent = orm(this.db)
+      .select({
+        title: tables.document_nodes.title,
+        version_no: tables.document_translation_versions.version_no,
+        state: tables.document_translation_versions.state,
+        validation_state: tables.document_translation_versions.validation_state,
+        origin_kind: tables.document_translation_versions.origin_kind,
+        created_at: tables.document_translation_versions.created_at,
+      })
+      .from(tables.document_translation_versions)
+      .innerJoin(
+        tables.document_translations,
+        sql`${tables.document_translations.id} = ${tables.document_translation_versions.document_translation_id}`,
+      )
+      .innerJoin(
+        tables.document_nodes,
+        sql`${tables.document_nodes.id} = ${tables.document_translations.document_node_id}`,
+      )
+      .where(
+        sql`${tables.document_translation_versions.project_id} = ${this.projectId}`,
+      )
+      .orderBy(sql`${tables.document_translation_versions.created_at} DESC`)
+      .limit(8)
+      .all().map((r) => {
       let tag = "번역안";
       if (r.state === "confirmed") tag = "확정";
       else if (r.validation_state === "needs_review") tag = "재검토";
@@ -339,59 +582,69 @@ export class ProjectRepo {
   }
 
   createDocument(input: CreateDocumentInput): DocumentListItem {
-    return this.db.transaction(() => {
+    return orm(this.db).transaction(() => {
       const sourceText = input.nodeRole === "source_unit" ? input.sourceText.replace(/^\uFEFF/, "") : "";
       if (input.nodeRole === "source_unit" && !sourceText.trim()) {
         throw new MunhaeError("invalid_input", "원문 문서에는 원문 내용이 필요합니다");
       }
       const id = createId();
       const now = nowIso();
-      const master = getRow<{ id: string }>(
-        this.db,
-        `SELECT id FROM document_nodes WHERE project_id = ? AND is_master = 1 AND archived_at IS NULL`,
-        this.projectId,
-      );
+      const master = orm(this.db)
+        .select({ id: tables.document_nodes.id })
+        .from(tables.document_nodes)
+        .where(
+          sql`${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.is_master} = 1 AND ${tables.document_nodes.archived_at} IS NULL`,
+        )
+        .get();
       if (!master) throw new MunhaeError("invalid_project", "프로젝트 마스터 폴더가 없습니다");
       const parentId = input.parentId ?? master.id;
       let ordinal = 0;
       if (parentId) {
-        const parent = getRow<{ id: string; node_role: DocumentNodeRole }>(
-          this.db,
-          `SELECT id, node_role FROM document_nodes WHERE id = ? AND project_id = ?`,
-          parentId,
-          this.projectId,
-        );
+        const parent = orm(this.db)
+          .select({
+            id: tables.document_nodes.id,
+            node_role: tables.document_nodes.node_role,
+          })
+          .from(tables.document_nodes)
+          .where(
+            sql`${tables.document_nodes.id} = ${parentId} AND ${tables.document_nodes.project_id} = ${this.projectId}`,
+          )
+          .get();
         if (!parent) throw new MunhaeError("not_found", "parent document not found");
         if (parent.node_role !== "container") {
           throw new MunhaeError("invalid_parent", "원문 문서 아래에는 하위 항목을 만들 수 없습니다");
         }
-        const row = getRow<{ m: number | null }>(
-          this.db,
-          `SELECT MAX(ordinal) AS m FROM document_nodes WHERE project_id = ? AND parent_node_id = ?`,
-          this.projectId,
-          parentId,
-        );
+        const row = orm(this.db)
+          .select({ m: sql<number | null>`MAX(${tables.document_nodes.ordinal})` })
+          .from(tables.document_nodes)
+          .where(
+            sql`${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.parent_node_id} = ${parentId}`,
+          )
+          .get();
         ordinal = (row?.m ?? -1) + 1;
       }
-      insertRow(this.db, "document_nodes", {
-        id,
-        project_id: this.projectId,
-        parent_node_id: parentId,
-        node_role: input.nodeRole,
-        is_master: 0,
-        title: input.title,
-        original_title: input.originalTitle?.trim() || null,
-        ordinal,
-        author_text: null,
-        language: null,
-        period_text: null,
-        date_text: null,
-        description_md: null,
-        source_reference: null,
-        created_at: now,
-        updated_at: now,
-        archived_at: null,
-      });
+      orm(this.db)
+        .insert(tables.document_nodes)
+        .values({
+          id,
+          project_id: this.projectId,
+          parent_node_id: parentId,
+          node_role: input.nodeRole,
+          is_master: 0,
+          title: input.title,
+          original_title: input.originalTitle?.trim() || null,
+          ordinal,
+          author_text: null,
+          language: null,
+          period_text: null,
+          date_text: null,
+          description_md: null,
+          source_reference: null,
+          created_at: now,
+          updated_at: now,
+          archived_at: null,
+        })
+        .run();
       if (input.nodeRole === "source_unit") {
         insertSourceLayer({
           db: this.db,
@@ -409,136 +662,156 @@ export class ProjectRepo {
       const item = this.listDocuments().find((d) => d.id === id);
       if (!item) throw new MunhaeError("internal", "document insert failed");
       return item;
-    })();
+    });
   }
 
   getEditor(documentNodeId: string): EditorView {
-    const node = getRow<{
-      id: string;
-      title: string;
-      original_title: string | null;
-      node_role: DocumentNodeRole;
-      author_text: string | null;
-      language: string | null;
-      period_text: string | null;
-      date_text: string | null;
-      source_reference: string | null;
-      parent_node_id: string | null;
-    }>(this.db, `SELECT * FROM document_nodes WHERE id = ? AND project_id = ?`, documentNodeId, this.projectId);
+    const node = orm(this.db)
+      .select({ ...getTableColumns(tables.document_nodes) })
+      .from(tables.document_nodes)
+      .where(
+        sql`${tables.document_nodes.id} = ${documentNodeId} AND ${tables.document_nodes.project_id} = ${this.projectId}`,
+      )
+      .get();
     if (!node) throw new MunhaeError("not_found", "document not found");
     if (node.node_role !== "source_unit") {
       throw new MunhaeError("not_ready", "목차 폴더에는 원문·표점안이 없습니다");
     }
 
     const inherited = this.inheritMetadata(node);
-    const source = getRow<{
-      version_id: string;
-      version_no: number;
-      lock_version: number;
-      state: EditorView["source"]["state"];
-      content_text: string;
-      source_text_id: string;
-    }>(
-      this.db,
-      `SELECT v.id AS version_id, v.version_no, h.lock_version, v.state, v.content_text,
-              t.id AS source_text_id
-       FROM src_texts t
-       JOIN src_text_heads h ON h.source_text_id = t.id
-       JOIN src_text_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? AND t.tombstoned_at IS NULL
-       LIMIT 1`,
-      documentNodeId,
-    );
+    const source = orm(this.db)
+      .select({
+        version_id: tables.src_text_versions.id,
+        version_no: tables.src_text_versions.version_no,
+        lock_version: tables.src_text_heads.lock_version,
+        state: tables.src_text_versions.state,
+        content_text: tables.src_text_versions.content_text,
+        source_text_id: tables.src_texts.id,
+      })
+      .from(tables.src_texts)
+      .innerJoin(
+        tables.src_text_heads,
+        sql`${tables.src_text_heads.source_text_id} = ${tables.src_texts.id}`,
+      )
+      .innerJoin(
+        tables.src_text_versions,
+        sql`${tables.src_text_versions.id} = ${tables.src_text_heads.current_version_id}`,
+      )
+      .where(
+        sql`${tables.src_texts.document_node_id} = ${documentNodeId} AND ${tables.src_texts.tombstoned_at} IS NULL`,
+      )
+      .limit(1)
+      .get();
     if (!source) throw new MunhaeError("not_ready", "이 문서에는 원문이 없습니다");
 
-    const punc = getRow<{
-      version_id: string;
-      version_no: number;
-      lock_version: number;
-      state: NonNullable<EditorView["punctuation"]>["state"];
-      punctuated_text: string;
-      structure_json: string | null;
-      source_text_version_id: string;
-      set_id: string;
-    }>(
-      this.db,
-      `SELECT v.id AS version_id, v.version_no, h.lock_version, v.state, v.punctuated_text,
-              v.structure_json, v.source_text_version_id, s.id AS set_id
-       FROM punctuation_sets s
-       JOIN punctuation_heads h ON h.punctuation_set_id = s.id
-       JOIN punctuation_versions v ON v.id = h.current_version_id
-       WHERE s.source_text_id = ?
-       LIMIT 1`,
-      source.source_text_id,
-    );
+    const punc = orm(this.db)
+      .select({
+        version_id: tables.punctuation_versions.id,
+        version_no: tables.punctuation_versions.version_no,
+        lock_version: tables.punctuation_heads.lock_version,
+        state: tables.punctuation_versions.state,
+        punctuated_text: tables.punctuation_versions.punctuated_text,
+        structure_json: tables.punctuation_versions.structure_json,
+        source_text_version_id: tables.punctuation_versions.source_text_version_id,
+        set_id: tables.punctuation_sets.id,
+      })
+      .from(tables.punctuation_sets)
+      .innerJoin(
+        tables.punctuation_heads,
+        sql`${tables.punctuation_heads.punctuation_set_id} = ${tables.punctuation_sets.id}`,
+      )
+      .innerJoin(
+        tables.punctuation_versions,
+        sql`${tables.punctuation_versions.id} = ${tables.punctuation_heads.current_version_id}`,
+      )
+      .where(
+        sql`${tables.punctuation_sets.source_text_id} = ${source.source_text_id}`,
+      )
+      .limit(1)
+      .get();
 
-    const anchorSet = punc ? getRow<{ id: string }>(
-      this.db,
-      `SELECT id FROM translation_anchor_sets
-       WHERE document_node_id = ? AND punctuation_version_id = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      documentNodeId,
-      punc.version_id,
-    ) : undefined;
+    const anchorSet = punc ? orm(this.db)
+      .select({ id: tables.translation_anchor_sets.id })
+      .from(tables.translation_anchor_sets)
+      .where(
+        sql`${tables.translation_anchor_sets.document_node_id} = ${documentNodeId} AND ${tables.translation_anchor_sets.punctuation_version_id} = ${punc.version_id}`,
+      )
+      .orderBy(sql`${tables.translation_anchor_sets.created_at} DESC`)
+      .limit(1)
+      .get() : undefined;
 
-    const structureSpans = punc ? allRows<{
-      id: string;
-      span_kind: NonNullable<EditorView["punctuation"]>["structureSpans"][number]["spanKind"];
-      parent_span_id: string | null;
-      ordinal: number;
-      codepoint_from: number;
-      codepoint_to: number;
-      quote: string;
-      label: string | null;
-    }>(
-      this.db,
-      `SELECT id, span_kind, parent_span_id, ordinal, codepoint_from, codepoint_to, quote, label
-       FROM punctuation_structure_spans
-       WHERE punctuation_version_id = ?
-       ORDER BY codepoint_from, codepoint_to DESC, ordinal`,
-      punc?.version_id ?? "",
-    ) : [];
+    const structureSpans = punc ? orm(this.db)
+      .select({
+        id: tables.punctuation_structure_spans.id,
+        span_kind: tables.punctuation_structure_spans.span_kind,
+        parent_span_id: tables.punctuation_structure_spans.parent_span_id,
+        ordinal: tables.punctuation_structure_spans.ordinal,
+        codepoint_from: tables.punctuation_structure_spans.codepoint_from,
+        codepoint_to: tables.punctuation_structure_spans.codepoint_to,
+        quote: tables.punctuation_structure_spans.quote,
+        label: tables.punctuation_structure_spans.label,
+      })
+      .from(tables.punctuation_structure_spans)
+      .where(
+        sql`${tables.punctuation_structure_spans.punctuation_version_id} = ${punc?.version_id ?? ""}`,
+      )
+      .orderBy(
+        sql`${tables.punctuation_structure_spans.codepoint_from}, ${tables.punctuation_structure_spans.codepoint_to} DESC, ${tables.punctuation_structure_spans.ordinal}`,
+      )
+      .all() : [];
 
-    const anchors = anchorSet ? allRows<{
-      anchor_key: string;
-      ordinal: number;
-      boundary_kind: string;
-      punctuation_codepoint_from: number;
-      punctuation_codepoint_to: number;
-      punctuated_quote: string;
-    }>(
-      this.db,
-      `SELECT a.anchor_key, a.ordinal, a.boundary_kind, a.punctuation_codepoint_from,
-              a.punctuation_codepoint_to, a.punctuated_quote
-       FROM translation_anchors a
-       WHERE a.anchor_set_id = ?
-       ORDER BY a.ordinal`,
-      anchorSet?.id ?? "",
-    ) : [];
+    const anchors = anchorSet ? orm(this.db)
+      .select({
+        anchor_key: tables.translation_anchors.anchor_key,
+        ordinal: tables.translation_anchors.ordinal,
+        boundary_kind: tables.translation_anchors.boundary_kind,
+        punctuation_codepoint_from:
+          tables.translation_anchors.punctuation_codepoint_from,
+        punctuation_codepoint_to:
+          tables.translation_anchors.punctuation_codepoint_to,
+        punctuated_quote: tables.translation_anchors.punctuated_quote,
+      })
+      .from(tables.translation_anchors)
+      .where(
+        sql`${tables.translation_anchors.anchor_set_id} = ${anchorSet?.id ?? ""}`,
+      )
+      .orderBy(sql`${tables.translation_anchors.ordinal}`)
+      .all() : [];
 
     const punctuationState: NonNullable<EditorView["punctuation"]>["state"] | null = punc
       ? (punc.source_text_version_id === source.version_id ? punc.state : "superseded")
       : null;
-    const translationRow = getRow<TranslationVersionRow & {
-      lock_version: number;
-      unresolved_staleness: number;
-    }>(
-      this.db,
-      `SELECT v.id, v.version_no, v.state, v.validation_state, v.text_content, v.origin_kind,
-              v.parent_version_id, v.source_text_version_id, v.punctuation_version_id,
-              v.translation_anchor_set_id, v.translation_policy_version_id, h.lock_version,
-              (SELECT COUNT(*) FROM translation_staleness st
-               WHERE st.document_translation_version_id = v.id
-                 AND st.resolved_by_document_translation_version_id IS NULL) AS unresolved_staleness
-       FROM document_translations t
-       JOIN document_translation_heads h ON h.document_translation_id = t.id
-       JOIN document_translation_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? AND t.project_id = ?
-         AND t.tombstoned_at IS NULL
-       LIMIT 1`,
-      documentNodeId,
-      this.projectId,
-    );
+    const translationRow = orm(this.db)
+      .select({
+        ...getTableColumns(tables.document_translation_versions),
+        lock_version: tables.document_translation_heads.lock_version,
+        unresolved_staleness: unresolvedStalenessCount(),
+      })
+      .from(tables.document_translations)
+      .innerJoin(
+        tables.document_translation_heads,
+        eq(
+          tables.document_translation_heads.document_translation_id,
+          tables.document_translations.id,
+        ),
+      )
+      .innerJoin(
+        tables.document_translation_versions,
+        eq(
+          tables.document_translation_versions.id,
+          tables.document_translation_heads.current_version_id,
+        ),
+      )
+      .where(
+        and(
+          eq(tables.document_translations.document_node_id, documentNodeId),
+          eq(tables.document_translations.project_id, this.projectId),
+          eq(tables.document_translations.target_locale, this.translationLanguage),
+          isNull(tables.document_translations.tombstoned_at),
+        ),
+      )
+      .limit(1)
+      .get();
     const textLayout = translationRow ? fullText.loadTextLayout(this.fullTextContext(), translationRow.id) : null;
     const translation: EditorView["translation"] = translationRow ? {
       versionId: translationRow.id,
@@ -598,7 +871,7 @@ export class ProjectRepo {
         structureMode: structureModeFromJson(punc.structure_json, structureSpans),
         structureSpans: structureSpans.map((span) => ({
           id: span.id,
-          spanKind: span.span_kind,
+          spanKind: punctuationSpanKind(span.span_kind),
           parentSpanId: span.parent_span_id,
           ordinal: span.ordinal,
           codepointFrom: span.codepoint_from,
@@ -622,37 +895,47 @@ export class ProjectRepo {
   }
 
   getChat(input: GetProjectChatInput): EditorView["chat"] {
-    const node = getRow<{ id: string; node_role: DocumentNodeRole }>(
-      this.db,
-      `SELECT id, node_role FROM document_nodes WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-      input.documentNodeId,
-      this.projectId,
-    );
+    const node = orm(this.db)
+      .select({
+        id: tables.document_nodes.id,
+        node_role: tables.document_nodes.node_role,
+      })
+      .from(tables.document_nodes)
+      .where(
+        sql`${tables.document_nodes.id} = ${input.documentNodeId} AND ${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.archived_at} IS NULL`,
+      )
+      .get();
     if (!node || node.node_role !== "source_unit") throw new MunhaeError("not_found", "document not found");
     return this.loadChat(input);
   }
 
   getLatestPunctuationSuggestion(documentNodeId: string): PunctuationSuggestionView | null {
-    const row = getRow<{
-      id: string;
-      agent_id: string;
-      text_content: string;
-      output_validation_state: string | null;
-      structured_json: string | null;
-      created_at: string;
-    }>(
-      this.db,
-      `SELECT m.id, m.agent_id, part.text_content, m.output_validation_state,
-              part.structured_json, m.created_at
-       FROM chat_threads thread
-       JOIN chat_messages m ON m.thread_id = thread.id
-       JOIN chat_message_parts part ON part.message_id = m.id AND part.ordinal = 1
-       WHERE thread.project_id = ? AND thread.scope_kind = 'document_node' AND thread.scope_id = ?
-         AND m.role = 'assistant' AND m.task_kind = 'punctuation_suggest' AND m.state = 'completed'
-       ORDER BY m.created_at DESC, m.rowid DESC LIMIT 1`,
-      this.projectId,
-      documentNodeId,
-    );
+    const row = orm(this.db)
+      .select({
+        id: tables.chat_messages.id,
+        agent_id: tables.chat_messages.agent_id,
+        text_content: tables.chat_message_parts.text_content,
+        output_validation_state: tables.chat_messages.output_validation_state,
+        structured_json: tables.chat_message_parts.structured_json,
+        created_at: tables.chat_messages.created_at,
+      })
+      .from(tables.chat_threads)
+      .innerJoin(
+        tables.chat_messages,
+        sql`${tables.chat_messages.thread_id} = ${tables.chat_threads.id}`,
+      )
+      .innerJoin(
+        tables.chat_message_parts,
+        sql`${tables.chat_message_parts.message_id} = ${tables.chat_messages.id} AND ${tables.chat_message_parts.ordinal} = 1`,
+      )
+      .where(
+        sql`${tables.chat_threads.project_id} = ${this.projectId} AND ${tables.chat_threads.scope_kind} = 'document_node' AND ${tables.chat_threads.scope_id} = ${documentNodeId} AND ${tables.chat_messages.role} = 'assistant' AND ${tables.chat_messages.task_kind} = 'punctuation_suggest' AND ${tables.chat_messages.state} = 'completed'`,
+      )
+      .orderBy(
+        sql`${tables.chat_messages.created_at} DESC, ${tables.chat_messages}.rowid DESC`,
+      )
+      .limit(1)
+      .get();
     if (!row || (row.agent_id !== "codex" && row.agent_id !== "claude" && row.agent_id !== "antigravity")) return null;
     if (row.output_validation_state === "invalid_unapplied"
       && revalidateRejectedPunctuationSuggestion(this.db, this.projectId, row.id)) {
@@ -677,7 +960,7 @@ export class ProjectRepo {
       messageId: row.id,
       documentNodeId,
       agentId: row.agent_id,
-      responseText: row.text_content,
+      responseText: row.text_content ?? "",
       createdAt: row.created_at,
       validationState: row.output_validation_state === "valid" ? "valid" : "invalid_unapplied",
       validationError: row.output_validation_state !== "valid" && typeof structured.message === "string" ? structured.message : null,
@@ -722,51 +1005,61 @@ export class ProjectRepo {
   saveSourceDraft(input: SaveSourceDraftInput): EditorView {
     const contentText = input.contentText.replace(/^\uFEFF/, "");
     if (!contentText.trim()) throw new MunhaeError("empty_source", "원문이 비어 있습니다");
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireSource(input.documentNodeId);
       if (ctx.currentState === "draft") {
-        this.db.prepare(`UPDATE src_text_versions SET state = 'superseded' WHERE id = ?`).run(ctx.currentVersionId);
+        orm(this.db)
+          .update(tables.src_text_versions)
+          .set({ state: "superseded" })
+          .where(eq(tables.src_text_versions.id, ctx.currentVersionId))
+          .run();
       }
       const now = nowIso();
       const versionId = createId();
-      insertRow(this.db, "src_text_versions", {
-        id: versionId,
-        project_id: this.projectId,
-        source_text_id: ctx.sourceTextId,
-        parent_version_id: ctx.currentVersionId,
-        version_no: ctx.currentVersionNo + 1,
-        content_text: contentText,
-        origin_kind: input.originKind,
-        source_asset_id: null,
-        page_from: null,
-        page_to: null,
-        locator_text: null,
-        change_summary: input.changeSummary?.trim() || null,
-        state: "draft",
-        content_hash: sha256Hex(contentText),
-        created_by_actor_id: this.actors.humanId,
-        created_at: now,
-      });
+      orm(this.db)
+        .insert(tables.src_text_versions)
+        .values({
+          id: versionId,
+          project_id: this.projectId,
+          source_text_id: ctx.sourceTextId,
+          parent_version_id: ctx.currentVersionId,
+          version_no: ctx.currentVersionNo + 1,
+          content_text: contentText,
+          origin_kind: input.originKind,
+          source_asset_id: null,
+          page_from: null,
+          page_to: null,
+          locator_text: null,
+          state: "draft",
+          content_hash: sha256Hex(contentText),
+          created_by_actor_id: this.actors.humanId,
+          created_at: now,
+        })
+        .run();
       this.casSourceHead(ctx.sourceTextId, input.expectedLockVersion, versionId);
       this.recordTranslationStaleness(input.documentNodeId, "source_text_changed", versionId, "source_text_version_id");
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   confirmSource(input: ConfirmSourceInput): EditorView {
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireSource(input.documentNodeId);
       if (ctx.currentState === "confirmed") {
         throw new MunhaeError("already_confirmed", "이미 확정된 원문안입니다");
       }
-      this.db.prepare(`UPDATE src_text_versions SET state = 'confirmed' WHERE id = ?`).run(ctx.currentVersionId);
+      orm(this.db)
+        .update(tables.src_text_versions)
+        .set({ state: "confirmed" })
+        .where(eq(tables.src_text_versions.id, ctx.currentVersionId))
+        .run();
       this.casSourceHead(ctx.sourceTextId, input.expectedLockVersion, ctx.currentVersionId, ctx.currentVersionId);
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   createPunctuationDraftFromConfirmedSource(input: CreatePunctuationDraftInput): EditorView {
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const source = this.requireSource(input.documentNodeId);
       if (source.lockVersion !== input.expectedSourceLockVersion) {
         throw new MunhaeError("cas_conflict", "원문안이 다른 편집에서 변경되었습니다");
@@ -774,52 +1067,66 @@ export class ProjectRepo {
       if (source.currentState !== "confirmed" || source.confirmedVersionId !== source.currentVersionId) {
         throw new MunhaeError("source_not_confirmed", "현재 원문안을 확정한 뒤 표점 원문을 만들 수 있습니다");
       }
-      const existing = getRow<{
-        punctuation_set_id: string;
-        current_version_id: string;
-        lock_version: number;
-        version_no: number;
-        state: PunctuationCtx["currentState"];
-        source_text_version_id: string;
-      }>(
-        this.db,
-        `SELECT punctuation.id AS punctuation_set_id, head.current_version_id, head.lock_version,
-                version.version_no, version.state, version.source_text_version_id
-         FROM punctuation_sets punctuation
-         JOIN punctuation_heads head ON head.punctuation_set_id = punctuation.id
-         JOIN punctuation_versions version ON version.id = head.current_version_id
-         WHERE punctuation.project_id = ? AND punctuation.source_text_id = ? AND punctuation.status = 'active'
-         ORDER BY punctuation.created_at LIMIT 1`,
-        this.projectId,
-        source.sourceTextId,
-      );
+      const existing = orm(this.db)
+        .select({
+          punctuation_set_id: tables.punctuation_sets.id,
+          current_version_id: tables.punctuation_heads.current_version_id,
+          lock_version: tables.punctuation_heads.lock_version,
+          version_no: tables.punctuation_versions.version_no,
+          state: tables.punctuation_versions.state,
+          source_text_version_id: tables.punctuation_versions.source_text_version_id,
+        })
+        .from(tables.punctuation_sets)
+        .innerJoin(
+          tables.punctuation_heads,
+          sql`${tables.punctuation_heads.punctuation_set_id} = ${tables.punctuation_sets.id}`,
+        )
+        .innerJoin(
+          tables.punctuation_versions,
+          sql`${tables.punctuation_versions.id} = ${tables.punctuation_heads.current_version_id}`,
+        )
+        .where(
+          sql`${tables.punctuation_sets.project_id} = ${this.projectId} AND ${tables.punctuation_sets.source_text_id} = ${source.sourceTextId} AND ${tables.punctuation_sets.status} = 'active'`,
+        )
+        .orderBy(sql`${tables.punctuation_sets.created_at}`)
+        .limit(1)
+        .get();
       if (existing?.source_text_version_id === source.currentVersionId) {
         throw new MunhaeError("punctuation_exists", "현재 원문에 대한 표점 작업안이 이미 있습니다");
       }
 
-      const node = getRow<{ title: string; original_title: string | null }>(
-        this.db,
-        `SELECT title, original_title FROM document_nodes WHERE id = ? AND project_id = ?`,
-        input.documentNodeId,
-        this.projectId,
-      );
+      const node = orm(this.db)
+        .select({
+          title: tables.document_nodes.title,
+          original_title: tables.document_nodes.original_title,
+        })
+        .from(tables.document_nodes)
+        .where(
+          sql`${tables.document_nodes.id} = ${input.documentNodeId} AND ${tables.document_nodes.project_id} = ${this.projectId}`,
+        )
+        .get();
       if (!node) throw new MunhaeError("not_found", "document not found");
       const now = nowIso();
       const punctuationSetId = existing?.punctuation_set_id ?? createId();
       if (!existing) {
-        insertRow(this.db, "punctuation_sets", {
-          id: punctuationSetId,
-          project_id: this.projectId,
-          source_text_id: source.sourceTextId,
-          name: `${node.original_title?.trim() || node.title} 표점`,
-          policy_version_id: this.policyVersionId,
-          status: "active",
-          created_at: now,
-        });
+        orm(this.db)
+          .insert(tables.punctuation_sets)
+          .values({
+            id: punctuationSetId,
+            project_id: this.projectId,
+            source_text_id: source.sourceTextId,
+            name: `${node.original_title?.trim() || node.title} 표점`,
+            policy_version_id: this.policyVersionId,
+            status: "active",
+            created_at: now,
+          })
+          .run();
       } else if (existing.state === "draft") {
-        this.db.prepare(`UPDATE punctuation_versions SET state = 'superseded' WHERE id = ?`).run(
-          existing.current_version_id,
-        );
+        orm(this.db)
+          .update(tables.punctuation_versions)
+          .set({ state: "superseded" })
+          .where(eq(tables.punctuation_versions.id, existing.current_version_id))
+          .run();
       }
       const created = insertPunctuationVersionWithAnchors({
         db: this.db,
@@ -834,21 +1141,23 @@ export class ProjectRepo {
         versionNo: (existing?.version_no ?? 0) + 1,
         punctuatedText: source.currentContentText,
         structureMode: input.structureMode,
-        changeSummary: "확정 원문에서 표점 작업안 생성",
         actorId: this.actors.humanId,
         anchorActorId: this.actors.systemId,
         createAnchors: false,
         now,
       });
       if (!existing) {
-        insertRow(this.db, "punctuation_heads", {
-          project_id: this.projectId,
-          punctuation_set_id: punctuationSetId,
-          current_version_id: created.punctuationVersionId,
-          confirmed_version_id: null,
-          lock_version: 1,
-          updated_at: now,
-        });
+        orm(this.db)
+          .insert(tables.punctuation_heads)
+          .values({
+            project_id: this.projectId,
+            punctuation_set_id: punctuationSetId,
+            current_version_id: created.punctuationVersionId,
+            confirmed_version_id: null,
+            lock_version: 1,
+            updated_at: now,
+          })
+          .run();
       } else {
         this.casPunctuationHead(
           punctuationSetId,
@@ -856,21 +1165,23 @@ export class ProjectRepo {
           created.punctuationVersionId,
         );
       }
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   savePunctuationDraft(input: SavePunctuationDraftInput): EditorView {
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const source = this.requireSource(input.documentNodeId);
       if (source.currentState !== "confirmed" || source.confirmedVersionId !== source.currentVersionId) {
         throw new MunhaeError("source_not_confirmed", "현재 원문안을 확정해야 표점 작업안을 저장할 수 있습니다");
       }
       const punctuation = this.requirePunctuation(input.documentNodeId);
       if (punctuation.currentState === "draft") {
-        this.db.prepare(`UPDATE punctuation_versions SET state = 'superseded' WHERE id = ?`).run(
-          punctuation.currentVersionId,
-        );
+        orm(this.db)
+          .update(tables.punctuation_versions)
+          .set({ state: "superseded" })
+          .where(eq(tables.punctuation_versions.id, punctuation.currentVersionId))
+          .run();
       }
       const now = nowIso();
       const created = insertPunctuationVersionWithAnchors({
@@ -887,7 +1198,6 @@ export class ProjectRepo {
         punctuatedText: input.punctuatedText.replace(/^\uFEFF/, ""),
         structureMode: input.structureMode,
         structureSpans: input.structureSpans,
-        changeSummary: input.changeSummary,
         actorId: this.actors.humanId,
         anchorActorId: this.actors.systemId,
         createAnchors: false,
@@ -904,12 +1214,12 @@ export class ProjectRepo {
         created.punctuationVersionId,
         "punctuation_version_id",
       );
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   confirmPunctuation(input: ConfirmPunctuationInput): EditorView {
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const source = this.requireSource(input.documentNodeId);
       const punctuation = this.requirePunctuation(input.documentNodeId);
       if (source.currentState !== "confirmed") {
@@ -937,16 +1247,18 @@ export class ProjectRepo {
         now: nowIso(),
       });
       this.validateStoredAnchorSet(input.documentNodeId, punctuation.currentVersionId);
-      this.db.prepare(`UPDATE punctuation_versions SET state = 'confirmed' WHERE id = ?`).run(
-        punctuation.currentVersionId,
-      );
+      orm(this.db)
+        .update(tables.punctuation_versions)
+        .set({ state: "confirmed" })
+        .where(eq(tables.punctuation_versions.id, punctuation.currentVersionId))
+        .run();
       this.casPunctuationHead(
         punctuation.punctuationSetId,
         input.expectedLockVersion,
         punctuation.currentVersionId,
         punctuation.currentVersionId,
       );
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
@@ -964,7 +1276,7 @@ export class ProjectRepo {
       throw new MunhaeError("invalid_input", "원문·표점 잠금 버전이 필요합니다");
     }
 
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const source = this.requireSource(input.documentNodeId);
       const punctuation = this.requirePunctuation(input.documentNodeId);
       if (
@@ -980,47 +1292,50 @@ export class ProjectRepo {
         throw new MunhaeError("stale_punctuation", "현재 원문에서 표점안을 다시 저장하고 확정해야 합니다");
       }
       this.validateStoredAnchorSet(input.documentNodeId, punctuation.currentVersionId);
-      const anchorSet = getRow<{ id: string }>(
-        this.db,
-        `SELECT id FROM translation_anchor_sets
-         WHERE document_node_id = ? AND source_text_version_id = ? AND punctuation_version_id = ?
-         ORDER BY created_at DESC LIMIT 1`,
-        input.documentNodeId,
-        source.currentVersionId,
-        punctuation.currentVersionId,
-      );
+      const anchorSet = orm(this.db)
+        .select({ id: tables.translation_anchor_sets.id })
+        .from(tables.translation_anchor_sets)
+        .where(
+          sql`${tables.translation_anchor_sets.document_node_id} = ${input.documentNodeId} AND ${tables.translation_anchor_sets.source_text_version_id} = ${source.currentVersionId} AND ${tables.translation_anchor_sets.punctuation_version_id} = ${punctuation.currentVersionId}`,
+        )
+        .orderBy(sql`${tables.translation_anchor_sets.created_at} DESC`)
+        .limit(1)
+        .get();
       if (!anchorSet) throw new MunhaeError("not_ready", "현재 표점안의 번역 앵커가 없습니다");
 
-      const policy = getRow<{ target_locale: string }>(
-        this.db,
-        `SELECT target_locale FROM core_translation_policy_versions WHERE id = ?`,
-        this.policyVersionId,
-      );
+      const policy = orm(this.db)
+        .select({
+          target_locale: tables.core_translation_policy_versions.target_locale,
+        })
+        .from(tables.core_translation_policy_versions)
+        .where(
+          sql`${tables.core_translation_policy_versions.id} = ${this.policyVersionId}`,
+        )
+        .get();
       if (!policy) throw new MunhaeError("not_ready", "현재 번역 원칙을 찾을 수 없습니다");
-      const existing = getRow<{ id: string }>(
-        this.db,
-        `SELECT id FROM document_translations
-         WHERE project_id = ? AND source_text_id = ? AND target_locale = ?`,
-        this.projectId,
-        source.sourceTextId,
-        policy.target_locale,
-      );
+      const existing = orm(this.db)
+        .select({ id: tables.document_translations.id })
+        .from(tables.document_translations)
+        .where(
+          sql`${tables.document_translations.project_id} = ${this.projectId} AND ${tables.document_translations.source_text_id} = ${source.sourceTextId} AND ${tables.document_translations.target_locale} = ${policy.target_locale}`,
+        )
+        .get();
       if (existing) {
         throw new MunhaeError("already_exists", "이 번역 단계에는 이미 번역안이 있습니다");
       }
 
-      const anchors = allRows<{
-        id: string;
-        anchor_key: string;
-        ordinal: number;
-        required: number;
-        boundary_kind: string;
-      }>(
-        this.db,
-        `SELECT id, anchor_key, ordinal, required, boundary_kind
-         FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`,
-        anchorSet.id,
-      );
+      const anchors = orm(this.db)
+        .select({
+          id: tables.translation_anchors.id,
+          anchor_key: tables.translation_anchors.anchor_key,
+          ordinal: tables.translation_anchors.ordinal,
+          required: tables.translation_anchors.required,
+          boundary_kind: tables.translation_anchors.boundary_kind,
+        })
+        .from(tables.translation_anchors)
+        .where(sql`${tables.translation_anchors.anchor_set_id} = ${anchorSet.id}`)
+        .orderBy(sql`${tables.translation_anchors.ordinal}`)
+        .all();
       if (!anchors.length) throw new MunhaeError("not_ready", "현재 표점안의 번역 앵커가 비어 있습니다");
       const drafts: BlockDraft[] = anchors.map((anchor, index) => ({
         blockKey: `B${String(index + 1).padStart(3, "0")}`,
@@ -1034,65 +1349,77 @@ export class ProjectRepo {
       const createdAt = nowIso();
       const text = joinBlockTranslations(drafts.map((draft) => draft.translation));
 
-      insertRow(this.db, "document_translations", {
-        id: translationId,
-        project_id: this.projectId,
-        document_node_id: input.documentNodeId,
-        source_text_id: source.sourceTextId,
-        target_locale: policy.target_locale,
-        created_at: createdAt,
-        tombstoned_at: null,
-      });
-      insertRow(this.db, "document_translation_versions", {
-        id: versionId,
-        project_id: this.projectId,
-        document_translation_id: translationId,
-        parent_version_id: null,
-        version_no: 1,
-        source_text_version_id: source.currentVersionId,
-        punctuation_version_id: punctuation.currentVersionId,
-        translation_anchor_set_id: anchorSet.id,
-        translation_policy_version_id: this.policyVersionId,
-        text_content: text,
-        origin_kind: "human",
-        generated_by_message_id: null,
-        validation_state: validationState,
-        needs_review: validationState === "needs_review" ? 1 : 0,
-        state: "draft",
-        content_hash: sha256Hex(text),
-        created_by_actor_id: this.actors.humanId,
-        created_at: createdAt,
-      });
+      orm(this.db)
+        .insert(tables.document_translations)
+        .values({
+          id: translationId,
+          project_id: this.projectId,
+          document_node_id: input.documentNodeId,
+          source_text_id: source.sourceTextId,
+          target_locale: policy.target_locale,
+          created_at: createdAt,
+          tombstoned_at: null,
+        })
+        .run();
+      orm(this.db)
+        .insert(tables.document_translation_versions)
+        .values({
+          id: versionId,
+          project_id: this.projectId,
+          document_translation_id: translationId,
+          parent_version_id: null,
+          version_no: 1,
+          source_text_version_id: source.currentVersionId,
+          punctuation_version_id: punctuation.currentVersionId,
+          translation_anchor_set_id: anchorSet.id,
+          translation_policy_version_id: this.policyVersionId,
+          text_content: text,
+          origin_kind: "human",
+          generated_by_message_id: null,
+          validation_state: validationState,
+          needs_review: validationState === "needs_review" ? 1 : 0,
+          state: "draft",
+          content_hash: sha256Hex(text),
+          created_by_actor_id: this.actors.humanId,
+          created_at: createdAt,
+        })
+        .run();
       insertVersionBlocks(this.db, this.projectId, versionId, drafts, anchors, validationState);
       recordValidation(this.db, this.projectId, versionId, findings, validationState);
-      insertRow(this.db, "document_translation_heads", {
-        project_id: this.projectId,
-        document_translation_id: translationId,
-        current_version_id: versionId,
-        confirmed_version_id: null,
-        lock_version: 1,
-        updated_at: createdAt,
-      });
-      insertRow(this.db, "user_edits", {
-        id: createId(),
-        project_id: this.projectId,
-        document_translation_id: translationId,
-        base_document_translation_version_id: null,
-        result_document_translation_version_id: versionId,
-        base_translation_block_id: null,
-        target_codepoint_from: null,
-        target_codepoint_to: null,
-        base_artifact_id: null,
-        result_artifact_id: null,
-        patch_artifact_id: null,
-        patch_format: null,
-        edit_kind: "create_draft",
-        reason: null,
-        actor_id: this.actors.humanId,
-        client_version: null,
-        created_at: createdAt,
-      });
-    })();
+      orm(this.db)
+        .insert(tables.document_translation_heads)
+        .values({
+          project_id: this.projectId,
+          document_translation_id: translationId,
+          current_version_id: versionId,
+          confirmed_version_id: null,
+          lock_version: 1,
+          updated_at: createdAt,
+        })
+        .run();
+      orm(this.db)
+        .insert(tables.user_edits)
+        .values({
+          id: createId(),
+          project_id: this.projectId,
+          document_translation_id: translationId,
+          base_document_translation_version_id: null,
+          result_document_translation_version_id: versionId,
+          base_translation_block_id: null,
+          target_codepoint_from: null,
+          target_codepoint_to: null,
+          base_artifact_id: null,
+          result_artifact_id: null,
+          patch_artifact_id: null,
+          patch_format: null,
+          edit_kind: "create_draft",
+          reason: null,
+          actor_id: this.actors.humanId,
+          client_version: null,
+          created_at: createdAt,
+        })
+        .run();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
@@ -1104,7 +1431,7 @@ export class ProjectRepo {
     const expectedSourceLockVersion = requirePositiveLockVersion(input.expectedSourceLockVersion);
     const expectedPunctuationLockVersion = requirePositiveLockVersion(input.expectedPunctuationLockVersion);
     const expectedTranslationLockVersion = requirePositiveLockVersion(input.expectedTranslationLockVersion);
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireTranslation(input.documentNodeId);
       if (
         ctx.sourceLockVersion !== expectedSourceLockVersion ||
@@ -1130,13 +1457,13 @@ export class ProjectRepo {
         editKind: "reset_to_current_anchors",
         allowStaleParent: true,
       });
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   saveTranslationDraft(input: SaveTranslationDraftInput): EditorView {
     if (this.getEditor(input.documentNodeId).translation?.textLayout) {
-      fullText.saveText(this.fullTextContext(), input.documentNodeId, input.textContent ?? "", requirePositiveLockVersion(input.expectedLockVersion));
+      fullText.saveText(this.fullTextContext(), input.documentNodeId, input.textContent ?? "", requirePositiveLockVersion(input.expectedLockVersion), input.textGroups);
       return this.getEditor(input.documentNodeId);
     }
     const expectedLockVersion = requirePositiveLockVersion(input.expectedLockVersion);
@@ -1156,7 +1483,7 @@ export class ProjectRepo {
       return this.getEditor(input.documentNodeId);
     }
     const expectedLockVersion = requirePositiveLockVersion(input.expectedLockVersion);
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireTranslation(input.documentNodeId);
       const current = this.requireCurrentVersion(ctx.translationId);
       this.assertCurrentTranslationDependencies(current, ctx);
@@ -1167,14 +1494,16 @@ export class ProjectRepo {
         throw new MunhaeError("needs_review", "재검토가 필요한 번역안은 확정할 수 없습니다");
       }
       assertNoOpenBlockingUncertainty(this.db, this.projectId, input.documentNodeId);
-      this.db
-        .prepare(`UPDATE document_translation_versions SET state = 'confirmed' WHERE id = ?`)
-        .run(current.id);
+      orm(this.db)
+        .update(tables.document_translation_versions)
+        .set({ state: "confirmed" })
+        .where(eq(tables.document_translation_versions.id, current.id))
+        .run();
       casUpdateHead(this.db, ctx.translationId, expectedLockVersion, {
         currentVersionId: current.id,
         confirmedVersionId: current.id,
       });
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
@@ -1185,7 +1514,7 @@ export class ProjectRepo {
       return this.getEditor(input.documentNodeId);
     }
     const expectedLockVersion = requirePositiveLockVersion(input.expectedLockVersion);
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireTranslation(input.documentNodeId);
       const current = this.requireCurrentVersion(ctx.translationId);
       this.assertCurrentTranslationDependencies(current, ctx);
@@ -1196,13 +1525,13 @@ export class ProjectRepo {
         parentId: current.id,
         editKind: "revise",
       });
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   mergeBlocks(input: MergeBlocksInput): EditorView {
     const expectedLockVersion = requirePositiveLockVersion(input.expectedLockVersion);
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireTranslation(input.documentNodeId);
       const current = this.requireCurrentVersion(ctx.translationId);
       this.assertCurrentTranslationDependencies(current, ctx);
@@ -1228,13 +1557,13 @@ export class ProjectRepo {
         parentId: current.id,
         editKind: "merge_blocks",
       });
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
   splitBlock(input: SplitBlockInput): EditorView {
     const expectedLockVersion = requirePositiveLockVersion(input.expectedLockVersion);
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireTranslation(input.documentNodeId);
       const current = this.requireCurrentVersion(ctx.translationId);
       this.assertCurrentTranslationDependencies(current, ctx);
@@ -1302,7 +1631,7 @@ export class ProjectRepo {
         parentId: current.id,
         editKind: "split_block",
       });
-    })();
+    });
     return this.getEditor(input.documentNodeId);
   }
 
@@ -1326,26 +1655,69 @@ export class ProjectRepo {
     return searchProject(this.db, this.projectId, input);
   }
 
+  getTermContext(documentId: string) {
+    this.getEditor(documentId);
+    return materials.resolveMaterials(this.db, this.projectId, documentId)
+      .filter(item => item.included && item.source !== "comment_reference")
+      .map(item => ({ id: item.id, title: item.title, scopeId: item.scopeId,
+        reason: item.reason, content: materials.materialPromptContent(item) }));
+  }
+
+  getTermReferenceComments(documentId: string) {
+    this.getEditor(documentId);
+    return materials.resolveMaterials(this.db, this.projectId, documentId)
+      .filter(item => item.included && item.source === "comment_reference")
+      .map(item => ({ id: item.id, title: item.title, content: materials.materialPromptContent(item) }));
+  }
+
+  getTerms(documentId?: string): termReview.TermEntry[] {
+    if (documentId) this.getEditor(documentId);
+    return termReview.listTerms(this.db, this.projectId, documentId);
+  }
+  deleteTerm(input: { id: string; expectedLockVersion: number }): void {
+    termReview.deleteDocumentTerm(this.db, this.projectId, input);
+  }
+
+  saveTerm(input: termReview.SaveTermInput): termReview.TermEntry {
+    const editor = input.documentId ? this.getEditor(input.documentId) : null;
+    return termReview.saveTerm(this.db, this.projectId, input, editor ? termSource(editor) : undefined);
+  }
+  promoteTerm(input: termReview.SaveTermInput): termReview.TermEntry {
+    if (!input.id || !input.documentId) throw new MunhaeError("invalid_input", "저장된 문서 용어를 선택하세요.");
+    return orm(this.db).transaction(() => {
+      const local = this.saveTerm(input);
+      const common = this.saveTerm({ ...input, id: undefined, expectedLockVersion: undefined, documentId: null, parentTermId: null, sourceVersion: null, quotes: [], contextNote: null, status: "draft" });
+      return this.saveTerm({ ...input, expectedLockVersion: local.lockVersion, parentTermId: common.id });
+    });
+  }
+  storeTermCandidates(documentId: string, sourceVersion: string, candidates: Array<termReview.TermContent & { quotes: string[] }>, generation: NonNullable<termReview.TermEntry["generation"]>): termReview.TermEntry[] {
+    const editor = this.getEditor(documentId);
+    return orm(this.db).transaction(() => candidates.map(candidate => termReview.saveTerm(this.db, this.projectId,
+      { ...candidate, documentId, sourceVersion, status: "draft" }, termSource(editor), generation)));
+  }
+
   getKnowledge(): KnowledgeView {
-    const glossary = allRows<{
-      id: string;
-      source_term: string;
-      target_term: string;
-      target_locale: string;
-      term_kind: string;
-      reading: string | null;
-      note_md: string | null;
-      usage_status: GlossaryEntryView["usageStatus"];
-      content_hash: string;
-      lock_version: number;
-    }>(
-      this.db,
-      `SELECT id, source_term, target_term, target_locale, term_kind, reading, note_md, usage_status,
-              content_hash, lock_version
-       FROM glossary_entries WHERE project_id = ? AND archived_at IS NULL
-       ORDER BY source_term, usage_status`,
-      this.projectId,
-    ).map((g) => ({
+    const glossary = orm(this.db)
+      .select({
+        id: tables.glossary_entries.id,
+        source_term: tables.glossary_entries.source_term,
+        target_term: tables.glossary_entries.target_term,
+        target_locale: tables.glossary_entries.target_locale,
+        term_kind: tables.glossary_entries.term_kind,
+        reading: tables.glossary_entries.reading,
+        note_md: tables.glossary_entries.note_md,
+        usage_status: tables.glossary_entries.usage_status,
+        content_hash: tables.glossary_entries.content_hash,
+        lock_version: tables.glossary_entries.lock_version,
+      })
+      .from(tables.glossary_entries)
+      .where(
+        sql`${tables.glossary_entries.project_id} = ${this.projectId} AND ${tables.glossary_entries.archived_at} IS NULL`,
+      )
+      .orderBy(
+        sql`${tables.glossary_entries.source_term}, ${tables.glossary_entries.usage_status}`,
+      )
+      .all().map((g) => ({
       id: g.id,
       contentHash: g.content_hash,
       lockVersion: g.lock_version,
@@ -1369,53 +1741,68 @@ export class ProjectRepo {
     const now = nowIso();
     const id = entry.id ?? createId();
     const hash = glossaryContentHash(entry);
+    const termKind = tables.glossary_entries.term_kind.enumValues.find(value => value === entry.termKind);
+    if (!termKind) throw new MunhaeError("invalid_input", "올바른 용어 종류가 아닙니다");
     if (entry.id) {
-      const info = this.db
-        .prepare(
-          `UPDATE glossary_entries SET source_term=@sourceTerm, target_term=@targetTerm, target_locale=@targetLocale,
-           term_kind=@termKind, reading=@reading, note_md=@noteMd, usage_status=@usageStatus,
-           content_hash=@hash, lock_version=lock_version+1, updated_by_actor_id=@actor, updated_at=@now
-           WHERE id=@id AND project_id=@projectId AND archived_at IS NULL AND lock_version=@lock`,
-        )
-        .run({
-          id,
-          projectId: this.projectId,
-          lock: requireKnowledgeLock(entry.expectedLockVersion),
-          sourceTerm: entry.sourceTerm,
-          targetTerm: entry.targetTerm,
-          targetLocale: entry.targetLocale,
-          termKind: entry.termKind,
+      const info = orm(this.db)
+        .update(tables.glossary_entries)
+        .set({
+          source_term: entry.sourceTerm,
+          target_term: entry.targetTerm,
+          target_locale: entry.targetLocale,
+          term_kind: termKind,
           reading: entry.reading,
-          noteMd: entry.noteMd,
-          usageStatus: entry.usageStatus,
-          hash,
-          actor: this.actors.humanId,
-          now,
-        });
+          note_md: entry.noteMd,
+          usage_status: entry.usageStatus,
+          content_hash: hash,
+          lock_version: sql`${tables.glossary_entries.lock_version} + 1`,
+          updated_by_actor_id: this.actors.humanId,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(tables.glossary_entries.id, id),
+            eq(tables.glossary_entries.project_id, this.projectId),
+            isNull(tables.glossary_entries.archived_at),
+            eq(
+              tables.glossary_entries.lock_version,
+              requireKnowledgeLock(entry.expectedLockVersion),
+            ),
+          ),
+        )
+        .run();
       if (info.changes !== 1) throwKnowledgeCasFailure(this.db, this.projectId, "glossary_entries", id);
     } else {
-      insertRow(this.db, "glossary_entries", {
-        id,
-        project_id: this.projectId,
-        source_term: entry.sourceTerm,
-        target_locale: entry.targetLocale,
-        target_term: entry.targetTerm,
-        term_kind: entry.termKind,
-        reading: entry.reading,
-        note_md: entry.noteMd,
-        usage_status: entry.usageStatus,
-        content_hash: hash,
-        lock_version: 1,
-        created_by_actor_id: this.actors.humanId,
-        updated_by_actor_id: this.actors.humanId,
-        created_at: now,
-        updated_at: now,
-        archived_at: null,
-      });
+      orm(this.db)
+        .insert(tables.glossary_entries)
+        .values({
+          id,
+          project_id: this.projectId,
+          source_term: entry.sourceTerm,
+          target_locale: entry.targetLocale,
+          target_term: entry.targetTerm,
+          term_kind: termKind,
+          reading: entry.reading,
+          note_md: entry.noteMd,
+          usage_status: entry.usageStatus,
+          content_hash: hash,
+          lock_version: 1,
+          created_by_actor_id: this.actors.humanId,
+          updated_by_actor_id: this.actors.humanId,
+          created_at: now,
+          updated_at: now,
+          archived_at: null,
+        })
+        .run();
     }
     const row = this.getKnowledge().glossary.find((g) => g.id === id);
     if (!row) throw new MunhaeError("internal", "glossary upsert failed");
     return row;
+  }
+
+  moveDocument(input: MoveDocumentInput): DocumentMetadataView {
+    moveStoredDocument(this.db, this.projectId, input);
+    return this.getDocumentMetadata(input.documentNodeId);
   }
 
   getDocumentMetadata(documentNodeId: string): DocumentMetadataView {
@@ -1449,6 +1836,7 @@ export class ProjectRepo {
   }
 
   updateContextItem(input: UpdateContextItemInput): NodeContextView {
+    if (commentReferences.isCommentReference(this.db, this.projectId, input.id)) return commentReferences.updateCommentReference({ db: this.db, projectId: this.projectId, actors: this.actors }, input);
     return updateStoredContextItem(
       { db: this.db, projectId: this.projectId, actors: this.actors },
       input,
@@ -1456,6 +1844,7 @@ export class ProjectRepo {
   }
 
   setContextItemEnabled(input: SetContextItemEnabledInput): NodeContextView {
+    if (commentReferences.isCommentReference(this.db, this.projectId, input.id)) return commentReferences.patchCommentReference({ db: this.db, projectId: this.projectId, actors: this.actors }, input);
     return setStoredContextItemEnabled(
       { db: this.db, projectId: this.projectId, actors: this.actors },
       input,
@@ -1463,14 +1852,16 @@ export class ProjectRepo {
   }
 
   setContextItemPriority(input: SetContextItemPriorityInput): NodeContextView {
+    if (commentReferences.isCommentReference(this.db, this.projectId, input.id)) return commentReferences.patchCommentReference({ db: this.db, projectId: this.projectId, actors: this.actors }, input);
     return setStoredContextItemPriority(
       { db: this.db, projectId: this.projectId, actors: this.actors },
       input,
     );
   }
 
-  archiveContextItem(input: ContextItemCasInput): void {
-    archiveStoredContextItem(
+  deleteContextItem(input: ContextItemCasInput): void {
+    if (commentReferences.isCommentReference(this.db, this.projectId, input.id)) return commentReferences.deleteCommentReference({ db: this.db, projectId: this.projectId, actors: this.actors }, input);
+    deleteStoredContextItem(
       { db: this.db, projectId: this.projectId, actors: this.actors },
       input,
     );
@@ -1521,6 +1912,9 @@ export class ProjectRepo {
   completeFullTextRun(input: CompleteTranslationRunInput) { return fullText.completeText(this.fullTextContext(), input); }
   prepareAlignment(versionId: string) { return fullText.alignmentRequest(this.fullTextContext(), versionId); }
   completeAlignment(versionId: string, raw: string) { return fullText.completeAlignment(this.fullTextContext(), versionId, raw); }
+  submitAlignment(versionId: string, raw: string) { return fullText.completeAlignment(this.fullTextContext(), versionId, raw, true); }
+  checkAlignment(versionId: string) { return fullText.checkAlignment(this.fullTextContext(), versionId); }
+  finishAlignment(versionId: string, input: fullText.AlignmentFinishInput) { return fullText.finishAlignment(this.fullTextContext(), versionId, input); }
   failAlignment(versionId: string, message: string) { fullText.failAlignment(this.fullTextContext(), versionId, message); }
 
   previewLegacyContext(input: ContextPreviewInput): ContextPreview {
@@ -1536,55 +1930,63 @@ export class ProjectRepo {
     ) {
       throw new MunhaeError("not_ready", "표점 원문을 확정하고 생성된 분절을 검토한 뒤 AI 번역을 실행할 수 있습니다");
     }
-    const policy = getRow<{
-      id: string;
-      version_no: number;
-      content_hash: string;
-      target_locale: string;
-      audience: string | null;
-      style_guide_md: string | null;
-      hanja_policy: string | null;
-      supplement_policy: string | null;
-      uncertainty_policy: string | null;
-      rules_json: string | null;
-    }>(
-      this.db,
-      `SELECT v.id, v.version_no, v.content_hash, v.target_locale, v.audience,
-              v.style_guide_md, v.hanja_policy,
-              v.supplement_policy, v.uncertainty_policy, v.rules_json
-       FROM core_translation_policy_versions v WHERE v.id = ?`,
-      this.policyVersionId,
-    );
+    const policy = orm(this.db)
+      .select({
+        id: tables.core_translation_policy_versions.id,
+        version_no: tables.core_translation_policy_versions.version_no,
+        content_hash: tables.core_translation_policy_versions.content_hash,
+        target_locale: tables.core_translation_policy_versions.target_locale,
+        audience: tables.core_translation_policy_versions.audience,
+        style_guide_md: tables.core_translation_policy_versions.style_guide_md,
+        hanja_policy: tables.core_translation_policy_versions.hanja_policy,
+        supplement_policy:
+          tables.core_translation_policy_versions.supplement_policy,
+        uncertainty_policy:
+          tables.core_translation_policy_versions.uncertainty_policy,
+        rules_json: tables.core_translation_policy_versions.rules_json,
+      })
+      .from(tables.core_translation_policy_versions)
+      .where(
+        sql`${tables.core_translation_policy_versions.id} = ${this.policyVersionId}`,
+      )
+      .get();
     if (!policy) throw new MunhaeError("not_ready", "현재 번역 원칙을 찾을 수 없습니다");
     const punctuated = currentPunctuation.punctuatedText;
-    const anchorSet = getRow<{ id: string; anchor_set_hash: string; source_text_version_id: string }>(
-      this.db,
-      `SELECT id, anchor_set_hash, source_text_version_id FROM translation_anchor_sets
-       WHERE document_node_id = ? AND punctuation_version_id = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      documentNodeId,
-      currentPunctuation.versionId,
-    );
+    const anchorSet = orm(this.db)
+      .select({
+        id: tables.translation_anchor_sets.id,
+        anchor_set_hash: tables.translation_anchor_sets.anchor_set_hash,
+        source_text_version_id:
+          tables.translation_anchor_sets.source_text_version_id,
+      })
+      .from(tables.translation_anchor_sets)
+      .where(
+        sql`${tables.translation_anchor_sets.document_node_id} = ${documentNodeId} AND ${tables.translation_anchor_sets.punctuation_version_id} = ${currentPunctuation.versionId}`,
+      )
+      .orderBy(sql`${tables.translation_anchor_sets.created_at} DESC`)
+      .limit(1)
+      .get();
     if (!anchorSet) throw new MunhaeError("not_ready", "이 표점안에는 번역 앵커가 없습니다");
     if (anchorSet.source_text_version_id !== editor.source.versionId) {
       throw new MunhaeError("stale_punctuation", "현재 원문안에서 새 표점안을 저장한 뒤 AI 실행을 준비해야 합니다");
     }
     this.validateStoredAnchorSet(documentNodeId, currentPunctuation.versionId);
-    const requestAnchors = allRows<{
-      anchor_key: string;
-      ordinal: number;
-      boundary_kind: string;
-      punctuation_codepoint_from: number;
-      punctuation_codepoint_to: number;
-      punctuated_quote_hash: string;
-      required: number;
-    }>(
-      this.db,
-      `SELECT anchor_key, ordinal, boundary_kind, punctuation_codepoint_from,
-              punctuation_codepoint_to, punctuated_quote_hash, required
-       FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`,
-      anchorSet.id,
-    ).map((anchor) => ({
+    const requestAnchors = orm(this.db)
+      .select({
+        anchor_key: tables.translation_anchors.anchor_key,
+        ordinal: tables.translation_anchors.ordinal,
+        boundary_kind: tables.translation_anchors.boundary_kind,
+        punctuation_codepoint_from:
+          tables.translation_anchors.punctuation_codepoint_from,
+        punctuation_codepoint_to:
+          tables.translation_anchors.punctuation_codepoint_to,
+        punctuated_quote_hash: tables.translation_anchors.punctuated_quote_hash,
+        required: tables.translation_anchors.required,
+      })
+      .from(tables.translation_anchors)
+      .where(sql`${tables.translation_anchors.anchor_set_id} = ${anchorSet.id}`)
+      .orderBy(sql`${tables.translation_anchors.ordinal}`)
+      .all().map((anchor) => ({
       anchorKey: anchor.anchor_key,
       ordinal: anchor.ordinal,
       boundaryKind: anchor.boundary_kind,
@@ -1705,11 +2107,11 @@ export class ProjectRepo {
     }
     for (const item of materials.resolveMaterials(this.db, this.projectId, documentNodeId)) {
       const content = materials.materialPromptContent(item);
-      addAuxiliary({ id: item.id, kind: item.source === "document_description" ? "document_context" : "context_item",
+      addAuxiliary({ id: item.id, kind: item.source === "comment_reference" ? "reference_comment" : item.source === "document_description" ? "document_context" : "context_item",
         label: item.title, reason: item.reason === "selected" ? "selected_document_context" : item.reason === "current" ? "current_document_context" : `ancestor_document_context:${distanceByNodeId.get(item.scopeId)}`,
         defaultIncluded: item.included, chars: codepointCount(content), content,
         material: { scopeId: item.scopeId, inheritToChildren: item.inheritToChildren !== false, lockVersion: item.lockVersion, origin: item.origin ?? null } });
-      if (item.excluded) auxiliary[auxiliary.length - 1]!.included = false;
+      if (item.excluded || !commentReferences.referenceReady(item)) auxiliary[auxiliary.length - 1]!.included = false;
     }
     const pastComments = materials.referenceComments(this.db, this.projectId, input.referenceCommentIds);
     for (const comment of pastComments) {
@@ -1723,50 +2125,43 @@ export class ProjectRepo {
     // default as an exact revision baseline.  Other project examples remain
     // visible in the preview and require an explicit pin, avoiding an
     // unbounded implicit prompt as the project grows.
-    const confirmedTranslations = allRows<{
-      document_node_id: string;
-      document_title: string;
-      original_title: string | null;
-      stage: string;
-      version_id: string;
-      version_hash: string;
-      text_content: string;
-      punctuation_version_id: string;
-      punctuation_hash: string;
-      punctuated_text: string;
-    }>(
-      this.db,
-      `SELECT translation.document_node_id,
-              node.title AS document_title,
-              node.original_title,
-              'translation' AS stage,
-              version.id AS version_id,
-              version.content_hash AS version_hash,
-              version.text_content,
-              punctuation.id AS punctuation_version_id,
-              punctuation.content_hash AS punctuation_hash,
-              punctuation.punctuated_text
-       FROM document_translation_heads head
-       JOIN document_translation_versions version
-         ON version.id = head.confirmed_version_id
-        AND version.state = 'confirmed'
-       JOIN document_translations translation
-         ON translation.id = head.document_translation_id
-        AND translation.project_id = version.project_id
-        AND translation.tombstoned_at IS NULL
-       JOIN document_nodes node
-         ON node.id = translation.document_node_id
-        AND node.project_id = translation.project_id
-        AND node.archived_at IS NULL
-       JOIN punctuation_versions punctuation
-         ON punctuation.id = version.punctuation_version_id
-        AND punctuation.project_id = version.project_id
-       WHERE version.project_id = ?
-       ORDER BY CASE WHEN translation.document_node_id = ? THEN 0 ELSE 1 END,
-                node.title, version.version_no`,
-      this.projectId,
-      documentNodeId,
-    );
+    const confirmedTranslations = orm(this.db)
+      .select({
+        document_node_id: tables.document_translations.document_node_id,
+        document_title: tables.document_nodes.title,
+        original_title: tables.document_nodes.original_title,
+        stage: sql<string>`'translation'`,
+        version_id: tables.document_translation_versions.id,
+        version_hash: tables.document_translation_versions.content_hash,
+        text_content: tables.document_translation_versions.text_content,
+        punctuation_version_id: tables.punctuation_versions.id,
+        punctuation_hash: tables.punctuation_versions.content_hash,
+        punctuated_text: tables.punctuation_versions.punctuated_text,
+      })
+      .from(tables.document_translation_heads)
+      .innerJoin(
+        tables.document_translation_versions,
+        sql`${tables.document_translation_versions.id} = ${tables.document_translation_heads.confirmed_version_id} AND ${tables.document_translation_versions.state} = 'confirmed'`,
+      )
+      .innerJoin(
+        tables.document_translations,
+        sql`${tables.document_translations.id} = ${tables.document_translation_heads.document_translation_id} AND ${tables.document_translations.project_id} = ${tables.document_translation_versions.project_id} AND ${tables.document_translations.tombstoned_at} IS NULL`,
+      )
+      .innerJoin(
+        tables.document_nodes,
+        sql`${tables.document_nodes.id} = ${tables.document_translations.document_node_id} AND ${tables.document_nodes.project_id} = ${tables.document_translations.project_id} AND ${tables.document_nodes.archived_at} IS NULL`,
+      )
+      .innerJoin(
+        tables.punctuation_versions,
+        sql`${tables.punctuation_versions.id} = ${tables.document_translation_versions.punctuation_version_id} AND ${tables.punctuation_versions.project_id} = ${tables.document_translation_versions.project_id}`,
+      )
+      .where(
+        sql`${tables.document_translation_versions.project_id} = ${this.projectId}`,
+      )
+      .orderBy(
+        sql`CASE WHEN ${tables.document_translations.document_node_id} = ${documentNodeId} THEN 0 ELSE 1 END, ${tables.document_nodes.title}, ${tables.document_translation_versions.version_no}`,
+      )
+      .all();
     for (const confirmed of confirmedTranslations) {
       const samePunctuation =
         confirmed.document_node_id === documentNodeId
@@ -1836,14 +2231,13 @@ export class ProjectRepo {
       chars: codepointCount(rendered.outputSchemaJson),
       content: rendered.outputSchemaJson,
     });
-    const sourceSnapshot = getRow<{ source_text_id: string }>(
-      this.db,
-      `SELECT sv.source_text_id
-       FROM src_text_versions sv
-       WHERE sv.id = ? AND sv.project_id = ?`,
-      editor.source.versionId,
-      this.projectId,
-    );
+    const sourceSnapshot = orm(this.db)
+      .select({ source_text_id: tables.src_text_versions.source_text_id })
+      .from(tables.src_text_versions)
+      .where(
+        sql`${tables.src_text_versions.id} = ${editor.source.versionId} AND ${tables.src_text_versions.project_id} = ${this.projectId}`,
+      )
+      .get();
     if (!sourceSnapshot) throw new MunhaeError("not_ready", "현재 원문 snapshot을 찾을 수 없습니다");
     const expectedHead = captureTranslationHead(
       this.db,
@@ -1913,15 +2307,21 @@ export class ProjectRepo {
     let snapshot: ProjectChatSnapshot;
     let rendered: ReturnType<typeof renderProjectChatRequest>;
     if (input.scopeKind === "project") {
-      const master = getRow<{ id: string }>(
-        this.db,
-        `SELECT id FROM document_nodes
-         WHERE project_id = ? AND is_master = 1 AND archived_at IS NULL`,
-        this.projectId,
-      );
+      const master = orm(this.db)
+        .select({ id: tables.document_nodes.id })
+        .from(tables.document_nodes)
+        .where(
+          sql`${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.is_master} = 1 AND ${tables.document_nodes.archived_at} IS NULL`,
+        )
+        .get();
       if (!master) throw new MunhaeError("invalid_project", "프로젝트 마스터 폴더가 없습니다");
-      const enabledProjectContext = materials.resolveMaterials(this.db, this.projectId, master.id)
-        .filter(item => item.included).map(item => {
+      const includedMaterials = materials.resolveMaterials(this.db, this.projectId, master.id).filter(item => item.included);
+      const referenceComments = includedMaterials.filter(item => item.source === "comment_reference").map(item => {
+        const content = materials.materialPromptContent(item);
+        return { referenceId: item.id, title: item.title, content, contentHash: sha256Hex(content), priority: item.priority };
+      });
+      const enabledProjectContext = includedMaterials
+        .filter(item => item.source !== "comment_reference").map(item => {
           const content = materials.materialPromptContent(item);
           return { contextItemId: item.id, title: item.title, content,
             contentHash: sha256Hex(content), priority: item.priority };
@@ -1939,21 +2339,24 @@ export class ProjectRepo {
           translationState: document.translationState,
         })),
         enabledProjectContext,
+        referenceComments,
       };
       rendered = renderProjectChatRequest({ snapshot, question });
     } else {
-      const source = getRow<{ content_hash: string }>(
-        this.db,
-        `SELECT content_hash FROM src_text_versions WHERE id = ? AND project_id = ?`,
-        editor.source.versionId,
-        this.projectId,
-      );
-      const punctuation = editor.punctuation ? getRow<{ content_hash: string }>(
-        this.db,
-        `SELECT content_hash FROM punctuation_versions WHERE id = ? AND project_id = ?`,
-        editor.punctuation.versionId,
-        this.projectId,
-      ) : null;
+      const source = orm(this.db)
+        .select({ content_hash: tables.src_text_versions.content_hash })
+        .from(tables.src_text_versions)
+        .where(
+          sql`${tables.src_text_versions.id} = ${editor.source.versionId} AND ${tables.src_text_versions.project_id} = ${this.projectId}`,
+        )
+        .get();
+      const punctuation = editor.punctuation ? orm(this.db)
+        .select({ content_hash: tables.punctuation_versions.content_hash })
+        .from(tables.punctuation_versions)
+        .where(
+          sql`${tables.punctuation_versions.id} = ${editor.punctuation.versionId} AND ${tables.punctuation_versions.project_id} = ${this.projectId}`,
+        )
+        .get() : null;
       if (!source || (editor.punctuation && !punctuation)) {
         throw new MunhaeError("not_ready", "현재 문서 snapshot을 찾을 수 없습니다");
       }
@@ -2160,13 +2563,13 @@ export class ProjectRepo {
   completeTranslationRun(input: CompleteTranslationRunInput): CompletedTranslationRun {
     storeTranslationResponse(this.db, this.projectId, input);
     try {
-      const message = getRow<{ request_manifest_json: string | null }>(
-        this.db,
-        `SELECT request_manifest_json FROM chat_messages
-         WHERE id = ? AND project_id = ? AND role = 'assistant' AND task_kind = 'translation'`,
-        input.messageId,
-        this.projectId,
-      );
+      const message = orm(this.db)
+        .select({ request_manifest_json: tables.chat_messages.request_manifest_json })
+        .from(tables.chat_messages)
+        .where(
+          sql`${tables.chat_messages.id} = ${input.messageId} AND ${tables.chat_messages.project_id} = ${this.projectId} AND ${tables.chat_messages.role} = 'assistant' AND ${tables.chat_messages.task_kind} = 'translation'`,
+        )
+        .get();
       if (!message?.request_manifest_json) {
         throw new MunhaeError("invalid_request_manifest", "AI 실행 snapshot을 찾을 수 없습니다");
       }
@@ -2236,13 +2639,13 @@ export class ProjectRepo {
   }
 
   private recoverInterruptedTranslationRuns(): void {
-    const rows = allRows<{ id: string }>(
-      this.db,
-      `SELECT id FROM chat_messages
-       WHERE project_id = ? AND role = 'assistant' AND task_kind = 'translation'
-         AND state IN ('queued', 'running', 'validating')`,
-      this.projectId,
-    );
+    const rows = orm(this.db)
+      .select({ id: tables.chat_messages.id })
+      .from(tables.chat_messages)
+      .where(
+        sql`${tables.chat_messages.project_id} = ${this.projectId} AND ${tables.chat_messages.role} = 'assistant' AND ${tables.chat_messages.task_kind} = 'translation' AND ${tables.chat_messages.state} IN ('queued', 'running', 'validating')`,
+      )
+      .all();
     for (const row of rows) {
       markTranslationRunFailed(
         this.db,
@@ -2268,29 +2671,35 @@ export class ProjectRepo {
   }
 
   private requireSource(documentNodeId: string): SourceCtx {
-    const row = getRow<{
-      source_text_id: string;
-      current_version_id: string;
-      confirmed_version_id: string | null;
-      lock_version: number;
-      version_no: number;
-      state: SourceCtx["currentState"];
-      content_text: string;
-      content_hash: string;
-    }>(
-      this.db,
-      `SELECT t.id AS source_text_id, h.current_version_id, h.confirmed_version_id, h.lock_version,
-              v.version_no, v.state, v.content_text, v.content_hash
-       FROM src_texts t
-       JOIN document_nodes n ON n.id = t.document_node_id
-       JOIN src_text_heads h ON h.source_text_id = t.id
-       JOIN src_text_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? AND t.project_id = ? AND t.tombstoned_at IS NULL
-         AND n.node_role = 'source_unit'
-       LIMIT 1`,
-      documentNodeId,
-      this.projectId,
-    );
+    const row = orm(this.db)
+      .select({
+        source_text_id: tables.src_texts.id,
+        current_version_id: tables.src_text_heads.current_version_id,
+        confirmed_version_id: tables.src_text_heads.confirmed_version_id,
+        lock_version: tables.src_text_heads.lock_version,
+        version_no: tables.src_text_versions.version_no,
+        state: tables.src_text_versions.state,
+        content_text: tables.src_text_versions.content_text,
+        content_hash: tables.src_text_versions.content_hash,
+      })
+      .from(tables.src_texts)
+      .innerJoin(
+        tables.document_nodes,
+        sql`${tables.document_nodes.id} = ${tables.src_texts.document_node_id}`,
+      )
+      .innerJoin(
+        tables.src_text_heads,
+        sql`${tables.src_text_heads.source_text_id} = ${tables.src_texts.id}`,
+      )
+      .innerJoin(
+        tables.src_text_versions,
+        sql`${tables.src_text_versions.id} = ${tables.src_text_heads.current_version_id}`,
+      )
+      .where(
+        sql`${tables.src_texts.document_node_id} = ${documentNodeId} AND ${tables.src_texts.project_id} = ${this.projectId} AND ${tables.src_texts.tombstoned_at} IS NULL AND ${tables.document_nodes.node_role} = 'source_unit'`,
+      )
+      .limit(1)
+      .get();
     if (!row) throw new MunhaeError("not_ready", "이 문서에는 원문이 없습니다");
     return {
       sourceTextId: row.source_text_id,
@@ -2305,31 +2714,37 @@ export class ProjectRepo {
   }
 
   private requirePunctuation(documentNodeId: string): PunctuationCtx {
-    const row = getRow<{
-      punctuation_set_id: string;
-      current_version_id: string;
-      confirmed_version_id: string | null;
-      lock_version: number;
-      version_no: number;
-      state: PunctuationCtx["currentState"];
-      punctuated_text: string;
-      structure_json: string | null;
-      source_text_version_id: string;
-    }>(
-      this.db,
-      `SELECT s.id AS punctuation_set_id, h.current_version_id, h.confirmed_version_id, h.lock_version,
-              v.version_no, v.state, v.punctuated_text, v.structure_json, v.source_text_version_id
-       FROM src_texts t
-       JOIN punctuation_sets s ON s.source_text_id = t.id
-       JOIN punctuation_heads h ON h.punctuation_set_id = s.id
-       JOIN punctuation_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? AND t.project_id = ? AND t.tombstoned_at IS NULL
-         AND s.status = 'active'
-       ORDER BY s.created_at
-       LIMIT 1`,
-      documentNodeId,
-      this.projectId,
-    );
+    const row = orm(this.db)
+      .select({
+        punctuation_set_id: tables.punctuation_sets.id,
+        current_version_id: tables.punctuation_heads.current_version_id,
+        confirmed_version_id: tables.punctuation_heads.confirmed_version_id,
+        lock_version: tables.punctuation_heads.lock_version,
+        version_no: tables.punctuation_versions.version_no,
+        state: tables.punctuation_versions.state,
+        punctuated_text: tables.punctuation_versions.punctuated_text,
+        structure_json: tables.punctuation_versions.structure_json,
+        source_text_version_id: tables.punctuation_versions.source_text_version_id,
+      })
+      .from(tables.src_texts)
+      .innerJoin(
+        tables.punctuation_sets,
+        sql`${tables.punctuation_sets.source_text_id} = ${tables.src_texts.id}`,
+      )
+      .innerJoin(
+        tables.punctuation_heads,
+        sql`${tables.punctuation_heads.punctuation_set_id} = ${tables.punctuation_sets.id}`,
+      )
+      .innerJoin(
+        tables.punctuation_versions,
+        sql`${tables.punctuation_versions.id} = ${tables.punctuation_heads.current_version_id}`,
+      )
+      .where(
+        sql`${tables.src_texts.document_node_id} = ${documentNodeId} AND ${tables.src_texts.project_id} = ${this.projectId} AND ${tables.src_texts.tombstoned_at} IS NULL AND ${tables.punctuation_sets.status} = 'active'`,
+      )
+      .orderBy(sql`${tables.punctuation_sets.created_at}`)
+      .limit(1)
+      .get();
     if (!row) throw new MunhaeError("not_ready", "이 문서에는 표점안이 없습니다");
     return {
       punctuationSetId: row.punctuation_set_id,
@@ -2350,24 +2765,27 @@ export class ProjectRepo {
     currentVersionId: string,
     confirmedVersionId?: string | null,
   ): void {
-    const info = this.db
-      .prepare(
-        `UPDATE src_text_heads
-         SET current_version_id = @current,
-             confirmed_version_id = CASE WHEN @setConfirmed = 1 THEN @confirmed ELSE confirmed_version_id END,
-             lock_version = lock_version + 1,
-             updated_at = @now
-         WHERE source_text_id = @id AND project_id = @projectId AND lock_version = @lock`,
+    const head = tables.src_text_heads;
+    const info = orm(this.db)
+      .update(head)
+      .set({
+        current_version_id: currentVersionId,
+        // Keep this column in SET even when unchanged: UPDATE OF triggers validate it.
+        confirmed_version_id:
+          confirmedVersionId === undefined
+            ? head.confirmed_version_id
+            : confirmedVersionId,
+        lock_version: sql`${head.lock_version} + 1`,
+        updated_at: nowIso(),
+      })
+      .where(
+        and(
+          eq(head.source_text_id, sourceTextId),
+          eq(head.project_id, this.projectId),
+          eq(head.lock_version, expectedLockVersion),
+        ),
       )
-      .run({
-        current: currentVersionId,
-        confirmed: confirmedVersionId ?? null,
-        setConfirmed: confirmedVersionId !== undefined ? 1 : 0,
-        now: nowIso(),
-        id: sourceTextId,
-        projectId: this.projectId,
-        lock: expectedLockVersion,
-      });
+      .run();
     if (info.changes !== 1) throw new MunhaeError("cas_conflict", "stale source lock_version");
   }
 
@@ -2377,45 +2795,48 @@ export class ProjectRepo {
     currentVersionId: string,
     confirmedVersionId?: string | null,
   ): void {
-    const info = this.db
-      .prepare(
-        `UPDATE punctuation_heads
-         SET current_version_id = @current,
-             confirmed_version_id = CASE WHEN @setConfirmed = 1 THEN @confirmed ELSE confirmed_version_id END,
-             lock_version = lock_version + 1,
-             updated_at = @now
-         WHERE punctuation_set_id = @id AND project_id = @projectId AND lock_version = @lock`,
+    const head = tables.punctuation_heads;
+    const info = orm(this.db)
+      .update(head)
+      .set({
+        current_version_id: currentVersionId,
+        // Keep this column in SET even when unchanged: UPDATE OF triggers validate it.
+        confirmed_version_id:
+          confirmedVersionId === undefined
+            ? head.confirmed_version_id
+            : confirmedVersionId,
+        lock_version: sql`${head.lock_version} + 1`,
+        updated_at: nowIso(),
+      })
+      .where(
+        and(
+          eq(head.punctuation_set_id, punctuationSetId),
+          eq(head.project_id, this.projectId),
+          eq(head.lock_version, expectedLockVersion),
+        ),
       )
-      .run({
-        current: currentVersionId,
-        confirmed: confirmedVersionId ?? null,
-        setConfirmed: confirmedVersionId !== undefined ? 1 : 0,
-        now: nowIso(),
-        id: punctuationSetId,
-        projectId: this.projectId,
-        lock: expectedLockVersion,
-      });
+      .run();
     if (info.changes !== 1) throw new MunhaeError("cas_conflict", "stale punctuation lock_version");
   }
 
   private loadStructureSpanInputs(punctuationVersionId: string): PunctuationStructureSpanInput[] {
-    return allRows<{
-      id: string;
-      span_kind: PunctuationStructureSpanInput["spanKind"];
-      parent_span_id: string | null;
-      ordinal: number;
-      codepoint_from: number;
-      codepoint_to: number;
-      label: string | null;
-    }>(
-      this.db,
-      `SELECT id, span_kind, parent_span_id, ordinal, codepoint_from, codepoint_to, label
-       FROM punctuation_structure_spans
-       WHERE punctuation_version_id = ?`,
-      punctuationVersionId,
-    ).map((span) => ({
+    return orm(this.db)
+      .select({
+        id: tables.punctuation_structure_spans.id,
+        span_kind: tables.punctuation_structure_spans.span_kind,
+        parent_span_id: tables.punctuation_structure_spans.parent_span_id,
+        ordinal: tables.punctuation_structure_spans.ordinal,
+        codepoint_from: tables.punctuation_structure_spans.codepoint_from,
+        codepoint_to: tables.punctuation_structure_spans.codepoint_to,
+        label: tables.punctuation_structure_spans.label,
+      })
+      .from(tables.punctuation_structure_spans)
+      .where(
+        sql`${tables.punctuation_structure_spans.punctuation_version_id} = ${punctuationVersionId}`,
+      )
+      .all().map((span) => ({
       spanKey: span.id,
-      spanKind: span.span_kind,
+      spanKind: punctuationSpanKind(span.span_kind),
       parentSpanKey: span.parent_span_id,
       ordinal: span.ordinal,
       codepointFrom: span.codepoint_from,
@@ -2425,46 +2846,41 @@ export class ProjectRepo {
   }
 
   private validateStoredAnchorSet(documentNodeId: string, punctuationVersionId: string): void {
-    const dependency = getRow<{
-      anchor_set_id: string;
-      source_text_version_id: string;
-      source_text: string;
-      punctuated_text: string;
-      set_source_version_id: string;
-    }>(
-      this.db,
-      `SELECT s.id AS anchor_set_id, p.source_text_version_id, src.content_text AS source_text,
-              p.punctuated_text, s.source_text_version_id AS set_source_version_id
-       FROM translation_anchor_sets s
-       JOIN punctuation_versions p ON p.id = s.punctuation_version_id
-       JOIN src_text_versions src ON src.id = p.source_text_version_id
-       WHERE s.document_node_id = ? AND s.punctuation_version_id = ?
-       ORDER BY s.created_at DESC LIMIT 1`,
-      documentNodeId,
-      punctuationVersionId,
-    );
+    const dependency = orm(this.db)
+      .select({
+        anchor_set_id: tables.translation_anchor_sets.id,
+        source_text_version_id: tables.punctuation_versions.source_text_version_id,
+        source_text: tables.src_text_versions.content_text,
+        punctuated_text: tables.punctuation_versions.punctuated_text,
+        set_source_version_id:
+          tables.translation_anchor_sets.source_text_version_id,
+      })
+      .from(tables.translation_anchor_sets)
+      .innerJoin(
+        tables.punctuation_versions,
+        sql`${tables.punctuation_versions.id} = ${tables.translation_anchor_sets.punctuation_version_id}`,
+      )
+      .innerJoin(
+        tables.src_text_versions,
+        sql`${tables.src_text_versions.id} = ${tables.punctuation_versions.source_text_version_id}`,
+      )
+      .where(
+        sql`${tables.translation_anchor_sets.document_node_id} = ${documentNodeId} AND ${tables.translation_anchor_sets.punctuation_version_id} = ${punctuationVersionId}`,
+      )
+      .orderBy(sql`${tables.translation_anchor_sets.created_at} DESC`)
+      .limit(1)
+      .get();
     if (!dependency || dependency.source_text_version_id !== dependency.set_source_version_id) {
       throw new MunhaeError("invalid_anchor_set", "표점안과 일치하는 번역 앵커 집합이 없습니다");
     }
-    const anchors = allRows<{
-      id: string;
-      anchor_key: string;
-      ordinal: number;
-      boundary_kind: string;
-      punctuation_codepoint_from: number;
-      punctuation_codepoint_to: number;
-      punctuated_quote: string;
-      punctuated_quote_hash: string;
-      source_codepoint_from: number;
-      source_codepoint_to: number;
-      source_quote: string;
-      source_quote_hash: string;
-      required: number;
-    }>(
-      this.db,
-      `SELECT * FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`,
-      dependency.anchor_set_id,
-    );
+    const anchors = orm(this.db)
+      .select({ ...getTableColumns(tables.translation_anchors) })
+      .from(tables.translation_anchors)
+      .where(
+        sql`${tables.translation_anchors.anchor_set_id} = ${dependency.anchor_set_id}`,
+      )
+      .orderBy(sql`${tables.translation_anchors.ordinal}`)
+      .all();
     if (!anchors.length) throw new MunhaeError("invalid_anchor_set", "번역 앵커가 비어 있습니다");
     let punctuationCursor = 0;
     let sourceCursor = 0;
@@ -2493,19 +2909,17 @@ export class ProjectRepo {
       ) {
         throw new MunhaeError("invalid_anchor_set", `번역 앵커 ${anchor.anchor_key}의 범위 또는 hash가 잘못되었습니다`);
       }
-      const exactSpan = getRow<{ n: number }>(
-        this.db,
-        `SELECT COUNT(*) AS n
-         FROM translation_anchor_structure_spans bridge
-         JOIN punctuation_structure_spans span ON span.id = bridge.punctuation_structure_span_id
-         WHERE bridge.anchor_id = ? AND span.punctuation_version_id = ?
-           AND span.span_kind = ? AND span.codepoint_from = ? AND span.codepoint_to = ?`,
-        anchor.id,
-        punctuationVersionId,
-        anchor.boundary_kind,
-        anchor.punctuation_codepoint_from,
-        anchor.punctuation_codepoint_to,
-      );
+      const exactSpan = orm(this.db)
+        .select({ n: sql<number>`COUNT(*)` })
+        .from(tables.translation_anchor_structure_spans)
+        .innerJoin(
+          tables.punctuation_structure_spans,
+          sql`${tables.punctuation_structure_spans.id} = ${tables.translation_anchor_structure_spans.punctuation_structure_span_id}`,
+        )
+        .where(
+          sql`${tables.translation_anchor_structure_spans.anchor_id} = ${anchor.id} AND ${tables.punctuation_structure_spans.punctuation_version_id} = ${punctuationVersionId} AND ${tables.punctuation_structure_spans.span_kind} = ${anchor.boundary_kind} AND ${tables.punctuation_structure_spans.codepoint_from} = ${anchor.punctuation_codepoint_from} AND ${tables.punctuation_structure_spans.codepoint_to} = ${anchor.punctuation_codepoint_to}`,
+        )
+        .get();
       if (exactSpan?.n !== 1) {
         throw new MunhaeError("invalid_anchor_set", `번역 앵커 ${anchor.anchor_key}의 논리 구조 연결이 잘못되었습니다`);
       }
@@ -2526,38 +2940,51 @@ export class ProjectRepo {
     newDependencyId: string,
     dependencyColumn: "source_text_version_id" | "punctuation_version_id",
   ): void {
-    const versions = allRows<{ id: string; old_dependency_id: string }>(
-      this.db,
-      `SELECT v.id, v.${dependencyColumn} AS old_dependency_id
-       FROM document_translation_versions v
-       JOIN document_translations t ON t.id = v.document_translation_id
-       WHERE t.document_node_id = ? AND t.project_id = ? AND v.${dependencyColumn} <> ?`,
-      documentNodeId,
-      this.projectId,
-      newDependencyId,
-    );
+    const dependency = tables.document_translation_versions[dependencyColumn];
+    const versions = orm(this.db)
+      .select({
+        id: tables.document_translation_versions.id,
+        old_dependency_id: dependency,
+      })
+      .from(tables.document_translation_versions)
+      .innerJoin(
+        tables.document_translations,
+        eq(
+          tables.document_translations.id,
+          tables.document_translation_versions.document_translation_id,
+        ),
+      )
+      .where(
+        and(
+          eq(tables.document_translations.document_node_id, documentNodeId),
+          eq(tables.document_translations.project_id, this.projectId),
+          ne(dependency, newDependencyId),
+        ),
+      )
+      .all();
     const detectedAt = nowIso();
     for (const version of versions) {
-      const existing = getRow<{ id: string }>(
-        this.db,
-        `SELECT id FROM translation_staleness
-         WHERE document_translation_version_id = ? AND cause_kind = ?
-           AND new_dependency_id = ? AND resolved_by_document_translation_version_id IS NULL`,
-        version.id,
-        causeKind,
-        newDependencyId,
-      );
+      const existing = orm(this.db)
+        .select({ id: tables.translation_staleness.id })
+        .from(tables.translation_staleness)
+        .where(
+          sql`${tables.translation_staleness.document_translation_version_id} = ${version.id} AND ${tables.translation_staleness.cause_kind} = ${causeKind} AND ${tables.translation_staleness.new_dependency_id} = ${newDependencyId} AND ${tables.translation_staleness.resolved_by_document_translation_version_id} IS NULL`,
+        )
+        .get();
       if (existing) continue;
-      insertRow(this.db, "translation_staleness", {
-        id: createId(),
-        project_id: this.projectId,
-        document_translation_version_id: version.id,
-        cause_kind: causeKind,
-        old_dependency_id: version.old_dependency_id,
-        new_dependency_id: newDependencyId,
-        detected_at: detectedAt,
-        resolved_by_document_translation_version_id: null,
-      });
+      orm(this.db)
+        .insert(tables.translation_staleness)
+        .values({
+          id: createId(),
+          project_id: this.projectId,
+          document_translation_version_id: version.id,
+          cause_kind: causeKind,
+          old_dependency_id: version.old_dependency_id,
+          new_dependency_id: newDependencyId,
+          detected_at: detectedAt,
+          resolved_by_document_translation_version_id: null,
+        })
+        .run();
     }
   }
 
@@ -2571,7 +2998,7 @@ export class ProjectRepo {
       expectedTextContent?: string;
     },
   ): void {
-    this.db.transaction(() => {
+    orm(this.db).transaction(() => {
       const ctx = this.requireTranslation(documentNodeId);
       const current = this.requireCurrentVersion(ctx.translationId);
       this.assertCurrentTranslationDependencies(current, ctx);
@@ -2585,7 +3012,7 @@ export class ProjectRepo {
         parentId: current.id,
         editKind: opts.editKind,
       });
-    })();
+    });
   }
 
   private insertDraftFromBlocks(
@@ -2611,7 +3038,11 @@ export class ProjectRepo {
     }
     if (!opts.allowStaleParent) this.assertCurrentTranslationDependencies(parent, ctx);
     if (parent.state === "draft") {
-      this.db.prepare(`UPDATE document_translation_versions SET state = 'superseded' WHERE id = ?`).run(parent.id);
+      orm(this.db)
+        .update(tables.document_translation_versions)
+        .set({ state: "superseded" })
+        .where(eq(tables.document_translation_versions.id, parent.id))
+        .run();
     }
     const anchors = loadAnchors(this.db, ctx.anchorSetId);
     const drafts: BlockDraft[] = blocksIn.map((b) => ({
@@ -2625,64 +3056,88 @@ export class ProjectRepo {
     const versionId = createId();
     const now = nowIso();
     const text = joinBlockTranslations(drafts.map((b) => b.translation));
-    insertRow(this.db, "document_translation_versions", {
-      id: versionId,
-      project_id: this.projectId,
-      document_translation_id: ctx.translationId,
-      parent_version_id: opts.parentId,
-      source_text_version_id: ctx.sourceVersionId,
-      punctuation_version_id: ctx.puncVersionId,
-      translation_anchor_set_id: ctx.anchorSetId,
-      translation_policy_version_id: ctx.policyVersionId,
-      text_content: text,
-      origin_kind: opts.originKind,
-      generated_by_message_id: null,
-      validation_state: validationState,
-      needs_review: validationState === "needs_review" ? 1 : 0,
-      state: "draft",
-      content_hash: sha256Hex(text),
-      created_by_actor_id: this.actors.humanId,
-      created_at: now,
-      version_no: parent.version_no + 1,
-    });
+    orm(this.db)
+      .insert(tables.document_translation_versions)
+      .values({
+        id: versionId,
+        project_id: this.projectId,
+        document_translation_id: ctx.translationId,
+        parent_version_id: opts.parentId,
+        source_text_version_id: ctx.sourceVersionId,
+        punctuation_version_id: ctx.puncVersionId,
+        translation_anchor_set_id: ctx.anchorSetId,
+        translation_policy_version_id: ctx.policyVersionId,
+        text_content: text,
+        origin_kind: opts.originKind,
+        generated_by_message_id: null,
+        validation_state: validationState,
+        needs_review: validationState === "needs_review" ? 1 : 0,
+        state: "draft",
+        content_hash: sha256Hex(text),
+        created_by_actor_id: this.actors.humanId,
+        created_at: now,
+        version_no: parent.version_no + 1,
+      })
+      .run();
     insertVersionBlocks(this.db, this.projectId, versionId, drafts, anchors, validationState);
     recordValidation(this.db, this.projectId, versionId, findings, validationState);
     casUpdateHead(this.db, ctx.translationId, opts.expectedLock, { currentVersionId: versionId });
-    this.db
-      .prepare(
-        `UPDATE translation_staleness
-         SET resolved_by_document_translation_version_id = ?
-         WHERE resolved_by_document_translation_version_id IS NULL
-           AND document_translation_version_id IN (
-             SELECT id FROM document_translation_versions WHERE document_translation_id = ?
-           )`,
+    orm(this.db)
+      .update(tables.translation_staleness)
+      .set({
+        resolved_by_document_translation_version_id: versionId,
+      })
+      .where(
+        and(
+          isNull(
+            tables.translation_staleness
+              .resolved_by_document_translation_version_id,
+          ),
+          inArray(
+            tables.translation_staleness.document_translation_version_id,
+            orm(this.db)
+              .select({ id: tables.document_translation_versions.id })
+              .from(tables.document_translation_versions)
+              .where(
+                eq(
+                  tables.document_translation_versions.document_translation_id,
+                  ctx.translationId,
+                ),
+              ),
+          ),
+        ),
       )
-      .run(versionId, ctx.translationId);
-    insertRow(this.db, "user_edits", {
-      id: createId(),
-      project_id: this.projectId,
-      document_translation_id: ctx.translationId,
-      base_document_translation_version_id: opts.parentId,
-      result_document_translation_version_id: versionId,
-      edit_kind: opts.editKind,
-      actor_id: this.actors.humanId,
-      created_at: now,
-    });
+      .run();
+    orm(this.db)
+      .insert(tables.user_edits)
+      .values({
+        id: createId(),
+        project_id: this.projectId,
+        document_translation_id: ctx.translationId,
+        base_document_translation_version_id: opts.parentId,
+        result_document_translation_version_id: versionId,
+        edit_kind: opts.editKind,
+        actor_id: this.actors.humanId,
+        created_at: now,
+      })
+      .run();
   }
 
   private requireTranslation(documentNodeId: string): StageCtx {
-    const row = getRow<{
-      translation_id: string;
-      lock_version: number;
-    }>(
-      this.db,
-      `SELECT t.id AS translation_id, h.lock_version
-       FROM document_translations t
-       JOIN document_translation_heads h ON h.document_translation_id = t.id
-       WHERE t.document_node_id = ? AND t.project_id = ? AND t.tombstoned_at IS NULL`,
-      documentNodeId,
-      this.projectId,
-    );
+    const row = orm(this.db)
+      .select({
+        translation_id: tables.document_translations.id,
+        lock_version: tables.document_translation_heads.lock_version,
+      })
+      .from(tables.document_translations)
+      .innerJoin(
+        tables.document_translation_heads,
+        sql`${tables.document_translation_heads.document_translation_id} = ${tables.document_translations.id}`,
+      )
+      .where(
+        sql`${tables.document_translations.document_node_id} = ${documentNodeId} AND ${tables.document_translations.project_id} = ${this.projectId} AND ${tables.document_translations.target_locale} = ${this.translationLanguage} AND ${tables.document_translations.tombstoned_at} IS NULL`,
+      )
+      .get();
     if (!row) throw new MunhaeError("not_found", "translation not found");
     const source = this.requireSource(documentNodeId);
     const punctuation = this.requirePunctuation(documentNodeId);
@@ -2692,15 +3147,15 @@ export class ProjectRepo {
     if (punctuation.sourceVersionId !== source.currentVersionId) {
       throw new MunhaeError("stale_punctuation", "현재 원문안에서 새 표점안을 저장해야 번역안을 편집할 수 있습니다");
     }
-    const anchorSet = getRow<{ id: string }>(
-      this.db,
-      `SELECT id FROM translation_anchor_sets
-       WHERE document_node_id = ? AND source_text_version_id = ? AND punctuation_version_id = ?
-       ORDER BY created_at DESC LIMIT 1`,
-      documentNodeId,
-      source.currentVersionId,
-      punctuation.currentVersionId,
-    );
+    const anchorSet = orm(this.db)
+      .select({ id: tables.translation_anchor_sets.id })
+      .from(tables.translation_anchor_sets)
+      .where(
+        sql`${tables.translation_anchor_sets.document_node_id} = ${documentNodeId} AND ${tables.translation_anchor_sets.source_text_version_id} = ${source.currentVersionId} AND ${tables.translation_anchor_sets.punctuation_version_id} = ${punctuation.currentVersionId}`,
+      )
+      .orderBy(sql`${tables.translation_anchor_sets.created_at} DESC`)
+      .limit(1)
+      .get();
     if (!anchorSet) throw new MunhaeError("not_ready", "현재 표점안의 번역 앵커가 없습니다");
     this.validateStoredAnchorSet(documentNodeId, punctuation.currentVersionId);
     return {
@@ -2726,13 +3181,13 @@ export class ProjectRepo {
     ) {
       return false;
     }
-    const stale = getRow<{ n: number }>(
-      this.db,
-      `SELECT COUNT(*) AS n FROM translation_staleness
-       WHERE document_translation_version_id = ?
-         AND resolved_by_document_translation_version_id IS NULL`,
-      version.id,
-    );
+    const stale = orm(this.db)
+      .select({ n: sql<number>`COUNT(*)` })
+      .from(tables.translation_staleness)
+      .where(
+        sql`${tables.translation_staleness.document_translation_version_id} = ${version.id} AND ${tables.translation_staleness.resolved_by_document_translation_version_id} IS NULL`,
+      )
+      .get();
     return (stale?.n ?? 0) === 0;
   }
 
@@ -2749,15 +3204,33 @@ export class ProjectRepo {
   }
 
   private requireCurrentVersion(translationId: string): TranslationVersionRow & { id: string } {
-    const row = getRow<TranslationVersionRow>(
-      this.db,
-      `SELECT v.id, v.version_no, v.state, v.validation_state, v.text_content, v.origin_kind, v.parent_version_id,
-              v.source_text_version_id, v.punctuation_version_id, v.translation_anchor_set_id, v.translation_policy_version_id
-       FROM document_translation_heads h
-       JOIN document_translation_versions v ON v.id = h.current_version_id
-       WHERE h.document_translation_id = ?`,
-      translationId,
-    );
+    const row = orm(this.db)
+      .select({
+        id: tables.document_translation_versions.id,
+        version_no: tables.document_translation_versions.version_no,
+        state: tables.document_translation_versions.state,
+        validation_state: tables.document_translation_versions.validation_state,
+        text_content: tables.document_translation_versions.text_content,
+        origin_kind: tables.document_translation_versions.origin_kind,
+        parent_version_id: tables.document_translation_versions.parent_version_id,
+        source_text_version_id:
+          tables.document_translation_versions.source_text_version_id,
+        punctuation_version_id:
+          tables.document_translation_versions.punctuation_version_id,
+        translation_anchor_set_id:
+          tables.document_translation_versions.translation_anchor_set_id,
+        translation_policy_version_id:
+          tables.document_translation_versions.translation_policy_version_id,
+      })
+      .from(tables.document_translation_heads)
+      .innerJoin(
+        tables.document_translation_versions,
+        sql`${tables.document_translation_versions.id} = ${tables.document_translation_heads.current_version_id}`,
+      )
+      .where(
+        sql`${tables.document_translation_heads.document_translation_id} = ${translationId}`,
+      )
+      .get();
     if (!row) throw new MunhaeError("not_found", "current translation version missing");
     return row;
   }
@@ -2772,56 +3245,65 @@ export class ProjectRepo {
   ): void {
     const sourceTextId = createId();
     const versionId = createId();
-    insertRow(this.db, "src_texts", {
-      id: sourceTextId,
-      project_id: this.projectId,
-      document_node_id: nodeId,
-      name,
-      status: "active",
-      created_at: now,
-      tombstoned_at: null,
-    });
-    insertRow(this.db, "src_text_versions", {
-      id: versionId,
-      project_id: this.projectId,
-      source_text_id: sourceTextId,
-      parent_version_id: null,
-      version_no: 1,
-      content_text: text,
-      origin_kind: originKind,
-      source_asset_id: null,
-      change_summary: null,
-      state: confirmed ? "confirmed" : "draft",
-      content_hash: sha256Hex(text),
-      created_by_actor_id: this.actors.humanId,
-      created_at: now,
-    });
-    insertRow(this.db, "src_text_heads", {
-      project_id: this.projectId,
-      source_text_id: sourceTextId,
-      current_version_id: versionId,
-      confirmed_version_id: confirmed ? versionId : null,
-      lock_version: 1,
-      updated_at: now,
-    });
+    orm(this.db)
+      .insert(tables.src_texts)
+      .values({
+        id: sourceTextId,
+        project_id: this.projectId,
+        document_node_id: nodeId,
+        name,
+        status: "active",
+        created_at: now,
+        tombstoned_at: null,
+      })
+      .run();
+    orm(this.db)
+      .insert(tables.src_text_versions)
+      .values({
+        id: versionId,
+        project_id: this.projectId,
+        source_text_id: sourceTextId,
+        parent_version_id: null,
+        version_no: 1,
+        content_text: text,
+        origin_kind: originKind,
+        source_asset_id: null,
+        state: confirmed ? "confirmed" : "draft",
+        content_hash: sha256Hex(text),
+        created_by_actor_id: this.actors.humanId,
+        created_at: now,
+      })
+      .run();
+    orm(this.db)
+      .insert(tables.src_text_heads)
+      .values({
+        project_id: this.projectId,
+        source_text_id: sourceTextId,
+        current_version_id: versionId,
+        confirmed_version_id: confirmed ? versionId : null,
+        lock_version: 1,
+        updated_at: now,
+      })
+      .run();
   }
 
   private listDocuments(): DocumentListItem[] {
-    const nodes = allRows<{
-      id: string;
-      parent_node_id: string | null;
-      node_role: DocumentNodeRole;
-      is_master: number;
-      title: string;
-      original_title: string | null;
-      ordinal: number;
-    }>(
-      this.db,
-      `SELECT id, parent_node_id, node_role, is_master, title, original_title, ordinal
-       FROM document_nodes WHERE project_id = ? AND archived_at IS NULL
-       ORDER BY ordinal`,
-      this.projectId,
-    );
+    const nodes = orm(this.db)
+      .select({
+        id: tables.document_nodes.id,
+        parent_node_id: tables.document_nodes.parent_node_id,
+        node_role: tables.document_nodes.node_role,
+        is_master: tables.document_nodes.is_master,
+        title: tables.document_nodes.title,
+        original_title: tables.document_nodes.original_title,
+        ordinal: tables.document_nodes.ordinal,
+      })
+      .from(tables.document_nodes)
+      .where(
+        sql`${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.archived_at} IS NULL`,
+      )
+      .orderBy(sql`${tables.document_nodes.ordinal}`)
+      .all();
     const byParent = new Map<string | null, typeof nodes>();
     for (const n of nodes) {
       const key = n.parent_node_id;
@@ -2830,24 +3312,29 @@ export class ProjectRepo {
       byParent.set(key, list);
     }
     const directContextCounts = new Map<string, number>();
-    for (const row of allRows<{ scope_kind: string | null; scope_id: string | null; n: number }>(
-      this.db,
-      `SELECT scope_kind, scope_id, COUNT(*) AS n
-       FROM context_items
-       WHERE project_id = ? AND archived_at IS NULL
-       GROUP BY scope_kind, scope_id`,
-      this.projectId,
-    )) {
+    for (const row of orm(this.db)
+      .select({
+        scope_kind: tables.context_items.scope_kind,
+        scope_id: tables.context_items.scope_id,
+        n: sql<number>`COUNT(*)`,
+      })
+      .from(tables.context_items)
+      .where(
+        sql`${tables.context_items.project_id} = ${this.projectId} AND ${tables.context_items.archived_at} IS NULL`,
+      )
+      .groupBy(tables.context_items.scope_kind, tables.context_items.scope_id)
+      .all()) {
       if (row.scope_kind === "document_node" && row.scope_id) {
         directContextCounts.set(row.scope_id, (directContextCounts.get(row.scope_id) ?? 0) + row.n);
       }
     }
-    for (const row of allRows<{ id: string }>(
-      this.db,
-      `SELECT id FROM document_nodes
-       WHERE project_id = ? AND archived_at IS NULL AND trim(COALESCE(description_md, '')) <> ''`,
-      this.projectId,
-    )) {
+    for (const row of orm(this.db)
+      .select({ id: tables.document_nodes.id })
+      .from(tables.document_nodes)
+      .where(
+        sql`${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.archived_at} IS NULL AND trim(COALESCE(${tables.document_nodes.description_md}, '')) <> ''`,
+      )
+      .all()) {
       directContextCounts.set(row.id, (directContextCounts.get(row.id) ?? 0) + 1);
     }
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -2890,49 +3377,89 @@ export class ProjectRepo {
   }
 
   private sourceUi(nodeId: string): VersionUiState {
-    const row = getRow<{ state: string }>(
-      this.db,
-      `SELECT v.state
-       FROM src_texts t
-       JOIN src_text_heads h ON h.source_text_id = t.id
-       JOIN src_text_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? LIMIT 1`,
-      nodeId,
-    );
+    const row = orm(this.db)
+      .select({ state: tables.src_text_versions.state })
+      .from(tables.src_texts)
+      .innerJoin(
+        tables.src_text_heads,
+        sql`${tables.src_text_heads.source_text_id} = ${tables.src_texts.id}`,
+      )
+      .innerJoin(
+        tables.src_text_versions,
+        sql`${tables.src_text_versions.id} = ${tables.src_text_heads.current_version_id}`,
+      )
+      .where(sql`${tables.src_texts.document_node_id} = ${nodeId}`)
+      .limit(1)
+      .get();
     if (!row) return "none";
     if (row.state === "confirmed") return "confirmed";
     return "draft";
   }
 
   private puncUi(nodeId: string): VersionUiState {
-    const row = getRow<{ state: string; punctuation_source_version_id: string; source_version_id: string }>(
-      this.db,
-      `SELECT v.state, v.source_text_version_id AS punctuation_source_version_id,
-              source_head.current_version_id AS source_version_id
-       FROM src_texts t
-       JOIN src_text_heads source_head ON source_head.source_text_id = t.id
-       JOIN punctuation_sets s ON s.source_text_id = t.id
-       JOIN punctuation_heads h ON h.punctuation_set_id = s.id
-       JOIN punctuation_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? LIMIT 1`,
-      nodeId,
-    );
+    const row = orm(this.db)
+      .select({
+        state: tables.punctuation_versions.state,
+        punctuation_source_version_id:
+          tables.punctuation_versions.source_text_version_id,
+        source_version_id: tables.src_text_heads.current_version_id,
+      })
+      .from(tables.src_texts)
+      .innerJoin(
+        tables.src_text_heads,
+        sql`${tables.src_text_heads.source_text_id} = ${tables.src_texts.id}`,
+      )
+      .innerJoin(
+        tables.punctuation_sets,
+        sql`${tables.punctuation_sets.source_text_id} = ${tables.src_texts.id}`,
+      )
+      .innerJoin(
+        tables.punctuation_heads,
+        sql`${tables.punctuation_heads.punctuation_set_id} = ${tables.punctuation_sets.id}`,
+      )
+      .innerJoin(
+        tables.punctuation_versions,
+        sql`${tables.punctuation_versions.id} = ${tables.punctuation_heads.current_version_id}`,
+      )
+      .where(sql`${tables.src_texts.document_node_id} = ${nodeId}`)
+      .limit(1)
+      .get();
     if (!row) return "none";
     if (row.state === "confirmed" && row.punctuation_source_version_id === row.source_version_id) return "confirmed";
     return "draft";
   }
 
   private translationUi(nodeId: string): VersionUiState {
-    const rows = allRows<{ state: string; validation_state: string; confirmed: string | null; stale: number }>(
-      this.db,
-      `SELECT v.state, v.validation_state, h.confirmed_version_id AS confirmed,
-              (SELECT COUNT(*) FROM translation_staleness st WHERE st.document_translation_version_id = v.id AND st.resolved_by_document_translation_version_id IS NULL) AS stale
-       FROM document_translations t
-       JOIN document_translation_heads h ON h.document_translation_id = t.id
-       JOIN document_translation_versions v ON v.id = h.current_version_id
-       WHERE t.document_node_id = ? AND t.tombstoned_at IS NULL`,
-      nodeId,
-    );
+    const rows = orm(this.db)
+      .select({
+        state: tables.document_translation_versions.state,
+        validation_state: tables.document_translation_versions.validation_state,
+        confirmed: tables.document_translation_heads.confirmed_version_id,
+        stale: unresolvedStalenessCount(),
+      })
+      .from(tables.document_translations)
+      .innerJoin(
+        tables.document_translation_heads,
+        eq(
+          tables.document_translation_heads.document_translation_id,
+          tables.document_translations.id,
+        ),
+      )
+      .innerJoin(
+        tables.document_translation_versions,
+        eq(
+          tables.document_translation_versions.id,
+          tables.document_translation_heads.current_version_id,
+        ),
+      )
+      .where(
+        and(
+          eq(tables.document_translations.document_node_id, nodeId),
+          eq(tables.document_translations.target_locale, this.translationLanguage),
+          isNull(tables.document_translations.tombstoned_at),
+        ),
+      )
+      .all();
     if (!rows.length) return "none";
     if (rows.some((r) => r.validation_state === "needs_review" || r.stale > 0)) return "review";
     if (rows.some((r) => r.confirmed && r.state === "confirmed")) return "confirmed";
@@ -2952,17 +3479,17 @@ export class ProjectRepo {
     let sourceReference = node.source_reference;
     let parentId = node.parent_node_id;
     while (parentId && (!authorName || !language || !periodText || !sourceReference)) {
-      const p = getRow<{
-        author_text: string | null;
-        language: string | null;
-        period_text: string | null;
-        source_reference: string | null;
-        parent_node_id: string | null;
-      }>(
-        this.db,
-        `SELECT author_text, language, period_text, source_reference, parent_node_id FROM document_nodes WHERE id = ?`,
-        parentId,
-      );
+      const p = orm(this.db)
+        .select({
+          author_text: tables.document_nodes.author_text,
+          language: tables.document_nodes.language,
+          period_text: tables.document_nodes.period_text,
+          source_reference: tables.document_nodes.source_reference,
+          parent_node_id: tables.document_nodes.parent_node_id,
+        })
+        .from(tables.document_nodes)
+        .where(sql`${tables.document_nodes.id} = ${parentId}`)
+        .get();
       if (!p) break;
       authorName ??= p.author_text;
       language ??= p.language;
@@ -2999,13 +3526,19 @@ export class ProjectRepo {
     let distance = 0;
     while (id && !seen.has(id)) {
       seen.add(id);
-      const node: LineageRow | undefined = getRow<LineageRow>(
-        this.db,
-        `SELECT id, parent_node_id, title, original_title, description_md
-         FROM document_nodes WHERE id = ? AND project_id = ? AND archived_at IS NULL`,
-        id,
-        this.projectId,
-      );
+      const node: LineageRow | undefined = orm(this.db)
+        .select({
+          id: tables.document_nodes.id,
+          parent_node_id: tables.document_nodes.parent_node_id,
+          title: tables.document_nodes.title,
+          original_title: tables.document_nodes.original_title,
+          description_md: tables.document_nodes.description_md,
+        })
+        .from(tables.document_nodes)
+        .where(
+          sql`${tables.document_nodes.id} = ${id} AND ${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.archived_at} IS NULL`,
+        )
+        .get();
       if (!node) break;
       lineage.push({
         id: node.id,
@@ -3022,24 +3555,30 @@ export class ProjectRepo {
 
   private loadChat(input: GetProjectChatInput): EditorView["chat"] {
     const scopeId = input.scopeKind === "project" ? this.projectId : input.documentNodeId;
-    return allRows<{ role: "user" | "assistant"; text: string; created_at: string; agent_id: string | null }>(
-      this.db,
-      `SELECT m.role, COALESCE(p.text_content, '') AS text, m.created_at, m.agent_id
-       FROM chat_threads t
-       JOIN chat_messages m ON m.thread_id = t.id
-       JOIN chat_message_parts p ON p.message_id = m.id AND p.ordinal = 1
-       WHERE t.project_id = ? AND t.scope_kind = ? AND t.scope_id = ?
-         AND m.state = 'completed'
-         AND (
-           (m.role = 'user' AND m.task_kind = 'chat_request')
-           OR (m.role = 'assistant' AND m.task_kind = 'chat')
-         )
-       ORDER BY m.created_at, m.rowid`,
-      this.projectId,
-      input.scopeKind,
-      scopeId,
-    ).map((r) => ({
-      role: r.role,
+    return orm(this.db)
+      .select({
+        role: tables.chat_messages.role,
+        text: sql<string>`COALESCE(${tables.chat_message_parts.text_content}, '')`,
+        created_at: tables.chat_messages.created_at,
+        agent_id: tables.chat_messages.agent_id,
+      })
+      .from(tables.chat_threads)
+      .innerJoin(
+        tables.chat_messages,
+        sql`${tables.chat_messages.thread_id} = ${tables.chat_threads.id}`,
+      )
+      .innerJoin(
+        tables.chat_message_parts,
+        sql`${tables.chat_message_parts.message_id} = ${tables.chat_messages.id} AND ${tables.chat_message_parts.ordinal} = 1`,
+      )
+      .where(
+        sql`${tables.chat_threads.project_id} = ${this.projectId} AND ${tables.chat_threads.scope_kind} = ${input.scopeKind} AND ${tables.chat_threads.scope_id} = ${scopeId} AND ${tables.chat_messages.state} = 'completed' AND ( (${tables.chat_messages.role} = 'user' AND ${tables.chat_messages.task_kind} = 'chat_request') OR (${tables.chat_messages.role} = 'assistant' AND ${tables.chat_messages.task_kind} = 'chat') )`,
+      )
+      .orderBy(
+        sql`${tables.chat_messages.created_at}, ${tables.chat_messages}.rowid`,
+      )
+      .all().map((r) => ({
+      role: r.role === "user" ? "user" : "assistant",
       text: r.text,
       createdAt: r.created_at,
       meta: r.agent_id ?? undefined,
@@ -3109,37 +3648,44 @@ export function createProject(opts: {
   title: string;
   parentDir: string;
   actorDisplayName?: string;
+  projectId?: string;
 }): { handle: ProjectRepo; summary: ProjectSummary } {
   const boot = bootstrapEmptyProject(opts);
   const now = boot.createdAt;
   const rootId = createId();
-  insertRow(boot.db, "document_nodes", {
-    id: rootId,
-    project_id: boot.projectId,
-    parent_node_id: null,
-    node_role: "container",
-    is_master: 1,
-    title: opts.title,
-    original_title: null,
-    ordinal: 0,
-    author_text: null,
-    language: "lzh",
-    period_text: null,
-    date_text: null,
-    description_md: null,
-    source_reference: null,
-    created_at: now,
-    updated_at: now,
-    archived_at: null,
-  });
-  insertRow(boot.db, "core_project_settings", {
-    project_id: boot.projectId,
-    active_document_node_id: rootId,
-    autosave_interval_ms: 3000,
-    ai_data_policy_json: JSON.stringify({ storePrompts: false }),
-    settings_json: JSON.stringify({}),
-    lock_version: 1,
-  });
+  orm(boot.db)
+    .insert(tables.document_nodes)
+    .values({
+      id: rootId,
+      project_id: boot.projectId,
+      parent_node_id: null,
+      node_role: "container",
+      is_master: 1,
+      title: opts.title,
+      original_title: null,
+      ordinal: 0,
+      author_text: null,
+      language: "lzh",
+      period_text: null,
+      date_text: null,
+      description_md: null,
+      source_reference: null,
+      created_at: now,
+      updated_at: now,
+      archived_at: null,
+    })
+    .run();
+  orm(boot.db)
+    .insert(tables.core_project_settings)
+    .values({
+      project_id: boot.projectId,
+      active_document_node_id: rootId,
+      autosave_interval_ms: 3000,
+      ai_data_policy_json: JSON.stringify({ storePrompts: false }),
+      settings_json: JSON.stringify({}),
+      lock_version: 1,
+    })
+    .run();
   const handle = new ProjectRepo(boot);
   return {
     handle,
@@ -3153,8 +3699,15 @@ export function createProject(opts: {
   };
 }
 
-export function openProject(packagePath: string): ProjectRepo {
-  return new ProjectRepo(openProjectDb(packagePath));
+export function openProject(packagePath: string, options: { onlineCache?: boolean } = {}): ProjectRepo {
+  return new ProjectRepo(openProjectDb(packagePath), options);
+}
+
+/** Build an account-scoped disposable cache while retaining the server's project identity. */
+export function openOnlineCache(opts: { parentDir: string; title: string; projectId: string; tables: OnlineTableData }): ProjectRepo {
+  const { handle } = createProject({ parentDir: opts.parentDir, title: opts.title, projectId: opts.projectId });
+  try { handle.applyOnlineRows(opts.tables); return handle; }
+  catch (error) { const path = handle.packagePath; handle.close(); rmSync(path, { recursive: true, force: true }); throw error; }
 }
 
 export function seedDemoProject(parentDir: string): ProjectRepo {
@@ -3164,7 +3717,7 @@ export function seedDemoProject(parentDir: string): ProjectRepo {
     actorDisplayName: "로컬 사용자",
   });
   try {
-    boot.db.transaction(() => seedDemoContents(boot))();
+    orm(boot.db).transaction(() => seedDemoContents(boot));
   } catch (err) {
     boot.db.close();
     releaseLock(boot.packagePath);

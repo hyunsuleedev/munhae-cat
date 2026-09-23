@@ -1,0 +1,21 @@
+.project-sharing-dialog { width: min(560px, calc(100vw - 40px)); max-height: calc(100dvh - 64px); overflow: auto; }
+.project-sharing-dialog .dl-h { display: flex; align-items: center; justify-content: space-between; }
+.project-sharing-dialog .dl-b { display: block; }
+.project-sharing-dialog [data-status] { margin: 0 0 14px; color: var(--muted); }
+.project-sharing-dialog h3,.project-invitations h3 { margin: 16px 0 8px; font-size: 12px; }
+.sharing-members { list-style: none; padding: 0; margin: 0; }
+.sharing-members li { display: flex; align-items: center; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.sharing-members li > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.sharing-members b { display: block; font-size: 12px; font-weight: 500; }
+.sharing-members small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.sharing-members .select { width: 90px; }
+.sharing-invite { margin-top: 20px; }
+.sharing-invite form { display: flex; gap: 8px; margin: 12px 0; }
+.sharing-invite .input { flex: 1; min-width: 0; }
+.sharing-invite .select { width: 90px; }
+.sharing-invite p,.project-sharing-dialog [data-error] { font-size: 12px; line-height: 1.6; }
+.project-sharing-dialog [data-error] { color: var(--accent-ink); }
+.project-invitations { padding: 10px; border-bottom: 1px solid var(--border); }
+.project-invitations h3 { margin-top: 0; }
+.online-project-group-label { font-size: 11px; color: var(--muted); padding: 14px 10px 2px; }
+@media(max-width: 480px) { .sharing-invite form { flex-wrap: wrap; } .sharing-invite .input { flex-basis: 100%; } }

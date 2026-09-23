@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createReadingToolGrant,
   createTranslationToolGrant,
   stopAgentToolBridge,
   type TranslationToolGrant,
@@ -41,6 +42,8 @@ async function postSubmission(input: {
 async function runBuiltWrapperProcess(input: {
   grant: TranslationToolGrant;
   body: string;
+  command?: string;
+  grantedCommand?: string;
 }): Promise<{
   exitCode: number | null;
   stdout: string;
@@ -48,12 +51,13 @@ async function runBuiltWrapperProcess(input: {
 }> {
   await access(builtWrapperPath);
   return await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [builtWrapperPath, "tools", "submit-translation"], {
+    const child = spawn(process.execPath, [builtWrapperPath, "tools", input.command ?? "submit-translation"], {
       env: {
         ...process.env,
         MUNHAE_TOOL_URL: input.grant.endpoint,
         MUNHAE_TOOL_GRANT: input.grant.token,
         MUNHAE_TOOL_RUN_ID: input.grant.runId,
+        MUNHAE_TOOL_COMMAND: input.grantedCommand,
       },
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -81,7 +85,7 @@ async function waitForCall(grant: TranslationToolGrant): Promise<void> {
   }
 }
 
-async function postWhileRevoking(grant: TranslationToolGrant, body: string): Promise<BridgeResponse> {
+async function postWhileRevoking(grant: TranslationToolGrant, body: string, whileReading = () => grant.revoke()): Promise<BridgeResponse> {
   const url = new URL(grant.endpoint);
   const bodyBuffer = Buffer.from(body, "utf8");
   const responsePromise = new Promise<BridgeResponse>((resolve, reject) => {
@@ -105,7 +109,7 @@ async function postWhileRevoking(grant: TranslationToolGrant, body: string): Pro
     call.flushHeaders();
     call.write(bodyBuffer.subarray(0, 1));
     void waitForCall(grant).then(() => {
-      grant.revoke();
+      whileReading();
       call.end(bodyBuffer.subarray(1));
     }, reject);
   });
@@ -459,4 +463,197 @@ describe("run-scoped translation tool bridge", () => {
     });
   });
 
+});
+
+it("isolates alignment capabilities, permits retries, and serializes concurrent calls", async () => {
+  let release!: () => void;
+  let started!: () => void;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  const handler = vi.fn(async () => { started(); await new Promise<void>(resolve => { release = resolve; }); return { ok: true }; });
+  const grant = await createTranslationToolGrant({ projectId: "p", runId: "r", onSubmit: vi.fn(), onAlignment: handler });
+  const send = (command: string, body = "{}") => postSubmission({ endpoint: grant.endpoint.replace(/[^/]+$/, command), token: grant.token, runId: grant.runId, body });
+  expect((await send("submit-translation")).status).toBe(403);
+  expect((await send("submit-alignment", "not-json")).status).toBe(400);
+  const first = send("submit-alignment");
+  await entered;
+  expect((await send("check-alignment")).body).toEqual({ ok: false, error: "tool_busy" });
+  release();
+  expect((await first).status).toBe(200);
+  expect(grant.inspect().committed).toBe(false);
+  grant.revoke();
+  expect((await send("check-alignment")).status).toBe(401);
+  const translation = await createTranslationToolGrant({ projectId: "p", runId: "r", onSubmit: vi.fn() });
+  expect((await postSubmission({ endpoint: translation.endpoint.replace(/[^/]+$/, "check-alignment"), token: translation.token, runId: translation.runId, body: "{}" })).status).toBe(403);
+});
+
+
+it("keeps new alignment CLI compatible with an old app grant endpoint", async () => {
+  const accept = vi.fn();
+  const grant = await createTranslationToolGrant({ projectId: "legacy", runId: "legacy-alignment", onSubmit: accept });
+  const body = JSON.stringify({ schemaVersion: 3, versionId: "v", links: [] });
+  const result = await runBuiltWrapperProcess({ grant, body, command: "submit-alignment" });
+  expect(result.exitCode).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ ok: true, accepted: true });
+  expect(accept).toHaveBeenCalledWith(body);
+  expect(grant.inspect().committed).toBe(true);
+});
+
+it("explains restart before invoking unsupported check tools on an old app", async () => {
+  const accept = vi.fn();
+  const grant = await createTranslationToolGrant({ projectId: "legacy", runId: "legacy-check", onSubmit: accept });
+  const result = await runBuiltWrapperProcess({ grant, body: "{}", command: "check-alignment" });
+  expect(result.exitCode).toBe(1);
+  expect(result.stderr).toContain("앱을 다시 시작");
+  expect(accept).not.toHaveBeenCalled();
+  expect(grant.inspect().callCount).toBe(0);
+});
+
+describe("on-demand reading tool capability", () => {
+  function send(grant: TranslationToolGrant, command: string, body = "{}", runId = grant.runId) {
+    return postSubmission({ endpoint: grant.endpoint.replace(/[^/]+$/, command), token: grant.token, runId, body });
+  }
+
+  it("isolates reading, translation, and alignment grants in both directions", async () => {
+    const handler = vi.fn(() => ({ ok: true }));
+    const reading = await createReadingToolGrant({ projectId: "p", runId: "reading", onTool: handler });
+    const translation = await createTranslationToolGrant({ projectId: "p", runId: "translation", onSubmit: vi.fn() });
+    const alignment = await createTranslationToolGrant({ projectId: "p", runId: "alignment", onSubmit: vi.fn(), onAlignment: handler });
+    expect(reading.endpoint).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1\/tools\/get-reading-context$/);
+    for (const command of ["submit-translation", "submit-alignment", "check-alignment", "finish-alignment"]) {
+      expect(await send(reading, command)).toEqual({ status: 403, body: { ok: false, error: "wrong_tool" } });
+    }
+    for (const grant of [translation, alignment]) {
+      for (const command of ["get-reading-context", "lookup-reading-dictionary", "submit-reading-analysis"]) {
+        expect(await send(grant, command)).toEqual({ status: 403, body: { ok: false, error: "wrong_tool" } });
+      }
+    }
+    expect(handler).not.toHaveBeenCalled();
+    expect(reading.inspect().callCount).toBe(0);
+  });
+
+  it("allows repeated context and dictionary reads, retries invalid proposals, and accepts exactly one submission", async () => {
+    const handler = vi.fn((command: string, raw: string) => {
+      if (command === "submit-reading-analysis" && !JSON.parse(raw).suggestions) return { ok: false, error: "invalid_suggestions" };
+      return { ok: true, command };
+    });
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: handler });
+    for (let count = 0; count < 2; count++) {
+      expect((await send(grant, "get-reading-context")).status).toBe(200);
+      expect((await send(grant, "lookup-reading-dictionary", '{"query":"學"}')).status).toBe(200);
+    }
+    expect((await send(grant, "submit-reading-analysis", "{")).body).toEqual({ ok: false, error: "invalid_json" });
+    expect((await send(grant, "submit-reading-analysis", "[]")).body).toEqual({ ok: false, error: "invalid_payload" });
+    expect((await send(grant, "submit-reading-analysis")).status).toBe(422);
+    expect(grant.inspect().committed).toBe(false);
+    const raw = '{ "suggestions": [{"from":0,"to":1,"quote":"學"}] }';
+    expect((await send(grant, "submit-reading-analysis", raw)).status).toBe(200);
+    expect(grant.inspect()).toEqual({ callCount: 8, committed: true, rawBody: raw, value: JSON.parse(raw), error: null });
+    for (const command of ["get-reading-context", "lookup-reading-dictionary", "submit-reading-analysis"]) {
+      expect(await send(grant, command)).toEqual({ status: 409, body: { ok: false, error: "already_submitted" } });
+    }
+    expect(handler).toHaveBeenCalledTimes(6);
+  });
+
+  it("rejects mismatched runs and invalid tokens without invoking a handler", async () => {
+    const handler = vi.fn(() => ({ ok: true }));
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: handler });
+    expect((await send(grant, "get-reading-context", "{}", "other-run")).status).toBe(401);
+    expect((await postSubmission({ endpoint: grant.endpoint, token: "x".repeat(43), runId: grant.runId, body: "{}" })).status).toBe(401);
+    expect(handler).not.toHaveBeenCalled();
+    expect(grant.inspect().callCount).toBe(0);
+    expect((await send(grant, "get-reading-context")).status).toBe(200);
+  });
+
+  it("rechecks revocation and expiry after reading an in-flight request body", async () => {
+    const handler = vi.fn(() => ({ ok: true }));
+    const revoked = await createReadingToolGrant({ projectId: "p", runId: "revoked", onTool: handler });
+    expect((await postWhileRevoking(revoked, "{}")).status).toBe(401);
+    const initialNow = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(initialNow);
+    const expired = await createReadingToolGrant({ projectId: "p", runId: "expired", ttlMs: 10_000, onTool: handler });
+    expect((await postWhileRevoking(expired, "{}", () => { now.mockReturnValue(initialNow + 10_001); })).status).toBe(401);
+    expect(handler).not.toHaveBeenCalled();
+    expect(expired.inspect().committed).toBe(false);
+  });
+
+  it("rejects concurrent calls without losing a valid retry", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const handler = vi.fn(async (command: string) => {
+      if (command === "lookup-reading-dictionary") { started(); await new Promise<void>(resolve => { release = resolve; }); }
+      return { ok: true };
+    });
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: handler });
+    const pending = send(grant, "lookup-reading-dictionary");
+    await entered;
+    expect(await send(grant, "submit-reading-analysis")).toEqual({ status: 409, body: { ok: false, error: "tool_busy" } });
+    release();
+    expect((await pending).status).toBe(200);
+    expect((await send(grant, "submit-reading-analysis")).status).toBe(200);
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not publish a late proposal when cancellation happens during the handler", async () => {
+    let release!: () => void;
+    let started!: () => void;
+    const entered = new Promise<void>(resolve => { started = resolve; });
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: async () => {
+      started(); await new Promise<void>(resolve => { release = resolve; }); return { ok: true, proposal: "late" };
+    } });
+    const pending = send(grant, "submit-reading-analysis");
+    await entered;
+    grant.revoke();
+    release();
+    expect(await pending).toEqual({ status: 401, body: { ok: false, error: "unauthorized" } });
+    expect(grant.inspect()).toMatchObject({ committed: false, rawBody: null });
+  });
+
+  it("keeps callback exceptions private and permits a corrected submission", async () => {
+    const handler = vi.fn().mockRejectedValueOnce(new Error("private provider token or SQL detail")).mockResolvedValue({ ok: true });
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: handler });
+    expect(await send(grant, "submit-reading-analysis")).toEqual({ status: 422, body: { ok: false, error: "submission_rejected" } });
+    expect((await send(grant, "submit-reading-analysis")).status).toBe(200);
+    expect(grant.inspect()).toMatchObject({ committed: true, error: null });
+  });
+
+  it("runs all three CLI commands only under the reading-analysis family and returns JSON", async () => {
+    const handler = vi.fn((command: string) => ({ ok: true, command }));
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: handler });
+    for (const command of ["get-reading-context", "lookup-reading-dictionary", "submit-reading-analysis"]) {
+      const result = await runBuiltWrapperProcess({ grant, command, grantedCommand: "reading-analysis", body: "{}" });
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toEqual({ ok: true, command });
+      expect(result.stdout).not.toContain(grant.token);
+    }
+  });
+
+  it("blocks CLI reading commands without the reading family and all cross-family commands", async () => {
+    const handler = vi.fn(() => ({ ok: true }));
+    const grant = await createReadingToolGrant({ projectId: "p", runId: "r", onTool: handler });
+    for (const grantedCommand of [undefined, "submit-translation", "submit-alignment", "get-reading-context"]) {
+      const result = await runBuiltWrapperProcess({ grant, command: "get-reading-context", grantedCommand, body: "{}" });
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+    }
+    for (const command of ["submit-translation", "submit-alignment", "check-alignment", "finish-alignment"]) {
+      const result = await runBuiltWrapperProcess({ grant, command, grantedCommand: "reading-analysis", body: "{}" });
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toBe("");
+    }
+    expect(handler).not.toHaveBeenCalled();
+    expect(grant.inspect().callCount).toBe(0);
+  });
+
+  it("refuses a reading CLI command pointed at a translation endpoint without sending the grant", async () => {
+    const accept = vi.fn();
+    const grant = await createTranslationToolGrant({ projectId: "p", runId: "r", onSubmit: accept });
+    const result = await runBuiltWrapperProcess({ grant, command: "get-reading-context", grantedCommand: "reading-analysis", body: "{}" });
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("허용된 로컬 bridge");
+    expect(result.stderr).not.toContain(grant.token);
+    expect(accept).not.toHaveBeenCalled();
+    expect(grant.inspect().callCount).toBe(0);
+  });
 });

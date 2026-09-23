@@ -1,5 +1,7 @@
 import { MunhaeError, nowIso, sliceCodepoints } from "@munhae/domain";
-import { allRows, getRow } from "./rows.ts";
+import { and, eq, isNull } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema as tables } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
 
 export type ReviewExportInput = {
@@ -50,8 +52,14 @@ function unlinked(translation: string): Pair[] {
   return [{ source: "", translation, status: "미연결 · 원문 전문과 대조하세요", spans: [] }];
 }
 function pairsFor(db: SqliteDb, item: Translation): Pair[] {
-  const layout = getRow<{ sentences_json: string; links_json: string }>(db,
-    "SELECT sentences_json, links_json FROM translation_text_layouts WHERE version_id=?", item.version_id);
+  const layout = orm(db)
+    .select({
+      sentences_json: tables.translation_text_layouts.sentences_json,
+      links_json: tables.translation_text_layouts.links_json,
+    })
+    .from(tables.translation_text_layouts)
+    .where(eq(tables.translation_text_layouts.version_id, item.version_id))
+    .get();
   if (layout) {
     try {
       const sentences = JSON.parse(layout.sentences_json) as unknown;
@@ -76,13 +84,41 @@ function pairsFor(db: SqliteDb, item: Translation): Pair[] {
     } catch { return unlinked(item.translation); }
   }
   // Older projects retain block/anchor correspondence instead of sentence links.
-  const blocks = allRows<{ id: string; target_codepoint_from: number; target_codepoint_to: number; validation_state: string }>(db,
-    "SELECT id,target_codepoint_from,target_codepoint_to,validation_state FROM translation_blocks WHERE document_translation_version_id=? ORDER BY ordinal", item.version_id);
+  const blocks = orm(db)
+    .select({
+      id: tables.translation_blocks.id,
+      target_codepoint_from: tables.translation_blocks.target_codepoint_from,
+      target_codepoint_to: tables.translation_blocks.target_codepoint_to,
+      validation_state: tables.translation_blocks.validation_state,
+    })
+    .from(tables.translation_blocks)
+    .where(
+      eq(
+        tables.translation_blocks.document_translation_version_id,
+        item.version_id,
+      ),
+    )
+    .orderBy(tables.translation_blocks.ordinal)
+    .all();
   if (!blocks.length) return unlinked(item.translation);
   return blocks.map(block => {
-    const spans = allRows<Span>(db, `SELECT a.source_codepoint_from AS 'from', a.source_codepoint_to AS 'to', a.source_quote AS quote
-      FROM translation_block_anchors ba JOIN translation_anchors a ON a.id=ba.translation_anchor_id
-      WHERE ba.translation_block_id=? ORDER BY ba.ordinal`, block.id);
+    const spans = orm(db)
+      .select({
+        from: tables.translation_anchors.source_codepoint_from,
+        to: tables.translation_anchors.source_codepoint_to,
+        quote: tables.translation_anchors.source_quote,
+      })
+      .from(tables.translation_block_anchors)
+      .innerJoin(
+        tables.translation_anchors,
+        eq(
+          tables.translation_anchors.id,
+          tables.translation_block_anchors.translation_anchor_id,
+        ),
+      )
+      .where(eq(tables.translation_block_anchors.translation_block_id, block.id))
+      .orderBy(tables.translation_block_anchors.ordinal)
+      .all();
     const valid = spans.length > 0 && spans.every(span => validSpan(span, item.source));
     return { source: valid ? spans.map(span => span.quote).join("\n…\n") : "",
       translation: sliceCodepoints(item.translation, block.target_codepoint_from, block.target_codepoint_to),
@@ -102,26 +138,111 @@ function uncoveredSource(source: string, pairs: Pair[]): string[] {
   return parts.filter(part => /[^\p{P}\p{Z}\s]/u.test(part));
 }
 function loadDocuments(db: SqliteDb, projectId: string, input: ReviewExportInput): Document[] {
-  const nodes = allRows<Node>(db, `SELECT n.id,n.parent_node_id,n.title,n.original_title,n.ordinal,n.node_role,
-    n.author_text AS author_name,n.period_text,n.date_text,n.source_reference
-    FROM document_nodes n
-    WHERE n.project_id=? AND n.archived_at IS NULL ORDER BY n.ordinal,n.id`, projectId);
+  const nodes = orm(db)
+    .select({
+      id: tables.document_nodes.id,
+      parent_node_id: tables.document_nodes.parent_node_id,
+      title: tables.document_nodes.title,
+      original_title: tables.document_nodes.original_title,
+      ordinal: tables.document_nodes.ordinal,
+      node_role: tables.document_nodes.node_role,
+      author_name: tables.document_nodes.author_text,
+      period_text: tables.document_nodes.period_text,
+      date_text: tables.document_nodes.date_text,
+      source_reference: tables.document_nodes.source_reference,
+    })
+    .from(tables.document_nodes)
+    .where(
+      and(
+        eq(tables.document_nodes.project_id, projectId),
+        isNull(tables.document_nodes.archived_at),
+      ),
+    )
+    .orderBy(tables.document_nodes.ordinal, tables.document_nodes.id)
+    .all();
   const byId = new Map(nodes.map(node => [node.id, node]));
   if (input.documentNodeId && byId.get(input.documentNodeId)?.node_role !== "source_unit")
     throw new MunhaeError("invalid_document", "내보낼 원문 작업 단위를 찾을 수 없습니다");
-  const column = input.state === "confirmed" ? "confirmed_version_id" : "current_version_id";
-  const items = allRows<Translation>(db, `SELECT n.id AS document_id,v.id AS version_id,v.version_no,v.state,v.created_at,
-    v.text_content AS translation,s.id AS source_version_id,s.version_no AS source_version_no,s.content_text AS source,
-    sh.current_version_id AS current_source_version_id,p.punctuated_text AS punctuation
-    FROM document_translation_heads h JOIN document_translations t ON t.id=h.document_translation_id
-    JOIN document_translation_versions v ON v.id=h.${column}
-    JOIN document_nodes n ON n.id=t.document_node_id
-    JOIN src_text_versions s ON s.id=v.source_text_version_id AND s.project_id=t.project_id
-    LEFT JOIN src_text_heads sh ON sh.source_text_id=s.source_text_id
-    LEFT JOIN punctuation_versions p ON p.id=v.punctuation_version_id AND p.source_text_version_id=s.id
-    WHERE t.project_id=? AND t.tombstoned_at IS NULL AND n.archived_at IS NULL AND n.node_role='source_unit'
-      AND (? IS NULL OR n.id=?) ${input.state === "confirmed" ? "AND v.state='confirmed'" : ""}
-    ORDER BY n.ordinal,n.id`, projectId, input.documentNodeId ?? null, input.documentNodeId ?? null);
+  const head = input.state === "confirmed" ? tables.document_translation_heads.confirmed_version_id : tables.document_translation_heads.current_version_id;
+  const items = orm(db)
+    .select({
+      document_id: tables.document_nodes.id,
+      version_id: tables.document_translation_versions.id,
+      version_no: tables.document_translation_versions.version_no,
+      state: tables.document_translation_versions.state,
+      created_at: tables.document_translation_versions.created_at,
+      translation: tables.document_translation_versions.text_content,
+      source_version_id: tables.src_text_versions.id,
+      source_version_no: tables.src_text_versions.version_no,
+      source: tables.src_text_versions.content_text,
+      current_source_version_id: tables.src_text_heads.current_version_id,
+      punctuation: tables.punctuation_versions.punctuated_text,
+    })
+    .from(tables.document_translation_heads)
+    .innerJoin(
+      tables.document_translations,
+      eq(
+        tables.document_translations.id,
+        tables.document_translation_heads.document_translation_id,
+      ),
+    )
+    .innerJoin(
+      tables.document_translation_versions,
+      eq(tables.document_translation_versions.id, head),
+    )
+    .innerJoin(
+      tables.document_nodes,
+      eq(tables.document_nodes.id, tables.document_translations.document_node_id),
+    )
+    .innerJoin(
+      tables.src_text_versions,
+      and(
+        eq(
+          tables.src_text_versions.id,
+          tables.document_translation_versions.source_text_version_id,
+        ),
+        eq(
+          tables.src_text_versions.project_id,
+          tables.document_translations.project_id,
+        ),
+      ),
+    )
+    .leftJoin(
+      tables.src_text_heads,
+      eq(
+        tables.src_text_heads.source_text_id,
+        tables.src_text_versions.source_text_id,
+      ),
+    )
+    .leftJoin(
+      tables.punctuation_versions,
+      and(
+        eq(
+          tables.punctuation_versions.id,
+          tables.document_translation_versions.punctuation_version_id,
+        ),
+        eq(
+          tables.punctuation_versions.source_text_version_id,
+          tables.src_text_versions.id,
+        ),
+      ),
+    )
+    .where(
+      and(
+        eq(tables.document_translations.project_id, projectId),
+        isNull(tables.document_translations.tombstoned_at),
+        isNull(tables.document_nodes.archived_at),
+        eq(tables.document_nodes.node_role, "source_unit"),
+        input.documentNodeId == null
+          ? undefined
+          : eq(tables.document_nodes.id, input.documentNodeId),
+        input.state === "confirmed"
+          ? eq(tables.document_translation_versions.state, "confirmed")
+          : undefined,
+      ),
+    )
+    .orderBy(tables.document_nodes.ordinal, tables.document_nodes.id)
+    .all();
   const documents = items.filter(item => item.translation.trim()).map(item => {
     const node = byId.get(item.document_id)!;
     const ancestors: Node[] = [];
@@ -131,8 +252,23 @@ function loadDocuments(db: SqliteDb, projectId: string, input: ReviewExportInput
     const nearest = (key: "author_name" | "period_text" | "source_reference") => [...ancestors].reverse().find(value => value[key]?.trim())?.[key];
     const metadata = ([ ["저자", nearest("author_name")], ["시대", nearest("period_text")], ["작성 시기", node.date_text], ["문헌 출처", nearest("source_reference")] ] as Array<[string, string | null | undefined]>).filter((entry): entry is [string, string] => !!entry[1]);
     const pairs = pairsFor(db, item);
-    const comments = input.includeComments === false ? [] : allRows<Comment>(db,
-      "SELECT target_kind,quote,body_md FROM review_comments WHERE project_id=? AND document_node_id=? AND translation_version_id=? AND archived_at IS NULL ORDER BY created_at,id", projectId, item.document_id, item.version_id);
+    const comments = input.includeComments === false ? [] : orm(db)
+      .select({
+        target_kind: tables.review_comments.target_kind,
+        quote: tables.review_comments.quote,
+        body_md: tables.review_comments.body_md,
+      })
+      .from(tables.review_comments)
+      .where(
+        and(
+          eq(tables.review_comments.project_id, projectId),
+          eq(tables.review_comments.document_node_id, item.document_id),
+          eq(tables.review_comments.translation_version_id, item.version_id),
+          isNull(tables.review_comments.archived_at),
+        ),
+      )
+      .orderBy(tables.review_comments.created_at, tables.review_comments.id)
+      .all();
     return { ...item, title: node.original_title || node.title, path: ancestors.map(value => value.original_title || value.title).join(" › "), metadata, pairs, uncovered: uncoveredSource(item.source, pairs), comments };
   });
   // Preserve the project's tree order, including sources under different folders.
@@ -191,8 +327,12 @@ export function buildReviewExport(db: SqliteDb, projectId: string, input: Review
   if (!input || !["html", "markdown"].includes(input.format) || !["current", "confirmed"].includes(input.state)
     || (input.documentNodeId != null && (typeof input.documentNodeId !== "string" || !input.documentNodeId.trim()))
     || (input.includeComments !== undefined && typeof input.includeComments !== "boolean")) invalid();
-  return db.transaction((): ReviewExportPayload => {
-    const project = getRow<{ title: string }>(db, "SELECT title FROM core_projects WHERE id=?", projectId);
+  return orm(db).transaction((): ReviewExportPayload => {
+    const project = orm(db)
+      .select({ title: tables.core_projects.title })
+      .from(tables.core_projects)
+      .where(eq(tables.core_projects.id, projectId))
+      .get();
     if (!project) throw new MunhaeError("invalid_project", "프로젝트를 찾을 수 없습니다");
     const documents = loadDocuments(db, projectId, input);
     if (!documents.length) throw new MunhaeError("nothing_to_export", input.state === "confirmed" ? "선택한 범위에 확정된 번역이 없습니다" : "선택한 범위에 저장된 번역이 없습니다");
@@ -204,5 +344,5 @@ export function buildReviewExport(db: SqliteDb, projectId: string, input: Review
       suggestedBaseName: `${title.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim() || "munhae"}-검토본`,
       content: input.format === "html" ? renderHtml(title, generatedAt, documents, includeComments) : renderMarkdown(title, generatedAt, documents, includeComments),
     };
-  })();
+  });
 }

@@ -32,10 +32,10 @@ export type AgentProbe = {
 export type ProjectSummary = {
   projectId: string;
   title: string;
+  /** Local path, or a stable online://account/project identifier (never the cache path). */
   packagePath: string;
-  storageMode: "local";
   openedAt: string;
-};
+} & ({ storageMode: "local" } | { storageMode: "online"; onlineProjectId: string; accountId: string });
 
 export type RecentProject = {
   projectId: string;
@@ -53,7 +53,8 @@ export type SourceOriginKind = "manual" | "paste" | "import";
 
 export type PunctuationStructureMode = "prose" | "poetry";
 
-export type PunctuationSpanKind = "paragraph" | "sentence" | "verse_line" | "couplet" | "stanza";
+/** Includes clause spans stored by legacy projects; new spans are validated by structure mode. */
+export type PunctuationSpanKind = "paragraph" | "sentence" | "verse_line" | "couplet" | "stanza" | "clause";
 
 export type PunctuationStructureSpanInput = {
   spanKey: string;
@@ -142,6 +143,13 @@ export type DocumentMetadataView = {
   sourceReference: string | null;
   lockVersion: number;
   updatedAt: string;
+};
+
+export type MoveDocumentInput = {
+  documentNodeId: string;
+  parentId: string;
+  beforeDocumentNodeId: string | null;
+  expectedLockVersion: number;
 };
 
 export type UpdateDocumentMetadataInput = {
@@ -239,7 +247,7 @@ export type EditorView = {
     textLayout?: {
       state: "pending" | "running" | "ready" | "needs_review" | "failed";
       sentences: Array<{ id: string; from: number; to: number; text: string }>;
-      links: Array<{ sentenceId: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
+      links: Array<{ sentenceId: string; groupId?: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
       error: string | null;
     };
     originKind: string;
@@ -257,6 +265,8 @@ export type EditorView = {
 };
 
 export type SaveTranslationDraftInput = {
+  textGroups?: Array<{ id: string; text: string; spans: Array<{ from: number; to: number; quote: string }> }>;
+
   documentNodeId: string;
   textContent: string;
   blocks: Array<{
@@ -293,7 +303,6 @@ export type SaveSourceDraftInput = {
   documentNodeId: string;
   contentText: string;
   originKind: SourceOriginKind;
-  changeSummary?: string | null;
   expectedLockVersion: number;
 };
 
@@ -313,7 +322,6 @@ export type SavePunctuationDraftInput = {
   punctuatedText: string;
   structureMode: PunctuationStructureMode;
   structureSpans?: PunctuationStructureSpanInput[];
-  changeSummary?: string | null;
   expectedLockVersion: number;
 };
 
@@ -432,7 +440,7 @@ export type ResolveUncertaintyInput = {
 
 export type NodeContextView = {
   id: string;
-  source: "context_item" | "document_description";
+  source: "context_item" | "document_description" | "comment_reference";
   scopeKind: "document_node";
   scopeId: string;
   title: string;
@@ -444,6 +452,7 @@ export type NodeContextView = {
   inheritToChildren?: boolean;
   conditionMd?: string;
   origin?: MaterialOrigin | null;
+  reference?: { commentId: string; needsReview: boolean; sourceChanged: boolean; sourceUnavailable: boolean; reviewedCommentLockVersion: number };
 };
 
 export type MaterialOrigin = {
@@ -462,7 +471,7 @@ export type MaterialOrigin = {
 export type MaterialCommentView = ReviewCommentView & { authorName: string; materialIds: string[] };
 export type MaterialPreferenceView = {
   documentNodeId: string;
-  source: "context_item" | "document_description";
+  source: "context_item" | "document_description" | "comment_reference";
   /** Actual context_items.id or document_nodes.id, never a virtual display ID. */
   sourceId: string;
   mode: "include" | "exclude";
@@ -506,6 +515,8 @@ export type CreateContextItemInput = {
 };
 
 export type UpdateContextItemInput = CreateContextItemInput & {
+  expectedCommentLockVersion?: number;
+  keepAsContext?: boolean;
   id: string;
   expectedLockVersion: number;
 };

@@ -1,3 +1,4 @@
+import { uiText, t, ui } from "./i18n";
 import type { MunhaeApi, ReviewExportInput } from "../../shared/munhae-api";
 import "../styles/review-export.css";
 
@@ -13,7 +14,7 @@ export function configureReviewExport(deps: Deps): { open(): void } {
   dialog.id = "dlgReviewExport";
   dialog.className = "review-export-dialog";
   dialog.setAttribute("aria-labelledby", "reviewExportTitle");
-  dialog.innerHTML = `<form id="reviewExportForm">
+  dialog.innerHTML = uiText(`<form id="reviewExportForm">
     <div class="dl-h" id="reviewExportTitle">번역 검토본 내보내기</div>
     <div class="dl-b review-export-fields">
       <p class="review-export-intro">원문과 번역을 나란히 읽고, 선택 구절의 코멘트와 참고자료를 함께 검토할 수 있습니다.</p>
@@ -27,7 +28,7 @@ export function configureReviewExport(deps: Deps): { open(): void } {
       <p id="reviewExportError" class="review-export-error" role="alert" hidden></p>
     </div>
     <div class="dl-f"><button class="btn" id="reviewExportClose" type="button">취소</button><button class="btn btn-primary" id="reviewExportSave" type="submit">저장 위치 선택…</button></div>
-  </form>`;
+  </form>`);
   document.body.append(dialog);
   const el = <T extends HTMLElement>(selector: string): T => dialog.querySelector<T>(selector)!;
   const error = el<HTMLParagraphElement>("#reviewExportError");
@@ -42,7 +43,7 @@ export function configureReviewExport(deps: Deps): { open(): void } {
   function setBusy(value: boolean): void {
     busy = value;
     for (const control of dialog.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input,select,button")) control.disabled = value;
-    save.textContent = value ? "준비 중…" : "저장 위치 선택…";
+    save.textContent = value ? t("준비 중…") : t("저장 위치 선택…");
     dialog.setAttribute("aria-busy", String(value));
   }
   async function run(): Promise<void> {
@@ -56,15 +57,15 @@ export function configureReviewExport(deps: Deps): { open(): void } {
     };
     setBusy(true);
     try {
-      if (scope.value === "document" && (!openedDocumentId || deps.currentDocumentId() !== openedDocumentId)) throw new Error("문서가 변경되었습니다. 검토본 내보내기를 다시 여세요.");
-      if (deps.beforeExport && !await deps.beforeExport()) { error.textContent = "편집 중인 내용을 저장한 뒤 다시 내보내세요."; error.hidden = false; return; }
+      if (scope.value === "document" && (!openedDocumentId || deps.currentDocumentId() !== openedDocumentId)) throw new Error(t("문서가 변경되었습니다. 검토본 내보내기를 다시 여세요."));
+      if (deps.beforeExport && !await deps.beforeExport()) { error.textContent = t("편집 중인 내용을 저장한 뒤 다시 내보내세요."); error.hidden = false; return; }
       const result = await deps.api.project.exportReview(input);
       if (!result.ok) throw new Error(result.error.message);
       if (!result.data) return;
       dialog.close();
-      deps.notify(`${result.data.documentCount}개 문서의 검토본을 저장했습니다.\n${result.data.filePath}`, "검토본 내보내기");
+      deps.notify(ui`${result.data.documentCount}개 문서의 검토본을 저장했습니다.\n${result.data.filePath}`, t("검토본 내보내기"));
     } catch (cause) {
-      error.textContent = cause instanceof Error ? cause.message : "검토본을 내보내지 못했습니다.";
+      error.textContent = cause instanceof Error ? cause.message : t("검토본을 내보내지 못했습니다.");
       error.hidden = false;
     } finally { setBusy(false); }
   }

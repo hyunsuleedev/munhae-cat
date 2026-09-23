@@ -1,0 +1,16 @@
+.statusbar .online-workspace-status { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.statusbar .online-workspace-status::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+.statusbar .online-workspace-status[data-state="synced"]::before { background: var(--ok); }
+.statusbar .online-workspace-status[data-state="pending"]::before { background: var(--warn); }
+.statusbar .online-workspace-status.has-error { color: var(--danger); }
+.statusbar .online-workspace-status.has-error::before { background: var(--danger); }
+.online-workspace-alert { display: flex; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--border); background: var(--warn-soft); color: var(--fg); font-size: 12px; flex: 0 0 auto; position: sticky; top: 0; z-index: 30; }
+.online-workspace-alert[hidden] { display: none; }
+.online-workspace-alert > span { flex: 1; overflow-wrap: anywhere; }
+.online-workspace-alert > button { flex: 0 0 auto; }
+.online-workspace-dialog { max-height: calc(100dvh - 80px); overflow: auto; }
+.online-workspace-dialog p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.online-workspace-dialog .dl-f { flex-wrap: wrap; }
+.online-workspace-time { font-size: 11.5px; }
+
+.online-permission-disabled { opacity: .4; cursor: default; }

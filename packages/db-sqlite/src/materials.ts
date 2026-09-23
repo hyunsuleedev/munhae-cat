@@ -1,8 +1,8 @@
-import { canonicalJson, createId, MunhaeError, nowIso, sha256Hex, utf8ByteLength } from "@munhae/domain";
+import { loadCommentReferences, createCommentReference, referenceReady, referencePrompt } from "./comment-references.ts";
+import { MunhaeError, nowIso } from "@munhae/domain";
 import type { ProjectActors } from "./bootstrap.ts";
-import { createContextItem, loadContextItem } from "./knowledge-ops.ts";
 import { materialOriginFromJson } from "./knowledge-content.ts";
-import { allRows, getRow, insertRow } from "./rows.ts";
+import { allRows, getRow } from "./rows.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type {
   MaterialCommentView, MaterialOrigin, MaterialPreferenceView, MaterialsView,
@@ -55,7 +55,7 @@ export function loadMaterialItems(db: SqliteDb, projectId: string): NodeContextV
       priority: 0, enabled: true, lockVersion: node.lock_version, updatedAt: node.updated_at,
       inheritToChildren: true, conditionMd: "", origin: null,
     }));
-  return [...items, ...descriptions].sort((a, b) => b.priority - a.priority || a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
+  return [...items, ...descriptions, ...loadCommentReferences(db, projectId)].sort((a, b) => b.priority - a.priority || a.updatedAt.localeCompare(b.updatedAt) || a.id.localeCompare(b.id));
 }
 
 export function loadMaterialPreferences(db: SqliteDb, projectId: string): MaterialPreferenceView[] {
@@ -80,7 +80,7 @@ export function resolveMaterials(db: SqliteDb, projectId: string, documentNodeId
     const distance = ancestors.indexOf(item.scopeId);
     const reason = distance === 0 ? "current" : distance > 0 && item.inheritToChildren !== false ? "ancestor" : preference?.referenced ? "selected" : null;
     if (reason) result.push({ ...item, reason, referenced: preference?.referenced ?? false, excluded: preference?.excluded ?? false,
-      included: !preference?.excluded && (item.enabled || preference?.mode === "include") });
+      included: referenceReady(item) && !preference?.excluded && (item.enabled || preference?.mode === "include") });
   }
   return result.sort((a, b) => {
     const distance = (item: ResolvedMaterialView) => item.reason === "selected" ? Number.MAX_SAFE_INTEGER : ancestors.indexOf(item.scopeId);
@@ -90,7 +90,7 @@ export function resolveMaterials(db: SqliteDb, projectId: string, documentNodeId
 
 export function listMaterialComments(db: SqliteDb, projectId: string): MaterialCommentView[] {
   const linked = allRows<{ source_comment_id: string; id: string }>(db,
-    "SELECT id,source_comment_id FROM context_items WHERE project_id=? AND source_comment_id IS NOT NULL AND archived_at IS NULL", projectId);
+    "SELECT id,comment_id AS source_comment_id FROM comment_references WHERE project_id=? AND archived_at IS NULL", projectId);
   return allRows<Omit<MaterialCommentView, "materialIds">>(db, `SELECT comment.id,
       document_node_id AS documentNodeId, translation_version_id AS translationVersionId,
       target_kind AS targetKind,target_version_id AS targetVersionId,codepoint_from AS codepointFrom,
@@ -112,7 +112,7 @@ export function getMaterials(context: Context, documentNodeId?: string): Materia
 
 export function setMaterialPreference(context: Context, input: SetMaterialPreferenceInput): void {
   const { db, projectId, actors } = context;
-  if (!["context_item", "document_description"].includes(input.source) || !["include", "exclude", "reset"].includes(input.mode))
+  if (!["context_item", "document_description", "comment_reference"].includes(input.source) || !["include", "exclude", "reset"].includes(input.mode))
     throw new MunhaeError("invalid_input", "자료 선택이 올바르지 않습니다");
   db.transaction(() => {
     const ancestors = lineage(db, projectId, input.documentNodeId);
@@ -141,27 +141,7 @@ export function setMaterialPreference(context: Context, input: SetMaterialPrefer
 }
 
 export function reuseCommentAsMaterial(context: Context, input: ReuseCommentAsMaterialInput): NodeContextView {
-  const { db, projectId } = context;
-  return db.transaction(() => {
-    const comment = listMaterialComments(db, projectId).find(comment => comment.id === input.commentId);
-    if (!comment) throw new MunhaeError("not_found", "코멘트를 찾을 수 없습니다");
-    if (comment.lockVersion !== input.expectedCommentLockVersion)
-      throw new MunhaeError("cas_conflict", "원본 코멘트가 변경되었습니다. 확인 후 다시 저장하세요");
-    const origin: MaterialOrigin = { commentId: comment.id, documentNodeId: comment.documentNodeId,
-      translationVersionId: comment.translationVersionId, targetKind: comment.targetKind, targetVersionId: comment.targetVersionId,
-      codepointFrom: comment.codepointFrom, codepointTo: comment.codepointTo, quote: comment.quote,
-      bodyMd: comment.bodyMd, lockVersion: comment.lockVersion };
-    const payload = canonicalJson(origin);
-    const existing = getRow<{ id: string }>(db, "SELECT id FROM provenance_artifacts WHERE project_id=? AND artifact_kind='material_comment_origin' AND canonical_sha256=?", projectId, sha256Hex(payload));
-    const artifactId = existing?.id ?? createId();
-    const item = createContextItem(context, input);
-    if (!existing) insertRow(db, "provenance_artifacts", { id: artifactId, project_id: projectId, artifact_kind: "material_comment_origin",
-      media_type: "application/json", payload_json: payload, raw_sha256: sha256Hex(payload), canonical_sha256: sha256Hex(payload),
-      byte_size: utf8ByteLength(payload), created_at: nowIso() });
-    db.prepare("UPDATE context_items SET source_comment_id=?,origin_artifact_id=? WHERE id=? AND project_id=?")
-      .run(comment.id, artifactId, item.id, projectId);
-    return loadContextItem(db, projectId, item.id);
-  })();
+  return createCommentReference(context, input);
 }
 
 /** A selected past comment is an example tied to its original text, not a current revision command. */
@@ -178,6 +158,7 @@ export function referenceComments(db: SqliteDb, projectId: string, ids: string[]
 }
 
 export function materialPromptContent(item: NodeContextView): string {
+  if (item.source === "comment_reference") return referencePrompt(item);
   return [item.contentMd, item.conditionMd?.trim() ? `적용 조건·예외: ${item.conditionMd.trim()}` : "",
     item.origin ? `근거 코멘트의 원래 구절: ${item.origin.quote}\n이 판단은 위 구절에서 나온 것입니다. 현재 문서에도 적용되는지 문맥을 확인하세요.` : ""]
     .filter(Boolean).join("\n\n");

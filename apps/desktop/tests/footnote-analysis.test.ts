@@ -23,7 +23,7 @@ function fixture() {
 }
 function success(output: unknown): AgentRunResult { return { ok: true, outputText: JSON.stringify(output), structuredOutput: output } as AgentRunResult; }
 function recommendation(id = "NOTE0", evidenceQuote = "태수는 지방의 장관을 이르는 말이다.") { return { id, relevance: "contextual", reason: "관직 뜻을 비교하는 근거다.", translationAdvice: "이 문서의 시대를 확인한 뒤 관직명으로 옮긴다.", caution: "같은 인물이라는 뜻은 아니다.", evidenceQuote }; }
-function setup(options: { total?: number; notes?: ItkcFootnote[]; output?: unknown; customProbe?: AgentProbe; runtime?: (request: AgentRunRequest) => Promise<AgentRunResult>; registerReal?: boolean; collectionTimeoutMs?: number; analysisTimeoutMs?: number } = {}) {
+function setup(options: { total?: number; notes?: ItkcFootnote[]; output?: unknown; customProbe?: AgentProbe; runtime?: (request: AgentRunRequest) => Promise<AgentRunResult>; persist?: (projectId: string) => Promise<void>; registerReal?: boolean; collectionTimeoutMs?: number; analysisTimeoutMs?: number } = {}) {
   const f = fixture();
   const records = options.notes ?? Array.from({ length: options.total ?? 21 }, (_, i) => note(i));
   const completions: Promise<void>[] = [];
@@ -33,10 +33,18 @@ function setup(options: { total?: number; notes?: ItkcFootnote[]; output?: unkno
   const cancel = vi.fn(async () => {});
   const service = new FootnoteAnalysisService({ search, probe: vi.fn(async () => options.customProbe ?? probe), run, cancel,
     register: activity => { if (options.registerReal) registerExternalAiActivity(activity); completions.push(activity.completion); },
+    ...(options.persist ? { persist: options.persist } : {}),
     ...(options.collectionTimeoutMs ? { collectionTimeoutMs: options.collectionTimeoutMs } : {}), ...(options.analysisTimeoutMs ? { analysisTimeoutMs: options.analysisTimeoutMs } : {}) });
   return { ...f, service, search, run, cancel, completions, async finish() { await Promise.all(completions); } };
 }
 describe("AI footnote analysis", () => {
+  it("does not launch analysis when online input persistence fails after collection", async () => {
+    const persist = vi.fn(async () => { throw Object.assign(new Error("offline"), { code: "online_workspace_request_failed" }); });
+    const f = setup({ persist });
+    const started = f.service.start(f.repo, DEFAULT_APP_CONFIG, f.input); await f.finish();
+    expect(f.search).toHaveBeenCalled(); expect(persist).toHaveBeenCalledWith(f.repo.projectId);
+    expect(f.run).not.toHaveBeenCalled(); expect(f.service.get(f.repo, started.id).state).toBe("failed");
+  });
   it("returns an immediate run and collects beyond the visible first page before grounded recommendations", async () => {
     const f = setup({ total: 61, output: { summary: "뒤쪽 후보에 근거가 있다.", recommendations: [recommendation("NOTE42")] } });
     const initial = f.service.start(f.repo, DEFAULT_APP_CONFIG, f.input);

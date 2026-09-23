@@ -1,3 +1,4 @@
+import { t, uiText, ui } from "./i18n";
 import type {
   ConfirmedExportFormat,
   KnowledgeView,
@@ -36,18 +37,18 @@ function renderSearchEntityOptions(): void {
   const select = must<HTMLSelectElement>("#projectSearchEntity");
   const selected = select.value;
   if (!type) {
-    select.innerHTML = '<option value="">필터 없음</option>';
+    select.innerHTML = uiText('<option value="">필터 없음</option>');
     select.disabled = true;
     return;
   }
   if (!searchKnowledge) {
-    select.innerHTML = '<option value="">지식 항목 불러오는 중…</option>';
+    select.innerHTML = uiText('<option value="">지식 항목 불러오는 중…</option>');
     select.disabled = true;
     return;
   }
   const options = searchEntityOptions(type);
   select.innerHTML = [
-    '<option value="">항목 선택…</option>',
+    uiText('<option value="">항목 선택…</option>'),
     ...options.map((entry) => `<option value="${deps?.escape(entry.id) ?? ""}">${deps?.escape(entry.label) ?? ""}</option>`),
   ].join("");
   select.disabled = false;
@@ -62,7 +63,7 @@ async function loadSearchEntities(): Promise<void> {
   const result = await activeDeps.api.knowledge.get();
   if (deps !== activeDeps) return;
   if (!result.ok) {
-    must("#projectSearchStatus").textContent = `지식 필터를 불러오지 못했습니다: ${result.error.message}`;
+    must("#projectSearchStatus").textContent = ui`지식 필터를 불러오지 못했습니다: ${result.error.message}`;
     return;
   }
   searchKnowledge = result.data;
@@ -73,7 +74,7 @@ function installDialogs(): void {
   if (document.querySelector("#dlgProjectSearch")) return;
   document.body.insertAdjacentHTML(
     "beforeend",
-    `<dialog id="dlgProjectSearch" style="width:min(780px,calc(100vw - 48px));max-height:calc(100vh - 64px)">
+    uiText(`<dialog id="dlgProjectSearch" style="width:min(780px,calc(100vw - 48px));max-height:calc(100vh - 64px)">
       <form id="projectSearchForm">
         <div class="dl-h">프로젝트 내용 검색</div>
         <div class="dl-b" style="display:grid;gap:12px">
@@ -105,7 +106,7 @@ function installDialogs(): void {
         </div>
         <div class="dl-f"><button class="btn" id="confirmedExportClose" type="button">취소</button><button class="btn btn-primary" id="confirmedExportRun" type="submit">저장 위치 선택…</button></div>
       </form>
-    </dialog>`,
+    </dialog>`),
   );
 
   must("#projectSearchClose").addEventListener("click", () => must<HTMLDialogElement>("#dlgProjectSearch").close());
@@ -128,8 +129,8 @@ function installDialogs(): void {
 }
 
 function resultLabel(result: SearchResult): string {
-  if (result.resultKind === "source") return `원문 V${result.versionNo}`;
-  return `번역 v${result.versionNo}`;
+  if (result.resultKind === "source") return ui`원문 V${result.versionNo}`;
+  return ui`번역 v${result.versionNo}`;
 }
 
 async function runSearch(): Promise<void> {
@@ -139,8 +140,8 @@ async function runSearch(): Promise<void> {
   const button = must<HTMLButtonElement>("#projectSearchRun");
   const status = must("#projectSearchStatus");
   button.disabled = true;
-  button.textContent = "검색 중…";
-  status.textContent = "저장된 원문과 번역에서 찾고 있습니다…";
+  button.textContent = t("검색 중…");
+  status.textContent = t("저장된 원문과 번역에서 찾고 있습니다…");
   try {
     const currentOnly = must<HTMLInputElement>("#projectSearchCurrent").checked;
     const entityType = must<HTMLSelectElement>("#projectSearchEntityType").value as SearchEntityType | "";
@@ -158,26 +159,26 @@ async function runSearch(): Promise<void> {
       must("#projectSearchResults").innerHTML = "";
       return;
     }
-    const entityLabel = result.data.entityFilter ? ` · ${result.data.entityFilter.label} 필터` : "";
-    status.textContent = `${result.data.results.length}건${entityLabel}${result.data.results.length >= 100 ? " · 최대 100건까지 표시합니다" : ""}`;
+    const entityLabel = result.data.entityFilter ? ui` · ${result.data.entityFilter.label} 필터` : "";
+    status.textContent = ui`${result.data.results.length}건${entityLabel}${result.data.results.length >= 100 ? t(" · 최대 100건까지 표시합니다") : ""}`;
     must("#projectSearchResults").innerHTML = result.data.results.length
       ? result.data.results.map((item) => {
-          const state = item.isConfirmed ? "확정" : item.isCurrent ? "현재" : "이력";
-          return `<article class="li" style="display:grid;gap:7px;padding:12px;border:1px solid var(--border);border-radius:7px;background:var(--panel)">
+          const state = item.isConfirmed ? t("확정") : item.isCurrent ? t("현재") : t("이력");
+          return ui`<article class="li" style="display:grid;gap:7px;padding:12px;border:1px solid var(--border);border-radius:7px;background:var(--panel)">
             <button type="button" data-search-document="${deps!.escape(item.documentNodeId)}" style="width:100%;text-align:left;display:grid;gap:7px;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer">
               <span class="row" style="gap:6px"><b>${deps!.escape(item.documentTitle)}</b><span class="tag ${item.isConfirmed ? "tag-ok" : "tag-plain"}">${state}</span><span class="tag tag-line">${deps!.escape(resultLabel(item))}</span></span>
               <span>${deps!.escape(item.snippet)}</span>
-              <span class="muted" style="font-size:11.5px">${item.isCurrent ? "현재 문서 열기 →" : "이전 버전의 검색 결과입니다. 누르면 현재 문서가 열립니다. →"}</span>
+              <span class="muted" style="font-size:11.5px">${item.isCurrent ? t("현재 문서 열기 →") : t("이전 버전의 검색 결과입니다. 누르면 현재 문서가 열립니다. →")}</span>
             </button>
             <details class="muted" style="font-size:10.5px"><summary>검색 기록 정보</summary><div style="overflow-wrap:anywhere;margin-top:6px">버전 식별자: ${deps!.escape(item.versionId)}<br>내용 해시: ${deps!.escape(item.contentHash)}</div></details>
           </article>`;
         }).join("")
-      : '<p class="muted" style="padding:18px;text-align:center">조건에 맞는 원문·번역이 없습니다.</p>';
+      : uiText('<p class="muted" style="padding:18px;text-align:center">조건에 맞는 원문·번역이 없습니다.</p>');
   } catch (error) {
-    status.textContent = error instanceof Error ? error.message : "검색하지 못했습니다.";
+    status.textContent = error instanceof Error ? error.message : t("검색하지 못했습니다.");
   } finally {
     button.disabled = false;
-    button.textContent = "검색";
+    button.textContent = t("검색");
   }
 }
 
@@ -187,7 +188,7 @@ async function runExport(): Promise<void> {
   const errorBox = must("#confirmedExportError");
   errorBox.hidden = true;
   button.disabled = true;
-  button.textContent = "준비 중…";
+  button.textContent = t("준비 중…");
   try {
     const scope = must<HTMLSelectElement>("#confirmedExportScope").value;
     const result = await deps.api.project.exportConfirmed({
@@ -202,15 +203,15 @@ async function runExport(): Promise<void> {
     if (!result.data) return;
     must<HTMLDialogElement>("#dlgConfirmedExport").close();
     deps.notify(
-      `${result.data.confirmedTranslationCount}개 확정 번역을 저장했습니다.\n${result.data.filePath}`,
-      "내보내기",
+      ui`${result.data.confirmedTranslationCount}개 확정 번역을 저장했습니다.\n${result.data.filePath}`,
+      t("내보내기"),
     );
   } catch (error) {
-    errorBox.textContent = error instanceof Error ? error.message : "내보내지 못했습니다.";
+    errorBox.textContent = error instanceof Error ? error.message : t("내보내지 못했습니다.");
     errorBox.hidden = false;
   } finally {
     button.disabled = false;
-    button.textContent = "저장 위치 선택…";
+    button.textContent = t("저장 위치 선택…");
   }
 }
 

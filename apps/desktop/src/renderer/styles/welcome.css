@@ -71,6 +71,13 @@ html[data-platform="mac"] .w-left {
 .w-act:hover {
   background: var(--fg-soft);
 }
+.w-act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.w-act:disabled:hover {
+  background: transparent;
+}
 .w-act .ic {
   width: 22px;
   height: 22px;
@@ -103,7 +110,7 @@ html[data-platform="mac"] .w-left {
   flex-direction: column;
   min-height: 0;
   overflow: auto;
-  padding: 14px 12px 12px;
+  padding: 52px 20px 24px;
 }
 .w-h {
   font-size: 11px;
@@ -205,6 +212,12 @@ html[data-platform="mac"] .w-left {
   .welcome {
     grid-template-columns: 1fr;
     overflow: auto;
+  }
+  .w-right {
+    padding: 16px 20px 24px;
+    overflow: visible;
+    border-left: 0;
+    border-top: 1px solid var(--border);
   }
 }
 .welcome-account { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; font-size: 12px; }

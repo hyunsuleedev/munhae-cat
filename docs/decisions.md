@@ -6,7 +6,7 @@ plan.md §23의 구현 전 남은 선택에 대한 결정.
 |---|---|---|
 | Bundler | electron-vite | main/preload/renderer 분리, HMR, electron-builder와 표준 조합 |
 | Packaging | electron-builder | 사용자 요청. mac dmg+zip, win nsis, linux AppImage |
-| SQLite | better-sqlite3 v13 (N-API) | WAL·단일 writer·동기 transaction. ORM 없음 |
+| SQLite | better-sqlite3 + Drizzle ORM | WAL·단일 writer·동기 transaction. 원문·표점·번역 저장소는 Drizzle 사용. [저장소 관리](local-storage.md) |
 | UUID | `uuid` 패키지의 v7 | 스키마: 애플리케이션이 생성하는 UUIDv7 |
 | 시간 | RFC 3339 `TEXT` UTC | 프로젝트 전체 통일 |
 | boolean | `INTEGER CHECK (x IN (0,1))` | schema.md §18.3 |

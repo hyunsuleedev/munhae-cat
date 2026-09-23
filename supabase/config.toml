@@ -417,3 +417,14 @@ s3_secret_key = "env(S3_SECRET_KEY)"
 # declarative_schema_path = "./database"
 # JSON string passed through to pg-delta SQL formatting.
 # format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+
+# billing validates a real Auth user with getUser(token); this also supports
+# asymmetric Supabase signing keys and Electron main-process requests.
+[functions.billing]
+verify_jwt = false
+import_map = "./functions/deno.json"
+
+# Stripe sends a signed raw body, not a Supabase JWT.
+[functions.stripe-webhook]
+verify_jwt = false
+import_map = "./functions/deno.json"

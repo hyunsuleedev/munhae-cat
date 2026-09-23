@@ -142,7 +142,7 @@ it("deletes active and archived people/places without creating copies, preservin
   expect(rows(db, "provenance_artifacts")).toEqual(before.artifacts);
   expect(rows(db, "glossary_entries")).toEqual(before.glossary);
   expect(rows(db, "chat_messages")).toEqual(before.messages);
-  expect(db.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 7 });
+  expect(db.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 10 });
   assertSqliteIntegrity(db);
 
   const after = {
@@ -201,7 +201,7 @@ it("opens a v4 project without a backup or copied knowledge and remains stable o
     expect(readdirSync(packagePath).filter((name) => name.endsWith(".bak"))).toEqual([]);
     const check = openSqlite(path); databases.push(check);
     try {
-      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 7 });
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 10 });
       expect(check.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name IN ('persons','places')").all()).toEqual([]);
       expect({ cards: rows(check, "context_items"), artifacts: rows(check, "provenance_artifacts") })
         .toEqual({ ...before, cards: before.cards.map(withMaterialDefaults) });

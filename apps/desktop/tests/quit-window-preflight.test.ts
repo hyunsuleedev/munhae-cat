@@ -9,6 +9,7 @@ const fixture = vi.hoisted(() => {
     on: vi.fn(),
     show: vi.fn(),
     hide: vi.fn(),
+    setMenuBarVisibility: vi.fn(),
     loadFile: vi.fn(async () => {}),
     loadURL: vi.fn(async () => {}),
     webContents: {

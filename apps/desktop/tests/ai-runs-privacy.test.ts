@@ -97,7 +97,7 @@ describe("AI run renderer privacy", () => {
     expect(view.partialText).toBe("");
   });
 
-  it("does not copy tool names or payloads into the renderer view", () => {
+  it("shows tool names without copying tool inputs or results", () => {
     const view = runningView("chat");
     const secret = "SENTINEL-tool-name-input-result";
 
@@ -106,7 +106,7 @@ describe("AI run renderer privacy", () => {
       runId: "run-1",
       agentId: "codex",
       at: "2026-09-04T00:00:01.000Z",
-      name: secret,
+      name: "web_search",
       state: "started",
       input: secret,
       result: secret,
@@ -115,6 +115,7 @@ describe("AI run renderer privacy", () => {
     expect(view.phase).toBe("validating");
     expect(view.detail).toBe("응답 처리 중…");
     expect(JSON.stringify(view)).not.toContain(secret);
+    expect(view.activity).toEqual([{ kind: "tool", text: "web_search · 실행 중", name: "web_search", state: "started" }]);
   });
 
   it.each([
@@ -156,3 +157,48 @@ describe("AI run renderer privacy", () => {
     });
   });
 });
+
+it("keeps thinking separate from chat answers and excludes other providers/tasks", () => {
+  for (const task of ["chat", "translation", "punctuation_suggest"] as const) {
+    for (const agent of ["claude", "codex", "antigravity"] as const) {
+      const view = runningView(task); view.agentId = agent;
+      updateFromEvent(view, { type: "thinking_delta", runId: "run-1", agentId: agent, at: "", text: "문맥 검토" });
+      expect(view.thinkingText ?? "").toBe((task === "chat" || task === "translation") && agent !== "antigravity" ? "문맥 검토" : "");
+      expect(view.partialText).toBe("");
+    }
+  }
+});
+
+it("retains text, tool activity and thinking in arrival order for chat only", () => {
+  const view = runningView("chat");
+  updateFromEvent(view, textDelta("출전 확인"));
+  updateFromEvent(view, { ...textDelta(""), type: "tool_call", name: "web_search", state: "started" });
+  updateFromEvent(view, { ...textDelta("검토"), type: "thinking_delta" });
+  updateFromEvent(view, textDelta("답변"));
+  expect(view.activity?.map(block => block.kind)).toEqual(["text", "tool", "thinking", "text"]);
+  const translation = runningView("translation");
+  updateFromEvent(translation, textDelta("초안"));
+  expect(translation.activity).toBeUndefined();
+});
+
+
+it("updates calls by ID even when same-name calls overlap and terminal events replay", () => {
+  const view = runningView("chat");
+  const tool = (id: string, state: "started" | "completed" | "failed") => updateFromEvent(view, { ...textDelta(""), type: "tool_call", id, name: "web_search", state });
+  tool("a", "started"); tool("b", "started");
+  tool("b", "failed"); tool("a", "completed"); tool("a", "completed"); tool("a", "started");
+  expect(view.activity?.map(({ id, state }) => ({ id, state }))).toEqual([{ id: "a", state: "completed" }, { id: "b", state: "failed" }]);
+});
+
+ it("streams translation thinking and tool lifecycle without result JSON", () => {
+  const view = runningView("translation");
+  updateFromEvent(view, { ...textDelta("원문을 검토합니다."), type: "thinking_delta" });
+  const tool = { ...textDelta(""), type: "tool_call" as const, id: "lookup", name: "web_search", state: "started" as const };
+  updateFromEvent(view, tool);
+  updateFromEvent(view, textDelta('{"translation":"structured result"}'));
+  updateFromEvent(view, { ...tool, state: "completed" });
+  expect(view.activity?.map(block => block.kind)).toEqual(["thinking", "tool"]);
+  expect(view.activity?.[1]?.state).toBe("completed");
+  expect(view.partialText).toBe("");
+  expect(JSON.stringify(view)).not.toContain("structured result");
+ });

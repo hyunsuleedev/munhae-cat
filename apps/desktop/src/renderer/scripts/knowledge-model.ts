@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { DocumentListItem, GlossaryEntryView, MaterialPreferenceView, NodeContextView } from "../../shared/munhae-api";
 
 export const KNOWLEDGE_TABS = ["context", "glossary", "comments", "uncertainty"] as const;
@@ -11,9 +12,9 @@ export function knowledgeTabFromHash(hash: string): KnowledgeTab {
 }
 
 export const USAGE_LABELS: Record<GlossaryEntryView["usageStatus"], string> = {
-  preferred: "기본",
-  allowed: "허용",
-  forbidden: "지양",
+  preferred: t("기본"),
+  allowed: t("허용"),
+  forbidden: t("지양"),
 };
 
 export function documentPath(documents: readonly DocumentListItem[], nodeId: string): DocumentListItem[] {
@@ -35,7 +36,7 @@ export function documentPath(documents: readonly DocumentListItem[], nodeId: str
 
 export function documentPathText(documents: readonly DocumentListItem[], nodeId: string): string {
   const path = documentPath(documents, nodeId);
-  return path.length ? path.map(node => node.originalTitle || node.title).join(" › ") : "연결 문서를 찾을 수 없음";
+  return path.length ? path.map(node => node.originalTitle || node.title).join(" › ") : t("연결 문서를 찾을 수 없음");
 }
 
 /** Preserve actual parent links and sibling order rather than interpreting depth or title. */
@@ -75,5 +76,5 @@ export function materialNodeState(
     : (item.inheritToChildren ?? true) && path.some(node => node.id === item.scopeId) ? "ancestor"
       : preference?.referenced ? "selected" : null;
   const excluded = preference?.excluded ?? false;
-  return { reason, excluded, included: !!reason && (item.enabled || preference?.mode === "include") && !excluded };
+  return { reason, excluded, included: !(item.reference?.needsReview || item.reference?.sourceChanged || item.reference?.sourceUnavailable) && !!reason && (item.enabled || preference?.mode === "include") && !excluded };
 }

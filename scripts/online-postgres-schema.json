@@ -1,0 +1,3952 @@
+{
+  "schemaVersion": 10,
+  "tables": [
+    {
+      "name": "chat_message_parts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "message_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "part_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "text_content",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "structured_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "chat_messages",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "thread_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_message_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "agent_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "requested_model",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "resolved_model",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "reasoning_level",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "service_tier",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "runtime_version",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "task_kind",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "output_contract",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "prompt_contract_version",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "request_manifest_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "request_manifest_hash",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "request_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "response_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "events_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "output_validation_state",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "usage_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "error_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "started_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "completed_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "chat_threads",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "scope_kind",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "scope_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "comment_references",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "comment_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "scope_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "note_md",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "''",
+          "pk": 0
+        },
+        {
+          "name": "condition_md",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "''",
+          "pk": 0
+        },
+        {
+          "name": "inherit_to_children",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "priority",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "reviewed_comment_lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "needs_review",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "origin_json",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "legacy_context_item_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "context_items",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "scope_kind",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "scope_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_md",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "priority",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "enabled",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "inherit_to_children",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "condition_md",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "''",
+          "pk": 0
+        },
+        {
+          "name": "source_comment_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "origin_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "core_actors",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "actor_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "display_name",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "subject_uri",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "metadata_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "core_project_settings",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "active_document_node_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "autosave_interval_ms",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "3000",
+          "pk": 0
+        },
+        {
+          "name": "ai_data_policy_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "settings_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "project_id"
+      ]
+    },
+    {
+      "name": "core_projects",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "slug",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "description",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "default_target_locale",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'ko'",
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'active'",
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "core_translation_policies",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "core_translation_policy_heads",
+      "columns": [
+        {
+          "name": "policy_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "current_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "confirmed_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "policy_id"
+      ]
+    },
+    {
+      "name": "core_translation_policy_versions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "policy_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "version_no",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_language",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_locale",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "audience",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "hanja_policy",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "supplement_policy",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "uncertainty_policy",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "style_guide_md",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "rules_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "document_nodes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_node_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "node_role",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'container'",
+          "pk": 0
+        },
+        {
+          "name": "is_master",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "title",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "original_title",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "language",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "period_text",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "date_text",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "description_md",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_reference",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "author_text",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "document_translation_heads",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_translation_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "current_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "confirmed_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "document_translation_id"
+      ]
+    },
+    {
+      "name": "document_translation_validation_findings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "validation_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "finding_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "severity",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "block_key",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "anchor_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "details_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "document_translation_validations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_translation_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_message_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "validator_version",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "result",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "needs_review",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "summary_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "validated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "document_translation_versions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_translation_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "version_no",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "translation_anchor_set_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "translation_policy_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "text_content",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "origin_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "generated_by_message_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "validation_state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "needs_review",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "document_translations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_locale",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "tombstoned_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "glossary_entries",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_term",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_locale",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_term",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "term_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "reading",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "note_md",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "usage_status",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "material_preferences",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 2
+        },
+        {
+          "name": "source_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 3
+        },
+        {
+          "name": "source_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 4
+        },
+        {
+          "name": "referenced",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "excluded",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "project_id",
+        "document_node_id",
+        "source_kind",
+        "source_id"
+      ]
+    },
+    {
+      "name": "provenance_artifacts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "artifact_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "media_type",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "payload_text",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "payload_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "storage_asset_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "raw_sha256",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "canonical_sha256",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "byte_size",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "schema_name",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "schema_version",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "classification",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "retention_class",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "redaction_state",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "provenance_lineage_edges",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "from_artifact_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "to_artifact_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "relation_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "message_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "punctuation_heads",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_set_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "current_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "confirmed_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "punctuation_set_id"
+      ]
+    },
+    {
+      "name": "punctuation_sets",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "policy_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'active'",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "punctuation_structure_spans",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "span_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_span_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_from",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_to",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "quote",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "quote_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "origin_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "confidence",
+          "type": "REAL",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "label",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "punctuation_versions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_set_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "version_no",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuated_text",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "structure_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "reading_annotations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_from",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_to",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "quote",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "reading",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "''",
+          "pk": 0
+        },
+        {
+          "name": "gloss",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "''",
+          "pk": 0
+        },
+        {
+          "name": "reading_order",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "citation_json",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "review_comments",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "translation_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_from",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_to",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "quote",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "body_md",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "archived_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "src_asset_locations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "asset_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "relative_path",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'present'",
+          "pk": 0
+        },
+        {
+          "name": "verified_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "src_asset_pages",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "asset_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "page_no",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "label",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "width",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "height",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "rotation",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "derivative_asset_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "src_assets",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "asset_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "original_filename",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "mime_type",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "byte_size",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "sha256",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "width",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "height",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "page_count",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_uri",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "acquired_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "src_node_assets",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "asset_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 2
+        },
+        {
+          "name": "role",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'reference'",
+          "pk": 0
+        },
+        {
+          "name": "page_from",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "page_to",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "locator_text",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 3
+        }
+      ],
+      "primaryKey": [
+        "document_node_id",
+        "asset_id",
+        "ordinal"
+      ]
+    },
+    {
+      "name": "src_text_heads",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "current_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "confirmed_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "source_text_id"
+      ]
+    },
+    {
+      "name": "src_text_versions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "version_no",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_text",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "origin_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_asset_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "page_from",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "page_to",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "locator_text",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "src_texts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "status",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'active'",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "tombstoned_at",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "term_entries",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_term_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "payload_json",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "lock_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "term_revisions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "term_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "payload_json",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "translation_anchor_sets",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_node_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_text_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "strategy_key",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "strategy_version",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "coverage_policy",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "anchor_set_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "translation_anchor_structure_spans",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "anchor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "punctuation_structure_span_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 2
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "anchor_id",
+        "punctuation_structure_span_id"
+      ]
+    },
+    {
+      "name": "translation_anchors",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "anchor_set_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "anchor_key",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "boundary_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_codepoint_from",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuation_codepoint_to",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuated_quote",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "punctuated_quote_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_codepoint_from",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_codepoint_to",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_quote",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "source_quote_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "context_before_hash",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "context_after_hash",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "display_label",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "required",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "1",
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "translation_block_anchors",
+      "columns": [
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "translation_block_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "translation_anchor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 2
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "relation_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'full'",
+          "pk": 0
+        },
+        {
+          "name": "confidence",
+          "type": "REAL",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "translation_block_id",
+        "translation_anchor_id"
+      ]
+    },
+    {
+      "name": "translation_blocks",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_translation_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "block_key",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "block_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_codepoint_from",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_codepoint_to",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "validation_state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "translation_staleness",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_translation_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "cause_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "old_dependency_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "new_dependency_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "detected_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "resolved_by_document_translation_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "translation_text_layouts",
+      "columns": [
+        {
+          "name": "version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "alignment_state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'pending'",
+          "pk": 0
+        },
+        {
+          "name": "sentences_json",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "links_json",
+          "type": "TEXT",
+          "notNull": true,
+          "default": "'[]'",
+          "pk": 0
+        },
+        {
+          "name": "alignment_request",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "alignment_response",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "alignment_error",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "skill_manifest_json",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "version_id"
+      ]
+    },
+    {
+      "name": "uncertainties",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "category",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "severity",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "blocking",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": "0",
+          "pk": 0
+        },
+        {
+          "name": "state",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "uncertainty_anchors",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "uncertainty_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_from",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "codepoint_to",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "quote",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "quote_hash",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "uncertainty_options",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "uncertainty_version_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "label",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "interpretation_md",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "ordinal",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "uncertainty_versions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "uncertainty_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "parent_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "version_no",
+          "type": "INTEGER",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "statement_md",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "rationale_md",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "confidence_label",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "content_hash",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_by_actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    },
+    {
+      "name": "user_edits",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 1
+        },
+        {
+          "name": "project_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "document_translation_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "base_document_translation_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "result_document_translation_version_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "base_translation_block_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_codepoint_from",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "target_codepoint_to",
+          "type": "INTEGER",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "base_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "result_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "patch_artifact_id",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "patch_format",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "edit_kind",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "reason",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "actor_id",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "client_version",
+          "type": "TEXT",
+          "notNull": false,
+          "default": null,
+          "pk": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "default": null,
+          "pk": 0
+        }
+      ],
+      "primaryKey": [
+        "id"
+      ]
+    }
+  ]
+}

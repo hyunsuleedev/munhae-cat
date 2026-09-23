@@ -1,6 +1,6 @@
 # 문해 공식 계정
 
-운영자 Supabase 프로젝트 `xanucaevzpwwabnmpamm` (`munhae`, Seoul)를 사용한다. 공식 앱에는 서버 선택 설정이 없다. 현재 구현은 계정 인증까지이며 공유 프로젝트, 멤버십, 결제, 클라우드 저장은 포함하지 않는다.
+운영자 Supabase 프로젝트 `xanucaevzpwwabnmpamm` (`munhae`, Seoul)를 사용한다. 공식 앱에는 서버 선택 설정이 없다. 계정 인증과 별도의 온라인 프로젝트 생성·목록·상세 조회를 지원한다. 현재 온라인 저장 범위는 프로젝트 이름·설명·소유자·생성 시각이며, 로컬 프로젝트의 문서·자료는 업로드하지 않는다. 공동 편집, 초대·멤버 권한, 결제는 후속 범위다. [온라인 프로젝트 구현 범위](online-projects.md).
 
 ## 사용자 흐름
 
@@ -26,6 +26,7 @@
 
 - `src/main/auth-config.ts`: 공식 URL·publishable key만 포함한다. 서비스 관리자 키는 앱에 넣지 않는다.
 - `src/main/auth.ts`, `account-service.ts`: main process가 요청, 세션 갱신, 인증 이벤트를 처리한다. renderer는 제한된 IPC만 호출한다.
+- `src/main/authenticated-client.ts`: 온라인 요청마다 현재 검증된 사용자와 SDK 세션을 대조하고, 해당 요청에 고정된 JWT로 데이터 클라이언트를 만든다. 계정 변경·로그아웃·복구 중에는 새 요청을 차단하고 이전 응답을 폐기한다. 같은 세션의 토큰 갱신이나 프로필 변경은 요청을 취소하지 않는다. 서버 RLS가 프로젝트 소유권을 최종 검증한다.
 - `src/main/auth-storage.ts`: OS `safeStorage`로 암호화한 세션을 Electron user data의 `account-session.enc`에 저장한다. 프로젝트 SQLite·assets·백업에는 세션을 넣지 않는다. OS 암호화를 쓸 수 없거나 Linux `basic_text` backend면 메모리에만 유지한다.
 - renderer에는 사용자 ID·이메일·표시 이름·이메일 인증 시각, 연결된 로그인 방식(`email`, `google`)과 상태만 전달한다. access/refresh token과 공급자의 임의 응답은 전달하지 않는다.
 - 표시 이름은 `auth.users.user_metadata.display_name`을 우선하며 Google 계정의 `full_name`, `name`도 읽는다. 향후 유료 이용 권한이나 프로젝트 역할은 이 metadata나 UI 상태를 신뢰하지 않고 서버의 멤버십·결제 원장에서 검증한다.
@@ -76,6 +77,8 @@ Supabase CLI 로그인 자격으로 Management API의 Google provider와 redirec
 ## 검증
 
 `apps/desktop/tests/account.test.ts`는 입력 검증, 비밀 정보 제외, OS 암호화 저장·복원, 복구 세션과 일반 세션의 비밀번호 변경 조건, Google 계정 표시와 세션 수락을 검사한다. `account-session-lifecycle.test.ts`는 초기 복원 공유, 초기 서버 검증, 실패 후 재시도, SDK 이벤트, 로그인·로그아웃 경합을 검사한다. `auth-gate.test.ts`와 `browser-auth-events.test.ts`는 화면의 상태 수신 순서, 페이지 중복 초기화 방지, 스트림 연결 종료·재연결과 토큰 제외를 검사한다. `google-oauth.test.ts`는 실제 loopback HTTP 요청으로 응답 경로·Host·메서드·중복 코드 검사, 취소·시간 초과·앱 종료, provider token 제외를 검사한다.
+
+`authenticated-client.test.ts`는 온라인 요청의 JWT 고정, 미로그인·복구 차단, 계정 불일치, 늦은 세션 조회·응답 폐기, 같은 사용자 재로그인, 일반 토큰 갱신, 인증 변경 중 요청 차단을 검사한다. 온라인 프로젝트 서비스·화면·RLS 검증 명령은 [온라인 프로젝트 문서](online-projects.md#검증)에 있다.
 
 ```sh
 pnpm typecheck

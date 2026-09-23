@@ -1,3 +1,4 @@
+import { t, ui, uiText } from "./i18n";
 import type { CreateReviewCommentInput, EditorView, MunhaeApi, ReviewCommentView } from "../../shared/munhae-api";
 import { textareaRange, sourceDisplayFromElement, sourceRangeFromDisplay } from "./review-selection";
 import { configureReviewMarks, type ReviewMarkRange } from "./review-marks";
@@ -38,6 +39,7 @@ export function configureReviewComments(deps: Deps) {
   let selected: SelectionTarget | null = null;
   let selecting = false;
   let pointerTarget: HTMLElement | null = null;
+  let selectionTrigger: HTMLElement | null = null;
   let editing: ReviewCommentView | null = null;
   let draftTarget: SelectionTarget | null = null;
   let activeCommentId: string | null = null;
@@ -50,6 +52,38 @@ export function configureReviewComments(deps: Deps) {
   const marks = configureReviewMarks(el("#translationWorkspace"));
   const footnotes = configureFootnoteSearch(deps.api, esc, { view: deps.view, hasUnsavedChanges: deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges });
   const contextMenu = configureReviewContextMenu(el("#translationWorkspace"), captureContextSelection);
+
+  const selectionAction = document.createElement("div");
+  selectionAction.className = "editor-selection-action"; selectionAction.popover = "manual";
+  selectionAction.innerHTML = `<button class="btn btn-sm" type="button">${t("코멘트 달기")}</button>`;
+  document.body.append(selectionAction);
+  selectionAction.addEventListener("pointerdown", event => event.preventDefault());
+  selectionAction.addEventListener("click", () => {
+    const v = deps.view(), target = selected;
+    const text = target?.targetKind === "source" ? v?.source.contentText : v?.translation?.textContent;
+    if (!target || !v || target.documentNodeId !== v.document.id || target.translationVersionId !== v.translation?.versionId
+      || target.targetVersionId !== (target.targetKind === "source" ? v.source.versionId : v.translation?.versionId)
+      || Array.from(text ?? "").slice(target.codepointFrom, target.codepointTo).join("") !== target.quote) { cancelSelection(); return; }
+    openComment();
+  });
+  function hideSelectionAction() { if (selectionAction.matches(":popover-open")) selectionAction.hidePopover(); }
+  function showSelectionAction(target: Node) {
+    if (!selected) { hideSelectionAction(); return; }
+    const range = window.getSelection();
+    const rect = target instanceof HTMLTextAreaElement ? target.getBoundingClientRect() : range?.rangeCount ? range.getRangeAt(0).getBoundingClientRect() : null;
+    if (!rect) return;
+    selectionTrigger = target instanceof HTMLElement ? target : target.parentElement;
+    const button = selectionAction.querySelector<HTMLButtonElement>("button")!;
+    button.disabled = !selectionReady();
+    button.title = button.disabled ? t("편집한 내용을 저장하고 AI 작업을 마친 뒤 코멘트를 남길 수 있습니다.") : t("코멘트 달기");
+    selectionAction.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 128))}px`;
+    selectionAction.style.top = `${Math.max(8, rect.top > 48 ? rect.top - 38 : rect.bottom + 6)}px`;
+    if (!selectionAction.matches(":popover-open")) selectionAction.showPopover();
+  }
+  document.addEventListener("pointerdown", event => { if (!selectionAction.contains(event.target as Node)) hideSelectionAction(); });
+  el("#translationWorkspace").addEventListener("contextmenu", hideSelectionAction);
+  el("#translationWorkspace").closest(".pane-scroll")?.addEventListener("scroll", hideSelectionAction, { passive: true });
+  window.addEventListener("resize", hideSelectionAction);
 
   function sourceState(): ReviewSourceState | null {
     const v = deps.view();
@@ -89,7 +123,7 @@ export function configureReviewComments(deps: Deps) {
     };
     const stillCurrent = () => {
       if (sourceSnapshotIsCurrent(snapshot, sourceState()) && !loading && !saving && !document.querySelector("dialog[open]")) return true;
-      deps.notify("문서나 원문이 바뀌었습니다. 구절을 다시 선택해 주세요.", "선택 구절");
+      deps.notify(t("문서나 원문이 바뀌었습니다. 구절을 다시 선택해 주세요."), t("선택 구절"));
       return false;
     };
     const canSearch = Array.from(snapshot.quote.trim()).length <= 100;
@@ -98,8 +132,8 @@ export function configureReviewComments(deps: Deps) {
       rects: [...range.getClientRects()].map(rect => ({ left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom })),
       actions: [
         {
-          id: "comment", label: "코멘트 달기", enabled: selectionReady(),
-          description: selectionReady() ? undefined : "현재 번역의 편집 내용을 저장한 뒤 코멘트를 남길 수 있습니다.",
+          id: "comment", label: t("코멘트 달기"), enabled: selectionReady(),
+          description: selectionReady() ? undefined : t("현재 번역의 편집 내용을 저장한 뒤 코멘트를 남길 수 있습니다."),
           run: () => {
             if (!stillCurrent() || !selectionReady() || !snapshot.translationVersionId) return;
             selected = {
@@ -115,8 +149,8 @@ export function configureReviewComments(deps: Deps) {
           },
         },
         {
-          id: "dictionary", label: "한자·어휘 사전", enabled: canSearch && !!deps.openDictionary,
-          description: "선택한 한자나 어휘의 한국어 뜻을 찾습니다.",
+          id: "dictionary", label: t("한자·어휘 사전"), enabled: canSearch && !!deps.openDictionary,
+          description: t("선택한 한자나 어휘의 한국어 뜻을 찾습니다."),
           run: () => {
             if (!stillCurrent()) return;
             cancelSelection();
@@ -126,7 +160,7 @@ export function configureReviewComments(deps: Deps) {
               isCurrent: () => sourceSnapshotIsCurrent(snapshot, sourceState()),
               insert: selectionReady() && snapshot.translationVersionId ? citation => {
                 if (!sourceSnapshotIsCurrent(snapshot, sourceState()) || !selectionReady() || !snapshot.translationVersionId) {
-                  throw new Error("문서나 번역이 바뀌었습니다. 현재 구절을 다시 선택해 주세요.");
+                  throw new Error(t("문서나 번역이 바뀌었습니다. 현재 구절을 다시 선택해 주세요."));
                 }
                 selected = {
                   documentNodeId: snapshot.documentNodeId, translationVersionId: snapshot.translationVersionId,
@@ -140,8 +174,8 @@ export function configureReviewComments(deps: Deps) {
           },
         },
         {
-          id: "footnote", label: "각주 검색", enabled: canSearch,
-          description: canSearch ? "선택한 구절로 한국고전종합DB의 각주 용례를 검색합니다." : "각주 검색은 100자 이하의 구절을 선택하세요.",
+          id: "footnote", label: t("각주 검색"), enabled: canSearch,
+          description: canSearch ? t("선택한 구절로 한국고전종합DB의 각주 용례를 검색합니다.") : t("각주 검색은 100자 이하의 구절을 선택하세요."),
           run: () => {
             if (!stillCurrent()) return;
             cancelSelection();
@@ -153,9 +187,9 @@ export function configureReviewComments(deps: Deps) {
           },
         },
         {
-          id: "footnote-ai", label: "AI 각주 추천", enabled: canSearch && !(deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()
+          id: "footnote-ai", label: t("AI 각주 추천"), enabled: canSearch && !(deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()
             && (!deps.view()?.translation || !!deps.view()?.translation?.isCurrentDependencies),
-          description: "선택한 구절의 문맥과 각주 자료를 AI가 대조해 추립니다.",
+          description: t("선택한 구절의 문맥과 각주 자료를 AI가 대조해 추립니다."),
           run: () => {
             if (!stillCurrent() || (deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()) return;
             cancelSelection();
@@ -188,25 +222,20 @@ export function configureReviewComments(deps: Deps) {
     if (!ready) {
       selecting = false;
       pointerTarget = null;
-      selected = null;
+      selected = null; hideSelectionAction();
     }
-    const button = el<HTMLButtonElement>("#btnAddReviewComment");
-    button.disabled = !ready;
-    button.setAttribute("aria-pressed", String(selecting));
-    button.title = selecting ? "코멘트 선택 모드 끄기 (Esc)" : "코멘트 선택 모드 켜기";
-    el("#rows").classList.toggle("is-comment-selecting", selecting);
-    for (const textarea of el("#rows").querySelectorAll<HTMLTextAreaElement>(".sentence-edit")) {
+    for (const textarea of document.querySelectorAll<HTMLTextAreaElement>("#rows .sentence-edit, #bookGroups .sentence-edit")) {
       textarea.readOnly = selecting || !deps.canEditTranslation(textarea.dataset.sentenceEdit ?? "");
     }
     el("#reviewSelectionHint").textContent = selecting
-      ? "코멘트를 남길 원문이나 번역문 범위를 선택하세요. Esc로 취소합니다."
+      ? t("코멘트를 남길 원문이나 번역문 범위를 선택하세요. Esc로 취소합니다.")
       : deps.hasUnsavedChanges()
-        ? "편집한 내용을 저장하고 AI 작업을 마친 뒤 코멘트를 남길 수 있습니다."
-        : "‘코멘트 달기’를 누르고 범위를 선택하거나, 원문 구절을 선택한 뒤 우클릭하세요.";
+        ? t("편집한 내용을 저장하고 AI 작업을 마친 뒤 코멘트를 남길 수 있습니다.")
+        : t("원문이나 번역문의 범위를 선택해 코멘트를 남기세요.");
   }
 
   function cancelSelection(): void {
-    contextMenu.close();
+    contextMenu.close(); hideSelectionAction();
     selecting = false;
     pointerTarget = null;
     selected = null;
@@ -215,7 +244,7 @@ export function configureReviewComments(deps: Deps) {
 
   function clearNativeSelection(): void {
     window.getSelection()?.removeAllRanges();
-    for (const textarea of el("#rows").querySelectorAll<HTMLTextAreaElement>(".sentence-edit")) {
+    for (const textarea of document.querySelectorAll<HTMLTextAreaElement>("#rows .sentence-edit, #bookGroups .sentence-edit")) {
       textarea.setSelectionRange(textarea.selectionEnd, textarea.selectionEnd);
     }
   }
@@ -241,12 +270,22 @@ export function configureReviewComments(deps: Deps) {
     }
   }
 
-  function render(): void {
+  /** Status updates change availability, not comment content or editor geometry. */
+  function refreshAvailability(current = comments.filter(eligible)): void {
     contextMenu.close();
     footnotes.refreshContext();
     renderSelection();
+    const selectedCount = current.filter(comment => included.has(comment.id)).length;
+    const button = el<HTMLButtonElement>("#btnRetranslateComments");
+    button.disabled = !selectedCount || !selectionReady();
+    const label = selectedCount ? ui`코멘트 ${selectedCount}개로 재번역…` : t("코멘트로 재번역…");
+    if (button.textContent !== label) button.textContent = label;
+  }
+
+  function render(): void {
     const current = comments.filter(eligible);
     const prior = comments.filter(comment => !eligible(comment));
+    refreshAvailability(current);
     el("#reviewCommentCount").textContent = String(current.length);
     for (const row of document.querySelectorAll<HTMLElement>("[data-review-sentence]")) {
       const sentence = deps.view()?.translation?.textLayout?.sentences.find(s => s.id === row.dataset.reviewSentence);
@@ -255,21 +294,17 @@ export function configureReviewComments(deps: Deps) {
         ? sentence && comment.codepointFrom < sentence.to && comment.codepointTo > sentence.from
         : ranges.some(range => comment.codepointFrom < Number(range.dataset.reviewSourceTo) && comment.codepointTo > Number(range.dataset.reviewSourceFrom))).length;
       const badge = row.querySelector<HTMLElement>("[data-review-row-count]");
-      if (badge) badge.innerHTML = count ? `<button class="review-row-count" type="button">코멘트 ${count}</button>` : "";
+      if (badge) badge.innerHTML = count ? ui`<button class="review-row-count" type="button">코멘트 ${count}</button>` : "";
     }
-    const selectedCount = current.filter(comment => included.has(comment.id)).length;
-    const button = el<HTMLButtonElement>("#btnRetranslateComments");
-    button.disabled = !selectedCount || !selectionReady();
-    button.textContent = selectedCount ? `코멘트 ${selectedCount}개로 재번역…` : "코멘트로 재번역…";
-    const card = (comment: ReviewCommentView, old: boolean) => `<article class="review-comment" data-review-card="${esc(comment.id)}">
-      <div class="review-comment-meta"><span>${comment.targetKind === "source" ? "원문" : "번역문"}</span>${old ? '<span class="tag tag-plain">이전 버전</span>' : `<label><input type="checkbox" data-review-include="${esc(comment.id)}"${included.has(comment.id) ? " checked" : ""}> 재번역에 포함</label>`}</div>
+    const card = (comment: ReviewCommentView, old: boolean) => ui`<article class="review-comment" data-review-card="${esc(comment.id)}">
+      <div class="review-comment-meta"><span>${comment.targetKind === "source" ? t("원문") : t("번역문")}</span>${old ? uiText('<span class="tag tag-plain">이전 버전</span>') : ui`<label><input type="checkbox" data-review-include="${esc(comment.id)}"${included.has(comment.id) ? " checked" : ""}> 재번역에 포함</label>`}</div>
       <button class="review-quote" type="button" data-review-locate="${esc(comment.id)}"${old ? " disabled" : ""}>${esc(comment.quote)}</button>
       <p class="review-comment-body">${esc(comment.bodyMd)}</p>
-      <div class="review-comment-actions"><button class="btn btn-sm" type="button" data-review-edit="${esc(comment.id)}">수정</button>${deps.reuseComment ? `<button class="btn btn-sm" type="button" data-review-reuse="${esc(comment.id)}">참고 자료로 재사용</button>` : ""}<button class="btn btn-sm" type="button" data-review-archive="${esc(comment.id)}">제외</button></div>
+      <div class="review-comment-actions"><button class="btn btn-sm" type="button" data-review-edit="${esc(comment.id)}">수정</button>${deps.reuseComment ? ui`<button class="btn btn-sm" type="button" data-review-reuse="${esc(comment.id)}">참고 자료로 재사용</button>` : ""}<button class="btn btn-sm" type="button" data-review-archive="${esc(comment.id)}">제외</button></div>
     </article>`;
     el("#reviewCommentsList").innerHTML = loading
-      ? '<p class="muted">코멘트를 불러오는 중입니다.</p>'
-      : `${current.length ? current.map(comment => card(comment, false)).join("") : '<p class="review-empty muted">아직 이 번역의 코멘트가 없습니다. ‘코멘트 달기’를 누른 뒤 문장별 대조에서 범위를 선택하세요.</p>'}${prior.length ? `<details class="review-prior"><summary>이전 버전의 코멘트 ${prior.length}개</summary><p class="muted">작성 당시의 번역에 연결된 기록입니다. 현재 재번역에는 포함되지 않습니다.</p>${prior.map(comment => card(comment, true)).join("")}</details>` : ""}`;
+      ? uiText('<p class="muted">코멘트를 불러오는 중입니다.</p>')
+      : `${current.length ? current.map(comment => card(comment, false)).join("") : uiText('<p class="review-empty muted">아직 이 번역의 코멘트가 없습니다. 원문이나 번역문의 범위를 선택해 코멘트를 남기세요.</p>')}${prior.length ? ui`<details class="review-prior"><summary>이전 버전의 코멘트 ${prior.length}개</summary><p class="muted">작성 당시의 번역에 연결된 기록입니다. 현재 재번역에는 포함되지 않습니다.</p>${prior.map(comment => card(comment, true)).join("")}</details>` : ""}`;
     renderMarks();
     deps.changed?.();
   }
@@ -301,7 +336,7 @@ export function configureReviewComments(deps: Deps) {
       comments = result.data;
       for (const comment of comments) if (!known.has(comment.id) && eligible(comment)) included.add(comment.id);
     } catch (error) {
-      if (request === serial) deps.notify(error instanceof Error ? error.message : "코멘트를 불러오지 못했습니다.", "검토 코멘트");
+      if (request === serial) deps.notify(error instanceof Error ? error.message : t("코멘트를 불러오지 못했습니다."), t("검토 코멘트"));
     } finally {
       if (request === serial) {
         loading = false;
@@ -311,17 +346,17 @@ export function configureReviewComments(deps: Deps) {
   }
 
   function captureSelection(target: Node): void {
-    if (!selecting || !selectionReady() || dialog.open) return;
-    const v = deps.view()!;
+    const v = deps.view();
+    if (!v?.translation?.textLayout || !v.translation.isCurrentDependencies || loading || saving || dialog.open || document.querySelector("dialog[open]")) { hideSelectionAction(); return; }
     const translation = v.translation!;
-    if (!el("#rows").contains(target)) return;
+    if (!el("#translationWorkspace").contains(target)) return;
     const textarea = target instanceof HTMLTextAreaElement ? target : null;
     if (textarea?.matches(".sentence-edit")) {
       const sentence = translation.textLayout!.sentences.find(s => s.id === textarea.dataset.sentenceEdit);
       const from = textarea.selectionStart;
       const to = textarea.selectionEnd;
       const range = sentence ? textareaRange(sentence.text, from, to) : null;
-      selected = sentence && range && textarea.value === sentence.text.replace(/\r\n?/g, "\n") ? {
+      selected = sentence && range && textarea.value === (textarea.dataset.trailingSeparator ? sentence.text.slice(0, -textarea.dataset.trailingSeparator.length) : sentence.text).replace(/\r\n?/g, "\n") ? {
         documentNodeId: v.document.id,
         translationVersionId: translation.versionId,
         targetKind: "translation",
@@ -353,11 +388,11 @@ export function configureReviewComments(deps: Deps) {
             codepointTo: mapped.to,
             quote: mapped.quote,
           };
-          else if (range.toString().trim() && source.dataset.reviewSourceMap) el("#reviewSelectionHint").textContent = "표점 부호만 선택한 경우에는 앞뒤 원문 글자도 함께 선택하세요.";
+          else if (range.toString().trim() && source.dataset.reviewSourceMap) el("#reviewSelectionHint").textContent = t("표점 부호만 선택한 경우에는 앞뒤 원문 글자도 함께 선택하세요.");
         }
       }
     }
-    if (selected) openComment();
+    showSelectionAction(target);
   }
 
   function openComment(comment?: ReviewCommentView): void {
@@ -367,7 +402,7 @@ export function configureReviewComments(deps: Deps) {
     activeCommentId = null;
     cancelSelection();
     clearNativeSelection();
-    el("#reviewCommentHeading").textContent = comment ? "코멘트 수정" : "코멘트 달기";
+    el("#reviewCommentHeading").textContent = comment ? t("코멘트 수정") : t("코멘트 달기");
     el("#reviewCommentQuote").textContent = draftTarget!.quote;
     el<HTMLTextAreaElement>("#reviewCommentBody").value = comment?.bodyMd ?? "";
     el("#reviewCommentError").textContent = "";
@@ -394,7 +429,7 @@ export function configureReviewComments(deps: Deps) {
       deps.showComments();
       await load();
     } catch (error) {
-      el("#reviewCommentError").textContent = error instanceof Error ? error.message : "코멘트를 저장하지 못했습니다.";
+      el("#reviewCommentError").textContent = error instanceof Error ? error.message : t("코멘트를 저장하지 못했습니다.");
     } finally {
       saving = false;
       el<HTMLButtonElement>("#reviewCommentSave").disabled = false;
@@ -414,7 +449,7 @@ export function configureReviewComments(deps: Deps) {
       if (!result.ok) throw new Error(result.error.message);
       await load();
     } catch (error) {
-      deps.notify(error instanceof Error ? error.message : "코멘트를 제외하지 못했습니다.", "검토 코멘트");
+      deps.notify(error instanceof Error ? error.message : t("코멘트를 제외하지 못했습니다."), t("검토 코멘트"));
     } finally {
       saving = false;
       render();
@@ -432,7 +467,7 @@ export function configureReviewComments(deps: Deps) {
       const textarea = [...document.querySelectorAll<HTMLTextAreaElement>(".sentence-edit")].find(e => e.dataset.sentenceEdit === sentence?.id);
       if (textarea && sentence) {
         if (textarea.value !== sentence.text.replace(/\r\n?/g, "\n")) {
-          deps.notify("번역문이 수정되어 구절의 위치를 표시할 수 없습니다. 저장 후 다시 확인하세요.", "검토 코멘트");
+          deps.notify(t("번역문이 수정되어 구절의 위치를 표시할 수 없습니다. 저장 후 다시 확인하세요."), t("검토 코멘트"));
           return;
         }
         target = textarea;
@@ -453,41 +488,33 @@ export function configureReviewComments(deps: Deps) {
     (target.querySelector<HTMLElement>(".review-range-mark.is-emphasized") ?? target).scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
   }
 
-  el("#rows").addEventListener("pointerdown", event => {
-    if (!selecting || event.button !== 0) return;
+  el("#translationWorkspace").addEventListener("pointerdown", event => {
+    if (event.button !== 0) return;
     pointerTarget = (event.target as HTMLElement).closest<HTMLElement>("[data-review-source-from], .sentence-edit");
   });
   document.addEventListener("pointerup", () => {
     const target = pointerTarget;
     pointerTarget = null;
-    if (target) captureSelection(target);
+    if (target) requestAnimationFrame(() => captureSelection(target));
   });
   document.addEventListener("pointercancel", () => { pointerTarget = null; });
-  el("#rows").addEventListener("keyup", event => {
+  el("#translationWorkspace").addEventListener("keyup", event => {
     // Wait until keyboard range selection finishes, not after each Shift+arrow.
     if ((event.key === "Shift" || event.key === "Enter") && event.target instanceof Node) captureSelection(event.target);
   });
   document.addEventListener("keydown", event => {
-    if (event.key !== "Escape" || !selecting) return;
-    event.preventDefault();
-    event.stopPropagation();
+    if (!selectionAction.matches(":popover-open")) return;
+    if (event.key === "Tab" && !event.shiftKey && selectionReady() && event.target === selectionTrigger) {
+      event.preventDefault(); selectionAction.querySelector<HTMLButtonElement>("button")!.focus(); return;
+    }
+    if (event.key !== "Escape") return;
+    event.preventDefault(); event.stopPropagation();
+    if (selectionAction.contains(document.activeElement)) selectionTrigger?.focus({ preventScroll: true });
     cancelSelection();
   }, true);
-  el("#rows").addEventListener("input", () => { cancelSelection(); render(); });
+  el("#translationWorkspace").addEventListener("input", () => { cancelSelection(); render(); });
   el("#rows").addEventListener("click", event => {
     if ((event.target as HTMLElement).closest(".review-row-count")) deps.showComments();
-  });
-  el("#btnAddReviewComment").addEventListener("click", () => {
-    if (selecting) { cancelSelection(); return; }
-    if (!selectionReady()) return;
-    deps.showComments();
-    selected = null;
-    pointerTarget = null;
-    activeCommentId = null;
-    clearNativeSelection();
-    selecting = true;
-    renderSelection();
-    renderMarks();
   });
   el("#reviewCommentForm").addEventListener("submit", event => { event.preventDefault(); void save(); });
   for (const id of ["#btnSearchFootnotes", "#btnSearchFootnotesContext"]) {
@@ -508,14 +535,14 @@ export function configureReviewComments(deps: Deps) {
       selection: { targetKind: target.targetKind, from: target.codepointFrom, to: target.codepointTo, quote: target.quote },
       isCurrent: currentTarget,
       insertAnalysis: recommendation => {
-        if (!currentTarget() || (deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()) throw new Error("문서나 작성 중인 코멘트가 바뀌었습니다. 현재 구절에서 다시 추천받으세요.");
+        if (!currentTarget() || (deps.hasUnsavedTextChanges ?? deps.hasUnsavedChanges)()) throw new Error(t("문서나 작성 중인 코멘트가 바뀌었습니다. 현재 구절에서 다시 추천받으세요."));
         const body = el<HTMLTextAreaElement>("#reviewCommentBody");
         body.value = appendFootnoteRecommendation(body.value, recommendation, body.maxLength);
         body.dispatchEvent(new Event("input", { bubbles: true }));
         queueMicrotask(() => { body.focus(); body.setSelectionRange(body.value.length, body.value.length); });
       },
       insert: note => {
-        if (!dialog.open || saving || draftTarget !== target) throw new Error("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요.");
+        if (!dialog.open || saving || draftTarget !== target) throw new Error(t("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요."));
         const body = el<HTMLTextAreaElement>("#reviewCommentBody");
         body.value = appendFootnoteCitation(body.value, note, body.maxLength);
         body.dispatchEvent(new Event("input", { bubbles: true }));
@@ -534,7 +561,7 @@ export function configureReviewComments(deps: Deps) {
     };
     deps.openDictionary?.({ query: target.quote, quote: target.quote, isCurrent: current,
       insert: citation => {
-        if (!current()) throw new Error("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요.");
+        if (!current()) throw new Error(t("작성 중인 코멘트가 바뀌었습니다. 구절을 다시 확인해 주세요."));
         const body = el<HTMLTextAreaElement>("#reviewCommentBody");
         body.value = appendDictionaryCitation(body.value, citation, body.maxLength);
         body.dispatchEvent(new Event("input", { bubbles: true }));
@@ -554,7 +581,7 @@ export function configureReviewComments(deps: Deps) {
     renderMarks();
   });
   el("#btnShowReviewComments").addEventListener("click", () => deps.showComments());
-  el("#btnCompareTranslation").addEventListener("click", () => { void deps.compare().catch(error => deps.notify(String(error), "번역 비교")); });
+  el("#btnCompareTranslation").addEventListener("click", () => { void deps.compare().catch(error => deps.notify(String(error), t("번역 비교"))); });
   el("#btnRetranslateComments").addEventListener("click", () => {
     const v = deps.view();
     const commentIds = comments.filter(comment => eligible(comment) && included.has(comment.id)).map(comment => comment.id);
@@ -584,6 +611,11 @@ export function configureReviewComments(deps: Deps) {
   return {
     load,
     refresh: render,
+    refreshAvailability: () => {
+      const wasSelecting = selecting;
+      refreshAvailability();
+      if (wasSelecting !== selecting) deps.changed?.();
+    },
     cancelSelection,
     isSelecting: () => selecting,
     current: () => comments.filter(eligible),

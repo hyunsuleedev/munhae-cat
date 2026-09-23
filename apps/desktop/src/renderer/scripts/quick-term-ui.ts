@@ -1,3 +1,4 @@
+import { uiText, t, ui } from "./i18n";
 import type { GlossaryEntryView, KnowledgeView, MunhaeApi } from "../../shared/munhae-api";
 import { USAGE_LABELS } from "./knowledge-model";
 import "../styles/quick-term.css";
@@ -16,7 +17,7 @@ export function configureQuickTerm(deps: QuickTermDeps) {
   dialog.className = "quick-term-dialog";
   dialog.setAttribute("aria-labelledby", "quickTermTitle");
   dialog.setAttribute("aria-describedby", "quickTermScope");
-  dialog.innerHTML = `<form id="quickTermForm">
+  dialog.innerHTML = uiText(`<form id="quickTermForm">
     <div class="quick-term-heading"><p class="muted">프로젝트 공통 용어집</p><h2 id="quickTermTitle">용어 등록</h2></div>
     <p class="quick-term-help" id="quickTermScope">이 프로젝트에서 참고할 표현을 직접 등록합니다. 이 구절에만 해당하는 해석은 코멘트나 문서 문맥에 남겨 주세요.</p>
     <p id="quickTermDraftNotice" class="quick-term-notice" role="status" hidden></p>
@@ -33,7 +34,7 @@ export function configureQuickTerm(deps: QuickTermDeps) {
     <p id="quickTermExisting" class="quick-term-notice" hidden></p>
     <p id="quickTermError" class="quick-term-error" role="alert" hidden></p>
     <div class="quick-term-footer"><button type="button" class="btn btn-sm" id="quickTermReset">입력 비우기</button><span class="sp"></span><button type="button" class="btn" id="quickTermClose">닫기</button><button type="submit" class="btn btn-primary" id="quickTermSave">용어집에 저장</button></div>
-  </form>`;
+  </form>`);
   document.body.append(dialog);
   const el = <T extends HTMLElement = HTMLElement>(id: string): T => {
     const value = dialog.querySelector<T>(`#${id}`);
@@ -64,19 +65,19 @@ export function configureQuickTerm(deps: QuickTermDeps) {
   }
   function updateHints(): void {
     el("quickTermUsageHelp").textContent = usage.value === "preferred"
-      ? "이 원문 표현의 기본 대응어로 참고합니다. 기본 표현은 원문 표현마다 하나만 등록할 수 있습니다."
+      ? t("이 원문 표현의 기본 대응어로 참고합니다. 기본 표현은 원문 표현마다 하나만 등록할 수 있습니다.")
       : usage.value === "forbidden"
-        ? "위 번역 표현을 사용하지 않도록 참고합니다. 피해야 하는 이유를 메모에 적어 주세요."
-        : "가능한 번역 표현으로 참고합니다. 실제 문맥에 맞는지는 번역하면서 판단합니다.";
+        ? t("위 번역 표현을 사용하지 않도록 참고합니다. 피해야 하는 이유를 메모에 적어 주세요.")
+        : t("가능한 번역 표현으로 참고합니다. 실제 문맥에 맞는지는 번역하면서 판단합니다.");
     const entries = currentTerms();
     const summary = entries.slice(0, 4).map(entry => `${entry.targetTerm} (${USAGE_LABELS[entry.usageStatus]})`).join(" · ");
-    message("quickTermExisting", entries.length ? `이미 등록된 번역 표현: ${summary}${entries.length > 4 ? ` 외 ${entries.length - 4}개` : ""}. 수정은 공통 지식의 용어집에서 할 수 있습니다.` : "");
+    message("quickTermExisting", entries.length ? ui`이미 등록된 번역 표현: ${summary}${entries.length > 4 ? ui` 외 ${entries.length - 4}개` : ""}. 수정은 공통 지식의 용어집에서 할 수 있습니다.` : "");
   }
   function setBusy(value: boolean): void {
     busy = value;
     el<HTMLFieldSetElement>("quickTermFields").disabled = value;
     for (const id of ["quickTermSave", "quickTermClose", "quickTermReset"]) el<HTMLButtonElement>(id).disabled = value;
-    el<HTMLButtonElement>("quickTermSave").textContent = value ? "저장 중…" : "용어집에 저장";
+    el<HTMLButtonElement>("quickTermSave").textContent = value ? t("저장 중…") : t("용어집에 저장");
     dialog.setAttribute("aria-busy", String(value));
   }
   function reset(value: string, prefill?: { targetTerm: string; noteMd: string }): void {
@@ -92,11 +93,11 @@ export function configureQuickTerm(deps: QuickTermDeps) {
   }
   function duplicateMessage(entries: GlossaryEntryView[], src: string, tgt: string): string {
     if (entries.some(entry => entry.targetLocale === "ko" && entry.sourceTerm === src && entry.targetTerm === tgt)) {
-      return "같은 원문·번역 표현이 이미 등록되어 있습니다. 기존 항목의 메모나 사용 기준은 공통 지식의 용어집에서 수정해 주세요.";
+      return t("같은 원문·번역 표현이 이미 등록되어 있습니다. 기존 항목의 메모나 사용 기준은 공통 지식의 용어집에서 수정해 주세요.");
     }
     const preferred = entries.find(entry => entry.targetLocale === "ko" && entry.sourceTerm === src && entry.usageStatus === "preferred");
     if (usage.value === "preferred" && preferred) {
-      return `‘${preferred.targetTerm}’이 이미 기본 번역 표현입니다. 새 표현을 ‘허용’으로 등록하거나, 공통 지식의 용어집에서 기존 기준을 변경해 주세요.`;
+      return ui`‘${preferred.targetTerm}’이 이미 기본 번역 표현입니다. 새 표현을 ‘허용’으로 등록하거나, 공통 지식의 용어집에서 기존 기준을 변경해 주세요.`;
     }
     return "";
   }
@@ -106,12 +107,12 @@ export function configureQuickTerm(deps: QuickTermDeps) {
     const tgt = target.value.trim();
     const memo = note.value.trim();
     if (!src || !tgt) {
-      message("quickTermError", "원문 표현과 번역 표현을 모두 입력해 주세요.");
+      message("quickTermError", t("원문 표현과 번역 표현을 모두 입력해 주세요."));
       (!src ? source : target).focus();
       return;
     }
     if (src.length > 500 || tgt.length > 500 || memo.length > 20_000) {
-      message("quickTermError", "입력 한도를 초과했습니다. 원문·번역 표현 또는 메모를 줄여 주세요.");
+      message("quickTermError", t("입력 한도를 초과했습니다. 원문·번역 표현 또는 메모를 줄여 주세요."));
       return;
     }
     const current = ++serial;
@@ -121,7 +122,7 @@ export function configureQuickTerm(deps: QuickTermDeps) {
       // Read the latest list before creating. This dialog never supplies an id or overwrites an entry.
       const latest = await deps.api.knowledge.get();
       if (current !== serial || !dialog.open) return;
-      if (!latest.ok) throw new Error("기존 용어집을 확인하지 못했습니다. 입력은 유지됩니다. 다시 저장해 주세요.");
+      if (!latest.ok) throw new Error(t("기존 용어집을 확인하지 못했습니다. 입력은 유지됩니다. 다시 저장해 주세요."));
       known = latest.data;
       updateHints();
       const duplicate = duplicateMessage(known.glossary, src, tgt);
@@ -138,8 +139,8 @@ export function configureQuickTerm(deps: QuickTermDeps) {
       if (current !== serial || !dialog.open) return;
       if (!result.ok) {
         throw new Error(result.error.code === "project_locked"
-          ? "프로젝트를 수정할 수 없습니다. 편집 가능한 프로젝트에서 다시 저장해 주세요."
-          : "용어를 저장하지 못했습니다. 기존 기본 표현이나 프로젝트 상태를 확인한 뒤 다시 시도해 주세요. 입력은 유지됩니다.");
+          ? t("프로젝트를 수정할 수 없습니다. 편집 가능한 프로젝트에서 다시 저장해 주세요.")
+          : t("용어를 저장하지 못했습니다. 기존 기본 표현이나 프로젝트 상태를 확인한 뒤 다시 시도해 주세요. 입력은 유지됩니다."));
       }
       known = { ...known, glossary: [result.data, ...known.glossary] };
       reset("");
@@ -147,9 +148,9 @@ export function configureQuickTerm(deps: QuickTermDeps) {
       dialog.close();
       try { deps.onSaved(result.data); }
       catch { /* The entry is already saved. A view refresh must not suggest saving it twice. */ }
-      deps.notify(`‘${src} → ${tgt}’을 프로젝트 용어집에 저장했습니다.`, "용어 등록");
+      deps.notify(ui`‘${src} → ${tgt}’을 프로젝트 용어집에 저장했습니다.`, t("용어 등록"));
     } catch (cause) {
-      if (current === serial && dialog.open) message("quickTermError", cause instanceof Error ? cause.message : "저장하지 못했습니다. 입력은 유지됩니다. 다시 시도해 주세요.");
+      if (current === serial && dialog.open) message("quickTermError", cause instanceof Error ? cause.message : t("저장하지 못했습니다. 입력은 유지됩니다. 다시 시도해 주세요."));
     } finally {
       if (current === serial) setBusy(false);
     }
@@ -170,12 +171,12 @@ export function configureQuickTerm(deps: QuickTermDeps) {
       known = deps.getKnowledge();
       nextSource = sourceTerm.trim();
       nextPrefill = prefill;
-      el("quickTermReset").textContent = prefill ? "새 사전 뜻으로 작성" : "입력 비우기";
+      el("quickTermReset").textContent = prefill ? t("새 사전 뜻으로 작성") : t("입력 비우기");
       const preserve = hasDraft();
       if (!preserve) reset(nextSource, nextPrefill);
       else {
         updateHints();
-        message("quickTermDraftNotice", `저장하지 않은 용어를 이어서 작성합니다. 새로 작성하려면 ‘${prefill ? "새 사전 뜻으로 작성" : "입력 비우기"}’ 버튼을 누르세요.`);
+        message("quickTermDraftNotice", ui`저장하지 않은 용어를 이어서 작성합니다. 새로 작성하려면 ‘${prefill ? t("새 사전 뜻으로 작성") : t("입력 비우기")}’ 버튼을 누르세요.`);
       }
       message("quickTermError", "");
       if (!dialog.open) dialog.showModal();

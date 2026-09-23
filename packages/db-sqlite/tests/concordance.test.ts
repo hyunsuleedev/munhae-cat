@@ -108,7 +108,7 @@ it("uses the selected confirmed head and its exact historical source rather than
   expect(search({ query: "물었다", state: "current" }).results).toHaveLength(0);
   expect(search({ query: "물었다", state: "confirmed" }).results[0]).toMatchObject({ translationVersionId: first.versionId, isConfirmed: true, isCurrent: false, alignment: "human" });
   const source = repo.getEditor(document.id).source;
-  repo.saveSourceDraft({ documentNodeId: document.id, contentText: "太守新原文", originKind: "manual", changeSummary: "원문 수정", expectedLockVersion: source.lockVersion });
+  repo.saveSourceDraft({ documentNodeId: document.id, contentText: "太守新原文", originKind: "manual", expectedLockVersion: source.lockVersion });
   const historical = search({ query: "太守", state: "confirmed" }).results[0];
   expect(historical).toMatchObject({ sourceVersionId: source.versionId, sourceIsCurrent: false, sourceText: "𠮷問太守。" });
   expect(db.prepare("SELECT content_text FROM src_text_versions WHERE id=?").get(historical!.sourceVersionId)).toEqual({ content_text: "𠮷問太守。太守答𠮷。" });

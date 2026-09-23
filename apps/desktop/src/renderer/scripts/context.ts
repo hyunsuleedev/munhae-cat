@@ -1,7 +1,10 @@
+import { configureContextChat } from "./context-chat";
+import { t, ui, uiText } from "./i18n";
 import type { DocumentListItem, HomeView, MaterialsView, NodeContextView, ResolvedMaterialView } from "../../shared/munhae-api";
 import {
-  bindSidebar, currentDocId, defaultSidebarTree, esc, go, initShell, must, notify,
-  renderSidebar, requireProject, revealSidebarNode, setSelfTitle, shortPath, unwrap,
+  bindSidebar, currentDocId, defaultSidebarTree, esc, go, ic, initShell, must, notify, store,
+  renderSidebar, requireProject, revealSidebarNode, setSelfTitle, projectLocationLabel, unwrap,
+  registerProjectRefresh,
 } from "./shared";
 import { resolveContextNode } from "./context-node";
 import { documentPathText } from "./knowledge-model";
@@ -19,7 +22,7 @@ type ContextDraft = {
   inclusion: HTMLElement;
   status: HTMLElement;
   save: HTMLButtonElement;
-  archive: HTMLButtonElement;
+  remove: HTMLButtonElement;
   saving: boolean;
 };
 
@@ -27,12 +30,13 @@ let docs: DocumentListItem[] = [];
 let node: DocumentListItem | undefined;
 let materials: MaterialsView | undefined;
 const drafts = new Map<HTMLFormElement, ContextDraft>();
+let activeContextForm: HTMLFormElement | undefined;
 let nextDraftId = 0;
 let allowUnload = false;
 
 const api = initShell({
   page: "context",
-  selfTitle: `문맥 편집 — ${project.title}`,
+  selfTitle: ui`문맥 편집 — ${project.title}`,
   beforeNavigate: () => {
     if (!canLeave()) return false;
     allowUnload = true;
@@ -42,8 +46,9 @@ const api = initShell({
     before: () => canLeave(),
     committed: () => { allowUnload = true; },
   },
-  extraPalette: [{ g: "문맥", l: "문맥 추가", k: "", id: "add-context" }],
+  extraPalette: [{ g: t("문맥"), l: t("문맥 추가"), k: "", id: "add-context" }],
   pageCmd: (id) => {
+    if (id === "ctxpane") { toggleContextSidebar(); return true; }
     if (id !== "add-context") return false;
     if (node) addDraft(undefined, true);
     return true;
@@ -54,10 +59,32 @@ const api = initShell({
     const activeForm = document.activeElement?.closest("form");
     const form = activeForm instanceof HTMLFormElement && drafts.has(activeForm)
       ? activeForm
-      : [...drafts].find(([, draft]) => isDirty(draft))?.[0];
+      : activeContextForm;
     if (form) void saveDraft(form);
   },
 }).api;
+
+function toggleContextSidebar(hidden = !must("#contextInspector").hidden): void {
+  const panel = must("#contextInspector");
+  const button = must<HTMLButtonElement>("#tbCtx");
+  if (hidden && panel.contains(document.activeElement)) button.focus();
+  panel.hidden = hidden;
+  button.classList.toggle("is-on", !hidden);
+  button.setAttribute("aria-expanded", String(!hidden));
+  store.set("munhae.context.sidebar", hidden ? "0" : "1");
+}
+must("#tbCtx").innerHTML = ic("panel");
+must("#tbCtx").addEventListener("click", () => toggleContextSidebar());
+toggleContextSidebar(store.get("munhae.context.sidebar") === "0");
+
+const chat = configureContextChat(api, project.projectId, () => [...drafts].map(([form, draft]) => ({
+  key: draft.item?.id ?? form.dataset.chatKey!, scopeId: node!.id, title: draft.title.value, contentMd: draft.content.value,
+  apply(original: string, text: string) {
+    if (!form.isConnected || draft.saving || draft.content.value !== original) return false;
+    draft.content.value = text; allowUnload = false; updateSaveState(); return true;
+  },
+})));
+must("#contextReferencesPanel").append(must(".context-rail"));
 
 function isDirty(draft: ContextDraft): boolean {
   return draft.title.value !== (draft.item?.title ?? "")
@@ -68,45 +95,68 @@ function isDirty(draft: ContextDraft): boolean {
 }
 
 function canLeave(): boolean {
+  if (chat.isBusy()) return false;
   if ([...drafts.values()].some((draft) => draft.saving)) {
-    notify("문맥을 저장하고 있습니다. 저장이 끝난 뒤 이동해 주세요.", "문맥");
+    notify(t("문맥을 저장하고 있습니다. 저장이 끝난 뒤 이동해 주세요."), t("문맥"));
     return false;
   }
   return ![...drafts.values()].some(isDirty)
-    || window.confirm("저장하지 않은 문맥이 있습니다. 이 화면을 떠나시겠습니까?");
+    || window.confirm(t("저장하지 않은 문맥이 있습니다. 이 화면을 떠나시겠습니까?"));
 }
 
 function updateSaveState(): void {
   for (const draft of drafts.values()) {
-    draft.status.textContent = draft.saving ? "저장 중…" : isDirty(draft) ? "저장하지 않은 변경" : draft.item ? "저장됨" : "새 문맥";
+    draft.status.textContent = draft.saving ? t("저장 중…") : isDirty(draft) ? t("저장하지 않은 변경") : draft.item ? t("저장됨") : t("새 문맥");
     draft.save.disabled = draft.saving || !isDirty(draft);
-    draft.archive.disabled = draft.saving;
+    draft.remove.disabled = draft.saving;
   }
   const pending = [...drafts.values()].some(isDirty);
-  must("#contextSaveStatus").textContent = pending ? "저장하지 않은 변경" : "";
+  must("#contextSaveStatus").textContent = pending ? t("저장하지 않은 변경") : "";
+}
+
+function showContext(form: HTMLFormElement, focus = false): void {
+  if (!drafts.has(form)) return;
+  const focusWasInNote = activeContextForm?.contains(document.activeElement);
+  activeContextForm = form;
+  const forms = [...drafts.keys()];
+  const index = forms.indexOf(form);
+  for (const candidate of forms) candidate.hidden = candidate !== form;
+  must("#contextPageCount").textContent = `${index + 1} / ${forms.length}`;
+  must<HTMLButtonElement>("#previousContext").disabled = index === 0;
+  must<HTMLButtonElement>("#nextContext").disabled = index === forms.length - 1;
+  if (focus || focusWasInNote) drafts.get(form)!.title.focus({ preventScroll: true });
+}
+
+function turnContext(direction: number): void {
+  const forms = [...drafts.keys()];
+  const index = activeContextForm ? forms.indexOf(activeContextForm) : 0;
+  const next = forms[index + direction];
+  if (next) showContext(next);
 }
 
 function addDraft(item?: NodeContextView, focus = false): void {
   const id = `context-draft-${++nextDraftId}`;
   const form = document.createElement("form");
   form.className = "context-form";
-  form.setAttribute("aria-label", item?.title || "새 문맥");
-  form.innerHTML = `
+  form.id = id;
+  form.dataset.chatKey = item?.id ?? crypto.randomUUID();
+  form.setAttribute("aria-label", item?.title || t("새 문맥"));
+  form.innerHTML = ui`
     <div class="context-note-head"><span class="context-note-icon" aria-hidden="true">≡</span><span>문맥 노트</span><span class="context-state" data-state role="status"></span></div>
     <div class="field context-title-field"><label for="${id}-title">제목</label><input class="input" id="${id}-title" name="title" maxlength="500" required placeholder="예: 문집 해제, 이 문서의 배경" value="${esc(item?.title ?? "")}"></div>
     <div class="field context-body-field"><label for="${id}-body">내용</label><textarea class="textarea" id="${id}-body" name="content" maxlength="200000" required placeholder="해제나 배경 설명, 번역할 때 참고할 내용을 그대로 적어 주세요. 출처도 함께 남길 수 있습니다.">${esc(item?.contentMd ?? "")}</textarea></div>
     <details class="context-options" ${item?.conditionMd || item?.origin ? "open" : ""}>
-      <summary>적용 범위·조건${item?.origin ? "·출처" : ""}</summary>
+      <summary>적용 범위·조건${item?.origin ? t("·출처") : ""}</summary>
       <label class="check"><input type="checkbox" name="inherit" ${item?.inheritToChildren !== false ? "checked" : ""}> 하위 폴더·문서에도 적용</label>
       <label for="${id}-condition">참고 조건 <span class="muted">선택</span></label>
       <textarea class="textarea context-condition" id="${id}-condition" name="condition" maxlength="20000" rows="2" placeholder="예: 같은 관서가 등장할 때 참고">${esc(item?.conditionMd ?? "")}</textarea>
-      ${item?.origin ? `<div class="context-origin"><span class="context-eyebrow">코멘트에서 가져온 문맥</span><p>${esc(documentPathText(docs, item.origin.documentNodeId))}</p><blockquote>${esc(item.origin.quote)}</blockquote><details><summary>원 코멘트와 작성 버전</summary><p>${esc(item.origin.bodyMd)}</p><p class="muted">번역 버전 ${esc(item.origin.translationVersionId)}</p></details></div>` : ""}
+      ${item?.origin ? ui`<div class="context-origin"><span class="context-eyebrow">코멘트에서 가져온 문맥</span><p>${esc(documentPathText(docs, item.origin.documentNodeId))}</p><blockquote>${esc(item.origin.quote)}</blockquote><details><summary>원 코멘트와 작성 버전</summary><p>${esc(item.origin.bodyMd)}</p><p class="muted">번역 버전 ${esc(item.origin.translationVersionId)}</p></details></div>` : ""}
     </details>
     <p class="context-inclusion" data-inclusion></p>
     <div class="context-actions">
       <label class="check"><input type="checkbox" name="enabled" ${item?.enabled !== false ? "checked" : ""}> AI 요청에 포함</label>
       <span class="sp"></span>
-      <button class="btn btn-ghost" type="button" data-archive>${item ? "보관" : "취소"}</button>
+      <button class="btn btn-ghost ${item ? "btn-danger" : ""}" type="button" data-delete>${item ? t("삭제") : t("취소")}</button>
       <button class="btn btn-primary" type="submit">저장 <kbd>⌘S</kbd></button>
     </div>`;
   const draft: ContextDraft = {
@@ -119,20 +169,19 @@ function addDraft(item?: NodeContextView, focus = false): void {
     inclusion: form.querySelector<HTMLElement>("[data-inclusion]")!,
     status: form.querySelector<HTMLElement>("[data-state]")!,
     save: form.querySelector<HTMLButtonElement>("[type=submit]")!,
-    archive: form.querySelector<HTMLButtonElement>("[data-archive]")!,
+    remove: form.querySelector<HTMLButtonElement>("[data-delete]")!,
     saving: false,
   };
   drafts.set(form, draft);
   updateInclusion(draft);
   form.addEventListener("input", () => { allowUnload = false; updateSaveState(); });
+  draft.title.addEventListener("change", () => chat.refresh());
   form.addEventListener("submit", (event) => { event.preventDefault(); void saveDraft(form); });
-  draft.archive.addEventListener("click", () => void archiveDraft(form));
+  draft.remove.addEventListener("click", () => void removeDraft(form));
   must("#contextEditors").append(form);
   updateSaveState();
-  if (focus) {
-    form.scrollIntoView({ block: "nearest" });
-    draft.title.focus({ preventScroll: true });
-  }
+  chat.refresh();
+  showContext(focus || !activeContextForm ? form : activeContextForm, focus);
 }
 
 async function refreshSidebar(): Promise<void> {
@@ -146,7 +195,7 @@ async function saveDraft(form: HTMLFormElement): Promise<void> {
   const draft = drafts.get(form);
   if (!draft || !node || draft.saving || !form.reportValidity()) return;
   if (!draft.title.value.trim() || !draft.content.value.trim()) {
-    notify("문맥의 제목과 내용을 입력해 주세요.", "문맥");
+    notify(t("문맥의 제목과 내용을 입력해 주세요."), t("문맥"));
     return;
   }
   const input = {
@@ -165,44 +214,55 @@ async function saveDraft(form: HTMLFormElement): Promise<void> {
     const result = draft.item
       ? await api.knowledge.updateContext({ ...input, id: draft.item.id, expectedLockVersion: draft.item.lockVersion })
       : await api.knowledge.createContext(input);
-    const saved = unwrap(result, "문맥 저장");
+    const saved = unwrap(result, t("문맥 저장"));
     if (!saved) return;
+    const priorChatKey = draft.item?.id ?? form.dataset.chatKey!;
     draft.item = saved;
+    chat.rekey(priorChatKey, saved.id);
     // Preserve any edits made while the request was in flight.
     if (draft.title.value === originalTitle) draft.title.value = saved.title;
     if (draft.content.value === input.contentMd) draft.content.value = saved.contentMd;
     if (draft.condition.value === input.conditionMd) draft.condition.value = saved.conditionMd ?? "";
-    draft.archive.textContent = "보관";
+    draft.remove.textContent = t("삭제");
+    draft.remove.classList.add("btn-danger");
     form.setAttribute("aria-label", saved.title);
-    notify(`${saved.title} 저장`, "문맥");
+    notify(ui`${saved.title} 저장`, t("문맥"));
     await refreshSidebar();
     await refreshReferences();
   } catch (error) {
-    notify(error instanceof Error ? error.message : "문맥을 저장하지 못했습니다.", "문맥 저장");
+    notify(error instanceof Error ? error.message : t("문맥을 저장하지 못했습니다."), t("문맥 저장"));
   } finally {
     draft.saving = false;
     updateSaveState();
   }
 }
 
-async function archiveDraft(form: HTMLFormElement): Promise<void> {
+async function removeDraft(form: HTMLFormElement): Promise<void> {
   const draft = drafts.get(form);
-  if (!draft || draft.saving) return;
-  if (isDirty(draft) && !window.confirm("이 문맥의 저장하지 않은 변경을 버리시겠습니까?")) return;
+  if (!draft || draft.saving || chat.isBusy()) return;
+  if (draft.item) {
+    if (!window.confirm(ui`‘${draft.item.title}’ 문맥을 삭제하시겠습니까? 삭제 후에는 복구할 수 없습니다.`)) return;
+  } else if (isDirty(draft) && !window.confirm(t("이 문맥의 저장하지 않은 변경을 버리시겠습니까?"))) return;
   draft.saving = true;
   updateSaveState();
   try {
     if (draft.item) {
-      const result = await api.knowledge.archiveContext({ id: draft.item.id, expectedLockVersion: draft.item.lockVersion });
-      if (!result.ok) { unwrap(result, "문맥 보관"); return; }
+      const result = await api.knowledge.deleteContext({ id: draft.item.id, expectedLockVersion: draft.item.lockVersion });
+      if (!result.ok) { unwrap(result, t("문맥 삭제")); return; }
     }
+    const removedIndex = [...drafts.keys()].indexOf(form);
     drafts.delete(form);
     form.remove();
-    if (drafts.size === 0) addDraft();
+    chat.refresh();
+    if (drafts.size === 0) { activeContextForm = undefined; addDraft(undefined, true); }
+    else {
+      const remaining = [...drafts.keys()];
+      showContext(activeContextForm === form ? remaining[Math.min(removedIndex, remaining.length - 1)]! : activeContextForm!, true);
+    }
     await refreshSidebar();
     await refreshReferences();
   } catch (error) {
-    notify(error instanceof Error ? error.message : "문맥을 보관하지 못했습니다.", "문맥");
+    notify(error instanceof Error ? error.message : t("문맥을 삭제하지 못했습니다."), t("문맥"));
   } finally {
     draft.saving = false;
     updateSaveState();
@@ -210,38 +270,38 @@ async function archiveDraft(form: HTMLFormElement): Promise<void> {
 }
 
 function inclusionLabel(item: ResolvedMaterialView): string {
-  const ownerKind = node?.nodeRole === "container" ? "폴더" : "문서";
-  return item.excluded ? `이 ${ownerKind}에서 제외됨` : item.included ? "AI 참고에 포함" : "AI 자동 포함 꺼짐";
+  const ownerKind = node?.nodeRole === "container" ? t("폴더") : t("문서");
+  return item.excluded ? ui`이 ${ownerKind}에서 제외됨` : item.included ? t("AI 참고에 포함") : t("AI 자동 포함 꺼짐");
 }
 
 function updateInclusion(draft: ContextDraft): void {
   const resolved = materials?.resolved?.find((item) => item.id === draft.item?.id);
   draft.inclusion.hidden = !resolved || !resolved.excluded && !(resolved.included && !resolved.enabled);
   draft.inclusion.textContent = resolved?.excluded
-    ? `${inclusionLabel(resolved)} · 문서별 참고 패널에서 선택한 제외 상태가 적용됩니다.`
-    : resolved?.included && !resolved.enabled ? "문서별 참고 패널에서 직접 포함한 문맥입니다." : "";
+    ? ui`${inclusionLabel(resolved)} · 문서별 참고 패널에서 선택한 제외 상태가 적용됩니다.`
+    : resolved?.included && !resolved.enabled ? t("문서별 참고 패널에서 직접 포함한 문맥입니다.") : "";
 }
 
 function referenceHtml(item: ResolvedMaterialView): string {
   return `<details class="context-reference${!item.included ? " is-excluded" : ""}">
-    <summary>${esc(item.title)}<span class="context-owner">${esc(documentPathText(docs, item.scopeId))}</span><span class="context-reference-status">${esc(inclusionLabel(item))}${item.source === "document_description" ? " · 문서 정보의 설명" : ""}</span></summary>
+    <summary>${esc(item.title)}<span class="context-owner">${esc(documentPathText(docs, item.scopeId))}</span><span class="context-reference-status">${esc(inclusionLabel(item))}${item.source === "document_description" ? t(" · 문서 정보의 설명") : ""}</span></summary>
     <p class="context-reference-body">${esc(item.contentMd)}</p>
-    ${item.conditionMd ? `<p class="context-reference-condition"><b>참고 조건</b> ${esc(item.conditionMd)}</p>` : ""}
-    ${item.scopeId !== node?.id ? `<button class="btn" type="button" data-owner="${esc(item.scopeId)}">연결된 ${docs.find((document) => document.id === item.scopeId)?.nodeRole === "container" ? "폴더" : "문서"}의 문맥 열기</button>` : ""}
+    ${item.conditionMd ? ui`<p class="context-reference-condition"><b>참고 조건</b> ${esc(item.conditionMd)}</p>` : ""}
+    ${item.scopeId !== node?.id ? ui`<button class="btn" type="button" data-owner="${esc(item.scopeId)}">연결된 ${docs.find((document) => document.id === item.scopeId)?.nodeRole === "container" ? t("폴더") : t("문서")}의 문맥 열기</button>` : ""}
   </details>`;
 }
 
 function renderReferences(): void {
-  const resolved = materials?.resolved ?? [];
+  const resolved = (materials?.resolved ?? []).filter(item => item.source !== "comment_reference");
   const descriptions = resolved.filter((item) => item.reason === "current" && item.source === "document_description");
   must("#documentDescriptions").hidden = descriptions.length === 0;
-  must("#documentDescriptions").innerHTML = '<h2>문서 정보의 설명</h2>' + descriptions.map(referenceHtml).join("");
+  must("#documentDescriptions").innerHTML = uiText('<h2>문서 정보의 설명</h2>') + descriptions.map(referenceHtml).join("");
   const inherited = resolved.filter((item) => item.reason === "ancestor");
   must("#inheritedCount").textContent = String(inherited.length);
   must("#inheritedContexts").innerHTML = inherited.map(referenceHtml).join("")
     || (!node?.parentId
-      ? '<div class="context-empty"><span aria-hidden="true">↳</span><b>프로젝트 최상위 폴더</b><p>상속받을 상위 폴더가 없습니다. 각 문맥에서 하위 적용 범위를 정할 수 있습니다.</p></div>'
-      : '<div class="context-empty"><span aria-hidden="true">↳</span><b>상속된 문맥이 없습니다</b><p>상위 폴더·문서에서 하위 적용을 켠 문맥이 이곳에 나타납니다.</p></div>');
+      ? uiText('<div class="context-empty"><span aria-hidden="true">↳</span><b>프로젝트 최상위 폴더</b><p>상속받을 상위 폴더가 없습니다. 각 문맥에서 하위 적용 범위를 정할 수 있습니다.</p></div>')
+      : uiText('<div class="context-empty"><span aria-hidden="true">↳</span><b>상속된 문맥이 없습니다</b><p>상위 폴더·문서에서 하위 적용을 켠 문맥이 이곳에 나타납니다.</p></div>'));
   const selected = resolved.filter((item) => item.reason === "selected");
   must("#selectedReferences").hidden = selected.length === 0;
   must("#selectedCount").textContent = String(selected.length);
@@ -251,7 +311,7 @@ function renderReferences(): void {
 
 async function refreshReferences(): Promise<void> {
   if (!node) return;
-  const result = unwrap(await api.knowledge.getMaterials(node.id), "문맥 적용 상태 불러오기");
+  const result = unwrap(await api.knowledge.getMaterials(node.id), t("문맥 적용 상태 불러오기"));
   if (!result) return;
   materials = result;
   renderReferences();
@@ -259,22 +319,22 @@ async function refreshReferences(): Promise<void> {
 
 async function boot(): Promise<void> {
   try {
-    const home = unwrap(await api.home.get(), "문서 불러오기");
-    if (!home) throw new Error("문맥을 불러오지 못했습니다. 페이지를 다시 열어 주세요.");
+    const home = unwrap(await api.home.get(), t("문서 불러오기"));
+    if (!home) throw new Error(t("문맥을 불러오지 못했습니다. 페이지를 다시 열어 주세요."));
     docs = home.documents;
     const requestedId = new URLSearchParams(location.search).get("node");
     node = resolveContextNode(docs, requestedId, currentDocId());
-    if (!node) throw new Error("이 문서를 찾을 수 없습니다. 사이드바에서 문서를 선택해 주세요.");
-    materials = unwrap(await api.knowledge.getMaterials(node.id), "문맥 불러오기") ?? undefined;
-    if (!materials) throw new Error("문맥을 불러오지 못했습니다. 페이지를 다시 열어 주세요.");
+    if (!node) throw new Error(t("이 문서를 찾을 수 없습니다. 사이드바에서 문서를 선택해 주세요."));
+    materials = unwrap(await api.knowledge.getMaterials(node.id), t("문맥 불러오기")) ?? undefined;
+    if (!materials) throw new Error(t("문맥을 불러오지 못했습니다. 페이지를 다시 열어 주세요."));
     history.replaceState(null, "", `context.html?node=${encodeURIComponent(node.id)}`);
     const title = node.originalTitle || node.title;
-    document.title = `${title} · 문맥 편집 — 문해`;
-    setSelfTitle(`문맥 편집 — ${title}`);
+    document.title = ui`${title} · 문맥 편집 — 문해`;
+    setSelfTitle(ui`문맥 편집 — ${title}`);
     must("#contextNodeName").textContent = title;
-    must("#directContextTitle").textContent = node.nodeRole === "container" ? "이 폴더의 문맥" : "이 문서의 문맥";
-    must("#currentScopeLabel").textContent = node.nodeRole === "container" ? "현재 폴더" : "현재 문서";
-    must("#sbPath").textContent = shortPath(project!.packagePath);
+    must("#directContextTitle").textContent = node.nodeRole === "container" ? t("이 폴더의 문맥") : t("이 문서의 문맥");
+    must("#currentScopeLabel").textContent = node.nodeRole === "container" ? t("현재 폴더") : t("현재 문서");
+    must("#sbPath").textContent = projectLocationLabel(project!);
     const lineage: DocumentListItem[] = [];
     const seen = new Set<string>();
     let current: DocumentListItem | undefined = node;
@@ -294,12 +354,14 @@ async function boot(): Promise<void> {
     must("#contextPage").hidden = false;
     must("#contextLoading").hidden = true;
   } catch (error) {
-    must("#contextLoading").textContent = error instanceof Error ? error.message : "문맥을 불러오지 못했습니다.";
+    must("#contextLoading").textContent = error instanceof Error ? error.message : t("문맥을 불러오지 못했습니다.");
     renderSidebar(defaultSidebarTree(docs));
   }
 }
 
 must("#addContext").addEventListener("click", () => { if (node) addDraft(undefined, true); });
+must("#previousContext").addEventListener("click", () => turnContext(-1));
+must("#nextContext").addEventListener("click", () => turnContext(1));
 must("#openSource").addEventListener("click", () => { if (node) go("editor", node.id); });
 must("#openMaterials").addEventListener("click", () => go("knowledge"));
 must(".context-rail").addEventListener("click", (event) => {
@@ -307,7 +369,7 @@ must(".context-rail").addEventListener("click", (event) => {
   if (target?.dataset.owner) go("context", target.dataset.owner);
 });
 window.addEventListener("beforeunload", (event) => {
-  if (!allowUnload && [...drafts.values()].some((draft) => draft.saving || isDirty(draft))) {
+  if (!allowUnload && (chat.isBusy() || [...drafts.values()].some((draft) => draft.saving || isDirty(draft)))) {
     event.preventDefault();
     event.returnValue = "";
   }
@@ -319,3 +381,42 @@ window.addEventListener("munhae:document-created", (event) => {
 });
 bindSidebar(undefined, undefined, () => defaultSidebarTree(docs));
 await boot();
+
+registerProjectRefresh({
+  blocked: () => chat.isBusy() || [...drafts.values()].some(draft => draft.saving || isDirty(draft)),
+  version: () => `${node?.id}:${[...drafts.values()].map(draft => `${draft.item?.id}:${draft.item?.lockVersion}`).join("|")}`,
+  async prepare() {
+    const id = node?.id;
+    const home = await api.home.get();
+    if (!home.ok) throw new Error(home.error.message);
+    const nextNode = home.data.documents.find(doc => doc.id === id);
+    if (!nextNode) return () => { location.href = "home.html"; };
+    const result = await api.knowledge.getMaterials(nextNode.id);
+    if (!result.ok) throw new Error(result.error.message);
+    return () => {
+      docs = home.data.documents; node = nextNode; materials = result.data;
+      const direct = materials.items.filter(item => item.scopeId === node!.id && item.source === "context_item");
+      const selectedId = activeContextForm ? drafts.get(activeContextForm)?.item?.id : null;
+      const remaining = new Map(direct.map(item => [item.id, item]));
+      for (const [form, draft] of drafts) {
+        const next = draft.item ? remaining.get(draft.item.id) : undefined;
+        if (!next) { drafts.delete(form); form.remove(); if (activeContextForm === form) activeContextForm = undefined; continue; }
+        remaining.delete(next.id); draft.item = next;
+        draft.title.value = next.title; draft.content.value = next.contentMd;
+        draft.enabled.checked = next.enabled; draft.inherit.checked = next.inheritToChildren !== false;
+        draft.condition.value = next.conditionMd ?? "";
+        form.setAttribute("aria-label", next.title);
+      }
+      for (const item of remaining.values()) addDraft(item);
+      if (!drafts.size) addDraft();
+      const selected = [...drafts].find(([, draft]) => draft.item?.id === selectedId)?.[0] ?? activeContextForm ?? [...drafts.keys()][0]!;
+      showContext(selected);
+      const title = node.originalTitle || node.title;
+      must("#contextNodeName").textContent = title;
+      must("#contextPath").textContent = documentPathText(docs, node.id);
+      document.title = ui`${title} · 문맥 편집 — 문해`; setSelfTitle(ui`문맥 편집 — ${title}`);
+      renderReferences(); updateSaveState(); chat.refresh();
+      renderSidebar(defaultSidebarTree(docs), { currentDocId: node.id });
+    };
+  },
+});

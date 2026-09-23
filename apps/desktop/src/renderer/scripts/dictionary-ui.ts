@@ -1,3 +1,4 @@
+import { t, ui, uiText } from "./i18n";
 import type { MunhaeApi } from "../../shared/munhae-api";
 import type { DictionaryEntry, DictionaryProvider, DictionarySearchResult, DictionaryStatus } from "../../shared/dictionary-types";
 import { dictionaryCitation, dictionaryReferenceLinks } from "./dictionary-citation";
@@ -16,23 +17,23 @@ type Deps = {
   register(entry: DictionaryEntry, citation: string): void;
 };
 const providers: { id: DictionaryProvider; label: string; help: string }[] = [
-  { id: "local", label: "내장 사전", help: "한국어 풀이·훈음과 부수·획수·이체자를 찾습니다. 인터넷 없이 사용할 수 있습니다." },
-  { id: "kostma", label: "고문헌 용어", help: "KOSTMA의 고문헌용어용례사전을 조회합니다. 해설 전문은 원문 사전에서 확인하세요." },
-  { id: "opendict", label: "우리말샘", help: "한자어의 한국어 뜻을 찾습니다. 국립국어원 무료 인증키가 필요합니다." },
-  { id: "stdict", label: "표준국어대사전", help: "표준국어대사전에 등재된 한자어를 찾습니다. 별도의 무료 인증키가 필요합니다." },
+  { id: "local", label: t("내장 사전"), help: t("한국어 풀이·훈음과 부수·획수·이체자를 찾습니다. 인터넷 없이 사용할 수 있습니다.") },
+  { id: "kostma", label: t("고문헌 용어"), help: t("KOSTMA의 고문헌용어용례사전을 조회합니다. 해설 전문은 원문 사전에서 확인하세요.") },
+  { id: "opendict", label: t("우리말샘"), help: t("한자어의 한국어 뜻을 찾습니다. 국립국어원 무료 인증키가 필요합니다.") },
+  { id: "stdict", label: t("표준국어대사전"), help: t("표준국어대사전에 등재된 한자어를 찾습니다. 별도의 무료 인증키가 필요합니다.") },
 ];
 
 function characterSummary(entry: DictionaryEntry): string {
   const info = entry.characterInfo;
   if (!info) return "";
-  return [info.codePoint, info.totalStrokes.length ? `총 ${info.totalStrokes.join(" / ")}획` : "", ...info.radicals.map(r => `부수 ${r.glyph} (${r.number}) · 나머지 ${r.residualStrokes}획`)].filter(Boolean).join(" · ");
+  return [info.codePoint, info.totalStrokes.length ? ui`총 ${info.totalStrokes.join(" / ")}획` : "", ...info.radicals.map(r => ui`부수 ${r.glyph} (${r.number}) · 나머지 ${r.residualStrokes}획`)].filter(Boolean).join(" · ");
 }
 
 function characterDetails(entry: DictionaryEntry, esc: (value: unknown) => string): string {
   const info = entry.characterInfo;
   if (!info) return "";
-  const labels = { semantic: "의미상 이체자", specializedSemantic: "특정 용법의 의미 이체자", z: "자형 이체자", traditional: "번체 대응", simplified: "간체 대응" };
-  return `<dl class="dictionary-character-info"><dt>문자 코드</dt><dd>${esc(info.codePoint)}</dd><dt>총획</dt><dd>${info.totalStrokes.length ? `${info.totalStrokes.map(esc).join(" / ")}획` : "미수록"}</dd><dt>부수·나머지 획</dt><dd>${info.radicals.length ? info.radicals.map(r => `<span class="dictionary-radical" title="Unihan 부수·획수 원자료: ${esc(r.raw)}"><span class="hanmun">${esc(r.glyph)}</span> ${r.number}번 · 나머지 ${r.residualStrokes}획${r.simplified ? ` · 간략 부수 (${esc(r.raw)})` : ""}</span>`).join("") : "미수록"}</dd></dl>${info.variants.map(group => `<div class="dictionary-variant-group"><p>${labels[group.kind]}</p><div>${group.characters.map(char => `<button class="btn btn-sm hanmun" type="button" data-dictionary-variant="${esc(char)}" aria-label="${esc(char)} 관련 자형 찾기">${esc(char)}</button>`).join("")}</div></div>`).join("")}<p class="dictionary-help">Unicode ${esc(info.unicodeVersion)}의 문자 속성입니다. 이체 관계만으로 문맥의 뜻이나 자형의 동일성을 확정하지 않습니다. 관련 글자를 누르면 별도로 조회합니다.</p>`;
+  const labels = { semantic: t("의미상 이체자"), specializedSemantic: t("특정 용법의 의미 이체자"), z: t("자형 이체자"), traditional: t("번체 대응"), simplified: t("간체 대응") };
+  return ui`<dl class="dictionary-character-info"><dt>문자 코드</dt><dd>${esc(info.codePoint)}</dd><dt>총획</dt><dd>${info.totalStrokes.length ? ui`${info.totalStrokes.map(esc).join(" / ")}획` : t("미수록")}</dd><dt>부수·나머지 획</dt><dd>${info.radicals.length ? info.radicals.map(r => ui`<span class="dictionary-radical" title="Unihan 부수·획수 원자료: ${esc(r.raw)}"><span class="hanmun">${esc(r.glyph)}</span> ${r.number}번 · 나머지 ${r.residualStrokes}획${r.simplified ? ui` · 간략 부수 (${esc(r.raw)})` : ""}</span>`).join("") : t("미수록")}</dd></dl>${info.variants.map(group => `<div class="dictionary-variant-group"><p>${labels[group.kind]}</p><div>${group.characters.map(char => ui`<button class="btn btn-sm hanmun" type="button" data-dictionary-variant="${esc(char)}" aria-label="${esc(char)} 관련 자형 찾기">${esc(char)}</button>`).join("")}</div></div>`).join("")}<p class="dictionary-help">Unicode ${esc(info.unicodeVersion)}의 문자 속성입니다. 이체 관계만으로 문맥의 뜻이나 자형의 동일성을 확정하지 않습니다. 관련 글자를 누르면 별도로 조회합니다.</p>`;
 }
 
 export function configureDictionary(deps: Deps) {
@@ -41,7 +42,7 @@ export function configureDictionary(deps: Deps) {
   dialog.id = "dlgDictionary";
   dialog.className = "dictionary-dialog";
   dialog.setAttribute("aria-labelledby", "dictionaryTitle");
-  dialog.innerHTML = `<header class="dictionary-heading"><div><p class="dictionary-eyebrow">字 · 어휘와 뜻을 살피다</p><h2 id="dictionaryTitle">한자·어휘 사전</h2></div><button class="btn btn-ghost" id="dictionaryClose" type="button" aria-label="사전 닫기">닫기</button></header>
+  dialog.innerHTML = ui`<header class="dictionary-heading"><div><p class="dictionary-eyebrow">字 · 어휘와 뜻을 살피다</p><h2 id="dictionaryTitle">한자·어휘 사전</h2></div><button class="btn btn-ghost" id="dictionaryClose" type="button" aria-label="사전 닫기">닫기</button></header>
     <p id="dictionaryContext" class="dictionary-context" hidden></p>
     <form id="dictionaryForm" class="dictionary-search"><label class="sr-only" for="dictionaryQuery">한자·한자어·독음 검색</label><input id="dictionaryQuery" class="input" type="search" placeholder="한자, 한자어 또는 독음 · 예: 目, 太守, 태수" required maxlength="200" autocomplete="off" spellcheck="false"><button class="btn btn-primary" type="submit">찾기</button></form>
     <div id="dictionaryCharacters" class="dictionary-characters" aria-label="글자별 찾기"></div>
@@ -78,7 +79,7 @@ export function configureDictionary(deps: Deps) {
   let currentLinks = dictionaryReferenceLinks("");
 
   function message(id: string, text: string) { el(id).textContent = text; el(id).hidden = !text; }
-  function fail(cause: unknown) { message("dictionaryError", cause instanceof Error ? cause.message : "사전을 조회하지 못했습니다. 다시 시도해 주세요."); }
+  function fail(cause: unknown) { message("dictionaryError", cause instanceof Error ? cause.message : t("사전을 조회하지 못했습니다. 다시 시도해 주세요.")); }
   function chosen() { return selected && result ? result.entries[selected.entry] : undefined; }
   function isCurrent() { return !context.isCurrent || context.isCurrent(); }
   function setProvider(next: DictionaryProvider) {
@@ -90,7 +91,7 @@ export function configureDictionary(deps: Deps) {
     currentLinks = dictionaryReferenceLinks(query.value);
     el("dictionaryReferences").innerHTML = currentLinks.map((link, i) => `<button type="button" data-dictionary-link="${i}">${esc(link.label)} ↗</button>`).join("");
     const chars = [...new Set(Array.from(query.value).filter(c => /\p{Script=Han}/u.test(c)))].slice(0, 32);
-    el("dictionaryCharacters").innerHTML = chars.length > 1 ? `<span>글자별</span>${chars.map(c => `<button type="button" data-dictionary-character="${esc(c)}" aria-label="${esc(c)} 한 글자 찾기">${esc(c)}</button>`).join("")}` : "";
+    el("dictionaryCharacters").innerHTML = chars.length > 1 ? ui`<span>글자별</span>${chars.map(c => ui`<button type="button" data-dictionary-character="${esc(c)}" aria-label="${esc(c)} 한 글자 찾기">${esc(c)}</button>`).join("")}` : "";
   }
   function renderSelected() {
     const entry = chosen();
@@ -99,27 +100,27 @@ export function configureDictionary(deps: Deps) {
     for (const id of ["dictionaryCopy", "dictionaryRegister", "dictionaryInsert"]) el<HTMLButtonElement>(id).disabled = !canCite;
     el("dictionaryInsert").hidden = !context.insert;
     el("dictionarySelected").innerHTML = entry && (sense || entry.characterInfo)
-      ? `<p class="dictionary-eyebrow">${entry.characterInfo ? "문자 정보" : "선택한 뜻"}</p><h3 class="hanmun">${esc(entry.headword)}</h3>${entry.reading ? `<p>${esc(entry.reading)}</p>` : ""}${sense ? `<p class="dictionary-chosen-sense">${esc(sense.text)}</p>` : characterDetails(entry, esc)}<p class="dictionary-source-label">${esc(entry.sourceLabel)}</p><p class="dictionary-license">${esc(entry.license)}</p><button class="btn btn-ghost btn-sm" id="dictionaryOpenSelected" type="button">원문·출처 보기 ↗</button>${entry.characterInfo ? "" : `<p class="dictionary-help">${entry.canCite ? "현재 문맥에 맞는 뜻을 골라 검토 의견이나 용어의 근거로 남기세요." : "이 자료의 상세 해설은 원문 사전에서 확인하세요."}</p>`}`
-      : `<p class="dictionary-eyebrow">뜻을 선택하세요</p><p class="dictionary-help">자의나 어휘의 뜻을 누르면 출처와 함께 가져올 수 있습니다. 기본 훈음은 고전의 모든 의미를 포함하지 않습니다.</p>`;
+      ? ui`<p class="dictionary-eyebrow">${entry.characterInfo ? t("문자 정보") : t("선택한 뜻")}</p><h3 class="hanmun">${esc(entry.headword)}</h3>${entry.reading ? `<p>${esc(entry.reading)}</p>` : ""}${sense ? `<p class="dictionary-chosen-sense">${esc(sense.text)}</p>` : characterDetails(entry, esc)}<p class="dictionary-source-label">${esc(entry.sourceLabel)}</p><p class="dictionary-license">${esc(entry.license)}</p><button class="btn btn-ghost btn-sm" id="dictionaryOpenSelected" type="button">원문·출처 보기 ↗</button>${entry.characterInfo ? "" : `<p class="dictionary-help">${entry.canCite ? t("현재 문맥에 맞는 뜻을 골라 검토 의견이나 용어의 근거로 남기세요.") : t("이 자료의 상세 해설은 원문 사전에서 확인하세요.")}</p>`}`
+      : uiText(`<p class="dictionary-eyebrow">뜻을 선택하세요</p><p class="dictionary-help">자의나 어휘의 뜻을 누르면 출처와 함께 가져올 수 있습니다. 기본 훈음은 고전의 모든 의미를 포함하지 않습니다.</p>`);
   }
   function render() {
     renderQueryLinks();
     el("dictionaryResults").setAttribute("aria-busy", String(busy));
-    el("dictionaryStatus").textContent = busy ? "사전을 찾고 있습니다…" : result
-      ? `‘${result.query}’ · ${result.total.toLocaleString()}건${result.hasMore ? " · 다음 페이지 있음" : ""}` : "한자·어휘를 입력해 뜻을 찾아보세요.";
+    el("dictionaryStatus").textContent = busy ? t("사전을 찾고 있습니다…") : result
+      ? ui`‘${result.query}’ · ${result.total.toLocaleString()}건${result.hasMore ? t(" · 다음 페이지 있음") : ""}` : t("한자·어휘를 입력해 뜻을 찾아보세요.");
     const entries = result?.entries ?? [];
-    el("dictionaryResults").innerHTML = busy ? `<p class="dictionary-empty">뜻과 출처를 불러오는 중입니다.</p>` : result && !entries.length
-      ? `<div class="dictionary-empty"><strong>이 사전에서 일치하는 항목을 찾지 못했습니다.</strong><p>어휘를 짧게 바꾸거나 글자별로 찾아보세요. 아래 외부 사전에서도 대조할 수 있습니다.</p></div>`
-      : entries.map((entry, i) => `<article class="dictionary-entry"><header><h3 class="hanmun">${esc(entry.headword)}</h3>${entry.reading ? `<span>${esc(entry.reading)}</span>` : ""}<span class="dictionary-kind">${entry.characterInfo ? "문자 속성" : entry.kind === "character" ? "낱자" : "어휘"}</span></header><p class="dictionary-source-label">${esc(entry.sourceLabel)}${entry.strokes ? ` · ${entry.strokes}획` : ""}${entry.radical ? ` · 부수 ${esc(entry.radical)}` : ""}</p>${entry.senses.length ? `<ol>${entry.senses.map((sense, s) => `<li><button type="button" data-dictionary-entry="${i}" data-dictionary-sense="${s}" aria-pressed="${selected?.entry === i && selected.sense === s}">${sense.label ? `<span class="dictionary-sense-label">${esc(sense.label)}</span>` : ""}${esc(sense.text)}</button></li>`).join("")}</ol>` : entry.characterInfo ? `<p class="dictionary-help">${esc(characterSummary(entry))}</p><p class="dictionary-help">한국어 뜻풀이는 수록하지 않은 문자 정보입니다.</p><button class="btn btn-sm" type="button" data-dictionary-entry="${i}" data-dictionary-sense="-1" aria-pressed="${selected?.entry === i}">부수·획수·이체자 보기</button>` : `<p class="dictionary-help">독음 정보만 있습니다. 상세 뜻풀이는 다른 사전에서 확인하세요.</p>`}${entry.variants?.length ? `<p class="dictionary-help">관련 자형 · ${entry.variants.map(esc).join(" · ")}</p>` : ""}<button class="dictionary-origin" type="button" data-dictionary-origin="${i}">원문·출처 ↗</button></article>`).join("");
+    el("dictionaryResults").innerHTML = busy ? uiText(`<p class="dictionary-empty">뜻과 출처를 불러오는 중입니다.</p>`) : result && !entries.length
+      ? uiText(`<div class="dictionary-empty"><strong>이 사전에서 일치하는 항목을 찾지 못했습니다.</strong><p>어휘를 짧게 바꾸거나 글자별로 찾아보세요. 아래 외부 사전에서도 대조할 수 있습니다.</p></div>`)
+      : entries.map((entry, i) => ui`<article class="dictionary-entry"><header><h3 class="hanmun">${esc(entry.headword)}</h3>${entry.reading ? `<span>${esc(entry.reading)}</span>` : ""}<span class="dictionary-kind">${entry.characterInfo ? t("문자 속성") : entry.kind === "character" ? t("낱자") : t("어휘")}</span></header><p class="dictionary-source-label">${esc(entry.sourceLabel)}${entry.strokes ? ui` · ${entry.strokes}획` : ""}${entry.radical ? ui` · 부수 ${esc(entry.radical)}` : ""}</p>${entry.senses.length ? `<ol>${entry.senses.map((sense, s) => `<li><button type="button" data-dictionary-entry="${i}" data-dictionary-sense="${s}" aria-pressed="${selected?.entry === i && selected.sense === s}">${sense.label ? `<span class="dictionary-sense-label">${esc(sense.label)}</span>` : ""}${esc(sense.text)}</button></li>`).join("")}</ol>` : entry.characterInfo ? ui`<p class="dictionary-help">${esc(characterSummary(entry))}</p><p class="dictionary-help">한국어 뜻풀이는 수록하지 않은 문자 정보입니다.</p><button class="btn btn-sm" type="button" data-dictionary-entry="${i}" data-dictionary-sense="-1" aria-pressed="${selected?.entry === i}">부수·획수·이체자 보기</button>` : uiText(`<p class="dictionary-help">독음 정보만 있습니다. 상세 뜻풀이는 다른 사전에서 확인하세요.</p>`)}${entry.variants?.length ? ui`<p class="dictionary-help">관련 자형 · ${entry.variants.map(esc).join(" · ")}</p>` : ""}<button class="dictionary-origin" type="button" data-dictionary-origin="${i}">원문·출처 ↗</button></article>`).join("");
     if (result?.notices.length) el("dictionaryResults").insertAdjacentHTML("beforeend", `<div class="dictionary-notices">${result.notices.map(n => `<p>${esc(n)}</p>`).join("")}</div>`);
     el<HTMLButtonElement>("dictionaryPrevious").disabled = busy || !result || result.page <= 1;
     el<HTMLButtonElement>("dictionaryNext").disabled = busy || !result?.hasMore;
-    el("dictionaryPage").textContent = result ? `${result.page} 페이지` : "";
+    el("dictionaryPage").textContent = result ? ui`${result.page} 페이지` : "";
     renderSelected();
   }
   function renderStatus() {
-    el("dictionaryKeyStatus").textContent = status ? `우리말샘: ${status.keys.opendict ? "키 저장됨" : "미연결"} · 표준국어대사전: ${status.keys.stdict ? "키 저장됨" : "미연결"}` : "사전 연결 상태를 확인하고 있습니다.";
-    el("dictionaryDatasets").innerHTML = status ? status.datasets.map((d, i) => `<div class="dictionary-dataset"><strong>${esc(d.label)}</strong><span>${d.entryCount.toLocaleString()}개 항목 · ${esc(d.updatedAt)}</span><p>${esc(d.description)}</p><p>${esc(d.license)} <button type="button" data-dictionary-license="${i}">이용 조건 ↗</button><button type="button" data-dictionary-dataset="${i}">자료 출처 ↗</button></p></div>`).join("") : "";
+    el("dictionaryKeyStatus").textContent = status ? ui`우리말샘: ${status.keys.opendict ? t("키 저장됨") : t("미연결")} · 표준국어대사전: ${status.keys.stdict ? t("키 저장됨") : t("미연결")}` : t("사전 연결 상태를 확인하고 있습니다.");
+    el("dictionaryDatasets").innerHTML = status ? status.datasets.map((d, i) => ui`<div class="dictionary-dataset"><strong>${esc(d.label)}</strong><span>${d.entryCount.toLocaleString()}개 항목 · ${esc(d.updatedAt)}</span><p>${esc(d.description)}</p><p>${esc(d.license)} <button type="button" data-dictionary-license="${i}">이용 조건 ↗</button><button type="button" data-dictionary-dataset="${i}">자료 출처 ↗</button></p></div>`).join("") : "";
   }
   async function refreshStatus() {
     if (keyBusy) return;
@@ -136,7 +137,7 @@ export function configureDictionary(deps: Deps) {
     const q = query.value.trim();
     const serial = ++request;
     result = null; selected = null; message("dictionaryError", ""); message("dictionaryActionStatus", "");
-    if (!q || Array.from(q).length > 100) { busy = false; render(); message("dictionaryError", "검색어를 1~100자로 입력하세요."); return; }
+    if (!q || Array.from(q).length > 100) { busy = false; render(); message("dictionaryError", t("검색어를 1~100자로 입력하세요.")); return; }
     busy = true; render();
     try {
       const response = await deps.api.dictionary.search({ query: q, provider, page });
@@ -163,7 +164,7 @@ export function configureDictionary(deps: Deps) {
     if (keyBusy) return;
     const input = el<HTMLInputElement>("dictionaryApiKey");
     const keyProvider = el<HTMLSelectElement>("dictionaryKeyProvider").value === "stdict" ? "stdict" : "opendict";
-    if (!remove && !input.value.trim()) { message("dictionaryError", "발급받은 인증키를 입력하세요."); input.focus(); return; }
+    if (!remove && !input.value.trim()) { message("dictionaryError", t("발급받은 인증키를 입력하세요.")); input.focus(); return; }
     const session = opening;
     ++statusRequest;
     keyBusy = true; message("dictionaryError", "");
@@ -174,7 +175,7 @@ export function configureDictionary(deps: Deps) {
       if (!response.ok) throw new Error(response.error.message);
       status = response.data; renderStatus();
       if (dialog.open && session === opening) {
-        message("dictionaryActionStatus", remove ? "저장한 인증키를 삭제했습니다." : "인증키를 저장했습니다. 검색해서 연결을 확인하세요.");
+        message("dictionaryActionStatus", remove ? t("저장한 인증키를 삭제했습니다.") : t("인증키를 저장했습니다. 검색해서 연결을 확인하세요."));
         if (!remove && provider === keyProvider && query.value.trim()) void search();
       }
     } catch (cause) { input.value = ""; if (dialog.open && session === opening) fail(cause); }
@@ -183,7 +184,7 @@ export function configureDictionary(deps: Deps) {
   function withCitation(action: (entry: DictionaryEntry, citation: string) => void) {
     const entry = chosen();
     if (!entry || !selected || busy) return;
-    if (!isCurrent()) { message("dictionaryError", "문서나 선택 구절이 바뀌었습니다. 현재 구절에서 다시 사전을 여세요."); renderSelected(); return; }
+    if (!isCurrent()) { message("dictionaryError", t("문서나 선택 구절이 바뀌었습니다. 현재 구절에서 다시 사전을 여세요.")); renderSelected(); return; }
     try { action(entry, dictionaryCitation(entry, selected.sense)); }
     catch (cause) { fail(cause); }
   }
@@ -214,7 +215,7 @@ export function configureDictionary(deps: Deps) {
   });
   el("dictionaryCopy").addEventListener("click", () => withCitation((_entry, citation) => {
     const serial = request;
-    void navigator.clipboard.writeText(citation).then(() => { if (dialog.open && serial === request) message("dictionaryActionStatus", "선택한 뜻과 출처를 복사했습니다."); }).catch(() => { if (dialog.open && serial === request) message("dictionaryError", "복사하지 못했습니다. 다시 시도해 주세요."); });
+    void navigator.clipboard.writeText(citation).then(() => { if (dialog.open && serial === request) message("dictionaryActionStatus", t("선택한 뜻과 출처를 복사했습니다.")); }).catch(() => { if (dialog.open && serial === request) message("dictionaryError", t("복사하지 못했습니다. 다시 시도해 주세요.")); });
   }));
   el("dictionaryRegister").addEventListener("click", () => withCitation((entry, citation) => { dialog.close(); deps.register(entry, citation); }));
   el("dictionaryInsert").addEventListener("click", () => withCitation((_entry, citation) => { const insert = context.insert; if (!insert) return; insert(citation); dialog.close(); }));
@@ -238,7 +239,7 @@ export function configureDictionary(deps: Deps) {
     open(next: DictionaryContext = {}) {
       ++request; ++opening; ++statusRequest; busy = false; context = next; selected = null; result = null;
       query.value = Array.from((next.query ?? "").trim()).slice(0, 100).join("");
-      message("dictionaryContext", next.quote ? `검토 구절 · ${next.quote}` : "");
+      message("dictionaryContext", next.quote ? ui`검토 구절 · ${next.quote}` : "");
       message("dictionaryError", ""); message("dictionaryActionStatus", "");
       setProvider("local"); render(); renderStatus();
       previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;

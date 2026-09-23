@@ -26,6 +26,7 @@ vi.mock("node:http", () => ({ createServer: (handler: (req: unknown, res: unknow
 } }));
 vi.mock("../src/main/auth", () => ({
   withAccount: (action: (account: unknown) => unknown) => action({ getState: state.account }),
+  withAuthenticatedClient: vi.fn(),
   subscribeAccountState: vi.fn(),
 }));
 vi.mock("../src/main/dictionary-credentials", () => ({
@@ -38,16 +39,23 @@ vi.mock("../src/main/dictionary-local", () => ({
   searchLocalDictionary: (query: string, page: number) => ({ query, page, provider: "local", entries: [], notices: [], total: 0, hasMore: false }),
 }));
 vi.mock("../src/main/window", () => ({ getMainWindow: () => ({ isDestroyed: () => false, webContents: state.sender }) }));
-vi.mock("../src/main/session", () => ({ getRuntimeSessionRef: vi.fn(), setRuntimeSessionRef: vi.fn(), clearRuntimeSession: vi.fn() }));
+vi.mock("../src/main/session", () => ({
+  getAppConfig: () => ({ language: "ko" }),
+  getRuntimeSessionRef: vi.fn(), setRuntimeSessionRef: vi.fn(), clearRuntimeSession: vi.fn(),
+  onlineSaveRequestKey: () => undefined,
+  withOnlineProjectSave: async <T>(operation: () => T | Promise<T>): Promise<T> => await operation(),
+}));
 vi.mock("../src/main/log", () => ({ log: state.log, redact: (value: string) => value }));
 vi.mock("../src/main/agents", () => ({}));
 vi.mock("../src/main/itkc-footnotes", () => ({}));
 vi.mock("../src/main/footnote-analysis", () => ({}));
+vi.mock("../src/main/reading-analysis", () => ({}));
 vi.mock("../src/main/reference-assets", () => ({}));
 vi.mock("../src/main/security", () => ({}));
-vi.mock("../src/main/ai-runs", () => ({}));
+vi.mock("../src/main/ai-runs", () => ({ persistAiBeforeLaunch: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../src/main/agent-runtime-client", () => ({}));
 vi.mock("../src/main/auth-handlers", () => ({ ACCOUNT_CHANNELS: [] }));
+vi.mock("../src/main/billing-handlers", () => ({ BILLING_CHANNELS: [] }));
 vi.mock("../src/main/browser-auth-events", () => ({}));
 
 import { registerIpcHandlers } from "../src/main/ipc";

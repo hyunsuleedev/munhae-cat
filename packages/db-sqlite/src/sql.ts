@@ -2,6 +2,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  REMOVE_CHANGE_SUMMARY_SQL,
+  TERM_REVIEW_SQL,
+  COMMENT_REFERENCES_SQL,
   APP_INIT_SQL,
   CONTEXT_WITHOUT_KIND_SQL,
   FULL_TEXT_SQL,
@@ -13,6 +16,9 @@ import {
 } from "./embedded-sql.ts";
 
 const EMBEDDED: Record<string, string> = {
+  "sqlite/010_remove_change_summary.sql": REMOVE_CHANGE_SUMMARY_SQL,
+  "sqlite/008_term_review.sql": TERM_REVIEW_SQL,
+  "sqlite/009_comment_references.sql": COMMENT_REFERENCES_SQL,
   "sqlite/001_init.sql": PROJECT_INIT_SQL,
   "app/001_init.sql": APP_INIT_SQL,
   "sqlite/002_full_text_translation.sql": FULL_TEXT_SQL,

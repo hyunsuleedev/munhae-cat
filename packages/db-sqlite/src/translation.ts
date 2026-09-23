@@ -8,7 +8,9 @@ import {
   sha256Hex,
   sliceCodepoints,
 } from "@munhae/domain";
-import { allRows, getRow, insertRow } from "./rows.ts";
+import { and, eq, sql } from "drizzle-orm";
+import { orm } from "./drizzle-db.ts";
+import { schema } from "./drizzle-schema.ts";
 import type { SqliteDb } from "./sqlite.ts";
 import type { TranslationBlockView } from "./views.ts";
 
@@ -44,8 +46,8 @@ export type TranslationVersionRow = {
   origin_kind: string;
   parent_version_id: string | null;
   source_text_version_id: string;
-  punctuation_version_id: string;
-  translation_anchor_set_id: string;
+  punctuation_version_id: string | null;
+  translation_anchor_set_id: string | null;
   translation_policy_version_id: string;
 };
 
@@ -56,65 +58,44 @@ export function casUpdateHead(
   patch: { currentVersionId: string; confirmedVersionId?: string | null },
 ): void {
   const now = nowIso();
-  const info = db
-    .prepare(
-      `UPDATE document_translation_heads
-       SET current_version_id = @current,
-           confirmed_version_id = CASE WHEN @setConfirmed = 1 THEN @confirmed ELSE confirmed_version_id END,
-           lock_version = lock_version + 1,
-           updated_at = @now
-       WHERE document_translation_id = @id AND lock_version = @lock`,
-    )
-    .run({
-      current: patch.currentVersionId,
-      confirmed: patch.confirmedVersionId ?? null,
-      setConfirmed: patch.confirmedVersionId !== undefined ? 1 : 0,
-      now,
-      id: translationId,
-      lock: expectedLock,
-    });
+  const heads = schema.document_translation_heads;
+  const info = orm(db).update(heads).set({
+    current_version_id: patch.currentVersionId,
+    confirmed_version_id: patch.confirmedVersionId !== undefined ? patch.confirmedVersionId : heads.confirmed_version_id,
+    lock_version: sql`${heads.lock_version} + 1`,
+    updated_at: now,
+  }).where(and(eq(heads.document_translation_id, translationId), eq(heads.lock_version, expectedLock))).run();
   if (info.changes !== 1) {
     throw new MunhaeError("cas_conflict", "stale lock_version");
   }
 }
 
 export function loadBlocks(db: SqliteDb, versionId: string): TranslationBlockView[] {
-  const blocks = allRows<{
-    id: string;
-    block_key: string;
-    ordinal: number;
-    block_kind: string;
-    target_codepoint_from: number;
-    target_codepoint_to: number;
-  }>(
-    db,
-    `SELECT id, block_key, ordinal, block_kind, target_codepoint_from, target_codepoint_to
-     FROM translation_blocks
-     WHERE document_translation_version_id = ?
-     ORDER BY ordinal`,
-    versionId,
-  );
-  const textRow = getRow<{ text_content: string }>(
-    db,
-    `SELECT text_content FROM document_translation_versions WHERE id = ?`,
-    versionId,
-  );
+  const blockTable = schema.translation_blocks;
+  const versions = schema.document_translation_versions;
+  const blockAnchors = schema.translation_block_anchors;
+  const anchors = schema.translation_anchors;
+  const blocks = orm(db).select({
+    id: blockTable.id,
+    block_key: blockTable.block_key,
+    ordinal: blockTable.ordinal,
+    block_kind: blockTable.block_kind,
+    target_codepoint_from: blockTable.target_codepoint_from,
+    target_codepoint_to: blockTable.target_codepoint_to,
+  }).from(blockTable).where(eq(blockTable.document_translation_version_id, versionId)).orderBy(blockTable.ordinal).all();
+  const textRow = orm(db).select({ text_content: versions.text_content })
+    .from(versions).where(eq(versions.id, versionId)).get();
   const text = textRow?.text_content ?? "";
-  const links = allRows<{
-    translation_block_id: string;
-    anchor_key: string;
-    relation_kind: string;
-    ordinal: number;
-  }>(
-    db,
-    `SELECT tba.translation_block_id, a.anchor_key, tba.relation_kind, tba.ordinal
-     FROM translation_block_anchors tba
-     JOIN translation_anchors a ON a.id = tba.translation_anchor_id
-     JOIN translation_blocks b ON b.id = tba.translation_block_id
-     WHERE b.document_translation_version_id = ?
-     ORDER BY tba.ordinal`,
-    versionId,
-  );
+  const links = orm(db).select({
+    translation_block_id: blockAnchors.translation_block_id,
+    anchor_key: anchors.anchor_key,
+    relation_kind: blockAnchors.relation_kind,
+    ordinal: blockAnchors.ordinal,
+  }).from(blockAnchors)
+    .innerJoin(anchors, eq(anchors.id, blockAnchors.translation_anchor_id))
+    .innerJoin(blockTable, eq(blockTable.id, blockAnchors.translation_block_id))
+    .where(eq(blockTable.document_translation_version_id, versionId))
+    .orderBy(blockAnchors.ordinal).all();
   const byBlock = new Map<string, { keys: string[]; kinds: string[] }>();
   for (const link of links) {
     const cur = byBlock.get(link.translation_block_id) ?? { keys: [], kinds: [] };
@@ -196,7 +177,7 @@ export function insertVersionBlocks(
     if (!b) continue;
     const blockId = createId();
     const slice = sliceCodepoints(text, range.from, range.to);
-    insertRow(db, "translation_blocks", {
+    orm(db).insert(schema.translation_blocks).values({
       id: blockId,
       project_id: projectId,
       document_translation_version_id: versionId,
@@ -207,7 +188,7 @@ export function insertVersionBlocks(
       target_codepoint_to: range.to,
       target_hash: sha256Hex(slice),
       validation_state: validationState,
-    });
+    }).run();
     let ord = 1;
     for (let j = 0; j < b.sourceAnchorIds.length; j += 1) {
       const key = b.sourceAnchorIds[j];
@@ -215,14 +196,14 @@ export function insertVersionBlocks(
       const anchor = byKey.get(key);
       if (!anchor) continue;
       const relation = b.relationKinds?.[j] ?? inferRelation(blocks, key);
-      insertRow(db, "translation_block_anchors", {
+      orm(db).insert(schema.translation_block_anchors).values({
         project_id: projectId,
         translation_block_id: blockId,
         translation_anchor_id: anchor.id,
         ordinal: ord,
         relation_kind: relation,
         confidence: null,
-      });
+      }).run();
       ord += 1;
     }
   }
@@ -238,7 +219,7 @@ export function recordValidation(
   validationState: "valid" | "needs_review",
 ): void {
   const id = createId();
-  insertRow(db, "document_translation_validations", {
+  orm(db).insert(schema.document_translation_validations).values({
     id,
     project_id: projectId,
     document_translation_version_id: versionId,
@@ -248,9 +229,9 @@ export function recordValidation(
     needs_review: validationState === "needs_review" ? 1 : 0,
     summary_json: JSON.stringify({ findings }),
     validated_at: nowIso(),
-  });
+  }).run();
   for (const kind of findings) {
-    insertRow(db, "document_translation_validation_findings", {
+    orm(db).insert(schema.document_translation_validation_findings).values({
       id: createId(),
       project_id: projectId,
       validation_id: id,
@@ -259,17 +240,19 @@ export function recordValidation(
       block_key: null,
       anchor_id: null,
       details_json: null,
-    });
+    }).run();
   }
 }
 
 export function loadAnchors(db: SqliteDb, anchorSetId: string): AnchorRow[] {
-  return allRows<AnchorRow>(
-    db,
-    `SELECT id, anchor_key, ordinal, required, boundary_kind
-     FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`,
-    anchorSetId,
-  );
+  const anchors = schema.translation_anchors;
+  return orm(db).select({
+    id: anchors.id,
+    anchor_key: anchors.anchor_key,
+    ordinal: anchors.ordinal,
+    required: anchors.required,
+    boundary_kind: anchors.boundary_kind,
+  }).from(anchors).where(eq(anchors.anchor_set_id, anchorSetId)).orderBy(anchors.ordinal).all();
 }
 
 export { canonicalJsonHash };

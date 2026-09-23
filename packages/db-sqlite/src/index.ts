@@ -1,7 +1,11 @@
+export type { TermContent, TermEntry, TermOccurrence, SaveTermInput } from "./term-review.ts";
+export { validateTermContent, termOccurrences } from "./term-review.ts";
 export { assertSqliteIntegrity, openSqlite, type SqliteDb } from "./sqlite.ts";
 export { migrateProjectDb, migrateAppDb, applySqlMigration } from "./migrate.ts";
 export { AppDb, openAppDatabase, type OpenAppDb, type RuntimeSessionKey } from "./app-db.ts";
-export { createProject, openProject, seedDemoProject, sqlitePath, ProjectRepo } from "./project-repo.ts";
+export { createProject, openProject, openOnlineCache, seedDemoProject, sqlitePath, ProjectRepo } from "./project-repo.ts";
+export { ONLINE_TABLE_METADATA, diffOnlineRows, applyOnlineRowChanges, isOnlineAssetPath } from "./online-data.ts";
+export type { OnlineRow, OnlineTableData, OnlineRowChange, OnlineTableMetadata } from "./online-data.ts";
 export type { ReadingCitation, ReadingAnnotationView, SaveReadingAnnotationInput, ReadingAnnotationCasInput } from "./reading-annotations.ts";
 export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "./views.ts";
 export {
@@ -150,5 +154,6 @@ export type {
   UpsertGlossaryInput,
   UpdateContextItemInput,
   UpdateDocumentMetadataInput,
+  MoveDocumentInput,
   VersionUiState,
 } from "./views.ts";

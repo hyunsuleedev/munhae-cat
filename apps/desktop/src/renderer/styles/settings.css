@@ -101,6 +101,7 @@
 .settings-account #accountUserEmail { font-size: 12px; }
 .settings-account .account-avatar { flex: 0 0 auto; width: 46px; height: 46px; font-size: 20px; }
 .settings-account .account-setting-row { padding: 20px 24px; }
+.settings-account .account-billing { padding-inline: 24px; }
 .settings-account .account-setting-row > button { min-height: 32px; }
 .settings-account #accountSignOut { color: var(--danger); }
 .settings-account #accountForm { max-width: 460px; padding: 24px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); }
@@ -112,6 +113,7 @@
   .settings-account .account-identity { flex-wrap: wrap; gap: 12px; padding: 20px; }
   .settings-account .account-identity-copy { flex-basis: calc(100% - 60px); }
   .settings-account .account-setting-row { padding: 18px 20px; }
+  .settings-account .account-billing { padding-inline: 20px; }
 }
 
 .runtime-panel,
