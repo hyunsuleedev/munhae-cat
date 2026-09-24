@@ -41,18 +41,18 @@
 .ai-run-dialog[data-mode="progress"] .ai-run-aside { border: 0; background: transparent; overflow: visible; }
 .ai-run-dialog[data-mode="progress"] .prep-run-progress { padding: 0; border: 0; }
 .prep-particle-stage { height: 332px; position: relative; isolation: isolate; overflow: hidden; background: var(--surface); }
-:is(#prepParticles, #punctuationParticles) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; pointer-events: none; mask-image: linear-gradient(transparent, #000 8%, #000 92%, transparent); }
+:is(#prepParticles, #punctuationParticles, #readingParticles) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; z-index: -1; pointer-events: none; mask-image: linear-gradient(transparent, #000 8%, #000 92%, transparent); }
 .prep-stage-status { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; text-align: center; }
-.prep-stage-status :is(#prepRunState, #punctuationRunState) { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 30px; background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--accent); font: 400 10px/1 var(--font-ui); padding: 5px 9px; margin-bottom: 16px; }
-.prep-stage-status :is(#prepRunState, #punctuationRunState)::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .6; }
-.prep-particle-stage[data-state="failed"] :is(#prepRunState, #punctuationRunState) { color: var(--danger); }
-.prep-particle-stage[data-validation="invalid_unapplied"] :is(#prepRunState, #punctuationRunState),
-.prep-particle-stage[data-validation="needs_review"][data-state="completed"] :is(#prepRunState, #punctuationRunState) { color: var(--warn); }
+.prep-stage-status :is(#prepRunState, #punctuationRunState, #readingRunState) { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 30px; background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--accent); font: 400 10px/1 var(--font-ui); padding: 5px 9px; margin-bottom: 16px; }
+.prep-stage-status :is(#prepRunState, #punctuationRunState, #readingRunState)::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .6; }
+.prep-particle-stage[data-state="failed"] :is(#prepRunState, #punctuationRunState, #readingRunState) { color: var(--danger); }
+.prep-particle-stage[data-validation="invalid_unapplied"] :is(#prepRunState, #punctuationRunState, #readingRunState),
+.prep-particle-stage[data-validation="needs_review"][data-state="completed"] :is(#prepRunState, #punctuationRunState, #readingRunState) { color: var(--warn); }
 .prep-stage-status .prep-run-phase { margin: 0; color: var(--fg); font-size: 27px; font-weight: 500; line-height: 1.45; letter-spacing: -1.05px; text-wrap: balance; text-shadow: 0 0 8px var(--surface), 0 0 4px var(--surface); }
 .prep-stage-status .prep-run-detail { margin: 12px 0 0; max-width: 410px; color: var(--muted); font-size: 12px; line-height: 1.7; letter-spacing: -.1px; text-wrap: balance; text-shadow: 0 0 6px var(--surface), 0 0 3px var(--surface); }
 .prep-elapsed { display: flex; align-items: center; gap: 6px; margin-top: 19px; color: var(--muted); font-size: 11px; }
 .prep-elapsed svg { width: 12px; height: 12px; }
-:is(#prepElapsed, #punctuationElapsed) { font-variant-numeric: tabular-nums; letter-spacing: .4px; }
+:is(#prepElapsed, #punctuationElapsed, #readingElapsed) { font-variant-numeric: tabular-nums; letter-spacing: .4px; }
 .prep-run-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); list-style: none; margin: 0; padding: 17px 28px 25px; gap: 9px; }
 .prep-run-steps li { position: relative; display: flex; align-items: center; gap: 6px; padding-top: 14px; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .prep-run-steps li::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; border-radius: 2px; background: var(--border); }
@@ -109,3 +109,9 @@
 #dlgPunctuation[data-mode="progress"] #punctuationPrepClose { order: 3; }
 #dlgPunctuation[data-mode="progress"] #btnCancelPunctuation { order: 2; background: transparent; border-color: transparent; color: var(--muted); }
 #dlgPunctuation[data-mode="progress"] #punctuationPrepReview { order: 4; }
+
+#readingRunSteps{grid-template-columns:repeat(3,minmax(0,1fr))}
+#readingSource{white-space:pre-wrap;max-height:160px;overflow:auto;font-size:20px;line-height:1.8}
+#readingError{margin:0 28px 18px}
+#dlgReadingAnalysis [hidden]{display:none!important}
+#readingModels{display:contents}

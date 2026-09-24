@@ -15,6 +15,8 @@ export type ReadingAnalysisSuggestion = ReadingAnalysisRange & {
   citation: ReadingCitation | null;
   /** AI interpretation, kept separate from the cited dictionary wording. */
   explanation: string;
+  /** Exact substring of the linked translation that renders this range, or null. Verified against the run's translation context. */
+  translationQuote: string | null;
   caution: string;
   applied: boolean;
 };
@@ -32,7 +34,8 @@ export type ReadingAnalysisRun = {
   result: { summary: string; suggestions: ReadingAnalysisSuggestion[] } | null;
   error: { code: string; message: string } | null;
 };
-export type ApplyReadingAnalysisInput = { runId: string; suggestionId: string };
+/** `orderOnly` updates only the reading order of an existing record, keeping its reading, sense, memo and link. */
+export type ApplyReadingAnalysisInput = { runId: string; suggestionId: string; orderOnly?: boolean };
 export type ReadingAnalysisApi = {
   startReadingAnalysis(input: ReadingAnalysisInput): Promise<IpcResult<ReadingAnalysisRun>>;
   getReadingAnalysis(id: string): Promise<IpcResult<ReadingAnalysisRun>>;

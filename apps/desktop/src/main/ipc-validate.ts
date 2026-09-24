@@ -447,7 +447,7 @@ function parseReadingCitation(value: unknown): ReadingCitation | null {
 
 export function parseSaveReadingAnnotationInput(value: unknown): SaveReadingAnnotationInput {
   const rec = asRecord(value, "input");
-  assertReadingFields(rec, ["id", "documentNodeId", "sourceVersionId", "codepointFrom", "codepointTo", "quote", "reading", "gloss", "readingOrder", "citation", "expectedLockVersion"], "input");
+  assertReadingFields(rec, ["id", "documentNodeId", "sourceVersionId", "codepointFrom", "codepointTo", "quote", "reading", "gloss", "readingOrder", "citation", "translationQuote", "expectedLockVersion"], "input");
   const id = rec.id === undefined ? undefined : asNonEmptyString(rec.id, "id", 80);
   const expectedLockVersion = asInt(rec.expectedLockVersion, "expectedLockVersion");
   if (!Number.isSafeInteger(expectedLockVersion) || (id ? expectedLockVersion < 1 : expectedLockVersion !== 0)) fail("expectedLockVersion");
@@ -463,12 +463,13 @@ export function parseSaveReadingAnnotationInput(value: unknown): SaveReadingAnno
   const readingOrder = rec.readingOrder === null ? null : asInt(rec.readingOrder, "readingOrder");
   if (readingOrder !== null && (readingOrder < 1 || readingOrder > 1_000_000)) fail("readingOrder");
   const citation = parseReadingCitation(rec.citation);
+  const translationQuote = rec.translationQuote === null ? null : parseReadingText(rec.translationQuote, "translationQuote", 500).trim() || null;
   if (!reading && !gloss && readingOrder === null && citation === null) fail("annotation");
   return {
     ...(id === undefined ? {} : { id }),
     documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
     sourceVersionId: asNonEmptyString(rec.sourceVersionId, "sourceVersionId", 80),
-    codepointFrom, codepointTo, quote, reading, gloss, readingOrder, citation, expectedLockVersion,
+    codepointFrom, codepointTo, quote, reading, gloss, readingOrder, citation, translationQuote, expectedLockVersion,
   };
 }
 

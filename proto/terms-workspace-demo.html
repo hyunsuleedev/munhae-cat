@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>문해 · 용어 검토 UI 데모</title>
+  <style>
+    :root {
+      --paper: #fffefa; --chrome: #f6f5f0; --sidebar: #efeee8;
+      --ink: #292b27; --muted: #74786e; --line: #dedfd5;
+      --accent: #794e40; --wash: #f1e9df; --green: #45684e;
+      --serif: "Noto Serif KR", "Noto Serif CJK KR", "AppleMyungjo", "Apple Myungjo", "Songti SC", Batang, serif;
+      --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", system-ui, sans-serif;
+      --source-size: 21px; --source-leading: 2.15;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 13px/1.5 var(--ui); }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+    button:disabled { cursor: default; opacity: .38; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+      outline: 2px solid var(--accent); outline-offset: 2px;
+    }
+    button:active:not(:disabled) { transform: scale(.98); }
+    [hidden] { display: none !important; }
+    .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+    .serif { font-family: var(--serif); }
+    .muted { color: var(--muted); }
+    .spacer { flex: 1; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); white-space: nowrap; font-size: 12px; }
+    .ghost { border-color: transparent; background: transparent; }
+    .primary { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    .accent { background: var(--wash); border-color: transparent; color: var(--accent); }
+    .icon-button { width: 30px; padding: 4px; }
+    @media (hover: hover) and (pointer: fine) {
+      .btn:hover:not(:disabled) { background: #edede5; }
+      .primary:hover:not(:disabled) { background: #43463e; }
+      .accent:hover:not(:disabled) { background: #e9ddce; }
+    }
+    .app { display: grid; grid-template-columns: 224px minmax(0,1fr); grid-template-rows: 40px minmax(0,1fr) 25px; height: 100dvh; min-height: 460px; overflow: hidden; }
+    .sidebar { grid-column: 1; grid-row: 1/3; display: flex; flex-direction: column; min-height: 0; background: var(--sidebar); border-right: 1px solid var(--line); }
+    .sidebar-top { height: 40px; flex: none; display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; letter-spacing: .05em; }
+    .brand { display: flex; align-items: center; gap: 14px; padding: 28px 22px 25px; }
+    .brand strong { font: 28px var(--serif); letter-spacing: 3px; }
+    .brand span { font-size: 9px; line-height: 1.6; letter-spacing: 1.5px; color: var(--muted); }
+    .side-search { margin: 0 12px 20px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; font-size: 12px; color: var(--muted); }
+    .side-label { padding: 9px 18px; font-size: 10px; color: var(--muted); }
+    .side-item { display: flex; align-items: center; gap: 9px; padding: 9px 10px; margin: 1px 8px; min-width: 0; font-size: 12px; }
+    .side-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .side-item.child { padding-left: 29px; }
+    .side-item.current { background: #e1e2d8; border-radius: 5px; }
+    .side-section { margin-top: 16px; }
+    .sidebar-bottom { margin-top: auto; display: flex; align-items: center; gap: 9px; border-top: 1px solid var(--line); padding: 14px 18px; color: var(--muted); font-size: 11px; }
+    .topbar { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 0 20px; min-width: 0; }
+    .topbar h1 { font: 500 15px var(--serif); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .topbar .subtitle { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .demo-tag { margin-left: auto; font-size: 10px; color: var(--accent); background: var(--wash); padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+    main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    .workflow { display: flex; align-items: stretch; gap: 0; height: 36px; flex: none; border-bottom: 1px solid var(--line); padding: 0 20px; }
+    .step { display: flex; align-items: center; gap: 8px; min-width: 130px; width: 19%; color: var(--muted); font-size: 11px; white-space: nowrap; position: relative; }
+    .step b { font: 17px Georgia, serif; letter-spacing: 1px; font-weight: 400; }
+    .step small { font-size: 9px; font-weight: 400; }
+    .step.current { color: var(--accent); font-weight: 600; }
+    .step.current::after { content: ""; position: absolute; height: 2px; width: 102px; bottom: 0; background: var(--accent); }
+    .workflow .btn { margin-left: auto; align-self: center; color: var(--muted); font-size: 11px; }
+    .toolbar { display: flex; align-items: stretch; min-height: 36px; height: 36px; flex: none; border-bottom: 1px solid var(--line); background: var(--chrome); }
+    .tool-group { display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-right: 1px solid var(--line); }
+    .tool-title { padding-inline: 16px; gap: 10px; }
+    .tool-title strong { font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .progress-label { font-size: 10px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tool-group:last-child { border-right: 0; border-left: 1px solid var(--line); }
+    .tool-group .btn { min-height: 30px; font-size: 11px; line-height: 20px; }
+    .toggle { display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+    input[type="checkbox"] { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .font-control { position: relative; }
+    .font-glyph { font-family: var(--serif); font-size: 12px; }
+    .font-glyph.big { font-size: 17px; margin-left: -2px; }
+    .popover { position: absolute; z-index: 9; top: calc(100% + 5px); left: 0; width: 230px; background: var(--paper); border: 1px solid var(--line); border-radius: 7px; padding: 14px; box-shadow: 0 8px 28px #292b271a; }
+    .popover label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; gap: 12px; margin-bottom: 14px; }
+    .popover label:last-child { margin-bottom: 0; }
+    .popover select { width: 94px; background: var(--paper); border: 1px solid var(--line); border-radius: 4px; padding: 4px; }
+    .workspace { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(350px,1fr); flex: 1; min-height: 0; min-width: 0; }
+    .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+    .source-pane { border-right: 1px solid var(--line); }
+    .pane-head { display: flex; align-items: center; gap: 9px; min-height: 36px; height: 36px; flex: none; border-bottom: 1px solid var(--line); padding: 0 23px; font-size: 12px; }
+    .pane-head strong { font-weight: 500; }
+    .pane-head small { font-size: 10px; color: var(--muted); }
+    .pane-head .order { margin-left: auto; }
+    .source-body, .term-list { overflow-y: auto; min-height: 0; flex: 1; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #d0d1c6 transparent; }
+    .source-body { padding: 22px 25px 40px 16px; scroll-padding-block: 26px; }
+    .paragraph { display: grid; grid-template-columns: 24px minmax(0,1fr); margin: 0 0 22px; gap: 1px; }
+    .para-number { padding-top: 11px; color: #92968b; font: 10px/1.4 var(--ui); font-variant-numeric: tabular-nums; user-select: none; }
+    .source-text { font: var(--source-size)/var(--source-leading) var(--serif); letter-spacing: .025em; overflow-wrap: anywhere; color: #43473f; }
+    .hit { display: inline; background: transparent; border: 0; border-bottom: 1px solid #bfb1a4; border-radius: 2px; padding: 1px 0; color: inherit; font: inherit; line-height: 1.45; letter-spacing: inherit; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+    .hit.related { background: var(--wash); border-color: #b4907f; }
+    .hit.current { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+    .no-marks .hit:not(.related):not(.current) { border-color: transparent; }
+    @media (hover: hover) and (pointer: fine) { .hit:hover { background: var(--wash); } .hit.current:hover { background: #684133; } }
+    .pane-foot { height: 34px; flex: none; display: flex; align-items: center; gap: 5px; border-top: 1px solid var(--line); padding: 0 15px; font-size: 10px; color: var(--muted); }
+    .pane-foot .btn { min-height: 26px; height: 26px; width: 25px; }
+    #occurrence { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .searchbar { display: flex; align-items: center; height: 45px; min-height: 45px; gap: 8px; padding: 0 16px 0 23px; border-bottom: 1px solid var(--line); }
+    .searchbar > .ic { color: #909488; width: 14px; height: 14px; }
+    .searchbar input { width: 100%; min-width: 0; height: 29px; border: 0; background: transparent; padding: 3px 2px; font-size: 11px; }
+    .searchbar input::placeholder { color: #92968c; }
+    .searchbar select { background: transparent; font-size: 10px; border: 0; border-left: 1px solid var(--line); border-radius: 0; padding: 4px 3px 4px 9px; max-width: 111px; }
+    .term-list { scroll-padding-block: 12px; }
+    .term { position: relative; border-bottom: 1px solid var(--line); }
+    .term.selected { background: #faf8f3; }
+    .term.selected::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--accent); }
+    .term-summary { display: block; width: 100%; text-align: left; background: transparent; border: 0; padding: 14px 23px 13px; }
+    .term-summary:active { transform: none !important; }
+    .term-summary:focus-visible { outline-offset: -3px; }
+    @media (hover: hover) and (pointer: fine) { .term-summary:hover { background: #292b2703; } }
+    .term-heading { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+    .term-heading strong { font: 20px/1.4 var(--serif); letter-spacing: .03em; }
+    .term.selected .term-heading strong { color: var(--accent); }
+    .reading { font-size: 11px; color: var(--muted); }
+    .kind { font-size: 10px; color: var(--muted); margin-left: auto; white-space: nowrap; }
+    .term-state { font-size: 10px; color: var(--muted); min-width: 42px; text-align: right; white-space: nowrap; }
+    .term-state.reviewed { color: var(--green); }
+    .term-state.stale { color: var(--accent); }
+    .term-meaning { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .term-detail { padding: 0 23px 18px; }
+    .detail-topline { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; color: var(--muted); font-size: 10px; }
+    .detail-topline .btn { font-size: 10px; min-height: 23px; padding: 0 4px; color: var(--muted); }
+    .definition { margin: 0 0 14px; font-size: 13px; line-height: 1.9; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+    .context-note { border-left: 2px solid #d7c5b5; padding: 0 0 0 12px; margin: 0 0 16px; }
+    .context-note small { display: block; color: var(--accent); font-size: 10px; margin-bottom: 4px; }
+    .context-note p { margin: 0; font-size: 12px; line-height: 1.85; color: #5c5f56; word-break: keep-all; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .evidence { border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+    .evidence summary { display: flex; align-items: center; gap: 5px; cursor: pointer; padding: 10px 0; list-style: none; }
+    .evidence summary::-webkit-details-marker { display: none; }
+    .evidence summary .ic { width: 12px; height: 12px; }
+    .evidence[open] summary .ic { transform: rotate(90deg); }
+    .evidence summary small { margin-left: auto; font-size: 10px; color: #96988d; }
+    .evidence blockquote { margin: 0 0 7px; color: #5c5f54; font: 15px/1.9 var(--serif); }
+    .evidence p { margin: 5px 0 12px; font-size: 10px; line-height: 1.8; }
+    .actions { display: flex; align-items: center; gap: 5px; padding-top: 7px; }
+    .actions .btn { font-size: 11px; }
+    .actions .primary { margin-left: auto; }
+    .reviewed-note { margin-left: auto; color: var(--green); font-size: 11px; }
+    .edit-form label { display: block; font-size: 11px; margin: 0 0 12px; }
+    .edit-form label small { color: var(--muted); margin-left: 5px; font-size: 10px; }
+    .edit-form textarea { width: 100%; min-height: 80px; padding: 9px 10px; background: var(--paper); border: 1px solid #cecfc3; border-radius: 4px; resize: vertical; font-size: 12px; line-height: 1.9; margin-top: 6px; display: block; }
+    .edit-note { font-size: 10px; color: var(--accent); }
+    .stale-note { padding: 10px 12px; background: var(--wash); color: var(--accent); margin-bottom: 13px; font-size: 11px; line-height: 1.75; border-radius: 4px; }
+    .stale-note strong { display: block; font-size: 11px; font-weight: 500; }
+    .stale-note p { margin: 4px 0 8px; }
+    .stale-note .btn { min-height: 26px; font-size: 10px; }
+    .comparison-quote { margin: 6px 0 10px; background: var(--paper); padding: 9px; border-radius: 3px; }
+    .comparison-quote p { margin: 3px 0; font-family: var(--serif); font-size: 14px; }
+    .comparison-quote small { display: block; font: 10px var(--ui); color: var(--muted); margin-bottom: 4px; }
+    .more-wrap { position: relative; }
+    .more-menu { position: absolute; left: 0; bottom: calc(100% + 5px); width: 140px; padding: 4px; background: var(--paper); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 5px 15px #292b2712; z-index: 5; }
+    .more-menu .btn { width: 100%; justify-content: flex-start; }
+    .empty { text-align: center; padding: 70px 25px; color: var(--muted); font-size: 12px; }
+    .empty p { margin: 0 0 14px; }
+    .review-progress { width: 72px; height: 3px; border-radius: 3px; background: #e9e7df; overflow: hidden; }
+    .review-progress span { display: block; height: 100%; background: #8f7866; }
+    .statusbar { grid-column: 1/3; display: flex; align-items: center; gap: 12px; padding: 0 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--muted); }
+    .statusbar .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .statusbar .right { margin-left: auto; white-space: nowrap; }
+    .mobile-tabs { display: none; }
+    dialog { width: min(430px,calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 9px; padding: 24px; background: var(--paper); color: var(--ink); box-shadow: 0 18px 70px #292b2726; }
+    dialog::backdrop { background: #292b2740; }
+    dialog h2 { font-size: 18px; letter-spacing: -.3px; margin: 0 0 8px; font-weight: 600; }
+    dialog p { font-size: 12px; line-height: 1.9; color: var(--muted); margin: 0 0 17px; }
+    dialog label.field { display: block; margin-top: 14px; font-size: 11px; }
+    dialog .field input, dialog .field textarea, dialog .field select { display: block; width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; margin-top: 5px; background: var(--paper); font-size: 12px; }
+    dialog .field textarea { min-height: 85px; resize: vertical; }
+    dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 22px; }
+    dialog .dialog-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+    dialog .dialog-row small { color: var(--muted); font-size: 11px; }
+    .toast { position: fixed; bottom: 42px; left: calc(50% + 112px); transform: translateX(-50%); background: var(--ink); color: var(--paper); font-size: 12px; padding: 10px 15px; border-radius: 6px; box-shadow: 0 4px 18px #292b271c; z-index: 15; max-width: min(450px,90vw); }
+    @media (max-width:1100px) {
+      .app { grid-template-columns: 184px minmax(0,1fr); }
+      .sidebar .brand { padding-left: 18px; gap: 10px; }
+      .side-item.child { padding-left: 22px; }
+      .workspace { grid-template-columns: minmax(0,1fr) minmax(340px,1fr); }
+      .step { min-width: 112px; }
+      .source-body { padding: 18px 18px 28px 12px; }
+      .term-summary { padding-inline: 18px; }
+      .term-detail { padding-inline: 18px; }
+      .source-text { font-size: calc(var(--source-size) - 1px); }
+      .toast { left: calc(50% + 92px); }
+    }
+    @media (max-width:900px) {
+      .app { grid-template-columns: minmax(0,1fr); }
+      .sidebar { display: none; }
+      .topbar, main { grid-column: 1; }
+      .statusbar { grid-column: 1; }
+      .step { min-width: 105px; width: 22%; }
+      .toast { left: 50%; }
+    }
+    @media (max-width:620px) {
+      .app { grid-template-rows: 40px minmax(0,1fr) 25px; }
+      .topbar { padding-inline: 14px; gap: 8px; }
+      .topbar h1 { font-size: 13px; }
+      .topbar > .ic, .topbar .subtitle { display: none; }
+      .workflow { padding: 0 14px; justify-content: space-between; }
+      .step { min-width: 0; width: auto; gap: 5px; font-size: 10px; }
+      .step small, .workflow .btn { display: none; }
+      .step b { font-size: 15px; }
+      .step.current::after { width: 100%; }
+      .toolbar .tool-title { padding-inline: 12px; }
+      .toolbar .tool-title strong { display: none; }
+      .tool-group { padding-inline: 4px; gap: 0; }
+      .tool-group .btn { padding-inline: 6px; }
+      .toolbar .toggle { font-size: 10px; gap: 4px; padding-inline: 4px; }
+      .toolbar .primary { font-size: 10px; }
+      .toolbar .spacer { flex: 1; min-width: 0; }
+      .mobile-tabs { display: flex; flex: none; height: 36px; border-bottom: 1px solid var(--line); }
+      .mobile-tabs button { flex: 1; border: 0; background: transparent; color: var(--muted); font-size: 11px; }
+      .mobile-tabs [aria-selected="true"] { box-shadow: inset 0 -2px var(--accent); color: var(--accent); background: #794e4005; }
+      .workspace { display: flex; flex-direction: column; }
+      .pane { flex: 1; }
+      .workspace .source-pane { display: none; border: 0; }
+      .workspace.show-source .source-pane { display: flex; }
+      .workspace.show-source .terms-pane { display: none; }
+      .pane-head { padding-inline: 18px; }
+      .source-body { padding: 18px 20px 30px 12px; }
+      .source-text { font-size: var(--source-size); }
+      .term-heading strong { font-size: 22px; }
+      .definition { font-size: 14px; }
+      .term-meaning { font-size: 12px; }
+      .context-note p { font-size: 13px; }
+      .actions .btn { min-height: 36px; }
+      .statusbar .path { display: none; }
+      .statusbar .right { font-size: 9px; }
+      .searchbar { padding-left: 18px; }
+    }
+    @media (max-width:360px) {
+      .toolbar .tool-title { display: none; }
+      .term-summary, .term-detail { padding-inline: 15px; }
+      .term-heading { gap: 6px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <!-- Interface icons reuse the existing Munhae editor assets. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 16 16"><path d="M8 4v9M8 4C6 2.5 3.5 2.5 1.5 3v9c2-.5 4.5-.5 6.5 1 2-1.5 4.5-1.5 6.5-1V3C12.5 2.5 10 2.5 8 4Z"/></symbol>
+    <symbol id="i-document" viewBox="0 0 16 16"><path d="M9 2H3v12h10V6M9 2v4h4L9 2ZM5 9l2 2 4-4"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 16 16"><path d="m10.5 2.5 3 3M3 10l7.5-7.5a2.12 2.12 0 0 1 3 3L6 13l-4 1z"/></symbol>
+    <symbol id="i-user" viewBox="0 0 16 16"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></symbol>
+    <symbol id="i-help" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 7v4M8 4.5v.5"/></symbol>
+    <symbol id="i-up" viewBox="0 0 16 16"><path d="m4 7 4-4 4 4M8 3v10"/></symbol>
+    <symbol id="i-down" viewBox="0 0 16 16"><path d="m4 9 4 4 4-4M8 3v10"/></symbol>
+  </defs></svg>
+  <div class="app">
+    <aside class="sidebar" aria-label="프로젝트 탐색 미리보기">
+      <div class="sidebar-top">MUNHAE WORKSPACE</div>
+      <div class="brand"><strong>文解</strong><span>MUNHAE<br>STUDIO</span></div>
+      <div class="side-search">문서 찾기</div>
+      <div class="side-label">프로젝트</div><div class="side-item"><svg class="ic"><use href="#i-book"/></svg>홈</div>
+      <div class="side-section"><div class="side-label">문서</div>
+        <div class="side-item"><svg class="ic" style="transform:rotate(90deg)"><use href="#i-chevron"/></svg><span class="name">CCTI 용어 비교</span><span class="muted">2</span></div>
+        <div class="side-item child"><span class="name">문맥</span></div>
+        <div class="side-item child current"><svg class="ic"><use href="#i-document"/></svg><span class="name serif">관서악부서</span></div>
+        <div class="side-item child"><svg class="ic"><use href="#i-document"/></svg><span class="name serif">관서악부서 — 개정본</span></div>
+      </div>
+      <div class="side-section"><div class="side-label">프로젝트 공통</div><div class="side-item"><svg class="ic"><use href="#i-book"/></svg>번역 자료</div></div>
+      <div class="sidebar-bottom"><svg class="ic"><use href="#i-user"/></svg>Hyunsu Lee</div>
+    </aside>
+    <header class="topbar">
+      <svg class="ic muted"><use href="#i-document"/></svg><h1>CCTI 용어 비교 — 관서악부서</h1><span class="subtitle">— 용어</span><span class="demo-tag">UI 데모</span>
+      <button class="btn ghost" id="reset">초기화</button>
+    </header>
+    <main>
+      <div class="workflow" aria-label="번역 작업 단계 미리보기">
+        <span class="step"><b>01</b> 원문 정리</span><span class="step"><b>02</b> 표점 <small>선택</small></span>
+        <span class="step current" aria-current="step"><b>03</b> 용어 <small>현재</small></span><span class="step"><b>04</b> 번역·검토</span>
+        <button class="btn ghost" id="help"><svg class="ic"><use href="#i-help"/></svg>작업 안내</button>
+      </div>
+      <div class="toolbar" role="toolbar" aria-label="용어 검토 도구">
+        <div class="tool-group tool-title"><strong>용어 검토</strong><span class="progress-label" id="topProgress"></span></div>
+        <div class="tool-group"><label class="toggle"><input id="marks" type="checkbox" checked>용어 표시</label></div>
+        <div class="tool-group font-control">
+          <button class="btn ghost" id="fontButton" aria-label="글자 크기와 줄 간격" aria-expanded="false" aria-controls="fontPanel" title="글자 크기와 줄 간격"><span class="font-glyph">가</span><span class="font-glyph big">가</span></button>
+          <div id="fontPanel" class="popover" hidden><label>글자 크기<select id="fontSize"><option value="18">18 px</option><option value="21" selected>21 px</option><option value="24">24 px</option><option value="27">27 px</option></select></label><label>줄 간격<select id="lineHeight"><option value="1.8">좁게</option><option value="2.15" selected>보통</option><option value="2.5">넓게</option></select></label></div>
+        </div>
+        <span class="spacer"></span>
+        <div class="tool-group"><button class="btn ghost" id="addTerm">직접 추가</button><button class="btn primary" id="generate">AI 용어 생성…</button></div>
+      </div>
+      <div class="mobile-tabs" role="tablist" aria-label="대조 영역"><button id="sourceTab" role="tab" aria-selected="false">표점 원문</button><button id="termsTab" role="tab" aria-selected="true">용어 검토</button></div>
+      <div class="workspace" id="workspace">
+        <section class="pane source-pane" aria-label="표점 원문">
+          <header class="pane-head"><strong>표점 원문</strong><small>P2 · 확정</small><small class="order">읽기 전용</small></header>
+          <div class="source-body" id="source" tabindex="0" aria-label="원문의 용어를 선택할 수 있습니다"></div>
+          <footer class="pane-foot"><span id="sourceCount"></span><span class="spacer"></span><span id="occurrence"></span><button class="btn ghost icon-button" id="prevHit" aria-label="이전 등장 위치" title="이전 등장 위치"><svg class="ic"><use href="#i-up"/></svg></button><button class="btn ghost icon-button" id="nextHit" aria-label="다음 등장 위치" title="다음 등장 위치"><svg class="ic"><use href="#i-down"/></svg></button></footer>
+        </section>
+        <section class="pane terms-pane" aria-label="용어 검토">
+          <header class="pane-head"><strong>용어</strong><small id="termCount"></small><small class="order">원문 등장 순서</small></header>
+          <div class="searchbar"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><input type="search" id="search" aria-label="용어 검색" placeholder="용어·독음·뜻풀이 검색"><select id="filter" aria-label="검토 상태"><option value="all">전체</option><option value="draft">검토 전</option><option value="reviewed">검토 완료</option><option value="stale">재검토 필요</option><option value="excluded">참고 제외</option></select></div>
+          <div class="term-list" id="terms" tabindex="-1"></div>
+          <footer class="pane-foot"><span id="bottomProgress"></span><span class="spacer"></span><div class="review-progress" aria-hidden="true"><span id="progressBar"></span></div><span id="remaining"></span></footer>
+        </section>
+      </div>
+    </main>
+    <footer class="statusbar"><span class="path">CCTI 용어 비교 / 관서악부서</span><span>UI 데모 · 예시 풀이</span><span class="right" id="saveState">이 브라우저에서만 저장</span></footer>
+  </div>
+  <dialog id="addDialog" aria-labelledby="addHeading"><form id="addForm"><h2 id="addHeading">용어 직접 추가</h2><p>원문에 있는 표현을 입력하면 해당 구절과 연결됩니다.</p><label class="field">표제어<input id="newForm" required maxlength="40" placeholder="예: 關西樂府"></label><label class="field">독음<input id="newReading" maxlength="60" placeholder="예: 관서악부"></label><label class="field">분류<select id="newKind"><option>표현</option><option>인물</option><option>장소</option><option>작품</option><option>전고</option><option>관직</option></select></label><label class="field">뜻풀이<textarea id="newDefinition" required placeholder="이 표현의 뜻을 적으세요."></textarea></label><div class="dialog-actions"><button type="button" class="btn ghost" data-close>취소</button><button class="btn primary" type="submit">용어 추가</button></div></form></dialog>
+  <dialog id="aiDialog" aria-labelledby="aiHeading"><h2 id="aiHeading">AI 용어 생성</h2><p>원문의 인물·장소·전고를 용어 후보로 만듭니다.</p><div class="dialog-row"><span>대상 원문</span><small>표점 P2 · 관서악부서</small></div><div class="dialog-row"><span>AI 모델</span><small>프로젝트 기본 모델</small></div><div class="dialog-row"><span>기존 용어</span><small>검토 내용 유지</small></div><p style="font-size:11px;margin-top:16px">이 데모에서는 미리 준비한 용어 후보 3개를 추가합니다.</p><div class="dialog-actions"><button class="btn ghost" data-close>취소</button><button class="btn primary" id="applyCandidates">예시 후보 추가</button></div></dialog>
+  <dialog id="helpDialog" aria-labelledby="helpHeading"><h2 id="helpHeading">원문을 보며 용어 검토</h2><p>원문에서 밑줄 친 표현을 누르면 용어 풀이가 열립니다. 뜻풀이와 문맥을 읽고, 필요할 때만 ‘수정’으로 편집하세요.</p><p>‘검토 완료·다음’을 누르면 다음 후보로 이동합니다. 원문이 바뀐 용어는 현재 구절을 대조한 뒤 다시 검토할 수 있습니다.</p><p>이 화면의 풀이와 검토 상태는 UI를 체험하기 위한 예시입니다.</p><div class="dialog-actions"><button class="btn primary" data-close>확인</button></div></dialog>
+  <dialog id="resetDialog" aria-labelledby="resetHeading"><h2 id="resetHeading">데모를 초기화할까요?</h2><p>이 데모에서 수정하거나 추가한 용어를 지우고 처음 상태로 돌아갑니다.</p><div class="dialog-actions"><button class="btn ghost" data-close>취소</button><button class="btn primary" id="doReset">초기화</button></div></dialog>
+  <dialog id="leaveDialog" aria-labelledby="leaveHeading"><h2 id="leaveHeading">수정한 풀이가 있습니다</h2><p>저장하지 않은 내용을 유지하거나, 버리고 이동할 수 있습니다.</p><div class="dialog-actions"><button class="btn ghost" data-close>계속 수정</button><button class="btn" id="discardChanges">버리고 이동</button><button class="btn primary" id="saveAndLeave">저장 후 이동</button></div></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script>
+    'use strict';
+    const $ = selector => document.querySelector(selector);
+    const esc = text => String(text ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const icon = name => `<svg class="ic" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+    const sourceParagraphs = [
+      '平壤，箕子，東明王之所都也。自古號佳麗擅國中。皇朝勑使如張芳洲，許海嶽，朱蘭嵎諸公，或稱天下第一江山，或稱如金陵，錢塘。國朝昇平屢百年，士大夫宦游者，畫舫江樓，粉黛笙歌，留連沉酣，有秦淮烟月西湖荷桂之娛。然金陵，錢塘，皆有唐，宋才子歌詩，輝暎湖山，以餙大平。東國無樂府，西京題詠，唯牧隱與李相國混外，近世三淵金翁作亦佳，然皆律體也。鄭知常官船一絶，始得樂府音調，爲千年絶唱，足與盛唐方駕。穆陵朝李達，崔慶昌，白光勳號三唐一時，又有徐益竝次鄭氏韻，頗稱名作。先輩亦病其爲採蓮曲，盖非其至者也。',
+      '僕亦嘗游平壤，次其韻，如黃鶴樓崔顥詩在上，擺筆臨江，幾欲爲金黃元之哭。甚矣，此道之難也。練光，浮碧之間，僕未嘗不慨然彷徨，欲更賦關西樂府，以遺是邦之爲方伯地主者，被之聲歌。自念五十布衣，失意棲遑，不足爲貴人重，恨不少年爲客，悒悒而歸。至今十數年，顚髮益種種矣。愛其湖山，如淡粧美人秀媚難忘，往往夢想在浿江舟中。',
+      '樊巖尙書之以節西也，都人士多爲歌詩以送之。僕奉香寧陵未還，後樂浪使者至，飛書督詩。樊巖吾友也，風流文采，足與平壤山川相暎發。僕亦宿念所動，爲公欣然，如白首廢將，十年田間，忽聞出塞金皷馬鳴蕭蕭，不覺彈弓一起。遂依王建宮詞體，蘸藥汁戲筆，作關西樂府，亦名關西伯四時行樂詞。先之以夏者，以樊巖赴鎭在端午也。凡西都之形勝謠俗，歷代興替，忠孝節俠，神仙寺刹，邊塞軍旅，樓臺船舫，以至女樂游衍之事，靡不備述，亦可謂一部西關志。而往往纖靡之語，襍以閭巷俚俗，樂於風雅掃地，恐不免輕薄之誚。',
+      '然較王建詩，百有加八，盖用禪家數珠法也。禪家持戒者，以百八珠念念脩善，循環不窮。僕平生喜其法，手之常念。西土雖號紛華，游是邦者，常作此念，如數珠法，蛾眉𥊑睩，管絃啁啾，不足以溺人情性。然豪傑之士，富貴得意，而聲色當塲，能不迷者，亦幾人哉。阿難世尊高足也，墯摩騰伽淫室，三旬不返，世尊現淸淨大法，救拔苦海。樊巖定力，吾未知與阿難何如。僕無世尊神通廣大法力，百八樂府，又不足以輝暎湖山，如唐，宋才子，亦安知其不爲淸凈大法乎。請樊巖以吾詩，爲禪家數珠，綺筵酒席，一歌一舞，念念自省，問主人翁惺惺否也。'
+    ];
+    const seed = [
+      ['pyongyang','平壤','평양','장소','기자와 동명왕의 도읍지로 제시되는 도시.','이 글에서는 강산의 아름다움과 시문 전통을 함께 살피는 중심 공간이다.','reviewed'],
+      ['gija','箕子','기자','인물','이 글에서 평양에 도읍했던 인물로 언급된다.','동명왕과 나란히 제시하여 평양의 오랜 역사와 위상을 드러낸다.','draft'],
+      ['dongmyeong','東明王','동명왕','인물','기자와 함께 평양의 옛 도읍을 설명하며 언급되는 왕.','인물의 역사적 행적에 관한 추가 설명은 별도 근거를 확인한 뒤 붙인다.','draft'],
+      ['dynasty','皇朝','황조','표현','중국 왕조를 높여 부르는 표현.','이 문맥에서 어느 왕조를 가리키는지는 뒤따르는 사신들의 활동 시기와 대조한다.','stale'],
+      ['jang','張芳洲','장방주','인물','평양의 경치를 품평한 사신 가운데 한 사람으로 등장한다.','이름과 호의 관계는 인물 자료를 대조할 필요가 있다.','draft'],
+      ['heo','許海嶽','허해악','인물','장방주·주난우와 나란히 열거되는 사신.','','draft'],
+      ['ju','朱蘭嵎','주난우','인물','평양의 경치를 평가한 사신 가운데 한 사람.','','draft'],
+      ['jinling','金陵','금릉','장소','평양의 경관에 견주어 언급되는 중국의 지명.','전후의 시문과 유람 문화를 함께 고려해 읽는다.','reviewed'],
+      ['qiantang','錢塘','전당','장소','금릉과 함께 경치와 문학의 관계를 설명하며 언급되는 지명.','','reviewed'],
+      ['qinhuai','秦淮','진회','장소','유람의 즐거움을 묘사하는 “秦淮烟月”에 쓰인 지명.','','draft'],
+      ['westlake','西湖','서호','장소','“西湖荷桂”에서 연꽃과 계수나무의 경치를 수식하는 지명.','','draft'],
+      ['mogeun','牧隱','목은','인물','서경을 읊은 시문을 열거하는 대목에 나오는 인물의 호.','','reviewed'],
+      ['jeong','鄭知常','정지상','인물','관선의 절구가 악부의 음조를 얻었다고 평가받는 시인.','이 글에서는 작품의 형식과 성취를 논하는 사례로 등장한다.','draft'],
+      ['hwanghak','黃鶴樓','황학루','장소','최호의 시와 함께 제시되는 누각.','기존의 뛰어난 작품 앞에서 새로 시를 짓기 어려운 심정을 드러내는 대목이다.','draft'],
+      ['gwanseo','關西樂府','관서악부','작품','글쓴이가 관서 지역을 소재로 짓고자 하는 악부의 제목.','뒤에서는 “關西伯四時行樂詞”라는 다른 이름도 함께 제시한다.','draft'],
+      ['beonam','樊巖','번암','인물','이 글에서 벗이자 관서로 부임하는 인물로 제시된다.','','draft']
+    ].map(([id,form,reading,kind,definition,context,status]) => ({id,form,reading,kind,definition,context,status}));
+    const candidates = [
+      {id:'seogyeong',form:'西京',reading:'서경',kind:'장소',definition:'이 글에서 평양을 가리키는 다른 이름.',context:'“西京題詠”은 그 지역을 읊은 시문을 뜻한다.',status:'draft'},
+      {id:'geum',form:'金黃元',reading:'김황원',kind:'인물',definition:'강가에서 붓을 내려놓고 울고 싶다는 대목에 등장하는 인물.',context:'전고의 구체적 내용은 별도 자료와 대조한다.',status:'draft'},
+      {id:'wanggeon',form:'王建',reading:'왕건',kind:'인물',definition:'글쓴이가 궁사의 형식을 본받았다고 언급하는 시인.',context:'“宮詞體”와 연결해 이름을 식별한다.',status:'draft'}
+    ];
+    const storageKey = 'munhae-terms-workspace-demo-v1';
+    const clone = value => JSON.parse(JSON.stringify(value));
+    let entries = clone(seed), selected = 'gija', occurrence = 0, editing = false, draft = null;
+    let toastTimer, pending = null, comparisonOpen = false, hits = [];
+    const allowedStatuses = new Set(['draft','reviewed','stale','excluded']);
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey));
+      if (Array.isArray(saved) && saved.length && saved.length < 250 && saved.every(e =>
+        ['id','form','reading','kind','definition','context','status'].every(key => typeof e[key] === 'string') &&
+        e.form.trim() && allowedStatuses.has(e.status)) && new Set(saved.map(e => e.id)).size === saved.length) entries = saved;
+    } catch {}
+    const active = () => entries.find(e => e.id === selected);
+    const changed = () => editing && draft && (draft.definition !== active()?.definition || draft.context !== active()?.context);
+    function toast(text) { clearTimeout(toastTimer); $('#toast').textContent = text; $('#toast').hidden = false; toastTimer = setTimeout(() => $('#toast').hidden = true, 3200); }
+    function persist() {
+      try { localStorage.setItem(storageKey, JSON.stringify(entries)); $('#saveState').textContent = '데모 변경사항 저장됨'; }
+      catch { $('#saveState').textContent = '현재 화면에서만 유지 · 브라우저 저장 불가'; }
+    }
+    function rebuildHits() {
+      hits = [];
+      sourceParagraphs.forEach((text,p) => {
+        entries.filter(e => e.status !== 'excluded').forEach(entry => {
+          let from = 0, at;
+          while ((at = text.indexOf(entry.form, from)) >= 0) {
+            hits.push({id:entry.id,p,start:at,end:at + entry.form.length});
+            from = at + entry.form.length;
+          }
+        });
+      });
+      hits.sort((a,b) => a.p - b.p || a.start - b.start || b.end - a.end);
+      const indices = {};
+      hits.forEach(hit => { hit.index = indices[hit.id] || 0; indices[hit.id] = hit.index + 1; });
+      entries.sort((a,b) => {
+        const ha = hits.find(h => h.id === a.id), hb = hits.find(h => h.id === b.id);
+        return (ha ? ha.p * 10000 + ha.start : Infinity) - (hb ? hb.p * 10000 + hb.start : Infinity);
+      });
+    }
+    function filtered() {
+      const query = $('#search').value.trim().toLocaleLowerCase(), filter = $('#filter').value;
+      return entries.filter(e => (filter === 'all' || e.status === filter) && [e.form,e.reading,e.definition,e.context].some(value => value.toLocaleLowerCase().includes(query)));
+    }
+    function renderSource() {
+      const scroll = $('#source').scrollTop;
+      $('#source').innerHTML = sourceParagraphs.map((text,p) => {
+        let cursor = 0, html = '';
+        for (const hit of hits.filter(h => h.p === p)) {
+          if (hit.start < cursor) continue;
+          const entry = entries.find(e => e.id === hit.id), chosen = hit.id === selected;
+          html += esc(text.slice(cursor,hit.start)) + `<button class="hit${chosen ? ' related' : ''}${chosen && hit.index === occurrence ? ' current' : ''}" data-hit="${esc(hit.id)}" data-index="${hit.index}" aria-label="${esc(entry.form)} 용어 보기" aria-pressed="${chosen && hit.index === occurrence}">${esc(text.slice(hit.start,hit.end))}</button>`;
+          cursor = hit.end;
+        }
+        html += esc(text.slice(cursor));
+        return `<p class="paragraph"><span class="para-number" aria-hidden="true">${String(p + 1).padStart(2,'0')}</span><span class="source-text">${html}</span></p>`;
+      }).join('');
+      $('#source').scrollTop = scroll;
+      const count = hits.filter(h => h.id === selected).length;
+      $('#occurrence').textContent = count ? `${active().form} · ${occurrence + 1} / ${count}` : '원문 대응 위치 없음';
+      $('#prevHit').disabled = !count || occurrence === 0;
+      $('#nextHit').disabled = !count || occurrence >= count - 1;
+      $('#sourceCount').textContent = `${Array.from(sourceParagraphs.join('')).length.toLocaleString()}자`;
+    }
+    function quoteFor(entry) {
+      const hit = hits.find(h => h.id === entry.id);
+      if (!hit) return '';
+      const text = sourceParagraphs[hit.p], start = text.lastIndexOf('。',hit.start) + 1;
+      const end = text.indexOf('。',hit.end);
+      return text.slice(start,end < 0 ? hit.end + 25 : end + 1);
+    }
+    function detail(entry) {
+      if (editing) return `<div class="term-detail edit-form"><div class="detail-topline"><span class="edit-note" id="editState">풀이 수정 중</span><span>⌘S 저장</span></div><label>뜻풀이<textarea id="editDefinition" rows="3">${esc(draft.definition)}</textarea></label><label>이 글에서의 풀이<small>선택</small><textarea id="editContext" rows="2">${esc(draft.context)}</textarea></label><div class="actions"><button class="btn ghost" data-action="cancel">취소</button><button class="btn primary" data-action="save">저장</button></div></div>`;
+      const stale = entry.status === 'stale';
+      return `<div class="term-detail">
+        <div class="detail-topline"><span>이 문서의 풀이</span><button class="btn ghost" data-action="locate">원문 위치 ${icon('chevron')}</button></div>
+        ${stale ? `<div class="stale-note"><strong>원문이 바뀌어 다시 확인해야 합니다</strong><p>표점 P1에서 만든 풀이입니다. 현재 구절과 대조하세요.</p>${comparisonOpen ? `<div class="comparison-quote"><small>이전 · P1</small><p>皇朝勑使，如張芳洲</p><small style="margin-top:9px">현재 · P2</small><p>皇朝勑使如張芳洲</p></div><button class="btn" data-action="resolve">대조 완료 · 검토 계속</button>` : '<button class="btn" data-action="compare">현재 구절 대조</button>'}</div>` : ''}
+        <p class="definition">${esc(entry.definition)}</p>
+        ${entry.context ? `<div class="context-note"><small>이 글에서</small><p>${esc(entry.context)}</p></div>` : ''}
+        <details class="evidence"><summary>${icon('chevron')}원문 근거<small>${quoteFor(entry) ? '연결 구절 1개' : '대응 구절 없음'}</small></summary>${quoteFor(entry) ? `<blockquote>${esc(quoteFor(entry))}</blockquote><p>관서악부서 · 표점 P2. 외부 출전은 아직 연결하지 않았습니다.</p>` : '<p>현재 원문에 대응하는 구절이 없습니다.</p>'}</details>
+        <div class="actions"><button class="btn ghost" data-action="edit">${icon('edit')}수정</button><div class="more-wrap"><button class="btn ghost icon-button" data-action="more" aria-label="용어 추가 작업" aria-expanded="false">⋯</button><div class="more-menu" hidden><button class="btn ghost" data-action="exclude">${entry.status === 'excluded' ? '참고에 포함' : '참고 제외'}</button>${entry.status === 'reviewed' ? '<button class="btn ghost" data-action="unreview">검토 전으로</button>' : ''}</div></div>${entry.status === 'reviewed' ? '<span class="reviewed-note">검토 완료</span><button class="btn accent" data-action="next">다음 용어</button>' : entry.status === 'excluded' ? '<span class="reviewed-note muted">참고에서 제외됨</span>' : `<button class="btn primary" data-action="review" ${stale ? 'disabled title="현재 구절을 먼저 대조하세요"' : ''}>검토 완료·다음 ${icon('chevron')}</button>`}</div>
+      </div>`;
+    }
+    function renderTerms() {
+      const scroll = $('#terms').scrollTop, visible = filtered();
+      $('#terms').innerHTML = visible.map(entry => {
+        const chosen = entry.id === selected;
+        const state = {draft:'검토 전',reviewed:'검토 완료',stale:'재검토',excluded:'제외'}[entry.status];
+        return `<article class="term${chosen ? ' selected' : ''}" data-card="${esc(entry.id)}"><button class="term-summary" data-select="${esc(entry.id)}" aria-expanded="${chosen}" aria-controls="detail-${esc(entry.id)}"><span class="term-heading"><strong>${esc(entry.form)}</strong><span class="reading">${esc(entry.reading)}</span><span class="kind">${esc(entry.kind)}</span><span class="term-state ${entry.status}">${state}</span></span>${chosen ? '' : `<span class="term-meaning">${esc(entry.definition)}</span>`}</button><div id="detail-${esc(entry.id)}" ${chosen ? '' : 'hidden'}>${chosen ? detail(entry) : ''}</div></article>`;
+      }).join('') || '<div class="empty"><p>조건에 맞는 용어가 없습니다.</p><button class="btn" data-action="clear">전체 용어 보기</button></div>';
+      $('#terms').scrollTop = scroll;
+      const reviewed = entries.filter(e => e.status === 'reviewed').length, total = entries.filter(e => e.status !== 'excluded').length;
+      $('#termCount').textContent = `${visible.length}개`;
+      $('#topProgress').textContent = `${reviewed} / ${total} 검토`;
+      $('#bottomProgress').textContent = `${reviewed}개 검토 완료`;
+      $('#remaining').textContent = `${total - reviewed}개 남음`;
+      $('#progressBar').style.width = `${total ? reviewed / total * 100 : 0}%`;
+      previousQuery = $('#search').value; previousFilter = $('#filter').value;
+    }
+    function render() { rebuildHits(); renderSource(); renderTerms(); }
+    function locate() {
+      const hit = $('#source .hit.current');
+      if (hit) { const host = $('#source'); host.scrollTop += hit.getBoundingClientRect().top - host.getBoundingClientRect().top - host.clientHeight / 3; }
+    }
+    function revealCard(focus = false) {
+      const card = $('#terms .selected');
+      if (!card) return;
+      const host = $('#terms'), top = card.getBoundingClientRect().top - host.getBoundingClientRect().top;
+      if (top < 0 || top > host.clientHeight * .4) host.scrollTop += top;
+      if (focus) card.querySelector('.term-summary').focus({preventScroll:true});
+    }
+    function guard(action) {
+      if (changed()) { pending = action; $('#leaveDialog').showModal(); return; }
+      editing = false; draft = null; action();
+    }
+    function select(id, index = 0, fromSource = false, focus = false) {
+      if (id === selected) { occurrence = index; renderSource(); if (!fromSource) locate(); return; }
+      guard(() => {
+        selected = id; occurrence = index; comparisonOpen = false;
+        if (!filtered().some(e => e.id === id)) { $('#search').value = ''; $('#filter').value = 'all'; }
+        render();
+        if (fromSource) mobilePane('terms'); else locate();
+        revealCard(focus);
+      });
+    }
+    function saveEdit() {
+      if (!draft || !active()) return;
+      const entry = active(), wasChanged = changed();
+      entry.definition = draft.definition.trim(); entry.context = draft.context.trim();
+      if (wasChanged && entry.status === 'reviewed') entry.status = 'draft';
+      editing = false; draft = null; persist(); render();
+    }
+    function nextTerm(review) {
+      const entry = active(), ordered = filtered(), position = ordered.findIndex(e => e.id === selected);
+      const following = [...ordered.slice(position + 1),...ordered.slice(0,position)].find(e => e.status === 'draft' || e.status === 'stale');
+      if (review) { entry.status = 'reviewed'; persist(); }
+      if (following) { selected = following.id; occurrence = 0; comparisonOpen = false; }
+      render(); locate(); revealCard(true);
+      if (review) toast(`${entry.form} 검토 완료${following ? ` · 다음 용어 ${following.form}` : ' · 표시된 후보를 모두 검토했습니다'}`);
+      else if (!following) toast('표시된 용어 중 남은 검토 후보가 없습니다.');
+    }
+    function mobilePane(name) {
+      $('#workspace').classList.toggle('show-source',name === 'source');
+      $('#sourceTab').setAttribute('aria-selected',String(name === 'source'));
+      $('#termsTab').setAttribute('aria-selected',String(name === 'terms'));
+    }
+    $('#source').addEventListener('click', event => {
+      const hit = event.target.closest('[data-hit]'); if (!hit) return;
+      if (hit.dataset.hit === selected) { occurrence = Number(hit.dataset.index); renderSource(); mobilePane('terms'); revealCard(); }
+      else select(hit.dataset.hit,Number(hit.dataset.index),true);
+    });
+    $('#terms').addEventListener('click', event => {
+      const button = event.target.closest('button'); if (!button) return;
+      if (button.dataset.select) { select(button.dataset.select); return; }
+      const action = button.dataset.action;
+      if (action === 'edit') { editing = true; draft = {definition:active().definition,context:active().context}; renderTerms(); $('#editDefinition').focus(); }
+      if (action === 'save') { saveEdit(); toast('풀이를 저장했습니다.'); revealCard(true); }
+      if (action === 'cancel') { editing = false; draft = null; renderTerms(); revealCard(true); }
+      if (action === 'review') nextTerm(true);
+      if (action === 'next') nextTerm(false);
+      if (action === 'locate') { mobilePane('source'); locate(); }
+      if (action === 'compare') { comparisonOpen = true; renderTerms(); locate(); }
+      if (action === 'resolve') { active().status = 'draft'; comparisonOpen = false; persist(); render(); toast('현재 원문에 연결했습니다. 풀이를 검토해 주세요.'); }
+      if (action === 'more') { const menu = button.nextElementSibling; menu.hidden = !menu.hidden; button.setAttribute('aria-expanded',String(!menu.hidden)); }
+      if (action === 'exclude') { active().status = active().status === 'excluded' ? 'draft' : 'excluded'; persist(); render(); }
+      if (action === 'unreview') { active().status = 'draft'; persist(); render(); }
+      if (action === 'clear') { $('#search').value = ''; $('#filter').value = 'all'; renderTerms(); }
+    });
+    $('#terms').addEventListener('input', event => {
+      if (event.target.id === 'editDefinition') draft.definition = event.target.value;
+      if (event.target.id === 'editContext') draft.context = event.target.value;
+      if ($('#editState')) $('#editState').textContent = changed() ? '저장하지 않은 변경' : '풀이 수정 중';
+    });
+    let previousQuery = '', previousFilter = 'all';
+    function applyFilter(control, previous) {
+      const next = control.value;
+      if (changed()) control.value = previous;
+      guard(() => {
+        control.value = next; previousQuery = $('#search').value; previousFilter = $('#filter').value;
+        const visible = filtered();
+        if (!visible.some(e => e.id === selected)) { selected = visible[0]?.id || entries[0].id; occurrence = 0; comparisonOpen = false; }
+        renderSource(); renderTerms(); $('#terms').scrollTop = 0;
+      });
+    }
+    $('#search').addEventListener('input', () => applyFilter($('#search'),previousQuery));
+    $('#filter').addEventListener('change', () => applyFilter($('#filter'),previousFilter));
+    $('#marks').onchange = event => $('#source').classList.toggle('no-marks',!event.target.checked);
+    $('#fontButton').onclick = () => { const open = $('#fontPanel').hidden; $('#fontPanel').hidden = !open; $('#fontButton').setAttribute('aria-expanded',String(open)); };
+    $('#fontSize').onchange = event => document.documentElement.style.setProperty('--source-size',event.target.value + 'px');
+    $('#lineHeight').onchange = event => document.documentElement.style.setProperty('--source-leading',event.target.value);
+    for (const [id,direction] of [['prevHit',-1],['nextHit',1]]) $('#' + id).onclick = () => { occurrence += direction; renderSource(); locate(); };
+    $('#sourceTab').onclick = () => mobilePane('source'); $('#termsTab').onclick = () => mobilePane('terms');
+    $('#help').onclick = () => $('#helpDialog').showModal();
+    $('#addTerm').onclick = () => guard(() => { $('#addForm').reset(); renderTerms(); $('#addDialog').showModal(); });
+    $('#generate').onclick = () => guard(() => { renderTerms(); $('#aiDialog').showModal(); });
+    $('#reset').onclick = () => $('#resetDialog').showModal();
+    document.querySelectorAll('[data-close]').forEach(button => button.onclick = () => button.closest('dialog').close());
+    $('#addForm').onsubmit = event => {
+      event.preventDefault();
+      const form = $('#newForm').value.trim(), definition = $('#newDefinition').value.trim();
+      if (!form || !definition) return;
+      const existing = entries.find(e => e.form === form);
+      if (existing) { $('#addDialog').close(); select(existing.id); toast('같은 표제어가 있어 기존 용어를 열었습니다.'); return; }
+      entries.push({id:'term-' + Date.now(),form,reading:$('#newReading').value.trim(),kind:$('#newKind').value,definition,context:'',status:'draft'});
+      selected = entries[entries.length - 1].id; occurrence = 0; $('#search').value = ''; $('#filter').value = 'all';
+      persist(); render(); $('#addDialog').close(); locate(); revealCard(true); toast('용어를 추가했습니다.');
+    };
+    $('#applyCandidates').onclick = () => {
+      const additions = candidates.filter(candidate => !entries.some(e => e.form === candidate.form));
+      entries.push(...clone(additions)); persist(); render(); $('#aiDialog').close();
+      if (additions.length) select(additions[0].id,0,false,true);
+      toast(additions.length ? `예시 후보 ${additions.length}개를 추가했습니다.` : '예시 후보가 이미 모두 추가되어 있습니다.');
+    };
+    $('#doReset').onclick = () => {
+      entries = clone(seed); selected = 'gija'; occurrence = 0; editing = false; draft = null; comparisonOpen = false;
+      $('#search').value = ''; $('#filter').value = 'all'; previousQuery = ''; previousFilter = 'all';
+      $('#marks').checked = true; $('#source').classList.remove('no-marks');
+      $('#fontSize').value = '21'; $('#lineHeight').value = '2.15'; document.documentElement.style.removeProperty('--source-size'); document.documentElement.style.removeProperty('--source-leading');
+      try { localStorage.removeItem(storageKey); } catch {}
+      render(); $('#source').scrollTop = 0; $('#terms').scrollTop = 0; $('#saveState').textContent = '이 브라우저에서만 저장'; $('#resetDialog').close(); toast('처음 상태로 돌아왔습니다.');
+    };
+    $('#discardChanges').onclick = () => { editing = false; draft = null; const action = pending; pending = null; $('#leaveDialog').close(); action?.(); };
+    $('#saveAndLeave').onclick = () => { saveEdit(); const action = pending; pending = null; $('#leaveDialog').close(); action?.(); };
+    $('#leaveDialog').addEventListener('close', () => { pending = null; });
+    document.addEventListener('click', event => {
+      if (!event.target.closest('.font-control')) { $('#fontPanel').hidden = true; $('#fontButton').setAttribute('aria-expanded','false'); }
+      if (!event.target.closest('.more-wrap')) document.querySelectorAll('.more-menu').forEach(menu => { menu.hidden = true; menu.previousElementSibling.setAttribute('aria-expanded','false'); });
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !$('#fontPanel').hidden) { $('#fontPanel').hidden = true; $('#fontButton').setAttribute('aria-expanded','false'); $('#fontButton').focus(); }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); if (editing && !document.querySelector('dialog[open]')) { saveEdit(); toast('풀이를 저장했습니다.'); revealCard(true); } }
+    });
+    window.addEventListener('beforeunload', event => { if (changed()) { event.preventDefault(); event.returnValue = ''; } });
+    if (!entries.some(e => e.id === selected)) selected = entries[0].id;
+    render();
+  </script>
+</body>
+</html>

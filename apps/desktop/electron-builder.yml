@@ -43,12 +43,14 @@ mac:
   notarize: false
   gatekeeperAssess: false
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch:
         - x64
   artifactName: Munhae-Studio-${version}-${arch}-setup.${ext}
 linux:
+  icon: build/icon.png
   target:
     - AppImage
   category: Office

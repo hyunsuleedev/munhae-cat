@@ -129,20 +129,21 @@ export function configureReadingAnalysisSession(deps: Deps) {
     } catch (error) { if (current(ticket)) { state.error = messageOf(error); schedule(ticket); } }
     finally { if (current(ticket)) { state.canceling = false; emit(); } }
   }
-  async function apply(suggestionId: string): Promise<boolean> {
+  /** `orderOnly` re-applies just the reading order to an existing record and leaves the proposal open. */
+  async function apply(suggestionId: string, orderOnly = false): Promise<boolean> {
     const run = state.run, ticket = generation;
     const suggestion = run?.result?.suggestions.find(item => item.id === suggestionId);
-    if (!context || !run || run.state !== "completed" || !suggestion || suggestion.applied || state.starting || state.canceling || state.applyingId || !deps.canApply()) return false;
+    if (!context || !run || run.state !== "completed" || !suggestion || (suggestion.applied && !orderOnly) || state.starting || state.canceling || state.applyingId || !deps.canApply()) return false;
     state.applyingId = suggestionId; state.error = ""; emit();
     try {
       if (!await matches(run, ticket) || !current(ticket) || !deps.canApply()) return false;
-      const result = await deps.api.applyReadingAnalysis({ runId: run.id, suggestionId });
+      const result = await deps.api.applyReadingAnalysis({ runId: run.id, suggestionId, ...(orderOnly ? { orderOnly: true } : {}) });
       if (!current(ticket)) return false;
       if (!result.ok) throw new Error(result.error.message);
       const note = result.data;
       if (note.documentNodeId !== run.documentNodeId || note.sourceVersionId !== run.sourceVersionId
         || note.codepointFrom !== suggestion.from || note.codepointTo !== suggestion.to || note.quote !== suggestion.quote) throw new Error("저장된 풀이의 원문 위치를 확인할 수 없습니다.");
-      state.run = { ...run, result: { ...run.result!, suggestions: run.result!.suggestions.map(item => item.id === suggestionId ? { ...item, applied: true } : item) } };
+      if (!orderOnly) state.run = { ...run, result: { ...run.result!, suggestions: run.result!.suggestions.map(item => item.id === suggestionId ? { ...item, applied: true } : item) } };
       deps.applied(note); return true;
     } catch (error) { if (current(ticket)) state.error = messageOf(error); return false; }
     finally { if (current(ticket)) { state.applyingId = null; emit(); } }

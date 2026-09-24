@@ -169,6 +169,11 @@
                       <span class="tag tag-plain" id="sourceStateBadge">—</span>
                     </div>
                     <span class="sp"></span>
+                    <button class="btn btn-ghost btn-sm" id="btnSourceView" type="button" popovertarget="sourceViewSettings" aria-expanded="false" aria-controls="sourceViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
+                    <div class="editor-tool-popover" id="sourceViewSettings" popover aria-label="원문 보기 설정" data-i18n-aria-label="원문 보기 설정">
+                      <div class="field"><label for="sourceFontSize" data-i18n="글자 크기">글자 크기</label><select class="select" id="sourceFontSize"><option value="18">18 px</option><option value="20" selected>20 px</option><option value="22">22 px</option><option value="24">24 px</option></select></div>
+                      <div class="field"><label for="sourceLineHeight" data-i18n="줄 간격">줄 간격</label><select class="select" id="sourceLineHeight"><option value="1.7" data-i18n="좁게">좁게</option><option value="2" selected data-i18n="보통">보통</option><option value="2.2" data-i18n="넓게">넓게</option></select></div>
+                    </div>
                     <div class="source-actions">
                       <button class="btn btn-ghost btn-sm" id="btnEditSource" type="button" hidden><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m10.5 2.5 3 3M3 10l7.5-7.5a2.12 2.12 0 0 1 3 3L6 13l-4 1z"></path></svg><span data-i18n="수정">수정</span></button>
                       <button class="btn btn-ghost btn-sm" id="btnCancelSourceEdit" type="button" hidden data-i18n="수정 취소">수정 취소</button>
@@ -189,7 +194,7 @@
                   <div class="punctuation-toolbar-tools" role="group" aria-label="표점 보기 설정" data-i18n-aria-label="표점 보기 설정">
                     <button class="btn btn-ghost btn-sm" id="btnPunctuationCompare" type="button" aria-pressed="true" aria-controls="punctuationSourcePane"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12v12H2ZM8 2v12"/></svg><span data-i18n="원문 대조">원문 대조</span></button>
                     <div id="punctuationDraftFields" title="글 형식은 표점과 함께 저장됩니다." data-i18n-title="글 형식은 표점과 함께 저장됩니다."><select class="select" id="punctuationMode" aria-label="글 형식" data-i18n-aria-label="글 형식" aria-describedby="documentFormHelp"><option value="prose" data-i18n="산문">산문</option><option value="poetry" data-i18n="운문">운문</option></select><span id="documentFormHelp" hidden data-i18n="글 형식은 표점과 함께 저장됩니다.">글 형식은 표점과 함께 저장됩니다.</span></div>
-                    <button class="btn btn-ghost btn-sm" id="btnPunctuationView" type="button" popovertarget="punctuationViewSettings" aria-expanded="false" aria-controls="punctuationViewSettings"><span data-i18n="보기">보기</span><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6 3 3 3-3"/></svg></button>
+                    <button class="btn btn-ghost btn-sm" id="btnPunctuationView" type="button" popovertarget="punctuationViewSettings" aria-expanded="false" aria-controls="punctuationViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
                   </div>
                   <div class="editor-tool-popover" id="punctuationViewSettings" popover aria-label="표점 보기 설정" data-i18n-aria-label="표점 보기 설정">
                     <div class="field"><label for="punctuationFontSize" data-i18n="글자 크기">글자 크기</label><select class="select" id="punctuationFontSize"><option value="18">18 px</option><option value="20">20 px</option><option value="22">22 px</option><option value="24">24 px</option></select></div>
@@ -208,6 +213,7 @@
                     <pre class="source-reference hanmun" id="punctuationSourceReference" aria-labelledby="punctuationSourceLabel" tabindex="0"></pre>
                     <footer class="punctuation-pane-footer"><span data-i18n="원문 문자 보존">원문 문자 보존</span><span id="punctuationSourceCount"></span></footer>
                   </section>
+                  <div id="punctuationDivider" class="comparison-divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="확정 원문과 표점 원문 너비 조절" aria-controls="punctuationSourceReference punctuationDraftText" title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원" data-i18n-aria-label="확정 원문과 표점 원문 너비 조절" data-i18n-title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원"></div>
                   <section class="punctuation-comparison-target" aria-labelledby="punctuationTargetLabel">
                     <div class="field" id="punctuationTextField">
                       <header class="punctuation-field-heading">
@@ -305,7 +311,7 @@
                 </div>
                 <div class="view folio-sheet" id="viewFull" data-od-id="view-full">
                   <div class="folio-columns"><span>原文 <small id="folioSourceLabel" data-i18n="원문">원문</small><select id="bookSourceMode" aria-label="서책 대조 원문"><option value="source">원본</option><option value="punctuation">표점 원문</option></select></span><span>譯文 <small data-i18n="번역 전문">번역 전문</small></span></div>
-                  <div class="folio-spread"><div class="folio-source hanmun" id="folioSourceText" lang="zh-Hant"></div><div class="folio-translation"><textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" data-i18n-aria-label="번역 전문" spellcheck="false" hidden></textarea><div id="bookGroups" hidden></div><div class="full-text" id="fullText"></div></div></div>
+                  <div class="folio-spread"><div class="folio-source hanmun" id="folioSourceText" lang="zh-Hant"></div><div class="folio-translation"><textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" data-i18n-aria-label="번역 전문" spellcheck="false" hidden></textarea><div id="bookGroups" hidden></div><div class="full-text" id="fullText"></div></div><div id="bookDivider" class="comparison-divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="서책 원문과 번역문 너비 조절" aria-controls="folioSourceText bookGroups fullTranslationInput fullText" title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원"></div></div>
                   <p class="folio-caption" data-i18n="문단과 줄바꿈을 그대로 보존합니다. 문장별 대조에서도 같은 번역문을 편집합니다.">문단과 줄바꿈을 그대로 보존합니다. 문장별 대조에서도 같은 번역문을 편집합니다.</p>
                 </div>
                 <div class="view" id="viewReading" data-od-id="view-reading"></div>
@@ -319,7 +325,7 @@
           <div class="scope" style="padding:0 8px">
             <div class="seg wide" id="rtabs" role="tablist">
               <button type="button" role="tab" data-tab="chat" aria-selected="true" data-i18n="AI 채팅">AI 채팅</button>
-              <button type="button" role="tab" data-tab="context" aria-selected="false" data-i18n="참고 자료">참고 자료</button>
+              <button type="button" role="tab" id="contextTab" data-tab="context" aria-selected="false" data-i18n="참고 자료">참고 자료</button>
               <button type="button" role="tab" data-tab="comments" aria-selected="false"><span data-i18n="코멘트 ">코멘트 </span><span id="reviewCommentCount">0</span></button>
               <button type="button" role="tab" data-tab="history" aria-selected="false" data-i18n="이력">이력</button>
             </div>
@@ -337,6 +343,7 @@
               <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="chatCancel" type="button" hidden data-i18n="취소">취소</button><button class="btn btn-sm" id="chatSend" type="submit"><span data-i18n="보내기 ">보내기 </span><kbd>⌘↩</kbd></button></div>
             </form>
           </div>
+          <div class="rpanel" id="rp-reading" role="tabpanel" aria-label="뜻풀이" data-i18n-aria-label="뜻풀이"></div>
           <div class="rpanel" id="rp-context" role="tabpanel"><div class="pane-scroll">
             <section id="documentMaterials" aria-label="문서별 번역 참고 자료" aria-live="polite" data-i18n-aria-label="문서별 번역 참고 자료"></section>
             <div class="pane-body"><button class="btn btn-sm" id="btnDictionaryContext" type="button" data-i18n="한자·어휘 사전">한자·어휘 사전</button><button class="btn btn-sm" id="btnSearchFootnotesContext" type="button" data-i18n="각주 용례 찾기 · 한국고전종합DB">각주 용례 찾기 · 한국고전종합DB</button></div>

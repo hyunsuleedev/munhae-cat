@@ -312,13 +312,16 @@ function structuredContainsSensitiveText(
  * raw and JSON-decoded strings so escaped credential values cannot bypass the
  * exact-value comparison before a payload reaches a project repository.
  */
+const MIN_REJECTING_SECRET_LENGTH = 8;
 export function containsSensitiveProviderData(
   payload: string,
   env: NodeJS.ProcessEnv = process.env,
   additionalSecrets: readonly string[] = [],
 ): boolean {
+  // Log redaction may over-match, but rejecting a submission must not: flags such as
+  // SESSION_ATTENDED=1 share credential-like names, and a value that short is not a secret.
   const secrets = [...new Set([
-    ...credentialEnvironmentValues(env),
+    ...credentialEnvironmentValues(env).filter((value) => value.trim().length >= MIN_REJECTING_SECRET_LENGTH),
     ...additionalSecrets.filter((value) => value.length > 0),
   ])].sort((left, right) => right.length - left.length);
   const contains = (text: string): boolean => (

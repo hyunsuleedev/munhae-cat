@@ -21,9 +21,16 @@ export function restoreV6MaterialsFixture(db: SqliteDb): void {
 
 /** Restore removed columns before constructing a pre-v10 fixture. */
 export function restoreV9SummaryFixture(db: SqliteDb): void {
+  restoreV10AnnotationFixture(db);
   for (const table of ["src_text_versions", "punctuation_versions"]) {
     const columns = db.pragma(`table_info(${table})`) as Array<{ name: string }>;
     if (!columns.some(column => column.name === "change_summary")) db.exec(`ALTER TABLE ${table} ADD COLUMN change_summary TEXT`);
   }
   db.exec("DELETE FROM meta_schema_migrations WHERE version=10; UPDATE meta_project_state SET schema_version=9");
+}
+
+/** Drop the local translation link table before constructing a pre-v11 fixture. */
+export function restoreV10AnnotationFixture(db: SqliteDb): void {
+  db.exec("DROP TABLE IF EXISTS reading_translation_links");
+  db.exec("DELETE FROM meta_schema_migrations WHERE version=11; UPDATE meta_project_state SET schema_version=10");
 }

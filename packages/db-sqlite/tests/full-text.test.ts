@@ -288,7 +288,7 @@ it("upgrades an actual v1 table without losing legacy history and creates a pre-
     expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
     expect(
       check.prepare("SELECT schema_version FROM meta_project_state").get(),
-    ).toEqual({ schema_version: 10 });
+    ).toEqual({ schema_version: 11 });
   } finally {
     check.close();
   }

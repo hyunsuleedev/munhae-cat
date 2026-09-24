@@ -16,12 +16,12 @@ const run = (extra: Partial<ReadingAnalysisRun> = {}): ReadingAnalysisRun => ({
   agentId: "codex", createdAt: "2026-09-23T12:00:00Z", state: "running", detail: "분석 중", result: null, error: null, ...extra,
 });
 const completed = () => run({ state: "completed", result: { summary: "문맥을 확인하세요.", suggestions: [{
-  id: "suggestion", from: 2, to: 3, quote: "甲", reading: "갑", readingOrder: null, citation: null,
+  id: "suggestion", from: 2, to: 3, quote: "甲", reading: "갑", readingOrder: null, citation: null, translationQuote: null,
   explanation: "AI 해석", caution: "추가 확인", applied: false,
 }] } });
 const annotation = (): ReadingAnnotationView => ({
   id: "note", documentNodeId: "doc", sourceVersionId: "source", codepointFrom: 2, codepointTo: 3, quote: "甲", reading: "갑",
-  readingOrder: null, citation: null, gloss: "", lockVersion: 1, createdAt: "2026-09-23", updatedAt: "2026-09-23",
+  readingOrder: null, citation: null, translationQuote: null, gloss: "", lockVersion: 1, createdAt: "2026-09-23", updatedAt: "2026-09-23",
 });
 function fixture() {
   const starts: ReturnType<typeof deferred<IpcResult<ReadingAnalysisRun>>>[] = [];

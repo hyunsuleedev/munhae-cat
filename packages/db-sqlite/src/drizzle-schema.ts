@@ -408,6 +408,13 @@ const reading_annotations = sqliteTable("reading_annotations", {
   archived_at: text("archived_at"),
 });
 
+const reading_translation_links = sqliteTable("reading_translation_links", {
+  annotation_id: text("annotation_id").primaryKey().notNull(),
+  project_id: text("project_id").notNull(),
+  translation_quote: text("translation_quote").notNull(),
+  updated_at: text("updated_at").notNull(),
+});
+
 const review_comments = sqliteTable("review_comments", {
   id: text("id").primaryKey().notNull(),
   project_id: text("project_id").notNull(),
@@ -712,6 +719,7 @@ export const schema = {
   punctuation_structure_spans,
   punctuation_versions,
   reading_annotations,
+  reading_translation_links,
   review_comments,
   src_asset_locations,
   src_asset_pages,

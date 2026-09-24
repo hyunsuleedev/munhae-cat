@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>문해 · 구절 연구 데모</title>
+<style>
+:root{--paper:#fffefa;--sidebar:#efeee8;--chrome:#f7f6f1;--ink:#292d27;--muted:#72776b;--line:#dedfd5;--accent:#815343;--wash:#f0e8de;--green:#566b52;--greenwash:#edf0e8;--serif:"Noto Serif KR","Noto Serif CJK KR","AppleMyungjo","Apple Myungjo","Songti SC",Batang,serif;--ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Apple SD Gothic Neo",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.5 var(--ui)}button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.4}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button:active:not(:disabled){transform:translateY(1px)}[hidden]{display:none!important}h1,h2,h3,p{margin:0}svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}.serif{font-family:var(--serif)}.muted{color:var(--muted)}.spacer{flex:1}.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:30px;padding:4px 10px;border:1px solid var(--line);border-radius:5px;background:var(--paper);white-space:nowrap;font-size:12px}.ghost{background:transparent;border-color:transparent}.primary{background:var(--ink);border-color:var(--ink);color:var(--paper)}.icon-btn{width:30px;padding:4px}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}.app{display:grid;grid-template-columns:200px minmax(0,1fr);grid-template-rows:44px minmax(0,1fr) 25px;height:100dvh;min-height:520px;overflow:hidden}.app.no-sidebar{grid-template-columns:0 minmax(0,1fr)}.app.no-sidebar .sidebar{visibility:hidden}
+.sidebar{grid-row:1/3;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--line);background:var(--sidebar);overflow:hidden}.side-top{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;padding:0 18px}.dot{width:10px;height:10px;border-radius:50%;background:#d5d3cd}.brand{padding:29px 21px 26px;display:flex;align-items:center;gap:12px}.brand strong{font:29px var(--serif);letter-spacing:3px}.brand span{font-size:9px;line-height:1.6;letter-spacing:1.4px;color:var(--muted)}.side-label{font-size:10px;color:var(--muted);padding:13px 17px 5px}.side-item{display:flex;align-items:center;gap:8px;margin:2px 8px;padding:9px 10px;font-size:12px;white-space:nowrap}.side-item span{overflow:hidden;text-overflow:ellipsis}.side-item.current{background:#e0e2d8;border-radius:5px}.side-item.child{padding-left:29px}.side-bottom{margin-top:auto;padding:15px 18px;border-top:1px solid var(--line);font-size:11px;color:var(--muted)}.topbar{display:flex;align-items:center;gap:10px;padding:0 17px;border-bottom:1px solid var(--line);min-width:0}.topbar h1{font:500 15px var(--serif);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.topbar small{color:var(--muted);font-size:11px}.demo-tag{font-size:10px;color:var(--accent);border:1px solid #ded0c3;border-radius:4px;padding:2px 6px;white-space:nowrap}.topbar .demo-tag{margin-left:auto}main{display:flex;flex-direction:column;min-height:0;min-width:0}.workflow{display:flex;align-items:center;gap:32px;min-height:35px;padding:0 25px;border-bottom:1px solid var(--line);font-size:11px;color:var(--muted);white-space:nowrap}.workflow span{display:flex;align-items:center;gap:8px}.workflow b{font:14px Georgia,serif;color:#9a9e91}.workflow .current{color:var(--accent)}.workflow .current b{color:var(--accent)}.views{display:flex;gap:25px;align-items:center;min-height:39px;padding:0 25px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted)}.views .active{position:relative;color:var(--ink);font-weight:600;align-self:stretch;display:flex;align-items:center}.views .active:after{content:"";height:2px;background:var(--accent);position:absolute;bottom:-1px;left:0;right:0}.views small{margin-left:auto;color:var(--muted);font-size:10px}.research{display:grid;grid-template-columns:minmax(0,1fr) 350px;flex:1;min-height:0;min-width:0}.reader{display:flex;flex-direction:column;min-height:0;min-width:0}.reader-toolbar{display:flex;align-items:center;gap:7px;min-height:43px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--chrome)}.reader-toolbar select{font-size:11px;border:0;background:transparent;min-width:0;width:145px;padding:6px 2px}.reader-toolbar .btn{font-size:11px}.toggle[aria-pressed=true]{background:var(--wash);color:var(--accent)}.reader-scroll{overflow:auto;scrollbar-width:thin;flex:1;min-height:0;overscroll-behavior:contain}.page{max-width:900px;margin:auto;padding:30px 36px 35px}.section-eyebrow{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:10px;margin-bottom:16px}.section-eyebrow .rule{height:1px;background:var(--line);flex:1}.section-eyebrow .unit-no{font-variant-numeric:tabular-nums;color:var(--accent)}.context-line{font:16px/1.9 var(--serif);color:#92968b;min-height:25px}.context-line.before:empty{display:none}.source{font:34px/2.3 var(--serif);letter-spacing:.035em;margin:17px 0 18px;overflow-wrap:anywhere;word-break:keep-all}.source button{display:inline;font:inherit;color:inherit;letter-spacing:inherit;line-height:1.7;border:0;border-bottom:1px solid transparent;background:transparent;padding:5px 2px 3px;border-radius:3px;box-decoration-break:clone;-webkit-box-decoration-break:clone}.source button.annotated{border-bottom-color:#b4b9a7}.source button[aria-pressed=true]{background:var(--wash);border-bottom:2px solid var(--accent);color:var(--accent)}.source rt{font:10px/1 var(--ui);letter-spacing:0;color:var(--muted);user-select:none}.source .punct{color:#757a6e}.translation-block{border-left:2px solid #b1b8a4;padding-left:18px;margin:23px 0 27px}.translation-label{font-size:10px;color:var(--green);margin-bottom:7px;display:flex;align-items:center;gap:8px}.translation{font:18px/1.9 var(--serif);word-break:keep-all;overflow-wrap:anywhere}.translation .selected-text{background:var(--greenwash);box-shadow:0 2px var(--greenwash)}.context-line.after{padding-top:15px;border-top:1px solid var(--line)}.char-section{margin-top:27px;padding-top:17px;border-top:1px solid var(--line)}.section-title{display:flex;align-items:center;gap:9px;font-size:12px;margin-bottom:13px}.section-title h3{font-size:12px;font-weight:600}.section-title small{font-size:10px;font-weight:400;color:var(--muted)}.section-title .btn{margin-left:auto;font-size:10px;min-height:24px;padding:2px 6px}.char-list{display:flex;flex-wrap:wrap;gap:4px}.char{min-width:47px;flex:0 0 47px;display:flex;flex-direction:column;align-items:center;gap:4px;background:transparent;border:1px solid transparent;padding:7px 2px;border-radius:4px}.char strong{font:24px/1.35 var(--serif);font-weight:400}.char small{font-size:10px;color:var(--muted)}.char[aria-pressed=true]{border-color:#d5c4b5;background:var(--wash);color:var(--accent)}.selection-help{font-size:10px;line-height:1.7;color:var(--muted);margin-top:13px}.research-notes{margin-top:31px}.research-notes .section-title{margin-bottom:9px}.note-row{display:grid;grid-template-columns:80px minmax(0,1fr) 14px;gap:13px;align-items:baseline;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:transparent;padding:12px 0}.note-row .quote{font:16px/1.6 var(--serif);color:var(--accent);overflow-wrap:anywhere}.note-row .note-copy{font-size:12px;color:#666c5f;line-height:1.75;overflow-wrap:anywhere}.note-row svg{width:13px;height:13px;align-self:center;color:#93988a}.empty-notes{font-size:12px;line-height:1.9;color:var(--muted);padding:12px 0}.reader-foot{display:flex;align-items:center;gap:8px;min-height:32px;padding:0 23px;border-top:1px solid var(--line);color:var(--muted);font-size:10px;flex-wrap:wrap}.reader-foot .dot{width:5px;height:5px;background:#8b977c}.reader-foot .btn{margin-left:auto;font-size:10px;min-height:24px;padding:1px 5px;color:var(--muted)}
+.inspector{display:flex;flex-direction:column;border-left:1px solid var(--line);min-height:0;min-width:0;background:#fafaf5}.inspector-top{padding:20px 22px 0}.selection-meta{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:10px;margin-bottom:11px}.selection-meta .position{margin-left:auto;font-variant-numeric:tabular-nums}.selection-heading{display:flex;align-items:baseline;gap:12px;margin-bottom:15px;min-height:49px;flex-wrap:wrap}.selection-heading h2{font:35px/1.4 var(--serif);color:var(--accent);overflow-wrap:anywhere;max-width:100%}.selection-heading h2.long{font-size:25px}.selection-heading span{font-size:12px;color:var(--muted)}.inspector-tabs{display:flex;gap:21px;border-bottom:1px solid var(--line)}.inspector-tabs button{position:relative;background:transparent;border:0;padding:10px 0 11px;font-size:11px;color:var(--muted);white-space:nowrap}.inspector-tabs button[aria-selected=true]{color:var(--ink);font-weight:600}.inspector-tabs button[aria-selected=true]:after{content:"";position:absolute;bottom:-1px;height:2px;left:0;right:0;background:var(--green)}.inspector-body{overflow:auto;padding:21px 22px 26px;flex:1;min-height:0;scrollbar-width:thin;overscroll-behavior:contain}.panel-label{font-size:10px;color:var(--muted);display:flex;gap:8px;align-items:center;margin-bottom:12px}.panel-label small{margin-left:auto;font-size:9px;color:#858b7c}.sense{width:100%;display:grid;grid-template-columns:15px minmax(0,1fr);gap:9px;text-align:left;background:transparent;border:1px solid var(--line);border-radius:5px;padding:12px 11px;margin-bottom:7px}.sense[aria-checked=true]{border-color:#a9b39b;background:var(--greenwash)}.radio-mark{border:1px solid #b3b8a9;border-radius:50%;width:12px;height:12px;margin-top:4px;display:flex;justify-content:center;align-items:center}.sense[aria-checked=true] .radio-mark{border-color:var(--green)}.sense[aria-checked=true] .radio-mark:after{content:"";width:6px;height:6px;background:var(--green);border-radius:50%}.sense strong{font-size:13px;line-height:1.8;font-weight:500;display:block}.sense small{display:block;font-size:11px;line-height:1.8;color:var(--muted);margin-top:4px}.sample-note{font-size:10px;line-height:1.8;color:var(--muted);margin:12px 0 22px}.fields{display:grid;grid-template-columns:minmax(0,1fr) 80px;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}label.field{display:flex;flex-direction:column;gap:7px;font-size:11px;color:var(--muted)}input,textarea{width:100%;min-width:0;border:1px solid var(--line);border-radius:4px;background:var(--paper);padding:7px 9px}input{height:33px;font-size:12px}textarea{min-height:128px;resize:vertical;line-height:1.9;font-size:12px}.inline-help{font-size:10px;color:var(--muted);line-height:1.8;margin-top:10px}.meaning-empty{padding:16px 0;color:var(--muted);font-size:12px;line-height:1.9}.evidence-quote{font:18px/1.9 var(--serif);padding:0 0 0 12px;border-left:2px solid #bdc5ae;margin:0 0 10px;overflow-wrap:anywhere}.evidence-caption{font-size:10px;color:var(--muted);margin-bottom:24px}.comment-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:11px}.comment-title span{color:var(--muted);font-size:10px}.review-check{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;margin-top:13px;cursor:pointer}.review-check input{width:14px;height:14px;accent-color:var(--green);margin:0}.evidence-reminder{margin-top:22px;border-top:1px solid var(--line);padding-top:16px;font-size:11px;line-height:1.9;color:var(--muted)}.ai-intro{font-size:12px;line-height:1.9;margin-bottom:17px;color:#646c5b}.ai-questions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:19px}.ai-questions button{font-size:11px;min-height:29px;padding:4px 8px}.ai-questions button[aria-pressed=true]{background:var(--wash);border-color:#ddcbb9;color:var(--accent)}.ai-answer{font-size:12px;line-height:1.95}.ai-answer h3{font-size:12px;font-weight:600;margin:17px 0 8px}.ai-answer p{margin:0 0 10px}.ai-answer .quote{font-family:var(--serif);font-size:17px;color:var(--accent)}.ai-use{margin-top:18px;font-size:11px}.inspector-foot{border-top:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:9px;background:#fafaf5;min-height:56px}.save-state{font-size:10px;line-height:1.5;color:var(--muted);flex:1}.save-state.dirty{color:var(--accent)}.inspector-foot .btn{font-size:11px}.statusbar{grid-row:3;grid-column:1/-1;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 13px;color:var(--muted);font-size:10px;min-width:0}.statusbar .path{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.statusbar .demo-info{margin-left:auto;white-space:nowrap}.help-dialog{max-width:480px;width:calc(100% - 32px);padding:25px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);box-shadow:0 15px 60px #292d2720}.help-dialog::backdrop{background:#292d2740}.help-dialog h2{font-size:17px;margin-bottom:15px}.help-dialog p{font-size:12px;line-height:1.95;color:var(--muted);margin-bottom:14px}.help-dialog ol{padding-left:20px;font-size:13px;line-height:2;margin-bottom:20px}.help-dialog .actions{display:flex;gap:8px;justify-content:flex-end}.compact-badge{display:inline-block;font-size:9px;line-height:1.5;color:var(--green);border:1px solid #ccd3c2;border-radius:3px;padding:1px 5px}
+@media(hover:hover) and (pointer:fine){.btn:hover:not(:disabled){background:#eeeee6}.primary:hover:not(:disabled){background:#41483b}.source button:hover{background:var(--wash)}.char:hover,.note-row:hover{background:#f3f2eb}.sense:hover{border-color:#afb99f}.inspector-tabs button:hover{color:var(--ink)}}
+@media(max-width:1180px){.app{grid-template-columns:178px minmax(0,1fr)}.research{grid-template-columns:minmax(0,1fr) 320px}.page{padding:27px 26px}.source{font-size:31px}.workflow{gap:24px}.reader-toolbar{padding-inline:15px}.reader-toolbar select{width:105px}.inspector-top{padding-inline:18px}.inspector-body{padding-inline:18px}.inspector-foot{padding-inline:18px}.reader-toolbar .control-label{display:none}.brand{padding-inline:17px}.views{gap:20px}}
+@media(max-width:960px){.app{grid-template-columns:0 minmax(0,1fr)}.sidebar{visibility:hidden}.research{grid-template-columns:minmax(0,1fr) 310px}.page{padding-inline:25px}.workflow{gap:28px}.topbar .subtitle{display:none}.source{font-size:30px}}
+@media(max-width:650px){.app{height:auto;min-height:100dvh;display:block;overflow:visible}.sidebar{display:none}.topbar{height:44px}.workflow{overflow:auto;gap:20px;padding-inline:15px;min-height:34px}.workflow span{flex-shrink:0}.views{padding-inline:15px;gap:20px;font-size:11px;min-height:39px}.views .active{height:39px}.views small{display:none}.research{display:flex;flex-direction:column}.reader-toolbar{position:sticky;top:0;z-index:2;padding-inline:10px}.reader-toolbar select{width:110px}.reader-scroll{overflow:visible}.page{padding:24px 22px}.source{font-size:29px;line-height:2.4}.translation{font-size:17px}.research-notes{margin-top:25px}.reader-foot{padding:8px 17px}.inspector{border-left:0;border-top:1px solid var(--line)}.inspector-body{overflow:visible;min-height:220px}.inspector-foot{position:sticky;bottom:0}.statusbar{min-height:28px}.statusbar .path{display:none}.statusbar .demo-info{margin-left:0}.source button{padding-block:9px}.inspector-tabs button{min-height:44px}.char{min-width:49px;min-height:64px}.note-row{grid-template-columns:70px minmax(0,1fr) 13px}.topbar small{display:none}}
+.source-chunk{white-space:nowrap}.note-copy{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}button:active:not(:disabled){transform:none}}
+</style>
+</head>
+<body>
+<svg style="display:none" aria-hidden="true"><defs><symbol id="i-panel" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="1.5"/><path d="M8 4v12"/></symbol><symbol id="i-book" viewBox="0 0 20 20"><path d="M10 5c-2-1.4-5-1.4-7-.4v11c2-1 5-1 7 .4 2-1.4 5-1.4 7-.4v-11c-2-1-5-1-7 .4Zm0 0v11"/></symbol><symbol id="i-file" viewBox="0 0 20 20"><path d="M5 2h6l4 4v12H5zM11 2v5h4M7.5 10h5M7.5 13h5"/></symbol><symbol id="i-folder" viewBox="0 0 20 20"><path d="M2 6h6l2-2h8v13H2z"/></symbol><symbol id="i-left" viewBox="0 0 20 20"><path d="m12 5-5 5 5 5"/></symbol><symbol id="i-right" viewBox="0 0 20 20"><path d="m8 5 5 5-5 5"/></symbol><symbol id="i-check" viewBox="0 0 20 20"><path d="m4 10 4 4 8-8"/></symbol><symbol id="i-home" viewBox="0 0 20 20"><path d="m2 9 8-7 8 7M5 7v10h10V7M8 17v-6h4v6"/></symbol><symbol id="i-spark" viewBox="0 0 20 20"><path d="m10 2 2.1 5.9L18 10l-5.9 2.1L10 18l-2.1-5.9L2 10l5.9-2.1Z"/></symbol><symbol id="i-note" viewBox="0 0 20 20"><path d="M3 3h14v11H8l-4 3v-3H3zM6 7h8M6 10h5"/></symbol></defs></svg>
+<div class="app" id="app">
+  <aside class="sidebar" aria-label="프로젝트 탐색">
+    <div class="side-top" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+    <div class="brand"><strong>文解</strong><span>MUNHAE<br>STUDIO</span></div>
+    <div class="side-label">프로젝트</div><div class="side-item"><svg><use href="#i-home"/></svg><span>홈</span></div>
+    <div class="side-label">문서</div><div class="side-item"><svg><use href="#i-folder"/></svg><span>관서악부 연구</span></div>
+    <div class="side-item child current"><svg><use href="#i-file"/></svg><span class="serif">관서악부서</span></div><div class="side-item child muted"><svg><use href="#i-note"/></svg><span>문맥</span></div>
+    <div class="side-label" style="margin-top:20px">프로젝트 공통</div><div class="side-item"><svg><use href="#i-book"/></svg><span>번역 자료</span></div>
+    <div class="side-bottom">문해 · 연구 작업 공간</div>
+  </aside>
+  <header class="topbar"><button class="btn ghost icon-btn" id="toggleSidebar" aria-label="사이드바 표시 전환" aria-pressed="true"><svg><use href="#i-panel"/></svg></button><svg><use href="#i-file"/></svg><h1>관서악부서</h1><small class="subtitle">— 번역·검토</small><span class="demo-tag">인터랙션 데모</span><button class="btn ghost icon-btn" id="help" aria-label="데모 사용 안내">?</button></header>
+  <main>
+    <nav class="workflow" aria-label="작업 단계"><span><b>01</b> 원문 정리</span><span><b>02</b> 표점</span><span><b>03</b> 용어</span><span class="current"><b>04</b> 번역·검토</span></nav>
+    <div class="views" aria-label="현재 보기"><span>원문 전문</span><span>문장별 대조</span><span>서책 보기</span><span class="active">구절 연구</span><small>원문을 읽고, 선택한 구절을 살펴봅니다</small></div>
+    <div class="research">
+      <section class="reader" aria-label="구절 읽기">
+        <div class="reader-toolbar"><button class="btn ghost icon-btn" id="previous" aria-label="이전 구절"><svg><use href="#i-left"/></svg></button><label class="sr-only" for="unitSelect">연구할 구절</label><select id="unitSelect"></select><button class="btn ghost icon-btn" id="next" aria-label="다음 구절"><svg><use href="#i-right"/></svg></button><span class="spacer"></span><button class="btn ghost toggle" id="toggleReadings" aria-pressed="false">독음 <span class="control-label">표시</span></button><button class="btn ghost toggle" id="toggleChars" aria-expanded="false" aria-controls="charSection">글자별 풀이</button></div>
+        <div class="reader-scroll" id="readerScroll"><article class="page">
+          <div class="section-eyebrow"><span class="unit-no" id="unitLabel">구절 01</span><span class="rule"></span><span>관서악부서</span></div>
+          <p class="context-line before" id="contextBefore"></p>
+          <div class="source" id="source" aria-label="원문 · 어휘를 선택해 연구"></div>
+          <section class="translation-block" aria-label="연결된 번역"><div class="translation-label">번역 <span id="translationTag"></span></div><p class="translation" id="translation"></p></section>
+          <p class="context-line after" id="contextAfter"></p>
+          <section class="char-section" id="charSection" hidden aria-label="글자별 풀이"><div class="section-title"><h3>글자별 풀이</h3><small>한 글자씩 살펴보기</small><button class="btn ghost" id="returnToPhrase">어휘로 돌아가기</button></div><div class="char-list" id="charList"></div></section>
+          <p class="selection-help">어휘를 눌러 뜻을 살펴보세요. Shift+클릭으로 선택 범위를 넓힐 수 있습니다.</p>
+          <section class="research-notes"><div class="section-title"><svg><use href="#i-note"/></svg><h3>이 구절의 연구</h3><small id="noteCount"></small></div><div id="noteList"></div></section>
+        </article></div>
+        <footer class="reader-foot"><span class="dot" aria-hidden="true"></span><span id="readingProgress">어휘별로 기록을 남길 수 있습니다</span><button class="btn ghost" id="openEvidence">선택한 어휘의 근거 <svg><use href="#i-right"/></svg></button></footer>
+      </section>
+      <aside class="inspector" aria-label="선택한 어휘 연구">
+        <div class="inspector-top"><div class="selection-meta"><span id="selectionKind">어휘</span><span class="position" id="selectionPosition"></span></div><div class="selection-heading"><h2 id="selectionText"></h2><span id="selectionReading"></span></div><div class="inspector-tabs" role="tablist" aria-label="연구 도구"><button id="tabDictionary" type="button" role="tab" aria-selected="true" aria-controls="panelDictionary" data-tab="dictionary">사전·독음</button><button id="tabEvidence" type="button" role="tab" aria-selected="false" aria-controls="panelEvidence" tabindex="-1" data-tab="evidence">연구 근거</button><button id="tabAi" type="button" role="tab" aria-selected="false" aria-controls="panelAi" tabindex="-1" data-tab="ai">AI 검토</button></div></div>
+        <div class="inspector-body" id="inspectorBody">
+          <section id="panelDictionary" role="tabpanel" aria-labelledby="tabDictionary"><div class="panel-label">이 어휘의 뜻 <small>풀이 예시</small></div><div id="senses" role="radiogroup" aria-label="사용할 뜻 선택"></div><p class="sample-note">화면 구성을 위한 예시 풀이입니다.<br>실제 사전 인용과 출처는 연결하지 않았습니다.</p><div class="fields"><label class="field">독음<input id="readingInput" autocomplete="off" maxlength="100"></label><label class="field">풀이 순서<input id="orderInput" type="number" min="1" max="99" placeholder="선택"></label></div><p class="inline-help">선택한 뜻과 독음은 이 위치에 기록됩니다.</p></section>
+          <section id="panelEvidence" role="tabpanel" aria-labelledby="tabEvidence" hidden><div class="panel-label">현재 문맥 <small>선택 구절의 원문</small></div><blockquote class="evidence-quote" id="evidenceQuote"></blockquote><p class="evidence-caption">관서악부서 · <span id="evidenceUnit"></span></p><label class="comment-title" for="commentInput">검토 코멘트 <span>나의 판단과 남은 질문</span></label><textarea id="commentInput" placeholder="이렇게 읽는 이유, 다른 해석, 더 확인할 근거를 적어 두세요."></textarea><label class="review-check"><input type="checkbox" id="reviewedInput">이 위치의 풀이를 검토함</label><p class="evidence-reminder">사전의 뜻과 연구자의 판단을 구분해 기록합니다. 코멘트는 선택한 원문 위치와 함께 남습니다.</p></section>
+          <section id="panelAi" role="tabpanel" aria-labelledby="tabAi" hidden><div class="panel-label"><svg><use href="#i-spark"/></svg>선택 구절 검토 <span class="compact-badge">응답 예시</span></div><p class="ai-intro">어떤 점을 살펴볼까요?<br>현재 구절과 선택한 어휘를 함께 놓고 검토합니다.</p><div class="ai-questions"><button class="btn" data-question="meaning" aria-pressed="false">문맥에서의 뜻</button><button class="btn" data-question="alternatives" aria-pressed="false">다른 독법</button><button class="btn" data-question="evidence" aria-pressed="false">확인할 근거</button></div><div class="ai-answer" id="aiAnswer"><p class="muted">질문을 선택하면 검토 예시가 나타납니다.</p></div><button class="btn ai-use" id="useAi" hidden>검토 코멘트로 가져오기 <svg><use href="#i-right"/></svg></button><p class="sample-note">미리 작성한 예시이며 AI 요청은 보내지 않습니다.</p></section>
+        </div>
+        <footer class="inspector-foot"><span class="save-state" id="saveState" role="status" aria-live="polite">선택한 어휘의 풀이</span><button class="btn ghost" id="discard" disabled>되돌리기</button><button class="btn primary" id="save" disabled>풀이 저장</button></footer>
+      </aside>
+    </div>
+  </main>
+  <footer class="statusbar"><span class="path">관서악부 연구 › 관서악부서</span><span id="statusProgress"></span><span class="demo-info">예시 자료 · 변경은 이 데모에만 저장</span></footer>
+</div>
+<dialog class="help-dialog" id="helpDialog"><h2>구절 연구, 이렇게 사용해 보세요</h2><ol><li>원문의 <b>東明王</b>이나 <b>所</b>를 선택합니다.</li><li>오른쪽에서 뜻을 고르고 독음을 기록합니다.</li><li><b>글자별 풀이</b>를 펼쳐 한 글자씩 살펴봅니다.</li><li><b>연구 근거</b>에 판단을 적고 풀이를 저장합니다.</li></ol><p>3개 구절을 둘러볼 수 있습니다. 저장한 기록은 이 브라우저의 데모에만 남습니다. 실제 프로젝트와 사전·AI 서비스에는 연결하지 않았습니다.</p><div class="actions"><button class="btn" id="resetDemo">예시 상태로 초기화</button><button class="btn primary" id="closeHelp">살펴보기</button></div></dialog>
+<script id="demoData" type="application/json">{"units":[{"source":"平壤，箕子，東明王之所都也。","translation":"평양은 기자와 동명왕이 도읍했던 곳이다.","contextBefore":"","contextAfter":"自古號佳麗，擅國中。","segments":[{"text":"平壤","reading":"평양","kind":"place","senses":[{"text":"평양","note":"지명으로 읽는 예시"}],"comment":"","reviewed":true},{"text":"，","kind":"punctuation"},{"text":"箕子","reading":"기자","kind":"person","senses":[{"text":"기자","note":"인명으로 읽는 예시"}],"comment":"","reviewed":true},{"text":"，","kind":"punctuation"},{"text":"東明王","reading":"동명왕","kind":"person","senses":[{"text":"동명왕","note":"왕의 칭호를 하나의 어휘로 읽음"}],"comment":"","reviewed":true},{"text":"之","reading":"지","kind":"grammar","senses":[{"text":"앞말과 뒷말을 잇는 말","note":"여기서는 인물과 所都를 연결하는 구문으로 검토"},{"text":"그것을 · 그곳을","note":"다른 문맥에서 가능한 대명사 용법"}],"comment":"","reviewed":false},{"text":"所","reading":"소","kind":"grammar","senses":[{"text":"…한 곳","note":"뒤의 都와 묶어 장소를 가리키는 표현으로 검토"},{"text":"…하는 바 · 것","note":"동작을 명사처럼 만드는 일반적인 풀이"}],"comment":"","reviewed":true},{"text":"都","reading":"도","kind":"verb","senses":[{"text":"도읍하다","note":"所都에서 동사로 읽는 예시"},{"text":"도읍 · 도성","note":"명사 용법과 비교하여 구문을 확인"}],"comment":"所都를 ‘도읍한 곳’으로 풀 때, 앞의 두 인물이 모두 연결되는가?","reviewed":false},{"text":"也","reading":"야","kind":"grammar","senses":[{"text":"…이다","note":"문장 끝에서 판단을 맺는 말로 검토"},{"text":"…라는 것이다","note":"설명의 어조를 살리는 번역 가능성"}],"comment":"","reviewed":true},{"text":"。","kind":"punctuation"}]},{"source":"自古號佳麗，擅國中。","translation":"예부터 아름다운 고장으로 이름나 나라 안에서 으뜸이었다.","contextBefore":"平壤，箕子，東明王之所都也。","contextAfter":"皇朝勑使如張芳洲，許海嶽，朱蘭嵎諸公…","segments":[{"text":"自古","reading":"자고","kind":"phrase","senses":[{"text":"예부터","note":"시간의 범위를 나타내는 표현"}],"comment":"","reviewed":true},{"text":"號","reading":"호","kind":"verb","senses":[{"text":"…라 불리다","note":"뒤의 佳麗와 연결하여 읽는 예시"},{"text":"이름 · 호칭","note":"명사 용법과 비교"}],"comment":"","reviewed":false},{"text":"佳麗","reading":"가려","kind":"phrase","senses":[{"text":"아름답다 · 아름다운 곳","note":"지명을 설명하는 문맥에서 읽는 예시"}],"comment":"","reviewed":true},{"text":"，","kind":"punctuation"},{"text":"擅","reading":"천","kind":"verb","senses":[{"text":"뛰어나다 · 으뜸이다","note":"國中과 연결한 번역안"},{"text":"독차지하다","note":"가능한 다른 뜻과 문맥을 비교"}],"comment":"‘으뜸이었다’라는 번역이 擅의 강도를 충분히 살리는가?","reviewed":false},{"text":"國中","reading":"국중","kind":"phrase","senses":[{"text":"나라 안","note":"범위를 나타내는 말로 읽는 예시"}],"comment":"","reviewed":true},{"text":"。","kind":"punctuation"}]},{"source":"然皆律體也。","translation":"그러나 모두 율시의 형식이다.","contextBefore":"近世三淵金翁作亦佳。","contextAfter":"鄭知常官船一絶，始得樂府音調…","segments":[{"text":"然","reading":"연","kind":"grammar","senses":[{"text":"그러나","note":"앞선 진술에서 전환하는 연결로 읽는 예시"},{"text":"그러하다","note":"서술하는 용법과 비교"}],"comment":"","reviewed":true},{"text":"皆","reading":"개","kind":"grammar","senses":[{"text":"모두","note":"앞서 언급한 대상 전체를 가리키는지 확인"}],"comment":"","reviewed":true},{"text":"律體","reading":"율체","kind":"term","senses":[{"text":"율시의 형식","note":"이 문장의 번역안에 따른 풀이"},{"text":"일정한 격률을 갖춘 시체","note":"가리키는 범위를 주변 문맥에서 확인"}],"comment":"律體의 범위가 율시에 한정되는지 앞뒤 문맥을 확인한다.","reviewed":false},{"text":"也","reading":"야","kind":"grammar","senses":[{"text":"…이다","note":"문장 끝의 판단을 맺는 말"},{"text":"…라는 것이다","note":"설명하는 어조를 살리는 번역 가능성"}],"comment":"","reviewed":true},{"text":"。","kind":"punctuation"}]}]}</script>
+<script>
+'use strict';
+const {units} = JSON.parse(document.getElementById('demoData').textContent);
+const $ = id => document.getElementById(id);
+const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const storageKey = 'munhae.reading-study-demo.v1';
+let records = {};
+try { const value = JSON.parse(localStorage.getItem(storageKey) || '{}'); if (value && typeof value === 'object' && !Array.isArray(value)) records = value; } catch {}
+const drafts = new Map();
+let unitIndex = 0, selection = {start:4,end:4,char:null}, anchor = 4;
+let activeTab = 'dictionary', showReadings = false, showChars = false, aiQuestion = null, aiText = '', storageFailed = false;
+const kinds = {place:'지명',person:'인명',grammar:'허사·구문',verb:'동사',phrase:'어휘',term:'시체·용어',character:'글자',range:'선택 구절'};
+const characterData = {
+  '平':['평','평탄하다'],'壤':['양','흙 · 땅'],'箕':['기','키'],'子':['자','아들'],
+  '東':['동','동쪽'],'明':['명','밝다'],'王':['왕','임금'],'自':['자','스스로 · …부터'],
+  '古':['고','옛날'],'佳':['가','아름답다'],'麗':['려','곱다'],'國':['국','나라'],
+  '中':['중','가운데 · 안'],'律':['률','법칙 · 운율'],'體':['체','몸 · 형식']
+};
+function unit(){ return units[unitIndex]; }
+function itemFor(sel = selection, index = unitIndex){
+  if(sel.char === 0 && Array.from(units[index].segments[sel.start].text).length === 1) sel = {...sel,char:null};
+  const u = units[index], group = u.segments.slice(sel.start, sel.end + 1), original = group[0];
+  let item = group.length === 1 ? {...original} : {text:group.map(s=>s.text).join(''),reading:group.map(s=>s.reading||'').join(''),kind:'range',senses:[],comment:'',reviewed:false};
+  let from = u.segments.slice(0,sel.start).reduce((n,s)=>n+Array.from(s.text).length,0);
+  if(sel.char !== null){
+    const glyph = Array.from(original.text)[sel.char];
+    const same = units.flatMap(u=>u.segments).find(s=>s.text === glyph && s.kind !== 'punctuation');
+    const basic = characterData[glyph];
+    item = same ? {...same,text:glyph} : {text:glyph,reading:basic?.[0]||'',kind:'character',senses:basic ? [{text:basic[1],note:'기본 훈 예시 · 어휘 전체의 문맥 풀이와 구분'}] : [],comment:'',reviewed:false};
+    from += sel.char;
+  }
+  return {...item,from,to:from+Array.from(item.text).length,key:`${index}:${sel.start}-${sel.end}:${sel.char ?? 'phrase'}`,selection:{...sel},unit:index};
+}
+function defaults(item){return {reading:item.reading || '',order:'',sense:item.reviewed && item.senses?.length ? 0 : null,comment:item.comment||'',reviewed:!!item.reviewed};}
+function baseline(item = itemFor()){
+  const d=defaults(item), r=records[item.key];
+  if(!r || typeof r !== 'object') return d;
+  return {reading:typeof r.reading==='string'?r.reading:d.reading,order:typeof r.order==='string'?r.order:d.order,sense:Number.isInteger(r.sense)&&r.sense>=0&&r.sense<(item.senses?.length||0)?r.sense:null,comment:typeof r.comment==='string'?r.comment:d.comment,reviewed:typeof r.reviewed==='boolean'?r.reviewed:d.reviewed};
+}
+function draft(item = itemFor()){if(!drafts.has(item.key)) drafts.set(item.key,{...baseline(item)});return drafts.get(item.key);}
+function dirty(item = itemFor()){return JSON.stringify(draft(item)) !== JSON.stringify(baseline(item));}
+function updateSaveState(){
+  const item = itemFor(), changed=dirty(item), d=draft(item);
+  const invalidOrder = d.order !== '' && (!Number.isInteger(Number(d.order)) || Number(d.order)<1 || Number(d.order)>99);
+  $('orderInput').setCustomValidity(invalidOrder?'1~99 사이 정수를 입력하세요.':'');
+  $('save').disabled=!changed || invalidOrder;
+  $('discard').disabled=!changed;
+  $('saveState').textContent=storageFailed?'브라우저에 저장하지 못했습니다.':invalidOrder?'풀이 순서는 1~99 사이입니다.':changed?'저장하지 않은 변경':records[item.key]?'저장됨':'예시 풀이';
+  $('saveState').classList.toggle('dirty',changed || storageFailed);
+  $('selectionReading').textContent=d.reading;
+}
+function patchDraft(field,value){draft()[field]=value;storageFailed=false;updateSaveState();}
+function renderSource(){
+  $('source').innerHTML=unit().segments.map((s,index)=>{
+    if(s.kind==='punctuation')return '';
+    const item=itemFor({start:index,end:index,char:null}), d=draft(item);
+    const selected=index>=selection.start&&index<=selection.end;
+    const marked=d.reviewed || !!d.comment || !!records[item.key] || Object.values(records).some(r=>r.unit===unitIndex && r.selection && r.selection.char===null && r.selection.start<=index && r.selection.end>=index);
+    const text=showReadings?`<ruby>${esc(s.text)}<rt>${esc(d.reading)}</rt></ruby>`:esc(s.text);
+    let punctuation='';
+    for(let cursor=index+1;unit().segments[cursor]?.kind==='punctuation';cursor++)punctuation+=unit().segments[cursor].text;
+    return `<span class="source-chunk"><button type="button" data-segment="${index}" aria-pressed="${selected}" aria-label="${esc(s.text)} · ${esc(d.reading)}" class="${marked?'annotated':''}">${text}</button>${punctuation?`<span class="punct">${esc(punctuation)}</span>`:''}</span>`;
+  }).join('');
+  const gloss=draft().sense;
+  const item=itemFor(), match=gloss!==null?item.senses?.[gloss]?.text:'';
+  const translation=unit().translation;
+  const matchIndex=match&&match.length>1?translation.indexOf(match):-1;
+  $('translation').innerHTML=matchIndex>=0?`${esc(translation.slice(0,matchIndex))}<span class="selected-text">${esc(match)}</span>${esc(translation.slice(matchIndex+match.length))}`:esc(translation);
+}
+function renderCharacters(){
+  $('charSection').hidden=!showChars;
+  $('toggleChars').setAttribute('aria-expanded',String(showChars));
+  $('toggleChars').setAttribute('aria-pressed',String(showChars));
+  if(!showChars)return;
+  $('charList').innerHTML=unit().segments.flatMap((s,index)=>s.kind==='punctuation'?[]:Array.from(s.text).map((glyph,char)=>{
+    const item=itemFor({start:index,end:index,char}), d=draft(item), selected=item.key===itemFor().key;
+    return `<button class="char" type="button" data-parent="${index}" data-char="${char}" aria-pressed="${selected}" aria-label="${esc(glyph)} · ${esc(d.reading || '독음 입력')} 한 글자 연구"><strong>${esc(glyph)}</strong><small>${esc(d.reading||'—')}</small></button>`;
+  })).join('');
+  $('returnToPhrase').disabled=selection.char===null;
+}
+function noteItems(){
+  const map=new Map();
+  unit().segments.forEach((s,index)=>{if(s.kind!=='punctuation'){const item=itemFor({start:index,end:index,char:null});map.set(item.key,item);}});
+  Object.values(records).forEach(record=>{
+    if(record?.unit===unitIndex && record.selection && Number.isInteger(record.selection.start) && record.selection.start>=0 && record.selection.end<unit().segments.length){
+      try {const item=itemFor(record.selection);map.set(item.key,item);} catch {}
+    }
+  });
+  const selected=itemFor(); map.set(selected.key,selected);
+  return [...map.values()].filter(item=>draft(item).comment.trim() || (records[item.key] && item.selection.end>item.selection.start));
+}
+function renderNotes(){
+  const notes=noteItems();
+  $('noteCount').textContent=notes.length?`${notes.length}개의 기록`:'';
+  $('noteList').innerHTML=notes.length?notes.map(item=>`<button type="button" class="note-row" data-note="${esc(item.key)}"><span class="quote">${esc(item.text)}</span><span class="note-copy">${esc(draft(item).comment || [draft(item).reading,'묶어 둔 어휘'].filter(Boolean).join(' · '))}</span><svg aria-hidden="true"><use href="#i-right"/></svg></button>`).join(''):'<p class="empty-notes">어휘를 선택하고 연구 근거에 질문이나 판단을 남겨 보세요.</p>';
+  const count=unit().segments.filter((s,index)=>s.kind!=='punctuation' && draft(itemFor({start:index,end:index,char:null})).reviewed).length;
+  const total=unit().segments.filter(s=>s.kind!=='punctuation').length;
+  $('readingProgress').textContent=`${total}개 어휘 중 ${count}개 검토 · 밑줄은 기록이 있는 어휘`;
+  $('statusProgress').textContent=`구절 ${unitIndex+1} / ${units.length}`;
+}
+function renderReader(){
+  $('unitSelect').value=String(unitIndex);
+  $('previous').disabled=unitIndex===0;
+  $('next').disabled=unitIndex===units.length-1;
+  $('unitLabel').textContent=`구절 ${String(unitIndex+1).padStart(2,'0')}`;
+  $('contextBefore').textContent=unit().contextBefore||'';
+  $('contextAfter').textContent=unit().contextAfter||'';
+  $('contextAfter').hidden=!unit().contextAfter;
+  $('toggleReadings').setAttribute('aria-pressed',String(showReadings));
+  renderSource();renderCharacters();renderNotes();
+}
+function renderDictionary(){
+  const item=itemFor(), d=draft(item), senses=item.senses||[];
+  $('senses').innerHTML=senses.length?senses.map((sense,index)=>`<button class="sense" type="button" role="radio" aria-checked="${d.sense===index}" tabindex="${d.sense===index || (d.sense===null && index===0)?0:-1}" data-sense="${index}"><span class="radio-mark" aria-hidden="true"></span><span><strong>${esc(sense.text)}</strong><small>${esc(sense.note)}</small></span></button>`).join(''):'<p class="meaning-empty">이 범위의 풀이 예시는 없습니다.<br>독음을 기록하거나 연구 근거에 판단을 남겨 보세요.</p>';
+  $('readingInput').value=d.reading;
+  $('orderInput').value=d.order;
+}
+function renderAi(){
+  const item=itemFor(), meanings=item.senses||[];
+  document.querySelectorAll('[data-question]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.question===aiQuestion)));
+  $('useAi').hidden=!aiQuestion;
+  if(!aiQuestion){$('aiAnswer').innerHTML='<p class="muted">질문을 선택하면 검토 예시가 나타납니다.</p>';aiText='';return;}
+  let heading, paragraphs;
+  if(aiQuestion==='meaning'){
+    heading='문맥에서 살펴볼 점';
+    paragraphs=meanings.length?[`「${item.text}」의 풀이 후보는 ‘${meanings[0].text}’입니다. ${meanings[0].note || ''}`,item.comment || '앞뒤 어휘와 연결해 읽은 뒤, 이 풀이가 번역문에서도 자연스럽게 이어지는지 확인해 보세요.']:['선택 범위를 하나의 구문으로 읽을 수 있는지 먼저 살펴보세요.','어휘의 경계와 문장 성분을 확인한 뒤 독음과 번역 표현을 나누어 기록하는 방식입니다.'];
+  }else if(aiQuestion==='alternatives'){
+    heading='독법을 비교하는 순서';
+    paragraphs=meanings.length>1?[`① ${meanings[0].text} — ${meanings[0].note}`,`② ${meanings[1].text} — ${meanings[1].note}`,'각 후보를 넣어 문장 전체를 읽어 보고, 원문의 어떤 말이 선택을 뒷받침하는지 코멘트에 남깁니다.']:[`「${item.text}」에는 이 데모에서 한 가지 풀이만 제시했습니다.`,'다른 해석을 임의로 만들지 않고, 앞뒤 문맥이나 실제 용례에서 다른 독법이 성립하는지 확인합니다.'];
+  }else{
+    heading='추가로 확인할 근거';
+    paragraphs=[`같은 문헌에서 「${item.text}」이 다시 나오는 위치와 앞뒤 문장을 확인합니다.`,'인용할 사전의 뜻 번호와 실제 예문을 대조합니다. 다른 문헌의 용례라면 문헌명과 정확한 원문 위치도 함께 기록합니다.','이 응답 예시에는 확인된 외부 출처가 연결되어 있지 않습니다.'];
+  }
+  aiText=`[AI 검토 예시 · 미확인]\n${heading}\n${paragraphs.join('\n')}`;
+  $('aiAnswer').innerHTML=`<span class="quote">${esc(item.text)}</span><h3>${heading}</h3>${paragraphs.map(p=>`<p>${esc(p)}</p>`).join('')}`;
+}
+function renderInspector(){
+  const item=itemFor(), d=draft(item);
+  $('selectionText').textContent=item.text;
+  $('selectionText').classList.toggle('long',Array.from(item.text).length>5);
+  $('selectionKind').textContent=kinds[item.kind]||'어휘';
+  $('selectionPosition').textContent=item.to-item.from===1?`${item.from+1}번째 글자`:`${item.from+1}–${item.to}번째 글자`;
+  $('evidenceQuote').textContent=unit().source;
+  $('evidenceUnit').textContent=`구절 ${String(unitIndex+1).padStart(2,'0')}`;
+  $('commentInput').value=d.comment;
+  $('reviewedInput').checked=d.reviewed;
+  renderDictionary();renderAi();updateSaveState();
+}
+function setTab(tab,focus=false){
+  activeTab=tab;
+  document.querySelectorAll('[data-tab]').forEach(button=>{const active=button.dataset.tab===tab;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;$(button.getAttribute('aria-controls')).hidden=!active;if(active&&focus)button.focus();});
+  $('inspectorBody').scrollTop=0;
+}
+function choose(sel,{focus=false,focusIndex=sel.end,preserveAnchor=false}={}){
+  selection={...itemFor(sel).selection};if(!preserveAnchor)anchor=sel.start;aiQuestion=null;storageFailed=false;
+  renderReader();renderInspector();$('inspectorBody').scrollTop=0;
+  if(focus)$('source').querySelector(`[data-segment="${focusIndex}"]`)?.focus({preventScroll:true});
+}
+function changeUnit(index){
+  if(!units[index])return;
+  unitIndex=index;anchor=unit().segments.findIndex(s=>s.kind!=='punctuation');
+  choose({start:anchor,end:anchor,char:null});$('readerScroll').scrollTop=0;
+}
+function save(){
+  if(!dirty() || !$('orderInput').checkValidity())return;
+  const item=itemFor(), next={...records,[item.key]:{...draft(item),selection:{...selection},unit:unitIndex}};
+  try{localStorage.setItem(storageKey,JSON.stringify(next));records=next;storageFailed=false;}catch{storageFailed=true;}
+  renderReader();updateSaveState();
+}
+$('source').addEventListener('click',event=>{const button=event.target.closest('[data-segment]');if(!button)return;const index=Number(button.dataset.segment);if(event.shiftKey){choose({start:Math.min(anchor,index),end:Math.max(anchor,index),char:null},{focus:true,focusIndex:index,preserveAnchor:true});}else{choose({start:index,end:index,char:null},{focus:true});}});
+$('source').addEventListener('keydown',event=>{
+  if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+  const button=event.target.closest('[data-segment]');if(!button)return;event.preventDefault();
+  const indexes=unit().segments.flatMap((s,i)=>s.kind==='punctuation'?[]:[i]);
+  let next=indexes.indexOf(Number(button.dataset.segment));next=event.key==='Home'?0:event.key==='End'?indexes.length-1:Math.max(0,Math.min(indexes.length-1,next+(event.key==='ArrowRight'?1:-1)));
+  const index=indexes[next];if(!event.shiftKey)anchor=index;
+  choose({start:event.shiftKey?Math.min(anchor,index):index,end:event.shiftKey?Math.max(anchor,index):index,char:null},{focus:true,focusIndex:index,preserveAnchor:event.shiftKey});
+});
+$('charList').addEventListener('click',event=>{const button=event.target.closest('[data-char]');if(button){const index=Number(button.dataset.parent), char=Number(button.dataset.char);choose({start:index,end:index,char});$('charList').querySelector(`[data-parent="${index}"][data-char="${char}"]`)?.focus({preventScroll:true});}});
+$('returnToPhrase').addEventListener('click',()=>choose({start:selection.start,end:selection.start,char:null}));
+$('toggleReadings').addEventListener('click',()=>{showReadings=!showReadings;renderReader();});
+$('toggleChars').addEventListener('click',()=>{showChars=!showChars;renderCharacters();});
+$('previous').addEventListener('click',()=>changeUnit(unitIndex-1));
+$('next').addEventListener('click',()=>changeUnit(unitIndex+1));
+$('unitSelect').addEventListener('change',event=>changeUnit(Number(event.target.value)));
+document.querySelectorAll('[data-tab]').forEach(button=>{
+  button.addEventListener('click',()=>setTab(button.dataset.tab));
+  button.addEventListener('keydown',event=>{const keys=['ArrowLeft','ArrowRight','Home','End'];if(!keys.includes(event.key))return;event.preventDefault();const tabs=['dictionary','evidence','ai'], current=tabs.indexOf(activeTab);const next=event.key==='Home'?0:event.key==='End'?2:(current+(event.key==='ArrowRight'?1:2))%3;setTab(tabs[next],true);});
+});
+function selectSense(index,focus=false){patchDraft('sense',index);renderDictionary();renderSource();if(focus)$('senses').querySelector(`[data-sense="${index}"]`)?.focus();}
+$('senses').addEventListener('click',event=>{const button=event.target.closest('[data-sense]');if(button)selectSense(Number(button.dataset.sense),true);});
+$('senses').addEventListener('keydown',event=>{if(!['ArrowDown','ArrowUp','ArrowLeft','ArrowRight'].includes(event.key))return;const button=event.target.closest('[data-sense]');if(!button)return;event.preventDefault();const count=itemFor().senses.length;selectSense((Number(button.dataset.sense)+(event.key==='ArrowUp'||event.key==='ArrowLeft'?count-1:1))%count,true);});
+$('readingInput').addEventListener('input',event=>patchDraft('reading',event.target.value));
+$('orderInput').addEventListener('input',event=>patchDraft('order',event.target.value));
+$('commentInput').addEventListener('input',event=>patchDraft('comment',event.target.value));
+$('reviewedInput').addEventListener('change',event=>patchDraft('reviewed',event.target.checked));
+$('save').addEventListener('click',save);
+$('discard').addEventListener('click',()=>{drafts.delete(itemFor().key);storageFailed=false;renderReader();renderInspector();});
+$('noteList').addEventListener('click',event=>{const button=event.target.closest('[data-note]');if(!button)return;const item=noteItems().find(item=>item.key===button.dataset.note);if(item){choose(item.selection);setTab('evidence');}});
+$('openEvidence').addEventListener('click',()=>setTab('evidence'));
+document.querySelectorAll('[data-question]').forEach(button=>button.addEventListener('click',()=>{aiQuestion=button.dataset.question;renderAi();}));
+$('useAi').addEventListener('click',()=>{if(!aiText)return;const existing=draft().comment;patchDraft('comment',[existing,aiText].filter(Boolean).join('\n\n'));$('commentInput').value=draft().comment;setTab('evidence');$('commentInput').focus();});
+$('toggleSidebar').addEventListener('click',()=>{const hidden=$('app').classList.toggle('no-sidebar');$('toggleSidebar').setAttribute('aria-pressed',String(!hidden));});
+$('help').addEventListener('click',()=>$('helpDialog').showModal());
+$('closeHelp').addEventListener('click',()=>$('helpDialog').close());
+$('helpDialog').addEventListener('click',event=>{if(event.target===$('helpDialog')){const b=$('helpDialog').getBoundingClientRect();if(event.clientX<b.left||event.clientX>b.right||event.clientY<b.top||event.clientY>b.bottom)$('helpDialog').close();}});
+$('resetDemo').addEventListener('click',()=>{try{localStorage.removeItem(storageKey);}catch{}records={};drafts.clear();unitIndex=0;anchor=4;showChars=false;showReadings=false;choose({start:4,end:4,char:null});setTab('dictionary');$('helpDialog').close();});
+document.addEventListener('keydown',event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==='s'){event.preventDefault();save();}});
+$('unitSelect').innerHTML=units.map((u,index)=>`<option value="${index}">${index+1} / ${units.length} · ${esc(u.source.slice(0,9))}${u.source.length>9?'…':''}</option>`).join('');
+renderReader();renderInspector();setTab('dictionary');
+</script>
+</body>
+</html>

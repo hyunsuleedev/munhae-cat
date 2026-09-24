@@ -76,6 +76,93 @@ function toggleContextSidebar(hidden = !must("#contextInspector").hidden): void 
 must("#tbCtx").innerHTML = ic("panel");
 must("#tbCtx").addEventListener("click", () => toggleContextSidebar());
 toggleContextSidebar(store.get("munhae.context.sidebar") === "0");
+initContextInspectorResize();
+
+function initContextInspectorResize(): void {
+  const workspace = document.querySelector(".context-workspace");
+  const panel = must("#contextInspector");
+  if (!(workspace instanceof HTMLElement)) return;
+  const key = "munhae.context.inspectorWidth";
+  const minWidth = 240;
+  const maxWidth = (): number => Math.max(minWidth, workspace.clientWidth - 360);
+  const saved = Number(store.get(key));
+  let preferred = Number.isFinite(saved) && saved >= minWidth ? saved : 0;
+  let width = preferred;
+  let drag: { pointerId: number; startX: number; startWidth: number } | null = null;
+  const handle = document.createElement("div");
+  handle.className = "context-inspector-resizer";
+  handle.tabIndex = 0;
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-label", t("문맥 AI 패널 너비"));
+  handle.setAttribute("aria-orientation", "vertical");
+  handle.setAttribute("aria-controls", "contextInspector");
+  handle.title = t("드래그하여 너비 조절 · 두 번 클릭하면 기본 너비");
+  panel.prepend(handle);
+
+  const applyWidth = (next: number | 0): void => {
+    if (next === 0) {
+      width = 0;
+      panel.style.removeProperty("--context-inspector-width");
+      handle.removeAttribute("aria-valuenow");
+      return;
+    }
+    width = Math.round(Math.max(minWidth, Math.min(maxWidth(), next)));
+    panel.style.setProperty("--context-inspector-width", `${width}px`);
+    handle.setAttribute("aria-valuemin", String(minWidth));
+    handle.setAttribute("aria-valuemax", String(maxWidth()));
+    handle.setAttribute("aria-valuenow", String(width));
+    handle.setAttribute("aria-valuetext", ui`${width}픽셀`);
+  };
+  const currentWidth = (): number => width || panel.getBoundingClientRect().width;
+  const finishDrag = (cancel = false): void => {
+    if (!drag) return;
+    const pointerId = drag.pointerId;
+    drag = null;
+    if (cancel) applyWidth(preferred);
+    else {
+      preferred = width;
+      store.set(key, String(width));
+    }
+    handle.classList.remove("is-drag");
+    document.body.classList.remove("is-resizing-context-inspector");
+    if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
+  };
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || drag || panel.hidden) return;
+    event.preventDefault();
+    const start = currentWidth();
+    width = start;
+    drag = { pointerId: event.pointerId, startX: event.clientX, startWidth: start };
+    handle.focus({ preventScroll: true });
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("is-drag");
+    document.body.classList.add("is-resizing-context-inspector");
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (drag?.pointerId === event.pointerId) applyWidth(drag.startWidth - (event.clientX - drag.startX));
+  });
+  handle.addEventListener("pointerup", (event) => { if (drag?.pointerId === event.pointerId) finishDrag(); });
+  handle.addEventListener("pointercancel", (event) => { if (drag?.pointerId === event.pointerId) finishDrag(true); });
+  handle.addEventListener("lostpointercapture", () => finishDrag(true));
+  handle.addEventListener("dblclick", () => {
+    applyWidth(0);
+    preferred = 0;
+    try { localStorage.removeItem(key); } catch { /* ignore */ }
+  });
+  handle.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && drag) { event.preventDefault(); finishDrag(true); return; }
+    if (drag || event.metaKey || event.ctrlKey || event.altKey) return;
+    const base = currentWidth();
+    const step = event.shiftKey ? 40 : 10;
+    const next = { ArrowLeft: base + step, ArrowRight: base - step, Home: minWidth, End: maxWidth() }[event.key];
+    if (next === undefined) return;
+    event.preventDefault();
+    applyWidth(next);
+    preferred = width;
+    store.set(key, String(width));
+  });
+  if (preferred) applyWidth(preferred);
+}
 
 const chat = configureContextChat(api, project.projectId, () => [...drafts].map(([form, draft]) => ({
   key: draft.item?.id ?? form.dataset.chatKey!, scopeId: node!.id, title: draft.title.value, contentMd: draft.content.value,

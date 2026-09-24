@@ -89,7 +89,7 @@ describe("explicit reading analysis tools and proposals", () => {
     const result = f.service.get(f.repo, initial.id); expect(result.state).toBe("completed");
     expect(f.repo.saveReadingAnnotation).not.toHaveBeenCalled();
     const saved = f.service.apply(f.repo, { runId: initial.id, suggestionId: result.result!.suggestions[0]!.id });
-    expect(saved).toMatchObject({ codepointFrom: 4, codepointTo: 6, reading: "태수", gloss: "", citation: null });
+    expect(saved).toMatchObject({ codepointFrom: 4, codepointTo: 6, reading: "태수", gloss: "이 위치의 관직명을 살펴볼 수 있습니다.", citation: null });
     expect(f.service.get(f.repo, initial.id).result!.suggestions[0]!.applied).toBe(true);
     expect(() => f.service.apply(f.repo, { runId: initial.id, suggestionId: result.result!.suggestions[0]!.id })).toThrow();
     const persisted = readFileSync(join(f.repo.packagePath, "runs/reading-study", `${initial.id}.json`), "utf8");
@@ -109,7 +109,7 @@ describe("explicit reading analysis tools and proposals", () => {
     const suggestion = f.service.get(f.repo, run.id).result!.suggestions[0]!;
     expect(suggestion.citation).toMatchObject({ sense: "고대 중국의 지방 장관.", headword: "太守", attribution: "사전 기여자" });
     const saved = f.service.apply(f.repo, { runId: run.id, suggestionId: suggestion.id });
-    expect(saved.citation).toEqual(suggestion.citation); expect(saved.gloss).toBe("");
+    expect(saved.citation).toEqual(suggestion.citation); expect(saved.gloss).toBe("이 위치의 관직명을 살펴볼 수 있습니다.");
   });
   it.each([
     { name: "forged sense", items: [proposal({ senseId: "forged" })] },
@@ -119,12 +119,27 @@ describe("explicit reading analysis tools and proposals", () => {
     { name: "invented citation field", items: [proposal({ citation: { sense: "fake" } })] },
     { name: "unusable explanation only", items: [proposal({ reading: "" })] },
     { name: "token echo", items: [proposal({ explanation: "fake-reading-token-sensitive-1234567890" })] },
+    { name: "translation quote outside the provided translation", items: [proposal({ translationQuote: "없는 번역 구절" })] },
+    { name: "blank translation quote", items: [proposal({ translationQuote: "  " })] },
   ])("rejects $name without writing annotation or accepting provider prose", async ({ items }) => {
     const f = fixture({ runtime: async tool => { expect((await tool("submit-reading-analysis", payload(items))).ok).toBe(false); return success(); } });
     const run = f.start(); await f.finish();
     expect(f.service.get(f.repo, run.id)).toMatchObject({ state: "failed", result: null, error: { code: "app_submission_missing" } });
     expect(f.repo.saveReadingAnnotation).not.toHaveBeenCalled();
   });
+  it("keeps a verbatim translation link from the provided translation and stores it on adoption", async () => {
+    const f = fixture({ runtime: async tool => {
+      expect(await tool("submit-reading-analysis", payload([proposal({ translationQuote: " 둘째 태수" })]))).toMatchObject({ ok: true });
+      return success();
+    } });
+    const run = f.start(); await f.finish();
+    const suggestion = f.service.get(f.repo, run.id).result!.suggestions[0]!;
+    expect(suggestion.translationQuote).toBe("둘째 태수");
+    const saved = f.service.apply(f.repo, { runId: run.id, suggestionId: suggestion.id });
+    expect(saved.translationQuote).toBe("둘째 태수");
+    expect(f.repo.saveReadingAnnotation).toHaveBeenCalledWith(expect.objectContaining({ translationQuote: "둘째 태수" }));
+  });
+
   it("does not cite a constituent sense for a multi-character word", async () => {
     const f = fixture({ runtime: async tool => {
       const dictionary = await tool("lookup-reading-dictionary", { query: "太" });
@@ -158,6 +173,31 @@ describe("explicit reading analysis tools and proposals", () => {
     expect(() => f.service.apply(f.repo, { runId: run.id, suggestionId: suggestion.id })).toThrow(/연구 기록이 바뀌/);
     expect(f.repo.saveReadingAnnotation).not.toHaveBeenCalled();
   });
+  it("adopts only the reading order of an existing record, leaves the proposal open, and keeps later adoption in sync", async () => {
+    const f = fixture({ runtime: async tool => { await tool("submit-reading-analysis", payload([proposal({ readingOrder: 2, senseId: null })])); return success(); } });
+    f.notes.push(existingNote({ citation: { source: "manual", sourceLabel: "수동 출처", entryId: "old", headword: "太守", reading: null, sense: "기존 선택 뜻", sourceUrl: "https://example.test", license: "test", licenseUrl: null, attribution: "test" }, translationQuote: "태수" }));
+    const run = f.start(); await f.finish(); const suggestion = f.service.get(f.repo, run.id).result!.suggestions[0]!;
+    const ordered = f.service.apply(f.repo, { runId: run.id, suggestionId: suggestion.id, orderOnly: true });
+    expect(ordered).toMatchObject({ id: "note1", lockVersion: 5, readingOrder: 2, reading: "태수", gloss: "기존 수동 메모", citation: { sense: "기존 선택 뜻" }, translationQuote: "태수" });
+    expect(f.service.get(f.repo, run.id).result!.suggestions[0]!.applied).toBe(false);
+    const adopted = f.service.apply(f.repo, { runId: run.id, suggestionId: suggestion.id });
+    expect(adopted).toMatchObject({ id: "note1", lockVersion: 6, reading: "태수", readingOrder: 2 });
+    expect(f.repo.saveReadingAnnotation.mock.calls[1]![0].expectedLockVersion).toBe(5);
+    expect(f.service.get(f.repo, run.id).result!.suggestions[0]!.applied).toBe(true);
+    expect(() => f.service.apply(f.repo, { runId: run.id, suggestionId: suggestion.id, orderOnly: "yes" as unknown as boolean })).toThrow();
+  });
+
+  it("keeps unique single-character reading orders and drops them all when numbers repeat", async () => {
+    const items = (a: number, b: number) => [proposal({ from: 4, to: 5, quote: "太", reading: "태", readingOrder: a }), proposal({ from: 5, to: 6, quote: "守", reading: "수", readingOrder: b })];
+    const unique = fixture({ runtime: async tool => { await tool("submit-reading-analysis", payload(items(2, 1))); return success(); } });
+    let run = unique.start(); await unique.finish();
+    expect(unique.service.get(unique.repo, run.id).result!.suggestions.map(item => item.readingOrder)).toEqual([2, 1]);
+    const repeated = fixture({ runtime: async tool => { expect(await tool("submit-reading-analysis", payload(items(1, 1)))).toMatchObject({ ok: true }); return success(); } });
+    run = repeated.start(); await repeated.finish();
+    expect(repeated.service.get(repeated.repo, run.id).state).toBe("completed");
+    expect(repeated.service.get(repeated.repo, run.id).result!.suggestions.map(item => item.readingOrder)).toEqual([null, null]);
+  });
+
   it("preserves manual gloss and citation when adopting a reading-only proposal", async () => {
     const f = fixture(); f.notes.push(existingNote({ citation: { source: "manual", sourceLabel: "수동 출처", entryId: "old", headword: "太守", reading: null, sense: "기존 선택 뜻", sourceUrl: "https://example.test", license: "test", licenseUrl: null, attribution: "test" } }));
     const run = f.start(); await f.finish(); const suggestion = f.service.get(f.repo, run.id).result!.suggestions[0]!;

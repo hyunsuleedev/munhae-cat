@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light">
+<title>문해 · 구절 연구</title>
+<style>
+:root{--paper:#fffefa;--canvas:#f6f5f0;--sidebar:#efeee8;--ink:#292b27;--muted:#72756a;--line:#dddfd4;--accent:#794e40;--accent-soft:#f1e9df;--green:#56684b;--green-soft:#edf0e6;--serif:"Noto Serif KR","Noto Serif CJK KR","AppleMyungjo","Apple Myungjo","Songti SC",Batang,serif;--ui:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;font:13px/1.6 var(--ui);color:var(--ink);background:var(--paper)}button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.45}a{color:inherit;text-underline-offset:4px}h1,h2,h3,p{margin:0}button{border:0;background:none}button,input,textarea{outline-offset:4px}button:focus-visible,input:focus-visible,textarea:focus-visible,a:focus-visible{outline:2px solid var(--accent)}[hidden]{display:none!important}.serif{font-family:var(--serif)}.muted{color:var(--muted)}.small{font-size:11px}.shell{display:grid;grid-template-columns:188px minmax(0,1fr);min-height:100dvh}.sidebar{background:var(--sidebar);border-right:1px solid var(--line);padding:34px 14px 18px;display:flex;flex-direction:column;position:sticky;top:0;height:100dvh}.brand{padding:0 12px 42px}.brand strong{font:30px var(--serif);letter-spacing:3px}.brand span{display:block;font-size:9px;letter-spacing:2.3px;color:var(--muted);margin-top:9px}.side-caption{font-size:10px;color:var(--muted);letter-spacing:.8px;margin:0 12px 13px}.document-link{background:#e2e4da;border-radius:5px;padding:12px;font-size:12px}.document-link strong{font-weight:550;display:block}.document-link small{display:block;color:var(--muted);margin-top:5px;font-size:10px}.side-details{padding:18px 12px;color:var(--muted);font-size:11px;line-height:2.2}.side-footer{margin-top:auto;padding:16px 12px 0;border-top:1px solid var(--line)}.demo-label{font-size:10px;letter-spacing:1px;color:var(--accent)}.side-footer p{font-size:11px;color:var(--muted);margin:9px 0 14px;line-height:1.8}.reset{padding:0;font-size:11px;text-decoration:underline;text-underline-offset:4px;color:var(--muted)}.app{min-width:0}.topbar{height:64px;display:flex;align-items:center;justify-content:space-between;gap:20px;border-bottom:1px solid var(--line);padding:0 34px}.breadcrumb{font-size:12px;color:var(--muted)}.breadcrumb b{font-weight:500;color:var(--ink);margin-left:14px}.topbar-right{display:flex;gap:18px;align-items:center;font-size:11px;color:var(--muted)}.version{padding-left:18px;border-left:1px solid var(--line)}.workspace-tabs{display:flex;align-items:center;gap:28px;height:50px;border-bottom:1px solid var(--line);padding:0 34px}.workspace-tabs button{padding:0;height:100%;position:relative;color:var(--muted);font-size:12px}.workspace-tabs button[aria-pressed=true]{color:var(--ink);font-weight:600}.workspace-tabs button[aria-pressed=true]:after{content:"";height:2px;position:absolute;bottom:-1px;left:0;right:0;background:var(--accent)}.workspace-tabs>span{margin-left:auto;color:var(--muted);font-size:11px}.workbench{display:grid;grid-template-columns:minmax(0,1fr) 342px;min-height:calc(100dvh - 114px)}.reader{min-width:0;padding:31px 38px 26px}.reader-heading{display:flex;align-items:start;gap:20px;justify-content:space-between}.eyebrow{font-size:10px;letter-spacing:1.5px;color:var(--muted)}.reader-heading h1{font:500 25px/1.4 var(--serif);margin-top:8px;letter-spacing:-.7px}.unit-number{font:italic 45px/1.15 Georgia,serif;color:#c5c7b9}.source-area{padding:37px 0 27px}.source-label{display:flex;gap:13px;align-items:center;font-size:10px;color:var(--muted);margin-bottom:14px}.source-label span:first-child{font-family:var(--serif);font-size:13px;letter-spacing:2px;color:var(--accent)}.source-text{font:32px/2.0 var(--serif);letter-spacing:2px;word-break:keep-all;overflow-wrap:anywhere}.source-text button{font:inherit;letter-spacing:inherit;padding:0 2px;position:relative;border-radius:3px;line-height:1.65;transition:background 140ms ease-out,color 140ms ease-out}.source-text button[aria-pressed=true]{color:var(--accent);background:var(--accent-soft)}.source-text button[data-saved=true]{text-decoration:underline;text-decoration-color:#98a38b;text-decoration-thickness:2px;text-underline-offset:9px}.source-text button[data-saved=true][aria-pressed=true]{text-decoration-color:var(--accent)}.source-text .line{display:block}.source-tools{display:flex;gap:22px;margin-top:22px}.text-btn{font-size:11px;color:var(--muted);padding:4px 0;min-height:30px}.text-btn[aria-expanded=true]{color:var(--accent)}.helper{font-size:10px;color:var(--muted);margin-top:8px}.context{font-family:var(--serif);font-size:15px;color:var(--muted);padding:14px 16px;background:var(--canvas);margin-top:12px;line-height:1.9}.context small{font:10px var(--ui);display:block;margin-bottom:5px}.char-strip{display:flex;flex-wrap:wrap;gap:4px;margin-top:12px;padding:10px 0}.char-strip button{border:1px solid var(--line);padding:6px 9px;font-family:var(--serif);font-size:18px}.translation{border-top:1px solid var(--line);padding:25px 0 27px}.section-heading{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:14px}.section-heading h2{font-size:11px;font-weight:500;color:var(--muted)}.section-heading h2 span{font:14px var(--serif);color:var(--accent);margin-right:12px}.translation-text{font:16px/2 var(--serif);word-break:keep-all;overflow-wrap:anywhere;color:#4e5148}.translation-text mark{background:#edf0e6;color:inherit}.translation-edit{width:100%;min-height:138px;resize:vertical;background:#fffefa;border:1px solid #b6bca9;border-radius:4px;padding:12px;font:16px/1.9 var(--serif)}.edit-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.btn{border:1px solid var(--line);padding:8px 12px;border-radius:4px;background:var(--paper);font-size:12px;line-height:1.4;min-height:35px}.btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}.btn.primary{background:var(--green);border-color:var(--green);color:#fffefa}.research-summary{border-top:1px solid var(--line);padding-top:22px}.research-summary h2{font-size:11px;font-weight:500;color:var(--muted)}.collected{display:flex;gap:14px;align-items:center;margin-top:15px;min-height:43px}.selected-word{font:22px var(--serif);min-width:56px;color:var(--green)}.collected-meaning{font-size:12px;line-height:1.8}.collected-meaning small{color:var(--muted);font-size:10px;display:block}.research-tip{font-size:11px;color:var(--muted);margin-top:20px;padding-top:14px;border-top:1px dotted var(--line)}.inspector{background:#f7f8f2;border-left:1px solid var(--line);display:flex;flex-direction:column;min-width:0;position:sticky;top:0;height:calc(100dvh - 114px);max-height:calc(100dvh - 114px)}.inspector-head{padding:30px 26px 23px}.inspector-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:15px}.inspector-title span{font-size:10px;letter-spacing:1px;color:var(--muted)}.inspector-title .term-type{letter-spacing:0;border:1px solid #d8ddcf;border-radius:3px;padding:2px 6px;color:var(--green)}.word-line{display:flex;align-items:baseline;gap:16px}.word-line h2{font:43px/1.45 var(--serif);letter-spacing:3px}.reading-input{width:90px;min-width:0;border:0;border-bottom:1px solid #cdd1c3;background:transparent;font:14px var(--ui);padding:6px 0;color:var(--green)}.adopt-row{margin-top:9px;display:flex;align-items:center;gap:13px;font-size:10px;color:var(--muted)}.adopt-row button{padding:4px 0;color:var(--green);text-decoration:underline;text-underline-offset:4px;font-size:10px}.inspector-tabs{display:flex;gap:24px;padding:0 26px;border-bottom:1px solid var(--line)}.inspector-tabs button{font-size:12px;color:var(--muted);padding:0 0 12px;position:relative}.inspector-tabs button[aria-selected=true]{color:var(--ink);font-weight:550}.inspector-tabs button[aria-selected=true]:after{content:"";height:2px;position:absolute;left:0;right:0;bottom:-1px;background:var(--green)}.inspector-body{padding:22px 26px;flex:1;overflow:auto;min-height:120px}.panel-intro{font-size:11px;color:var(--muted);margin-bottom:18px;line-height:1.7}.sense-option{width:100%;text-align:left;border:1px solid var(--line);border-radius:4px;background:#fffefa;padding:15px;margin-bottom:10px;display:block;transition:border-color 150ms ease-out,background 150ms ease-out}.sense-option[aria-pressed=true],.sense-option.selected{border-color:#849777;background:var(--green-soft)}.sense-option small,.sense-source{display:block;font-size:10px;color:var(--muted);margin-bottom:6px}.sense-option strong{display:block;font-size:13px;font-weight:500;line-height:1.7}.sense-option p{font-size:11px;line-height:1.8;margin-top:7px;color:var(--muted)}.sense-meta{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:10px}.sense-option .chosen{color:var(--green);font-size:10px;margin-top:8px;display:block}.example-item{border-bottom:1px solid var(--line);padding:0 0 18px;margin:0 0 18px}.example-item blockquote{margin:0 0 10px;font:18px/1.9 var(--serif)}.example-item mark{background:var(--accent-soft);color:var(--accent)}.example-item p{font-size:11px;line-height:1.8;color:var(--muted)}.example-item small{display:block;font-size:10px;color:var(--muted);margin-top:10px}.save-area{padding:18px 26px 20px;border-top:1px solid var(--line);background:#f7f8f2}.save-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.save-state{font-size:11px;color:var(--green)}.save-row button{min-width:108px}.save-note{font-size:10px;line-height:1.7;color:var(--muted);margin-top:10px}.kbd{font-family:var(--ui);font-size:10px;opacity:.75;margin-left:7px}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 20px;background:var(--ink);color:var(--paper);border-radius:5px;font-size:12px;box-shadow:0 4px 20px #292b2714;z-index:20;max-width:85vw}.mobile-title{display:none}@media(hover:hover){.source-text button:hover{background:var(--accent-soft)}.btn:hover:not(:disabled){border-color:#9ea58f}.text-btn:hover,.reset:hover{color:var(--ink)}.sense-option:hover{border-color:#95a485}}@media(min-width:1450px){.reader{padding-left:58px;padding-right:58px}.source-text{font-size:37px}.workbench{grid-template-columns:minmax(0,1fr) 385px}.inspector-head,.inspector-body,.save-area{padding-left:32px;padding-right:32px}.inspector-tabs{padding-left:32px}}@media(max-width:1100px){.shell{grid-template-columns:152px minmax(0,1fr)}.workbench{grid-template-columns:minmax(0,1fr) 300px}.reader{padding:26px}.source-text{font-size:27px;letter-spacing:1px}.topbar,.workspace-tabs{padding-left:26px;padding-right:26px}.inspector-head,.inspector-body,.save-area{padding-left:22px;padding-right:22px}.inspector-tabs{padding-left:22px}}@media(max-width:850px){.shell{grid-template-columns:minmax(0,1fr)}.sidebar{display:none}.topbar{padding:0 22px;height:55px}.topbar-right .version{display:none}.workspace-tabs{padding:0 22px}.workbench{grid-template-columns:minmax(0,1fr) 300px;min-height:calc(100dvh - 105px)}.reader{padding:25px}.source-text{font-size:25px}.source-text .line{display:inline}.unit-number{font-size:37px}}@media(max-width:650px){.topbar{padding:0 19px}.breadcrumb{font-size:11px}.breadcrumb b{margin-left:7px}.topbar-right{font-size:10px}.workspace-tabs{padding:0 19px;gap:23px}.workspace-tabs>span{font-size:10px}.workbench{display:block}.reader{padding:24px}.reader-heading h1{font-size:24px}.source-area{padding-top:25px}.source-text{font-size:30px}.source-text .line{display:block}.translation{padding:23px 0}.research-summary{padding-top:20px}.research-tip{display:none}.inspector{border-left:0;border-top:1px solid var(--line);position:static;height:auto;max-height:none}.inspector-head{padding:25px 24px 20px}.inspector-body{overflow:visible;padding:22px 24px}.inspector-tabs{padding-left:24px}.save-area{position:sticky;bottom:0;padding:15px 24px}.inspector-body{min-height:200px}.word-line h2{font-size:38px}.research-summary{margin-bottom:2px}}@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar" aria-label="문서 정보"><div class="brand"><strong>文解</strong><span>MUNHAE STUDIO</span></div><p class="side-caption">연구 중인 문헌</p><div class="document-link"><strong>관서악부서</strong><small>關西樂府序</small></div><div class="side-details">원문과 번역을 함께 읽고<br>한 구절의 뜻을 살펴봅니다.</div><div class="side-footer"><span class="demo-label">INTERACTIVE DEMO</span><p>풀이와 용례는 시연용입니다.<br>저장은 이 데모에만 반영됩니다.</p><button class="reset" id="resetDemo">데모 처음으로</button></div></aside>
+<div class="app"><header class="topbar"><div class="breadcrumb">관서악부서 <b>번역·검토</b></div><div class="topbar-right"><span>구절 연구 데모</span><span class="version">원문 V2 · 번역안 V3</span></div></header>
+<nav class="workspace-tabs" aria-label="연구 화면"><button id="readerMode" aria-pressed="true">구절 연구</button><button id="translationMode" aria-pressed="false">번역 수정</button><span>이 구절에 저장한 풀이 <b id="researchCount">0</b></span></nav>
+<main class="workbench"><article class="reader"><div class="reader-heading"><div><div class="eyebrow">關西樂府序 · 관서악부서</div><h1>시가 비추는 산수</h1></div><span class="unit-number" aria-label="제6구절">06</span></div>
+<section class="source-area" aria-label="원문 구절"><div class="source-label"><span>原文</span><span>어휘를 선택해 살펴보세요</span></div><div class="source-text" id="sourceText"><span class="line"><button data-term="ran" aria-pressed="false">然</button><button data-term="jinling" aria-pressed="true">金陵</button> ， <button data-term="qiantang" aria-pressed="false">錢塘</button></span><span class="line">皆有唐 ， 宋<button data-term="caizi" aria-pressed="false">才子</button>歌詩</span><span class="line">輝暎<button data-term="hushan" aria-pressed="false">湖山</button> <button data-term="yi" aria-pressed="false">以</button>餙大平</span></div><div class="source-tools"><button class="text-btn" id="contextToggle" aria-expanded="false" aria-controls="contextBlock">앞뒤 문맥</button><button class="text-btn" id="charToggle" aria-expanded="false" aria-controls="charStrip">연구 어휘 펼치기</button></div><div class="context" id="contextBlock" hidden><small>앞 구절 · 저장된 원문</small>國朝昇平屢百年 士大夫宦游者 畫舫江樓 粉黛笙歌 留連沉酣 有秦淮烟月西湖荷桂之娛<br><br><small>뒤 구절 · 저장된 원문</small>東國無樂府 西京題詠 唯牧隱與李相國混外 近世三淵金翁作亦佳 然皆律體也</div><div class="char-strip" id="charStrip" hidden aria-label="연구 어휘의 글자"></div><p class="helper">밑줄은 저장한 풀이 · 방향키로 선택한 어휘 이동</p></section>
+<section class="translation" aria-label="연결된 번역"><div class="section-heading"><h2><span>譯</span>연결된 번역</h2><button class="text-btn" id="editTranslation">이 문장 수정</button></div><p class="translation-text" id="translationText">그런데 금릉과 전당에는 모두 당·송의 재사들이 지은 노래와 시가 있어 호수와 산을 빛내고 태평성대를 꾸며 주었다.</p><div id="translationEditor" hidden><label class="small muted" for="translationInput">이 구절의 번역</label><textarea class="translation-edit" id="translationInput"></textarea><div class="edit-actions"><button class="btn ghost" id="translationCancel">취소</button><button class="btn primary" id="translationSave">번역 저장</button></div></div></section>
+<section class="research-summary" aria-label="선택 어휘의 채택한 풀이"><h2>이 구절에서 채택한 뜻</h2><div class="collected"><span class="selected-word" id="selectedMeaningWord">金陵</span><div class="collected-meaning"><span id="selectedMeaning">아직 채택한 뜻이 없습니다.</span><small id="selectedSource">사전 뜻을 선택한 뒤 저장해 보세요.</small></div></div><p class="research-tip">원문을 읽다가 막히는 어휘만 살펴보세요. 글자마다 풀이를 채울 필요는 없습니다.</p></section>
+</article>
+<aside class="inspector" aria-label="선택 어휘 연구"><header class="inspector-head"><div class="inspector-title"><span>선택한 어휘</span><span class="term-type" id="termType">지명</span></div><div class="word-line"><h2 id="termWord">金陵</h2><label><span hidden>독음</span><input class="reading-input" id="termReading" aria-label="선택한 어휘의 독음" maxlength="100" value="금릉" autocomplete="off"></label></div><div class="adopt-row"><span id="readingOrigin">사전 기본 독음</span><button id="adoptReading">이 독음 사용</button></div></header>
+<div class="inspector-tabs" role="tablist" aria-label="연구 자료"><button data-panel-tab="meanings" id="meaningsTab" role="tab" aria-selected="true" aria-controls="meaningsPanel">사전 뜻</button><button data-panel-tab="examples" id="examplesTab" role="tab" aria-selected="false" aria-controls="examplesPanel" tabindex="-1">용례 비교</button></div>
+<div class="inspector-body"><section id="meaningsPanel" role="tabpanel" aria-labelledby="meaningsTab"><p class="panel-intro">이 구절에 맞는 뜻을 선택하세요.<br>사전의 기본값은 아직 채택한 뜻이 아닙니다.</p><div id="senseList"></div></section><section id="examplesPanel" role="tabpanel" aria-labelledby="examplesTab" hidden><p class="panel-intro">선택한 어휘가 쓰인 문장을 비교합니다.<br>아래 예문은 화면 시연을 위한 자료입니다.</p><div id="exampleList"></div></section></div>
+<footer class="save-area"><div class="save-row"><span class="save-state" id="savedState" role="status" aria-live="polite">뜻을 선택하세요</span><button class="btn primary" id="saveSense" disabled>풀이 저장<span class="kbd">⌘S</span></button></div><p class="save-note">시연 사전 · 실제 인용 근거가 아닙니다.<br>선택한 독음과 뜻은 이 브라우저에 저장됩니다.</p></footer></aside></main></div></div>
+<div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+<script id="demoScript">
+(() => {
+  'use strict';
+  const init = () => {
+    const $ = (id) => document.getElementById(id);
+    const key = 'munhae.reading-study-demo.v2';
+    const terms = {
+      ran: { word: '然', reading: '연', type: '접속 표현 · 1자', senses: ['그러나, 그런데 — 앞의 내용과 이어지는 전환', '그러하다 — 앞의 내용을 받아 긍정함'] },
+      jinling: { word: '金陵', reading: '금릉', type: '지명 · 2자', senses: ['금릉 — 중국 난징의 옛 지명'] },
+      qiantang: { word: '錢塘', reading: '전당', type: '지명 · 2자', senses: ['전당 — 중국 항저우 일대를 가리키는 옛 지명'] },
+      caizi: { word: '才子', reading: '재자', type: '인물 표현 · 2자', senses: ['재능 있는 문인 — 시를 지은 이들을 가리킴', '재주 있는 사람 — 넓은 의미의 인물 표현'] },
+      hushan: { word: '湖山', reading: '호산', type: '경물 표현 · 2자', senses: ['호수와 산 — 주변의 경물을 함께 이름', '산수의 경치 — 경물 전체를 아울러 읽기'] },
+      yi: { word: '以', reading: '이', type: '연결 표현 · 1자', senses: ['그리하여 — 앞의 내용과 결과를 연결', '…하기 위하여 — 목적의 관계로 검토'] }
+    };
+    const ids = Object.keys(terms);
+    const defaultTranslation = $('translationText').textContent.trim();
+    let state = { version: 2, saved: {}, translation: defaultTranslation };
+    let drafts = {}, selected = 'jinling', activeTab = 'meanings', timer;
+    let initialMessage = '';
+    const validRecord = (record) => record && typeof record === 'object' && typeof record.reading === 'string' && record.reading.length <= 100 && (record.sense === null || Number.isInteger(record.sense) && record.sense >= 0 && record.sense < 2) && typeof record.adopted === 'boolean';
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== 2 || !parsed.saved || typeof parsed.saved !== 'object' || typeof parsed.translation !== 'string') throw new Error('schema');
+        state.translation = parsed.translation;
+        for (const id of ids) if (validRecord(parsed.saved[id]) && (parsed.saved[id].sense === null || parsed.saved[id].sense < terms[id].senses.length)) state.saved[id] = { ...parsed.saved[id] };
+      }
+    } catch { initialMessage = '저장된 시연 상태를 불러오지 못했습니다. 기본 상태로 열었습니다.'; }
+    const say = (message) => {
+      clearTimeout(timer); $('toast').textContent = message; $('toast').hidden = false;
+      timer = setTimeout(() => { $('toast').hidden = true; }, 4500);
+    };
+    const getDraft = () => drafts[selected] || (drafts[selected] = state.saved[selected] ? { ...state.saved[selected] } : { reading: terms[selected].reading, sense: null, adopted: false });
+    const changed = () => {
+      const draft = getDraft(), saved = state.saved[selected];
+      return saved ? JSON.stringify(draft) !== JSON.stringify(saved) : draft.adopted || draft.sense !== null || draft.reading !== terms[selected].reading;
+    };
+    const persist = (next) => {
+      try { localStorage.setItem(key, JSON.stringify(next)); state = next; return true; }
+      catch { say('브라우저에 저장하지 못했습니다. 선택과 입력은 이 화면에 유지됩니다.'); return false; }
+    };
+    const text = (id, value) => { $(id).textContent = value; };
+    const renderStatus = () => {
+      const draft = getDraft(), saved = state.saved[selected], dirty = changed();
+      text('savedState', dirty ? '저장하지 않은 변경' : saved ? '이 브라우저에 저장됨' : '아직 채택하지 않음');
+      $('savedState').dataset.state = dirty ? 'dirty' : saved ? 'saved' : 'empty';
+      $('saveSense').disabled = !dirty || (!draft.adopted && draft.sense === null);
+      text('selectedMeaningWord', terms[selected].word);
+      text('readingOrigin', draft.adopted ? (dirty ? '채택한 독음 · 저장 전' : '저장한 독음') : draft.reading === terms[selected].reading ? '사전 기본 독음' : '직접 입력한 독음 · 미채택');
+      text('selectedMeaning', draft.sense === null ? (draft.adopted ? '독음만 채택했습니다. 뜻은 아직 선택하지 않았습니다.' : '뜻 후보를 확인하고 문맥에 맞는 풀이를 채택하세요.') : terms[selected].senses[draft.sense]);
+      text('selectedSource', (draft.sense === null ? (draft.adopted ? '시연 사전 · 독음 채택' : '채택한 출처 없음') : '시연 사전 · 선택한 뜻') + (dirty && (draft.adopted || draft.sense !== null) ? ' · 저장 전' : ''));
+      text('adoptReading', draft.adopted ? '독음 채택됨' : '이 독음 사용');
+      $('adoptReading').disabled = draft.adopted;
+      text('researchCount', String(Object.keys(state.saved).length));
+      document.querySelectorAll('#sourceText [data-term]').forEach((button) => {
+        button.classList.toggle('is-selected', button.dataset.term === selected);
+        button.dataset.saved = String(Boolean(state.saved[button.dataset.term]));
+        button.setAttribute('aria-pressed', String(button.dataset.term === selected));
+        button.tabIndex = button.dataset.term === selected ? 0 : -1;
+      });
+    };
+    const renderSenses = () => {
+      const list = $('senseList'); list.replaceChildren();
+      terms[selected].senses.forEach((meaning, index) => {
+        const row = document.createElement('button'); row.type = 'button'; row.className = 'sense-option';
+        row.classList.toggle('is-adopted', getDraft().sense === index);
+        row.setAttribute('aria-pressed', String(getDraft().sense === index));
+        const label = document.createElement('strong'); label.textContent = meaning;
+        const meta = document.createElement('small'); meta.className = getDraft().sense === index ? 'chosen' : ''; meta.textContent = getDraft().sense === index ? '채택한 뜻 · 시연 사전' : '뜻 후보 · 시연 사전';
+        row.append(label, meta);
+        row.addEventListener('click', () => { getDraft().sense = index; getDraft().adopted = true; renderSenses(); renderStatus(); $('senseList').children[index].focus(); });
+        list.append(row);
+      });
+    };
+    const renderExamples = () => {
+      const list = $('exampleList'); list.replaceChildren();
+      const item = document.createElement('article'); item.className = 'example-item';
+      const label = document.createElement('small'); label.className = 'example-source'; label.textContent = '현재 문서 · 관서악부서';
+      const line = document.createElement('blockquote'); line.className = 'example-original';
+      const phrase = '然金陵 ， 錢塘 皆有唐 ， 宋才子歌詩 輝暎湖山 以餙大平';
+      const parts = phrase.split(terms[selected].word);
+      parts.forEach((part, index) => { if (index) { const mark = document.createElement('mark'); mark.textContent = terms[selected].word; line.append(mark); } line.append(document.createTextNode(part)); });
+      const note = document.createElement('p'); note.className = 'example-note'; note.textContent = `‘${terms[selected].word}’의 문맥을 대조하는 화면입니다. 외부 문헌 검색은 연결하지 않은 시연입니다.`;
+      item.append(line, note, label); list.append(item);
+      const samples = {ran:'山水雖佳，然無人題詠。',jinling:'客遊金陵，觀其山水。',qiantang:'舟至錢塘，望湖上諸山。',caizi:'才子賦詩，傳於四方。',hushan:'登樓而望湖山。',yi:'作詩以記其遊。'};
+      const other = document.createElement('article'); other.className = 'example-item';
+      const quote = document.createElement('blockquote');
+      samples[selected].split(terms[selected].word).forEach((part,index)=>{ if(index){const mark=document.createElement('mark');mark.textContent=terms[selected].word;quote.append(mark);}quote.append(document.createTextNode(part)); });
+      const credit = document.createElement('small'); credit.textContent='비교 예문 · 시연을 위해 만든 문장';
+      other.append(quote,credit);list.append(other);
+    };
+    const select = (id) => {
+      if (!terms[id]) return; selected = id;
+      text('termWord', terms[id].word); text('termType', terms[id].type); $('termReading').value = getDraft().reading;
+      renderSenses(); renderExamples(); renderStatus();
+    };
+    document.querySelectorAll('#sourceText [data-term]').forEach((button) => {
+      button.addEventListener('click', () => select(button.dataset.term));
+      button.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault(); const index = ids.indexOf(button.dataset.term);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : Math.max(0, Math.min(ids.length - 1, index + (event.key === 'ArrowRight' ? 1 : -1)));
+        select(ids[next]); document.querySelector(`#sourceText [data-term="${ids[next]}"]`).focus();
+      });
+    });
+    $('termReading').maxLength = 100;
+    $('termReading').addEventListener('input', () => { getDraft().reading = $('termReading').value; getDraft().adopted = false; renderStatus(); });
+    $('adoptReading').addEventListener('click', () => { getDraft().adopted = true; renderStatus(); $('saveSense').focus(); });
+    $('saveSense').addEventListener('click', () => {
+      if ($('saveSense').disabled) return;
+      if (persist({ ...state, saved: { ...state.saved, [selected]: { ...getDraft() } } })) { renderStatus(); say(`‘${terms[selected].word}’의 풀이를 이 브라우저에 저장했습니다.`); }
+    });
+    const tabs = [...document.querySelectorAll('[data-panel-tab]')];
+    const showTab = (name) => {
+      activeTab = name;
+      tabs.forEach((tab) => { const on = tab.dataset.panelTab === name; tab.classList.toggle('is-active', on); tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1; });
+      $('meaningsPanel').hidden = name !== 'meanings'; $('examplesPanel').hidden = name !== 'examples';
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => showTab(tab.dataset.panelTab));
+      tab.addEventListener('keydown', (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault(); const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+        showTab(tabs[next].dataset.panelTab); tabs[next].focus();
+      });
+    });
+    const toggle = (buttonId, panelId) => $(buttonId).addEventListener('click', () => {
+      $(panelId).hidden = !$(panelId).hidden; $(buttonId).setAttribute('aria-expanded', String(!$(panelId).hidden));
+    });
+    toggle('charToggle', 'charStrip'); toggle('contextToggle', 'contextBlock');
+    for (const id of ids) for (const char of terms[id].word) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'char-chip'; button.textContent = char; button.setAttribute('aria-label', `${char} — ${terms[id].word} 살펴보기`);
+      button.addEventListener('click', () => select(id)); $('charStrip').append(button);
+    }
+    let returnFocus = null, translationDraft = state.translation;
+    const setMode = (editing) => {
+      $('readerMode').classList.toggle('is-active', !editing); $('translationMode').classList.toggle('is-active', editing);
+      $('readerMode').setAttribute('aria-pressed', String(!editing)); $('translationMode').setAttribute('aria-pressed', String(editing));
+    };
+    const openTranslation = () => {
+      if (!$('translationEditor').hidden) { $('translationInput').focus(); return; }
+      returnFocus = document.activeElement; $('translationText').hidden = true; $('translationEditor').hidden = false; $('translationInput').value = translationDraft;
+      setMode(true); $('translationInput').focus();
+    };
+    const closeTranslation = () => {
+      $('translationEditor').hidden = true; $('translationText').hidden = false; setMode(false); if (returnFocus && returnFocus.isConnected) returnFocus.focus();
+    };
+    $('editTranslation').addEventListener('click', openTranslation); $('translationMode').addEventListener('click', openTranslation);
+    $('readerMode').addEventListener('click', () => { closeTranslation(); document.querySelector(`#sourceText [data-term="${selected}"]`).focus(); });
+    $('translationInput').addEventListener('input', () => { translationDraft = $('translationInput').value; });
+    $('translationCancel').addEventListener('click', () => { translationDraft = state.translation; closeTranslation(); });
+    $('translationSave').addEventListener('click', () => {
+      if (persist({ ...state, translation: $('translationInput').value })) { text('translationText', state.translation); closeTranslation(); say('이 구절의 시연 번역을 저장했습니다.'); }
+    });
+    $('translationEditor').addEventListener('keydown', (event) => { if (event.key === 'Escape') { event.preventDefault(); closeTranslation(); } });
+    document.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') { event.preventDefault(); ($('translationEditor').hidden ? $('saveSense') : $('translationSave')).click(); }
+    });
+    $('resetDemo').addEventListener('click', () => {
+      if (!window.confirm('이 브라우저에 저장한 시연 풀이와 번역을 초기화할까요?')) return;
+      const next = { version: 2, saved: {}, translation: defaultTranslation };
+      if (!persist(next)) return;
+      drafts = {}; translationDraft = defaultTranslation; closeTranslation(); text('translationText', defaultTranslation); select('jinling'); showTab('meanings'); say('이 데모의 저장 상태를 초기화했습니다.');
+    });
+    text('translationText', state.translation); select(selected); showTab(activeTab); setMode(false);
+    if (initialMessage) say(initialMessage);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+
+</script>
+</body></html>

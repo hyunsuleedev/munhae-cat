@@ -64,9 +64,13 @@
 .folio-editor .review-toolbar { border-top: 0; margin: 0 0 12px; padding: 0; gap: 7px; }
 .folio-editor #reviewSelectionHint { font-size: 10px; flex: 1 1 140px; }
 .folio-sheet { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; box-shadow: 0 2px 7px #292b2704; overflow: clip; }
+#viewFull { border: 0; }
 .folio-columns { display: grid; grid-template-columns: 41% minmax(0, 1fr); padding: 15px 23px; border-bottom: 1px solid var(--border); color: var(--fg); font: 17px var(--font-hanmun); }
-#viewParallel { --comparison-source-width: clamp(180px, 41%, calc(100% - 180px)); }
-#viewParallel .folio-columns { grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); min-height: 36px; padding: 0; font: 500 12px/1.4 var(--font-ui); }
+#viewParallel, #viewFull { --comparison-source-width: clamp(180px, 41%, calc(100% - 180px)); }
+#viewFull .folio-columns { grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); height: 36px; padding: 0; }
+#viewFull .folio-columns > span { align-items: center; padding-inline: 23px; }
+#viewFull .folio-columns > span:last-child { padding-left: 26px; }
+#viewParallel .folio-columns { grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); min-height: 36px; padding: 0; border-bottom: 0; font: 500 12px/1.4 var(--font-ui); }
 #viewParallel .folio-columns > span { align-items: center; min-height: 35px; padding: 3px 23px; gap: 8px; }
 #viewParallel .folio-columns > span:last-child { padding-left: 25px; }
 #viewParallel .parallel-source-heading { border-right: 1px solid var(--border); }
@@ -112,7 +116,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 .folio-editor .sentence-edit:read-only:focus { outline: none; background: transparent; }
 .sentence-actions .sentence-state { margin-right: auto; }
 .folio-editor .sentence-edit:not(:read-only):hover { background: transparent; }
-.folio-spread { display: grid; grid-template-columns: 41% minmax(0, 1fr); }
+.folio-spread { position: relative; display: grid; grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); }
 .folio-source { padding: 25px 24px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--source-size); line-height: 2.15; letter-spacing: .025em; border-right: 1px solid var(--border); }
 .folio-translation { padding: 24px 26px; min-width: 0; }
 .folio-editor #fullTranslationInput { display: block; width: 100%; padding: 0; border: 0; border-radius: 0; box-shadow: none; resize: vertical; min-height: 50vh; field-sizing: content; font: var(--reading-size)/2.15 var(--font-hanmun); background: transparent; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -151,6 +155,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
   .folio-editor .bcell-tgt { padding-left: 23px; }
   .folio-source, .folio-translation { padding: 20px 18px; }
   .folio-columns { padding-inline: 16px; }
+  #viewFull .folio-columns > span { padding-inline: 18px; }
   #viewParallel .folio-columns > span { padding-inline: 16px; }
   #viewParallel .folio-columns > span:last-child { padding-left: 19px; }
   .folio-columns small { font-size: 9px; }
@@ -162,7 +167,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
   .folio-editor .brow, .folio-spread { grid-template-columns: minmax(0, 1fr); }
   .folio-editor .bcell-src, .folio-source { border-right: 0; border-bottom: 1px dashed var(--border); }
   .folio-editor .sentence-edit { margin-top: 0; }
-  .folio-columns, #viewParallel .folio-columns { grid-template-columns: 1fr 1fr; }
+  .folio-columns, #viewParallel .folio-columns, #viewFull .folio-columns { grid-template-columns: 1fr 1fr; }
   .folio-editor #viewParallel .brow { grid-template-columns: minmax(0, 1fr); }
   .comparison-divider { display: none; }
 }
@@ -453,7 +458,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 }
 .folio-editor .pane-scroll:has(> .center-body > #sourceWorkspace:not([hidden])) { display: flex; overflow: hidden; }
 .folio-editor .center-body:has(> #sourceWorkspace:not([hidden])) { flex: 1; min-height: 0; width: 100%; max-width: none; padding: 0; }
-#sourceWorkspace { height: 100%; min-height: 0; }
+#sourceWorkspace { height: 100%; min-height: 0; --source-font-size: 20px; --source-line-height: 2; }
 .source-sheet { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; background: var(--surface); }
 .source-sheet > :not(textarea) { flex-shrink: 0; }
 .source-toolbar { display: flex; align-items: stretch; gap: 0; min-height: 36px; padding: 0; border-bottom: 1px solid var(--border); background: var(--chrome); }
@@ -463,7 +468,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 .source-toolbar .tag::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 5px; border-radius: 50%; background: currentColor; vertical-align: middle; }
 .source-sheet .btn { min-height: 28px; }
 .source-sheet .btn:not(:disabled):active { transform: scale(.97); }
-.source-sheet #sourceDraftText { display: block; flex: 1 1 0; width: 100%; height: 0; min-height: 0; margin: 0; padding: 24px 28px; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-family: var(--font-hanmun); font-size: 20px; line-height: 2; letter-spacing: .035em; resize: none; overflow-y: auto; overscroll-behavior-y: contain; box-shadow: none; }
+.source-sheet #sourceDraftText { display: block; flex: 1 1 0; width: 100%; height: 0; min-height: 0; margin: 0; padding: 24px 28px; border: 0; border-radius: 0; background: transparent; color: var(--fg); font-family: var(--font-hanmun); font-size: var(--source-font-size); line-height: var(--source-line-height); letter-spacing: .035em; resize: none; overflow-y: auto; overscroll-behavior-y: contain; box-shadow: none; }
 .source-sheet #sourceDraftText:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
 .source-sheet #sourceDraftText:read-only:focus-visible { outline: 1px solid var(--ctl-border); outline-offset: -1px; }
 .source-sheet #sourceDraftText::placeholder { font-family: var(--font-ui); font-size: 14px; letter-spacing: 0; color: var(--muted); }
@@ -472,6 +477,14 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 .source-footer { display: flex; align-items: center; gap: 12px; min-height: 34px; padding: 0 16px; border-top: 1px solid var(--border); }
 .source-info { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
 .source-info > span + span { padding-left: 12px; border-left: 1px solid var(--border); }
+#btnSourceView { align-self: center; anchor-name: --source-settings; margin-right: 4px; }
+#btnSourceView span { font: 12px/20px var(--font-hanmun); }
+#btnSourceView span:last-child { font-size: 17px; margin-left: -2px; }
+#sourceViewSettings { position-anchor: --source-settings; left: auto; right: anchor(right); padding: 14px; }
+#sourceViewSettings .field { display: grid; grid-template-columns: minmax(0, 1fr) 94px; align-items: center; gap: 12px; margin: 0 0 14px; }
+#sourceViewSettings .field:last-child { margin-bottom: 0; }
+#sourceViewSettings .field label { font-size: 12px; }
+#sourceViewSettings .select { width: 100%; min-height: 0; border: 1px solid var(--border); border-radius: 4px; padding: 4px; color: var(--fg); background: var(--surface); font: 11px var(--font-ui); }
 .source-actions { display: flex; align-items: center; flex-shrink: 0; gap: 4px; padding: 2px 6px; border-left: 1px solid var(--border); }
 .source-toolbar .btn { height: 30px; min-height: 30px; padding: 4px 8px; border-radius: 5px; font-size: 12px; line-height: 20px; white-space: nowrap; box-shadow: none; }
 .source-toolbar .ic { width: 16px; height: 16px; stroke-width: 1.4; }
@@ -483,7 +496,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
   .source-toolbar #btnConfirmSource:hover:not(:disabled) { border-color: var(--accent-ink); }
 }
 @container (max-width: 680px) {
-  .source-sheet #sourceDraftText { padding: 20px; font-size: 18px; }
+  .source-sheet #sourceDraftText { padding: 20px; }
 }
 @container (max-width: 440px) {
   .source-toolbar-title { gap: 6px; padding-inline: 10px; }
@@ -512,13 +525,15 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 #punctuationMode { width: 74px; height: 30px; padding-left: 8px; border-color: transparent; border-radius: 5px; background-color: transparent; font-size: 12px; box-shadow: none; }
 #punctuationMode:disabled { color: var(--muted); opacity: 1; }
 #punctuationMode:focus { border-color: transparent; box-shadow: none; }
-#btnPunctuationView { gap: 2px; anchor-name: --punctuation-settings; }
+#btnPunctuationView { anchor-name: --punctuation-settings; }
+#btnPunctuationView span { font: 12px/20px var(--font-hanmun); }
+#btnPunctuationView span:last-child { font-size: 17px; margin-left: -2px; }
 #btnSuggestPunctuation { margin-right: 8px; }
-#punctuationViewSettings { position-anchor: --punctuation-settings; padding: 14px; border-radius: 6px; }
-#punctuationViewSettings .field { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-items: center; gap: 12px; margin: 0 0 12px; }
+#punctuationViewSettings { position-anchor: --punctuation-settings; padding: 14px; }
+#punctuationViewSettings .field { display: grid; grid-template-columns: minmax(0, 1fr) 94px; align-items: center; gap: 12px; margin: 0 0 14px; }
 #punctuationViewSettings .field label { font-size: 12px; }
 #punctuationViewSettings .check { font-size: 12px; }
-#punctuationViewSettings .select { width: 100%; height: 30px; }
+#punctuationViewSettings .select { width: 100%; min-height: 0; border: 1px solid var(--border); border-radius: 4px; padding: 4px; color: var(--fg); background: var(--surface); font: 11px var(--font-ui); }
 @media (hover: hover) and (pointer: fine) {
   .punctuation-toolbar .btn-ghost:hover:not(:disabled), #punctuationMode:hover:not(:disabled) { background-color: var(--fg-softer); }
   .punctuation-toolbar #btnConfirmPunctuation:hover:not(:disabled) { background: color-mix(in srgb, var(--accent-soft) 80%, var(--accent-ink)); }
@@ -528,9 +543,10 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 #punctuationWorkspace > .workflow-notice { flex-shrink: 0; margin: 0 0 10px; padding: 7px 10px; max-height: 18vh; overflow: auto; font-size: 11px; }
 #punctuationAiStatus { flex: 0 0 auto; color: var(--muted); font-size: 10.5px; line-height: 1.6; padding: 0 0 8px; max-height: 16vh; overflow: auto; white-space: pre-wrap; }
 #punctuationAiStatus:empty { display: none; }
-.punctuation-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); flex: 1; min-height: 0; overflow: hidden; background: var(--surface); border: 0; border-radius: 0; }
+.punctuation-comparison { position: relative; display: grid; --comparison-source-width: 50%; grid-template-columns: var(--comparison-source-width) minmax(0, 1fr); flex: 1; min-height: 0; overflow: hidden; background: var(--surface); border: 0; border-radius: 0; }
 .punctuation-comparison.is-focused { grid-template-columns: minmax(0, 1fr); }
-.punctuation-comparison.is-focused .punctuation-source-pane { display: none; }
+.punctuation-comparison.is-focused .punctuation-source-pane,
+.punctuation-comparison.is-focused > .comparison-divider { display: none; }
 .punctuation-source-pane, .punctuation-comparison-target, #punctuationTextField { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .punctuation-source-pane { border-right: 1px solid var(--border); background: color-mix(in srgb, var(--bg) 55%, var(--surface)); }
 #punctuationTextField { flex: 1; margin: 0; gap: 0; }
@@ -543,7 +559,9 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 .punctuation-text-switch button[aria-pressed="true"] { background: var(--fg-softer); color: var(--accent-ink); }
 .punctuation-text-switch button:focus-visible { outline: 2px solid var(--accent-ink); }
 .punctuation-editor { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
-.punctuation-comparison #punctuationSourceReference, .punctuation-editor #punctuationDraftText { display: block; flex: 1 1 0; width: 100%; height: 0; min-height: 0; max-height: none; margin: 0; padding: 20px 22px; border: 0; border-radius: 0; box-shadow: none; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; resize: none; background: transparent; font-family: var(--font-hanmun); font-size: var(--punctuation-font-size); line-height: var(--punctuation-line-height); letter-spacing: .025em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.punctuation-comparison #punctuationSourceReference, .punctuation-editor #punctuationDraftText { display: block; flex: 1 1 0; width: 100%; height: 0; min-height: 0; max-height: none; margin: 0; padding: 20px 22px; border: 0; border-radius: 0; box-shadow: none; overflow: auto; overscroll-behavior: contain; resize: none; background: transparent; font-family: var(--font-hanmun); font-size: var(--punctuation-font-size); line-height: var(--punctuation-line-height); letter-spacing: .025em; white-space: pre-wrap; overflow-wrap: anywhere; }
+.punctuation-comparison #punctuationSourceReference,
+.punctuation-editor #punctuationDraftText { scrollbar-gutter: auto; scrollbar-width: thin; scrollbar-color: var(--ctl-border) transparent; }
 .punctuation-editor #punctuationDraftText:focus-visible { outline: 1px solid var(--ctl-border); outline-offset: -1px; }
 .punctuation-source-paragraph { display: inline; cursor: pointer; }
 .punctuation-source-paragraph.is-current { background: var(--fg-softer); }
@@ -559,6 +577,7 @@ body.is-comparison-resizing, body.is-comparison-resizing * { cursor: col-resize 
 #punctuationWorkspace [hidden] { display: none !important; }
 @container (max-width: 680px) {
   .punctuation-comparison, .punctuation-comparison.is-focused { grid-template-columns: minmax(0, 1fr); }
+  .punctuation-comparison > .comparison-divider { display: none; }
   .punctuation-source-pane { display: none; border-right: 0; }
   .punctuation-comparison.is-showing-source .punctuation-source-pane { display: flex; }
   .punctuation-comparison.is-showing-source .punctuation-comparison-target { display: none; }

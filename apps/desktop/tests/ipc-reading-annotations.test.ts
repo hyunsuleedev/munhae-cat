@@ -10,7 +10,7 @@ const citation = {
 const annotation = {
   documentNodeId: "document-1", sourceVersionId: "source-1", codepointFrom: 3, codepointTo: 5,
   quote: "𠀀綱", reading: "강", gloss: "문맥에서 그물의 벼리를 가리킴", readingOrder: 2,
-  citation, expectedLockVersion: 0,
+  citation, translationQuote: null, expectedLockVersion: 0,
 };
 
 describe("reading annotation IPC validation", () => {
@@ -28,6 +28,8 @@ describe("reading annotation IPC validation", () => {
       expect(parseSaveReadingAnnotationInput({ ...empty, ...change })).toEqual({ ...empty, ...change });
     }
     expect(parseSaveReadingAnnotationInput({ ...empty, gloss: " 풀이 \n" }).gloss).toBe("풀이");
+    expect(parseSaveReadingAnnotationInput({ ...annotation, translationQuote: " 벼리를 " }).translationQuote).toBe("벼리를");
+    expect(parseSaveReadingAnnotationInput({ ...annotation, translationQuote: "  " }).translationQuote).toBeNull();
     expect(() => parseSaveReadingAnnotationInput(empty)).toThrow();
   });
 
@@ -48,7 +50,7 @@ describe("reading annotation IPC validation", () => {
     { quote: "綱".repeat(101), codepointFrom: 0, codepointTo: 101 },
     { reading: "강".repeat(101) }, { gloss: "뜻".repeat(2_001) },
     { readingOrder: 0 }, { readingOrder: -1 }, { readingOrder: 0.5 }, { readingOrder: 1_000_001 },
-    { readingOrder: undefined }, { reading: null }, { citation: undefined },
+    { readingOrder: undefined }, { reading: null }, { citation: undefined }, { translationQuote: undefined }, { translationQuote: "번".repeat(501) }, { translationQuote: "\u0000" },
     { quote: "\ud800綱" }, { reading: "\u0000" }, { gloss: "풀이\udfff" },
     { createdBy: "renderer-asserted-owner" }, { sourceContent: "must not edit source" },
   ])("rejects invalid bounds, missing version guards, and unexpected fields: %j", (invalid) => {

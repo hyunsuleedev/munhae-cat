@@ -1,3 +1,4 @@
+import { configureComparisonResize } from "./comparison-resize";
 import { t, ui } from "./i18n";
 import { must, store } from "./shared";
 import { punctuationParagraphs, type PunctuationParagraph } from "./punctuation-paragraphs";
@@ -46,6 +47,7 @@ export function configurePunctuationWorkspace() {
     renderLayout();
   }).observe(must(".pane-center"));
   settings.addEventListener("toggle", () => must("#btnPunctuationView").setAttribute("aria-expanded", String(settings.matches(":popover-open"))));
+  configureComparisonResize(sheet, must("#punctuationDivider"), () => {}, "munhae.punctuation.sourceRatio", 50);
 
   function selectCurrent(scroll = false): void {
     if (!paragraphs?.length) { must("#punctuationLocation").textContent = ""; return; }

@@ -1,9 +1,8 @@
 import { store } from "./shared";
 
-export function configureComparisonResize(sheet: HTMLElement, handle: HTMLElement, changed: () => void): void {
-  const key = "munhae.comparison.sourceRatio";
+export function configureComparisonResize(sheet: HTMLElement, handle: HTMLElement, changed: () => void, key = "munhae.comparison.sourceRatio", initial = 41): void {
   const saved = Number.parseFloat(store.get(key) ?? "");
-  let ratio = Number.isFinite(saved) ? Math.max(20, Math.min(80, saved)) : 41;
+  let ratio = Number.isFinite(saved) ? Math.max(20, Math.min(80, saved)) : initial;
   let pointer: number | undefined;
   let frame = 0;
   const limits = (): [number, number] => {
@@ -47,13 +46,13 @@ export function configureComparisonResize(sheet: HTMLElement, handle: HTMLElemen
     handle.addEventListener(name, (event) => { if (event.pointerId === pointer) finish(); });
   }
   window.addEventListener("blur", () => { if (pointer !== undefined) finish(); });
-  handle.addEventListener("dblclick", () => { ratio = 41; render(); save(); });
+  handle.addEventListener("dblclick", () => { ratio = initial; render(); save(); });
   handle.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End", "Enter"].includes(event.key)) return;
     event.preventDefault();
     const [min, max] = limits();
     const current = Math.max(min, Math.min(max, ratio));
-    ratio = event.key === "Enter" ? 41 : event.key === "Home" ? min : event.key === "End" ? max
+    ratio = event.key === "Enter" ? initial : event.key === "Home" ? min : event.key === "End" ? max
       : Math.max(min, Math.min(max, current + (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 5 : 1)));
     render(); save();
   });

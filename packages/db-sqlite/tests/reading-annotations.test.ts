@@ -26,7 +26,7 @@ function setup(text = source) {
 function input(repo: ProjectRepo, documentNodeId: string, from = 5, to = 6): SaveReadingAnnotationInput {
   const current = repo.getEditor(documentNodeId).source;
   return { documentNodeId, sourceVersionId: current.versionId, codepointFrom: from, codepointTo: to,
-    quote: sliceCodepoints(current.contentText, from, to), reading: "길", gloss: "두 번째 𠮷의 문맥 풀이", readingOrder: 4, citation, expectedLockVersion: 0 };
+    quote: sliceCodepoints(current.contentText, from, to), reading: "길", gloss: "두 번째 𠮷의 문맥 풀이", readingOrder: 4, citation, translationQuote: null, expectedLockVersion: 0 };
 }
 function inspect<T>(repo: ProjectRepo, action: (db: ReturnType<typeof openSqlite>) => T): T {
   const db = openSqlite(sqlitePath(repo.packagePath));
@@ -136,7 +136,7 @@ it("rejects UTF-16 offsets, wrong quotes, invalid ranges and empty or oversized 
     { codepointFrom: 0.5 }, { codepointTo: 1000 }, { quote: "\u0000" },
     { reading: "독".repeat(101) }, { gloss: "풀이".repeat(1001) },
     { reading: " ", gloss: "\n", readingOrder: null, citation: null },
-    { readingOrder: 0 }, { readingOrder: 1.5 }, { readingOrder: 1_000_001 },
+    { readingOrder: 0 }, { readingOrder: 1.5 }, { readingOrder: 1_000_001 }, { translationQuote: "번".repeat(501) }, { translationQuote: "\u0000" },
   ]) expect(() => repo.saveReadingAnnotation({ ...request, ...patch })).toThrow();
   expect(repo.listReadingAnnotations(id)).toEqual([]);
   const long = setup("𠮷".repeat(101));
@@ -205,7 +205,7 @@ it("upgrades v5 once with a consistent backup and leaves existing project data u
     assertSqliteIntegrity(backup);
   } finally { backup.close(); }
   inspect(reopened, check => {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 10 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 11 });
     expect(Object.fromEntries(tables.map(table => [table, check.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()]))).toEqual(oldRows);
     assertSqliteIntegrity(check);
   });
@@ -214,4 +214,20 @@ it("upgrades v5 once with a consistent backup and leaves existing project data u
   clean.push(() => again.close());
   expect(readdirSync(path).filter(name => name.includes(".before-reading-annotations-") && name.endsWith(".bak"))).toEqual(backups);
   expect(again.listReadingAnnotations(id)).toEqual([]);
+});
+
+it("stores an optional translation quote as display-only evidence and drops blank values", () => {
+  const { repo, id } = setup();
+  const linked = repo.saveReadingAnnotation({ ...input(repo, id), translationQuote: " 길한 " });
+  expect(linked.translationQuote).toBe("길한");
+  inspect(repo, db => expect(db.prepare("SELECT translation_quote FROM reading_translation_links WHERE annotation_id=?").get(linked.id)).toEqual({ translation_quote: "길한" }));
+  const cleared = repo.saveReadingAnnotation({ ...input(repo, id), id: linked.id, expectedLockVersion: linked.lockVersion, translationQuote: "  " });
+  expect(cleared.translationQuote).toBeNull();
+  expect(cleared.lockVersion).toBe(2);
+  inspect(repo, db => expect(db.prepare("SELECT count(*) AS n FROM reading_translation_links").get()).toEqual({ n: 0 }));
+  expect(repo.getEditor(id).translation).toBeNull();
+  const relinked = repo.saveReadingAnnotation({ ...input(repo, id), id: linked.id, expectedLockVersion: 2, translationQuote: "길" });
+  expect(repo.listReadingAnnotations(id).find(row => row.id === linked.id)?.translationQuote).toBe("길");
+  repo.archiveReadingAnnotation({ id: relinked.id, expectedLockVersion: relinked.lockVersion });
+  inspect(repo, db => { expect(db.prepare("SELECT count(*) AS n FROM reading_translation_links").get()).toEqual({ n: 0 }); expect(db.pragma("foreign_key_check")).toEqual([]); });
 });

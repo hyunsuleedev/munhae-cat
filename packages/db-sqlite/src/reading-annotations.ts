@@ -30,6 +30,8 @@ export type ReadingAnnotationView = {
   gloss: string;
   readingOrder: number | null;
   citation: ReadingCitation | null;
+  /** Exact part of the linked translation this range renders, or null. Display-only; never edits translation text. */
+  translationQuote: string | null;
   lockVersion: number;
   createdAt: string;
   updatedAt: string;
@@ -46,6 +48,7 @@ type Source = { sourceVersionId: string; contentText: string; contentHash: strin
 const columns = `id, document_node_id AS documentNodeId, source_version_id AS sourceVersionId,
   source_content_hash AS sourceContentHash, codepoint_from AS codepointFrom, codepoint_to AS codepointTo,
   quote, reading, gloss, reading_order AS readingOrder, citation_json AS citationJson,
+  (SELECT link.translation_quote FROM reading_translation_links link WHERE link.annotation_id = reading_annotations.id) AS translationQuote,
   lock_version AS lockVersion, created_at AS createdAt, updated_at AS updatedAt`;
 const citationFields: Record<string, number> = { source: 100, sourceLabel: 500, entryId: 500, headword: 500,
   reading: 100, sense: 20_000, senseLabel: 500, sourceUrl: 2048, license: 1000, licenseUrl: 2048, attribution: 5000 };
@@ -134,6 +137,7 @@ export function saveReadingAnnotation(repo: Context, input: SaveReadingAnnotatio
   const reading = text(input.reading, 100, "독음").trim();
   const gloss = text(input.gloss, 2000, "문맥 풀이").trim();
   const sourceCitation = citation(input.citation);
+  const translationQuote = input.translationQuote === null ? null : text(input.translationQuote, 500, "번역 대응").trim() || null;
   if (input.readingOrder !== null && (!Number.isSafeInteger(input.readingOrder) || input.readingOrder < 1 || input.readingOrder > 1_000_000))
     invalid("풀이 순서는 1 이상의 정수로 입력해 주세요");
   if (!reading && !gloss && input.readingOrder === null && sourceCitation === null) invalid("독음이나 풀이를 입력해 주세요");
@@ -177,6 +181,9 @@ export function saveReadingAnnotation(repo: Context, input: SaveReadingAnnotatio
         lock_version: 1, created_by_actor_id: repo.actors.humanId, updated_by_actor_id: repo.actors.humanId,
         created_at: now, updated_at: now });
     }
+    // The link lives beside the record so the online row protocol keeps its v10 columns.
+    repo.db.prepare(`DELETE FROM reading_translation_links WHERE annotation_id=? AND project_id=?`).run(id, repo.projectId);
+    if (translationQuote !== null) insertRow(repo.db, "reading_translation_links", { annotation_id: id, project_id: repo.projectId, translation_quote: translationQuote, updated_at: now });
     return view(stored(repo, id));
   }).immediate();
 }
@@ -192,5 +199,6 @@ export function archiveReadingAnnotation(repo: Context, input: ReadingAnnotation
       lock_version=lock_version+1, updated_by_actor_id=? WHERE id=? AND project_id=? AND lock_version=? AND archived_at IS NULL`)
       .run(now, now, repo.actors.humanId, input.id, repo.projectId, input.expectedLockVersion);
     if (result.changes !== 1) throw new MunhaeError("cas_conflict", "글자 풀이가 다른 편집에서 변경되었습니다. 다시 불러오세요");
+    repo.db.prepare(`DELETE FROM reading_translation_links WHERE annotation_id=? AND project_id=?`).run(input.id, repo.projectId);
   }).immediate();
 }

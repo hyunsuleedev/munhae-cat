@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   REMOVE_CHANGE_SUMMARY_SQL,
+  READING_TRANSLATION_QUOTE_SQL,
   TERM_REVIEW_SQL,
   COMMENT_REFERENCES_SQL,
   APP_INIT_SQL,
@@ -17,6 +18,7 @@ import {
 
 const EMBEDDED: Record<string, string> = {
   "sqlite/010_remove_change_summary.sql": REMOVE_CHANGE_SUMMARY_SQL,
+  "sqlite/011_reading_translation_quote.sql": READING_TRANSLATION_QUOTE_SQL,
   "sqlite/008_term_review.sql": TERM_REVIEW_SQL,
   "sqlite/009_comment_references.sql": COMMENT_REFERENCES_SQL,
   "sqlite/001_init.sql": PROJECT_INIT_SQL,

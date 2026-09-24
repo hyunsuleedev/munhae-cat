@@ -687,6 +687,9 @@ describe("environment and error safety", () => {
     )).toBe(true);
     expect(containsSensitiveProviderData(envelope(grant), {}, [grant])).toBe(true);
     expect(containsSensitiveProviderData(envelope("민감 정보가 없는 번역"), {}, [grant])).toBe(false);
+    // Short flag values under credential-like names are not secrets and must not reject ordinary JSON.
+    expect(containsSensitiveProviderData('{"from":1,"quote":"平"}', { CLAUDE_CODE_SESSION_ATTENDED: "1", CI_TOKEN: "true" })).toBe(false);
+    expect(containsSensitiveProviderData('{"note":"abcdefgh"}', { SOME_TOKEN: "abcdefgh" })).toBe(true);
   });
 });
 

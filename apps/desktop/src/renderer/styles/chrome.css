@@ -468,7 +468,6 @@ html[data-platform="mac"] .sb-top {
   min-height: 28px;
   padding-left: calc(24px + var(--sb-depth) * 12px);
   color: var(--muted);
-  font-size: 11px;
 }
 .sb-context .ic { width: 13px; height: 13px; }
 .sb-context .sb-item.is-current { color: var(--accent); }

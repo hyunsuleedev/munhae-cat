@@ -1,12 +1,12 @@
 .context-content { container-type: inline-size; background: var(--surface); }
 .context-page, .context-layout, .context-writing, .context-editors { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .context-page { width: 100%; }
-.context-heading { display: flex; align-items: center; flex-shrink: 0; gap: 16px; min-height: 64px; padding: 12px 24px; border-bottom: 1px solid var(--border); }
+.context-heading { display: flex; align-items: center; flex-shrink: 0; gap: 12px; min-height: 0; padding: 6px 20px; border-bottom: 1px solid var(--border); }
 .context-heading-title { flex: 1; min-width: 0; }
-.context-heading-title h2 { margin: 0 0 3px; font-size: 12px; font-weight: 600; }
-.context-path { margin: 0; color: var(--muted); font-size: 11px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.context-pagination { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
-.context-pagination .btn { width: 30px; height: 30px; padding: 0; font: 22px/1 var(--font-ui); }
+.context-heading-title h2 { margin: 0; font-size: 12px; font-weight: 600; line-height: 1.25; }
+.context-path { margin: 1px 0 0; color: var(--muted); font-size: 11px; line-height: 1.25; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.context-pagination { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.context-pagination .btn { width: 24px; height: 24px; padding: 0; font: 18px/1 var(--font-ui); }
 .context-pagination .btn:disabled { opacity: .3; }
 .context-page-count { min-width: 48px; text-align: center; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .context-writing, .context-rail { min-width: 0; }
@@ -40,7 +40,7 @@
 .context-actions input[type=checkbox] { accent-color: var(--accent); }
 .context-actions .btn { height: 30px; border-radius: 6px; }
 .context-actions .btn-primary { padding-inline: 13px; }
-.context-add { flex-shrink: 0; height: 30px; gap: 5px; font-size: 11px; }
+.context-add { flex-shrink: 0; height: 26px; gap: 4px; padding-inline: 8px; font-size: 11px; }
 .context-add > span[aria-hidden] { font-size: 16px; }
 .context-rail { padding-top: 28px; }
 .context-scope { padding: 0 0 22px; border-bottom: 1px solid var(--border); background: transparent; }
@@ -75,7 +75,15 @@
 @container (max-width: 520px) { .context-heading { gap: 8px; padding-inline: 16px; } .context-form .field, .context-note-head, .context-actions { padding-inline: 16px; } .context-options { margin-inline: 16px; } }
 .context-workspace { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .context-workspace > .context-content { flex: 1; min-width: 0; }
-.context-inspector { width: clamp(320px, 29vw, 430px); min-width: 300px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); min-height: 0; }
+.context-inspector { position: relative; width: var(--context-inspector-width, clamp(280px, 29vw, 430px)); min-width: 0; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); min-height: 0; }
+.context-inspector-resizer { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; z-index: 5; cursor: col-resize; touch-action: none; }
+.context-inspector-resizer::after { content: ""; position: absolute; inset: 0 3px; }
+.context-inspector-resizer.is-drag::after,
+.context-inspector-resizer:focus-visible::after { background: var(--accent); }
+.context-inspector-resizer:focus-visible { outline: none; }
+@media (hover: hover) and (pointer: fine) { .context-inspector-resizer:hover::after { background: var(--accent); } }
+body.is-resizing-context-inspector,
+body.is-resizing-context-inspector * { cursor: col-resize !important; user-select: none !important; }
 .context-inspector-tabs { display: flex; padding: 0 14px; border-bottom: 1px solid var(--border); gap: 20px; }
 .context-inspector-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 14px 0 12px; font: 12px var(--font-ui); cursor: pointer; }
 .context-inspector-tabs button[aria-selected=true] { color: var(--fg); border-bottom-color: var(--accent); }

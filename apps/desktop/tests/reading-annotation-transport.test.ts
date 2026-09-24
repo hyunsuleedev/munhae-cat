@@ -23,7 +23,7 @@ const signedIn: AccountState = {
 };
 const input: SaveReadingAnnotationInput = {
   documentNodeId: "document-1", sourceVersionId: "source-1", codepointFrom: 0, codepointTo: 2,
-  quote: "𠀀綱", reading: "강", gloss: "벼리", readingOrder: 1, citation: null, expectedLockVersion: 0,
+  quote: "𠀀綱", reading: "강", gloss: "벼리", readingOrder: 1, citation: null, translationQuote: null, expectedLockVersion: 0,
 };
 
 beforeEach(() => {

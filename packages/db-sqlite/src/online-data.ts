@@ -7,7 +7,8 @@ export type OnlineRow = Record<string, string | number | null>;
 export type OnlineTableData = Record<string, OnlineRow[]>;
 export type OnlineRowChange = { table: string; key: OnlineRow; before: OnlineRow | null; after: OnlineRow | null };
 export type OnlineTableMetadata = { name: string; columns: string[]; primaryKey: string[] };
-const EXCLUDED = new Set(["meta_schema_migrations", "meta_project_state", "chat_agent_sessions"]);
+// reading_translation_links is display-only local research state; the v10 online row protocol does not carry it.
+const EXCLUDED = new Set(["meta_schema_migrations", "meta_project_state", "chat_agent_sessions", "reading_translation_links"]);
 const COMPOSITE_KEYS: Record<string, string[]> = {
   material_preferences: ["project_id", "document_node_id", "source_kind", "source_id"],
   src_node_assets: ["document_node_id", "asset_id", "ordinal"],

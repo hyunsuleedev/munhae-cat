@@ -1,6 +1,7 @@
 import { configureSentenceSelection } from "./sentence-selection-ui";
 import { createPunctuationProgress } from "./punctuation-progress-ui";
 import { configurePunctuationWorkspace } from "./punctuation-workspace-ui";
+import { configureSourceView } from "./source-view-ui";
 import { configureComparisonResize } from "./comparison-resize";
 import { configureTermReview } from "./term-review-ui";
 import { alignmentSettingsMarkup, changeAlignmentSetting } from "./alignment-settings-ui";
@@ -292,7 +293,7 @@ const quickTerm = configureQuickTerm({ api, escape: esc, notify, getKnowledge: (
 const dictionary = configureDictionary({ api, escape: esc, notify,
   register: (entry, citation) => quickTerm.open(entry.headword, { targetTerm: entry.reading ?? "", noteMd: citation }),
 });
-const readingStudy = configureReadingStudy({ api, host: must("#viewReading"), escape: esc, notify,
+const readingStudy = configureReadingStudy({ api, host: must("#viewReading"), inspectorHost: must("#rp-reading"), openInspector: () => setTab("reading"), escape: esc, notify,
   canEdit: () => !!view && !sourceDirty && !punctuationDirty && !dirty && !translationSaving && !workspaceSaving && !workspaceSwitching && activeMutations.size === 0 && !sentenceLinkUi.isBusy(),
   changed: () => renderSaveState(),
   edited: () => { editorEditSerial += 1; },
@@ -2686,6 +2687,7 @@ function updateDraftActionDisabled(): void {
   renderAuxiliaryRunControls();
 }
 
+configureSourceView();
 const punctuationWorkspaceUi = configurePunctuationWorkspace();
 
 function renderDraftWorkspaces(): void {
@@ -2920,6 +2922,7 @@ function setWorkspace(next: Workspace, committedMutation = false): void {
   if (next === "terms") void termReview.load(true);
   editorAids.rememberPosition();
   must("#ws").classList.toggle("reading-layout", next === "translation" && layout === "reading");
+  syncReadingDrawer();
   readingStudy.setVisible(next === "translation" && layout === "reading");
   renderWorkflow();
   if (next === "source") must<HTMLTextAreaElement>("#sourceDraftText").focus();
@@ -3140,11 +3143,28 @@ function setView(v: Layout): void {
   if (v === "parallel" || v === "full") resizeSentenceEditors();
   if (v === "full" && selectedSentenceId) highlightBookSource(selectedSentenceId);
   renderComparisonState();
+  syncReadingDrawer();
   readingStudy.setVisible(workspace === "translation" && v === "reading", v === "reading" ? selectedSentenceId : null);
   if (enteringReading) must("#viewReading").closest(".pane-scroll")?.scrollTo({ top: 0 });
 }
 
+function syncReadingDrawer(): void {
+  const reading = workspace === "translation" && layout === "reading";
+  const tab = must("#contextTab");
+  const entering = reading && tab.dataset.tab !== "reading";
+  const leavingSelected = !reading && tab.dataset.tab === "reading" && tab.getAttribute("aria-selected") === "true";
+  tab.dataset.tab = reading ? "reading" : "context";
+  tab.dataset.i18n = reading ? "뜻풀이" : "참고 자료";
+  tab.textContent = t(tab.dataset.i18n);
+  tab.setAttribute("aria-controls", reading ? "rp-reading" : "rp-context");
+  if (entering) setTab("reading");
+  else if (leavingSelected) setTab("context");
+}
+
 function setTab(t: string): void {
+  const reading = workspace === "translation" && layout === "reading";
+  if (t === "context" && reading) t = "reading";
+  else if (t === "reading" && !reading) t = "context";
   $$("#rtabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === t)));
   $$(".rpanel").forEach((p) => p.classList.toggle("is-open", p.id === `rp-${t}`));
   if ($("#ws")?.classList.contains("no-ctx")) togglePane("ctx", false);
@@ -3156,7 +3176,7 @@ function selectRow(key: string): void {
 }
 
 function togglePane(which: "ref" | "ctx", force?: boolean): void {
-  if (layout === "reading") {
+  if (layout === "reading" && which === "ref") {
     if (readingStudy.isBusy() || readingStudy.hasUnsavedDraft()) { notify(t("풀이를 저장한 뒤 다른 패널을 여세요."), t("구절 연구")); return; }
     setView("parallel");
   }
@@ -4149,6 +4169,7 @@ must("#btnConfirmPunctuation").addEventListener("click", () => void confirmPunct
 must("#btnCreateTranslationDraft").addEventListener("click", () => void createTranslationDraft());
 must("#btnResetTranslationDraft").addEventListener("click", () => void resetTranslationDraft());
 configureComparisonResize(must("#viewParallel"), must("#comparisonDivider"), resizeSentenceEditors);
+configureComparisonResize(must("#viewFull"), must("#bookDivider"), resizeSentenceEditors, "munhae.book.sourceRatio");
 $$(".gutter").forEach((g) =>
   g.addEventListener("pointerdown", (e) => {
     const ws = must("#ws");

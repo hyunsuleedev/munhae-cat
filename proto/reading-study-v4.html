@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">
+<title>문해 · 구절 연구 통합 데모</title>
+<style>
+
+:root{--paper:#fffefa;--canvas:#f6f5f0;--sidebar:#efeee8;--ink:#292b27;--muted:#696d63;--line:#dedfd5;--accent:#794e40;--accent-soft:#f1e9df;--green:#56654c;--green-soft:#edf0e6;--serif:"Noto Serif KR","Noto Serif CJK KR","AppleMyungjo","Apple Myungjo","Songti SC",Batang,serif;--ui:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",system-ui,sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:13px/1.5 var(--ui)}button,input,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.5}button{background:none;border:0}h1,h2,h3,p{margin:0}a{color:var(--accent);text-underline-offset:3px}[hidden]{display:none!important}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.serif{font-family:var(--serif)}.muted{color:var(--muted)}.shell{display:grid;grid-template-columns:184px minmax(0,1fr);min-height:100dvh}.sidebar{background:var(--sidebar);border-right:1px solid var(--line);padding:29px 14px 18px;display:flex;flex-direction:column;height:100dvh;position:sticky;top:0}.brand{padding:0 10px 31px}.brand strong{font:27px/1.2 var(--serif);letter-spacing:3px}.brand span{font-size:8px;letter-spacing:1.7px;display:block;margin-top:8px;color:var(--muted)}.side-label{font-size:11px;color:var(--muted);padding:0 10px;margin-bottom:9px}.passage-nav{display:grid;gap:4px}.passage-nav button{text-align:left;padding:11px 10px;border-radius:4px}.passage-nav button[aria-pressed=true]{background:#e0e3d7}.passage-nav b{font-size:12px;font-weight:550;display:block}.passage-nav span{font-size:11px;color:var(--muted);display:block;margin-top:4px}.sidebar-bottom{margin-top:auto;padding:17px 10px 0;border-top:1px solid var(--line)}.demo-tag{font-size:10px;color:var(--accent);letter-spacing:.5px}.sidebar-bottom p{font-size:11px;color:var(--muted);margin:8px 0 14px;line-height:1.7}.text-button{padding:3px 0;color:var(--muted);font-size:11px;text-decoration:underline;text-underline-offset:4px}.app{min-width:0}.topbar{position:sticky;top:0;z-index:3;height:53px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 25px;border-bottom:1px solid var(--line);background:var(--paper)}.breadcrumb{font-size:12px;color:var(--muted)}.breadcrumb b{color:var(--ink);font-weight:500;margin-right:14px}.prototype-note{font-size:11px;color:var(--muted)}.screen-heading{position:sticky;top:53px;z-index:3;background:var(--paper);height:75px;padding:0 25px;display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line)}.heading-name{display:flex;align-items:baseline;gap:12px}.heading-name h1{font:23px/1.2 var(--serif);font-weight:500}.heading-name span{font-size:11px;color:var(--muted)}.layout-switch{display:flex;padding:3px;border:1px solid var(--line);background:var(--canvas);border-radius:5px;gap:2px}.layout-switch button{font-size:12px;padding:6px 11px;border-radius:3px;color:var(--muted);white-space:nowrap}.layout-switch button[aria-pressed=true]{background:var(--paper);color:var(--accent);box-shadow:0 1px 3px #292b2712}.workbench{display:grid;grid-template-columns:minmax(0,1fr) 302px;align-items:start}.reader{min-width:0;padding:21px 26px 36px}.source-caption{font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:10px}.source-text{font:20px/1.8 var(--serif);margin-top:8px;overflow-wrap:anywhere}.reading-controls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:17px 0 17px;padding-top:15px;border-top:1px solid var(--line)}.reading-controls h2{font-size:12px;font-weight:600}.reading-controls .toggles{display:flex;gap:14px;flex-wrap:wrap}.toggles label{font-size:11px;color:var(--muted);display:flex;gap:5px;align-items:center;cursor:pointer}.toggles input{accent-color:var(--green);width:12px;height:12px;margin:0}.reading-grid{--cols:8}.study-line{display:grid;grid-template-columns:43px repeat(var(--cols),minmax(0,1fr));grid-template-rows:43px 22px minmax(24px,auto) minmax(33px,auto) 25px;gap:0 3px;margin-bottom:17px}.row-label{font-size:10px;color:var(--muted);align-self:center;white-space:nowrap;grid-column:1}.row-label.r1{grid-row:1}.row-label.r2{grid-row:2}.row-label.r3{grid-row:3}.row-label.r4{grid-row:4}.token{position:relative;grid-row:1 / 5;display:grid;grid-template-rows:subgrid;align-items:stretch;justify-items:center;min-width:0;padding:0 2px;border:1px solid transparent;border-radius:4px;color:var(--ink);transition:background 100ms ease-out,border-color 100ms ease-out}.token:hover{background:#f2f2e9}.token[aria-pressed=true]{background:var(--accent-soft);border-color:#d8c5b5}.token.linked{background:var(--green-soft);border-color:#b8c1ad}.token .glyph{font:30px/1.25 var(--serif);align-self:center}.token .punctuation{position:absolute;right:0;top:11px;font:17px var(--serif);color:var(--muted);pointer-events:none}.token .reading{font-size:12px;color:var(--accent);align-self:center;overflow-wrap:anywhere}.token .basic{font-size:12px;color:var(--muted);align-self:start;text-align:center;line-height:1.6;padding:1px 0 3px;overflow-wrap:anywhere}.token .meaning{font-size:13px;font-weight:500;line-height:1.6;text-align:center;align-self:start;padding:3px 0 5px;overflow-wrap:anywhere}.token .meaning.empty{color:#85887e;font-weight:400}.token .order{position:absolute;left:4px;top:3px;font:9px var(--ui);color:var(--green)}.group-marker{grid-row:5;min-width:0;border-top:1px solid #a8b49c;margin:4px 3px 0;padding:4px 0 0;font-size:10px;line-height:1.2;color:var(--green);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.group-marker[aria-pressed=true]{color:var(--accent);border-top:2px solid var(--accent)}.hide-basic .study-line{grid-template-rows:43px 22px 0 minmax(33px,auto) 25px}.hide-basic .basic,.hide-basic .r3{visibility:hidden;padding:0;min-height:0;height:0;overflow:hidden}.mode-cards .study-line{grid-template-columns:repeat(var(--cols),minmax(0,1fr));column-gap:7px;grid-template-rows:43px 22px minmax(24px,auto) minmax(33px,auto) 25px}.mode-cards .token{border-color:var(--line);background:#f8f8f2;border-radius:6px;padding-inline:4px}.mode-cards .token[aria-pressed=true]{background:var(--accent-soft);border-color:#bca18f}.mode-cards .token.linked{background:var(--green-soft);border-color:#a8b49c}.mode-cards .row-label{display:none}.mode-cards.hide-basic .study-line{grid-template-rows:43px 22px 0 minmax(33px,auto) 25px}.grid-hint{font-size:10px;color:var(--muted);margin-top:2px}.bottom-reading{margin-top:24px;border-top:1px solid var(--line);padding-top:16px}.section-title{display:flex;gap:9px;align-items:center;font-size:11px;color:var(--muted);margin-bottom:9px}.section-title b{font-weight:550;color:var(--ink)}.section-title small{font-size:10px;color:var(--accent)}.translation-text{font:15px/1.95 var(--serif);word-break:keep-all;overflow-wrap:anywhere}.direct-read{display:flex;flex-wrap:wrap;gap:8px 4px;margin:6px 0 18px}.direct-fragment{border-radius:3px;padding:3px 5px;border-bottom:1px solid #d6ddcc}.direct-fragment strong{font-size:14px;font-weight:400;display:block}.direct-fragment small{display:block;font:13px/1.7 var(--serif);color:var(--green)}.direct-fragment[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent)}.inspector{background:#f6f7f1;border-left:1px solid var(--line);position:sticky;top:128px;height:calc(100dvh - 128px);max-height:calc(100dvh - 128px);display:flex;flex-direction:column;min-width:0}.inspector-header{padding:21px 21px 16px;border-bottom:1px solid var(--line)}.inspector-label{display:flex;justify-content:space-between;color:var(--muted);font-size:11px;margin-bottom:10px}.selection-name{display:flex;align-items:center;gap:18px;margin-bottom:14px}.selection-name h2{font:38px/1.3 var(--serif);max-width:155px;overflow-wrap:anywhere}.selection-name .small-glyph{font-size:25px}.selection-name p{font-size:12px;color:var(--muted)}.reading-edit{white-space:nowrap;display:flex;align-items:center;gap:12px;font-size:11px;color:var(--muted)}.reading-edit input{flex:1;width:0;background:var(--paper);border:1px solid #d4d7c9;border-radius:3px;min-width:0;padding:6px 9px;font-size:12px}.inspector-body{overflow:auto;flex:1;min-height:0;padding:18px 21px}.selected-sense{border-left:2px solid #adb7a0;padding:1px 0 1px 11px;margin-bottom:21px}.selected-sense p{font-size:14px;line-height:1.65;margin-top:5px;overflow-wrap:anywhere}.selected-sense label{font-size:10px;color:var(--muted)}.sense-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:11px}.sense-heading h3{font-size:11px;font-weight:550}.sense-heading small{font-size:10px;color:var(--muted)}.sense-list{display:grid;gap:7px}.sense-option{text-align:left;background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:11px 12px;position:relative}.sense-option[aria-pressed=true]{border-color:#a7b496;background:#edf1e6}.sense-option strong{font-size:13px;font-weight:550;display:block}.sense-option p{font-size:11px;line-height:1.75;color:var(--muted);margin-top:5px}.sense-option small{display:block;font-size:10px;color:var(--green);margin-top:7px}.selection-note{font-size:11px;color:var(--muted);line-height:1.85;margin-top:17px}.inspector-footer{border-top:1px solid var(--line);background:#f6f7f1;padding:14px 21px 17px}.save-row{display:flex;align-items:center;justify-content:space-between;gap:10px}.save-row p{font-size:11px;color:var(--muted)}.save-button{padding:8px 14px;background:var(--green);color:var(--paper);border-radius:4px;font-size:12px}.footer-note{font-size:10px;color:var(--muted);margin-top:9px}.selection-tools{display:flex;justify-content:space-between;gap:12px;margin-top:12px}.selection-tools button{font-size:10px;color:var(--muted);padding:0}.selection-tools button:hover{text-decoration:underline}.mobile-close{display:none}.view-detail{display:none}.empty-message{padding:13px 0;font-size:12px;line-height:1.8;color:var(--muted)}.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--paper);font-size:12px;padding:10px 16px;border-radius:5px;z-index:10;box-shadow:0 3px 15px #0002}.footline{font-size:10px;color:var(--muted);margin-top:22px}.tiny-source{font-size:11px;color:var(--muted)}.hide-sidebar .shell{grid-template-columns:minmax(0,1fr)}.hide-sidebar .sidebar{display:none}.sidebar-toggle{font-size:11px;color:var(--muted);padding:0}.topbar-start{display:flex;align-items:center;gap:18px}
+@media(min-width:1500px){.workbench{grid-template-columns:minmax(0,1fr) 330px}.reader{padding-left:38px;padding-right:38px}.shell{grid-template-columns:210px minmax(0,1fr)}}
+@media(max-width:1120px){.shell{grid-template-columns:154px minmax(0,1fr)}.workbench{grid-template-columns:minmax(0,1fr) 277px}.reader{padding-left:18px;padding-right:18px}.inspector-header,.inspector-body,.inspector-footer{padding-left:17px;padding-right:17px}.heading-name span{display:none}.topbar,.screen-heading{padding-inline:18px}}
+@media(max-width:860px){.shell{grid-template-columns:minmax(0,1fr)}.sidebar{display:none}.sidebar-toggle{display:none}.workbench{grid-template-columns:minmax(0,1fr) 280px}.topbar .prototype-note{display:none}.reader{padding:18px}.heading-name h1{font-size:21px}.reading-controls{align-items:flex-start}.reading-controls .toggles{gap:9px}}
+@media(max-width:650px){.topbar{height:43px}.screen-heading{top:43px}.screen-heading{height:auto;min-height:92px;align-items:flex-start;padding-block:14px;gap:12px;flex-direction:column}.workbench{display:block}.reader{padding:19px 14px 85px}.inspector{display:none;position:fixed;inset:auto 0 0 0;height:76dvh;max-height:76dvh;border:1px solid var(--line);z-index:8;box-shadow:0 -10px 40px #292b2718}.inspector.is-open{display:flex}.inspector-header{padding:16px 21px 13px}.selection-name{margin-bottom:10px}.selection-name h2{font-size:31px}.inspector-label{margin-bottom:6px}.mobile-close{display:block;color:var(--accent);font-size:11px}.view-detail{display:block;position:fixed;bottom:16px;right:16px;padding:10px 15px;border-radius:5px;background:var(--green);color:var(--paper);z-index:7;box-shadow:0 3px 10px #0002}.reading-controls .toggles{gap:10px}.reading-controls h2{white-space:nowrap}.source-text{font-size:18px}.study-line{grid-template-columns:38px repeat(var(--cols),minmax(0,1fr))}.layout-switch button{padding:5px 12px}.breadcrumb{font-size:11px}.token .glyph{font-size:28px}.token .meaning{font-size:12px}.grid-hint{line-height:1.8}.toast{width:calc(100% - 32px);bottom:75px;text-align:center}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+:root{--paper:#fffefa;--muted:#666b60;--line:#dddfd5}
+body{height:100dvh;overflow:hidden}.shell{height:calc(100dvh - 26px);min-height:0;grid-template-columns:184px minmax(0,1fr)}.sidebar{height:100%;position:static;padding-top:26px}.brand{padding-bottom:30px}.brand strong{font-size:27px}.app{display:flex;flex-direction:column;min-height:0}.topbar{height:44px;min-height:44px;position:static;padding-inline:24px}.breadcrumb b{font-weight:600}.prototype-note{font-size:10px;border:1px solid var(--line);padding:2px 7px;border-radius:3px}.screen-heading{height:53px;min-height:53px;position:static;padding-inline:24px}.heading-name h1{font:17px var(--ui);font-weight:600}.heading-name span{font-size:10px}.toolbar-actions{display:flex;align-items:center;gap:15px}.passage-control{display:flex;gap:3px;align-items:center}.passage-control select{border:0;background:transparent;max-width:170px;font-size:12px}.quiet-button{padding:7px 9px;color:var(--muted);font-size:11px;border-radius:3px}.quiet-button:hover{background:var(--canvas)}.ai-launch{font-size:11px;border:1px solid #b8c1ae;border-radius:4px;padding:7px 11px;color:var(--green);background:#f4f6ef;white-space:nowrap}.workbench{flex:1;min-height:0;grid-template-columns:minmax(0,1fr) 326px;align-items:stretch;overflow:hidden}.reader{overflow-y:auto;overscroll-behavior:contain;padding:23px 25px 30px}.source-caption{font-size:10px}.source-text{font-size:20px;line-height:1.6;margin-top:6px}.source-text button{font:inherit;padding:0 1px;border-radius:2px}.source-text button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent)}.source-text button:hover{background:var(--canvas)}.reading-controls{margin:12px 0;padding-top:12px}.reading-controls .toggles{gap:13px}.view-switch{display:flex;border:1px solid var(--line);border-radius:4px;padding:2px;margin-right:2px}.view-switch button{font-size:10px;padding:3px 7px;border-radius:2px;color:var(--muted)}.view-switch button[aria-pressed=true]{background:var(--canvas);color:var(--ink)}.reading-controls-right{display:flex;gap:12px;align-items:center}.study-line{grid-template-rows:40px 19px minmax(20px,auto) minmax(25px,auto) 22px;margin-bottom:12px}.row-label{font-size:10px}.token .glyph{font-size:30px}.token .basic{font-size:11px}.token .meaning{font-size:12px}.group-marker{font-size:10px;color:#526048;border-color:#9daa8e;min-height:24px;padding-top:5px}.group-marker:hover{background:var(--green-soft)}.hide-basic .study-line{grid-template-rows:40px 19px 0 minmax(25px,auto) 22px}.mode-cards .study-line{grid-template-rows:40px 19px minmax(20px,auto) minmax(25px,auto) 22px}.inspector{position:static;top:auto;height:100%;max-height:none;min-height:0;background:#f6f7f2}.inspector-header{padding:21px 21px 0;border-bottom:0}.inspector-label{font-size:10px}.selection-name{min-height:52px;margin-bottom:17px;gap:14px}.selection-name h2{font-size:37px;max-width:210px}.selection-name p{font-size:12px}.selection-name .small-glyph{font-size:23px}.research-tabs{display:flex;border-bottom:1px solid var(--line);gap:20px;padding:0 21px}.research-tabs button{font-size:11px;padding:10px 0 11px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}.research-tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--green);font-weight:600}.inspector-body{padding-top:20px;scrollbar-gutter:stable;overflow-y:auto}.form-row{display:grid;grid-template-columns:1fr 80px;gap:12px;margin-bottom:22px}.form-field{display:flex;flex-direction:column;gap:7px;font-size:10px;color:var(--muted)}.form-field input{min-width:0;width:100%;padding:7px 9px;border:1px solid #d4d7c9;border-radius:3px;background:var(--paper);font-size:12px}.selected-sense{margin-bottom:23px}.sense-option{padding:12px}.sense-option p{font-size:11px;line-height:1.8}.sense-option small{font-size:10px}.inspector-footer{padding:12px 21px 13px}.save-button{padding:7px 13px}.footer-note{font-size:10px;margin-top:7px}.empty-message{font-size:12px}.section-intro{font-size:12px;line-height:1.8;color:var(--muted);margin-bottom:18px}.note-input{resize:vertical;width:100%;min-height:138px;background:var(--paper);border:1px solid #d4d7c9;border-radius:4px;padding:11px;font:12px/1.9 var(--ui);color:var(--ink)}textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.field-label{display:block;font-size:11px;font-weight:600;margin-bottom:9px}.note-tip{font-size:10px;line-height:1.8;color:var(--muted);margin:9px 0 22px}.ai-notes{display:grid;gap:10px}.saved-ai-note{padding:12px;border-left:2px solid #aab69c;background:#eef1e7}.saved-ai-note span{font-size:10px;color:var(--green)}.saved-ai-note p{font-size:12px;line-height:1.8;margin-top:6px}.ai-context{font-size:11px;background:#eeefe8;border:1px solid var(--line);border-radius:4px;padding:10px 12px;line-height:1.8;margin-bottom:17px}.ai-context b{font-weight:500;color:var(--accent);font-family:var(--serif);font-size:17px;display:block}.question-buttons{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}.question-buttons button{font-size:11px;padding:7px 9px;border:1px solid #d4d7c9;background:var(--paper);border-radius:4px}.question-buttons button:hover{border-color:#9caa8d;background:#f1f4e9}.ai-idle{border-top:1px solid var(--line);padding-top:17px;font-size:11px;line-height:1.9;color:var(--muted)}.ai-idle strong{font-size:12px;color:var(--ink);font-weight:500;display:block;margin-bottom:5px}.ai-progress{font-size:12px;color:var(--green);padding:14px 0}.ai-progress progress{width:100%;height:4px;accent-color:var(--green);margin-top:10px}.ai-progress button{margin-top:10px;text-decoration:underline;font-size:11px}.ai-summary{font-size:11px;line-height:1.8;color:var(--muted);margin-bottom:13px}.ai-summary b{display:block;font-size:11px;color:var(--ink);font-weight:550;margin-bottom:5px}.proposal{border:1px solid var(--line);background:var(--paper);border-radius:4px;padding:12px;margin-bottom:10px}.proposal-top{display:flex;justify-content:space-between;align-items:center;gap:10px}.proposal-range{font:22px var(--serif);color:var(--accent);padding:0}.proposal-top span{font-size:10px;color:var(--muted)}.proposal .proposal-meaning{font-size:12px;font-weight:550;margin-top:8px}.proposal p{font-size:11px;line-height:1.85;color:var(--muted);margin-top:6px}.proposal .caution{border-left:2px solid #c5af88;padding-left:8px;color:#776448}.proposal .adopt{font-size:11px;color:var(--green);border:1px solid #bbc7ad;border-radius:3px;padding:5px 8px;margin-top:12px}.proposal .adopt:disabled{border-color:transparent;opacity:1;color:var(--muted);padding-left:0}.bottom-reading{margin-top:16px;padding-top:16px}.translation-text{font-size:15px}.research-records{margin-top:26px;border-top:1px solid var(--line);padding-top:15px}.record-heading{display:flex;justify-content:space-between;margin-bottom:12px}.record-heading h2{font-size:12px;font-weight:550}.record-heading span{font-size:10px;color:var(--muted)}.record-row{display:flex;align-items:baseline;gap:18px;width:100%;text-align:left;padding:11px 0;border-bottom:1px solid var(--line)}.record-row strong{font:17px var(--serif);color:var(--accent);min-width:42px;max-width:110px;overflow-wrap:anywhere}.record-row span{font-size:11px;line-height:1.7;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;color:var(--muted)}.empty-record{font-size:11px;color:var(--muted);padding:4px 0}.statusbar{height:26px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:0 16px;font-size:10px;color:var(--muted);background:var(--paper)}.statusbar span+span{margin-left:10px}.status-dot{color:var(--green)}.sidebar-bottom p{font-size:10px}.sidebar-subtitle{font-size:10px;color:var(--muted);padding:7px 10px 0}.brand span{font-size:8px}.footer-error{color:#8a493d!important}.mobile-close{margin-left:auto}.view-detail{font-size:12px}.toast{bottom:40px}.side-section{padding:20px 10px;color:var(--muted);font-size:11px}.side-section p{margin-bottom:11px}
+@media(min-width:1500px){.workbench{grid-template-columns:minmax(0,1fr) 352px}.shell{grid-template-columns:200px minmax(0,1fr)}.reader{padding-inline:35px}}
+@media(max-width:1120px){.shell{grid-template-columns:154px minmax(0,1fr)}.workbench{grid-template-columns:minmax(0,1fr) 300px}.reader{padding-inline:20px}.toolbar-actions{gap:8px}.heading-name span{display:none}.research-tabs{gap:17px;padding-inline:18px}.inspector-header,.inspector-body,.inspector-footer{padding-inline:18px}}
+@media(max-width:860px){.shell{grid-template-columns:minmax(0,1fr)}.workbench{grid-template-columns:minmax(0,1fr) 288px}.reading-controls-right{gap:5px}.screen-heading,.topbar{padding-inline:18px}.prototype-note{display:none}.reader{padding-inline:18px}}
+@media(max-width:650px){body{overflow:auto;height:auto}.shell{height:auto;min-height:calc(100dvh - 26px)}.topbar{position:sticky;top:0;z-index:3;height:43px}.screen-heading{position:sticky;top:43px;z-index:3;flex-direction:row;align-items:center;height:auto;min-height:92px;flex-wrap:wrap;padding:12px 14px;gap:10px}.toolbar-actions{width:100%;justify-content:space-between}.workbench{display:block;overflow:visible}.reader{padding:20px 14px 75px;overflow:visible}.inspector{display:none;position:fixed;inset:auto 0 0;height:82dvh;max-height:82dvh;border:1px solid var(--line);box-shadow:0 -10px 40px #292b2718;z-index:8}.inspector.is-open{display:flex}.inspector-header{padding-top:15px}.inspector-label{margin-bottom:5px}.selection-name{min-height:35px;margin-bottom:8px}.selection-name h2{font-size:29px}.research-tabs{gap:24px}.reader .view-switch{display:none}.reading-controls-right{gap:12px}.statusbar{position:fixed;bottom:0;left:0;right:0;z-index:6}.statusbar>span:first-child{max-width:47%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.statusbar .status-detail{display:none}.view-detail{bottom:40px}.toast{bottom:85px}.inspector-footer{padding-bottom:max(13px,env(safe-area-inset-bottom))}.passage-control select{max-width:160px}.source-text{font-size:18px}}
+.mode-cards.hide-basic .study-line{grid-template-rows:40px 19px 0 minmax(25px,auto) 22px}
+
+.analysis-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;margin:0 0 15px;background:#f1f3eb;border:1px solid var(--line);border-radius:4px;font-size:11px;line-height:1.7}.analysis-bar strong{font-size:12px;display:block;font-weight:550}.analysis-bar p{color:var(--muted)}.analysis-actions{display:flex;gap:8px;flex-shrink:0;align-items:center}.analysis-actions button{font-size:11px;padding:6px 9px;border:1px solid #bbc7ad;border-radius:3px;white-space:nowrap}.analysis-actions .apply-all{background:var(--green);color:var(--paper);border-color:var(--green)}.analysis-actions .discard-analysis{border:0;color:var(--muted);padding:6px 0}.token .ai-value{text-decoration:underline dotted #95a585;text-underline-offset:5px}.group-marker.ai-pending{border-top-style:dashed}.proposal-detail{border:1px dashed #aebc9f;border-radius:4px;padding:12px;margin-bottom:18px;background:#edf1e6}.proposal-detail h3{font-size:11px;color:var(--green);font-weight:550;margin-bottom:8px}.proposal-detail dl{display:grid;grid-template-columns:55px minmax(0,1fr);gap:5px 8px;font-size:12px;margin:0}.proposal-detail dt{font-size:11px;color:var(--muted)}.proposal-detail dd{margin:0;overflow-wrap:anywhere}.proposal-detail p{font-size:11px;color:var(--muted);line-height:1.8;margin-top:9px}.proposal-detail button{margin-top:12px;background:var(--green);color:var(--paper);padding:6px 10px;border-radius:3px;font-size:11px}.spaced-field{margin-top:13px}.group-edit{display:flex;align-items:center;gap:7px;font-size:11px;margin-top:17px}.group-edit input{accent-color:var(--green)}.ai-analysis-summary{padding:12px;background:#edf1e6;border:1px solid var(--line);border-radius:4px;margin-bottom:15px;font-size:12px}.ai-analysis-summary p{font-size:11px;color:var(--muted);line-height:1.8;margin:7px 0}.ai-analysis-summary button{padding:5px 0;color:var(--green);text-decoration:underline}.analysis-bar .muted{font-size:10px}.form-field input{width:100%}@media(max-width:900px){.analysis-bar{align-items:flex-start;flex-wrap:wrap}}@media(max-width:650px){.analysis-bar{font-size:10px}.analysis-actions button{min-height:34px}}
+
+/* Reading study refinement: content first, explicit proposal review. */
+:root{--paper:#fffefa;--canvas:#f4f3ed;--sidebar:#f1f0e9;--ink:#30342d;--muted:#74796d;--line:#e2e3db;--green:#526349;--green-soft:#eef2e8;--accent:#856447;--accent-soft:#f0e8df}
+button,input,select,textarea{-webkit-tap-highlight-color:transparent}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #839b6d;outline-offset:3px}button{touch-action:manipulation}
+.shell{grid-template-columns:172px minmax(0,1fr)}.sidebar{padding:25px 12px 18px;background:var(--sidebar)}.brand{padding:0 12px 31px}.brand strong{font-size:26px}.brand span{font-size:7px;letter-spacing:1.8px;margin-top:7px}.side-label{font-size:11px;padding-inline:12px;color:#858a7d}.passage-nav button{padding:12px;border-radius:5px;margin-bottom:2px}.passage-nav b{font-size:12px;font-weight:550}.passage-nav span{font-size:10px;margin-top:5px}.passage-nav button[aria-pressed=true]{background:#e4e7dc;box-shadow:inset 2px 0 var(--green)}.sidebar-bottom{padding-inline:12px}.demo-tag{font-size:8px;letter-spacing:1.1px;color:#7a8270}.sidebar-bottom p{font-size:10px}.text-button{font-size:10px}
+.screen-heading{height:57px;min-height:57px;padding:0 23px;gap:16px;background:var(--paper)}.heading-name{align-items:center;gap:12px}.heading-name h1{font-size:16px;letter-spacing:-.3px}.heading-name>span{font-size:11px;color:var(--muted)}.icon-button{display:inline-flex;align-items:center;justify-content:center;min-width:30px;min-height:30px;padding:0;border-radius:5px;color:var(--muted);font-size:22px;line-height:1}.mobile-close{display:none}.sidebar-toggle{margin-left:-5px;margin-right:1px}.toolbar-actions{gap:20px}.passage-control{gap:4px}.passage-control select{font-size:12px;max-width:160px;padding:6px 3px}.ai-launch{font-size:12px;min-height:33px;padding:7px 13px;background:var(--green);color:#fffefa;border-color:var(--green);border-radius:5px}.workbench{grid-template-columns:minmax(0,1fr) 336px}.reader{padding:20px 28px 32px;scrollbar-gutter:stable}.source-caption{font-size:10px;letter-spacing:.1px}.source-text{font-size:20px;line-height:1.7;margin-top:5px;letter-spacing:.1px}.source-text button{padding-inline:1px}.reading-controls{margin:16px 0 12px;padding-top:14px}.reading-controls h2{font-size:12px;font-weight:600}.view-switch{border:0;padding:2px;background:#f0f0e9;border-radius:5px}.view-switch button{font-size:10px;padding:5px 9px;border-radius:3px}.view-switch button[aria-pressed=true]{background:var(--paper);box-shadow:0 1px 3px #252c1c15}.reading-controls-right{gap:15px}.toggles label{font-size:10px}.toggles input{width:13px;height:13px}
+.analysis-bar{border:0;border-radius:4px;min-height:43px;padding:8px 11px;margin-bottom:14px;gap:8px;background:#f1f4ed;line-height:1.5}.analysis-bar[data-state=idle],.analysis-bar[data-state=saved]{background:transparent;border-left:2px solid #dce2d4;border-radius:0;min-height:30px;padding:4px 10px;margin-block:0 14px}.analysis-copy{display:flex;align-items:center;gap:9px;min-width:0}.analysis-copy strong{font-size:11px;font-weight:600;white-space:nowrap}.analysis-copy p{font-size:10px;line-height:1.6}.analysis-count{font-variant-numeric:tabular-nums;color:var(--green);background:#e0e7d8;border-radius:10px;display:inline-block;padding:1px 6px;margin-left:4px;font-size:10px}.analysis-actions{gap:12px}.analysis-actions button{font-size:10px;padding:6px 9px;min-height:29px}.analysis-actions .apply-all{border-radius:4px}.analysis-actions .discard-analysis{font-size:10px}.analysis-copy .legend-line{height:0;width:16px;border-top:1px dashed #6b8157;flex:none}.study-line{column-gap:4px;grid-template-rows:40px 20px minmax(20px,auto) minmax(25px,auto) 25px;margin-bottom:13px}.token .glyph{font-size:31px}.token .reading{font-size:12px;color:var(--accent)}.token .basic{font-size:11px;color:#818676}.token .meaning{font-size:12px;font-weight:500}.token .ai-value{text-decoration:none}.token.has-proposal{border-bottom:1px dashed #bbc8af;border-radius:4px 4px 0 0}.token[aria-pressed=true]{background:var(--accent-soft);border:1px solid #c8b39e;border-radius:4px;box-shadow:0 1px 3px #39281709}.token.has-proposal[aria-pressed=true]{border-bottom-style:solid}.row-label{font-size:9px;color:#959b8c}.group-marker{font-size:10px;color:#687759;line-height:1.4;padding-top:5px;min-height:25px;margin-top:4px}.group-marker[aria-pressed=true]{color:var(--accent);background:#f5eee7;border-top:1px solid var(--accent);border-radius:0 0 3px 3px}.grid-hint{font-size:9px;color:#979c90;margin-top:4px}.bottom-reading{margin-top:20px;padding-top:15px}.section-title{font-size:11px}.section-title small{color:#9c9f95;font-size:9px}.translation-text{font-size:14px;line-height:1.95;color:#676d60}.research-records{margin-top:22px}.record-heading span{font-size:10px}
+.inspector{background:#f8f9f4}.inspector-header{padding:17px 21px 0}.inspector-label{font-size:10px;line-height:1.5;margin-bottom:8px}.selection-position{display:flex;align-items:center;gap:10px}.selection-name{gap:11px;min-height:46px;margin-bottom:11px}.selection-name h2{font-size:34px;line-height:1.35;max-width:185px;letter-spacing:.5px}.selection-name p{font-size:11px;max-width:95px;overflow-wrap:anywhere;line-height:1.7}.selection-name .small-glyph{font-size:23px}.selection-nav{display:flex;gap:2px;margin-left:auto;flex:none}.selection-nav button{min-width:25px;min-height:28px;font-size:20px}.research-tabs{gap:22px;padding-inline:21px}.research-tabs button{font-size:11px;min-height:40px;padding:9px 0}.inspector-body{padding:20px 21px;scrollbar-gutter:stable}.proposal-detail{padding:0;border:0;border-radius:0;background:transparent;margin-bottom:18px}.proposal-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}.proposal-heading h3{margin:0;font-size:11px;color:var(--ink)}.proposal-badge{font-size:9px;color:var(--green);border:1px solid #c5d0ba;background:#edf2e6;border-radius:3px;padding:2px 5px;white-space:nowrap}.proposal-table{display:grid;grid-template-columns:52px minmax(0,1fr) 14px minmax(0,1.2fr);gap:0 7px;align-items:start}.proposal-table>*{min-width:0;padding:8px 0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}.proposal-table .column-title{font-size:9px;color:var(--muted);padding:0 0 5px}.proposal-table .field-name{font-size:10px;color:var(--muted)}.proposal-table .old-value{color:#92998a}.proposal-table .new-value{font-weight:500;color:var(--green)}.proposal-table .field-arrow{color:#bec5b7;font-size:11px}.proposal-table .manual-mark{display:block;font-size:9px;color:#927450;font-weight:400}.proposal-detail .protected-note{font-size:10px;background:#f2efe5;padding:7px 9px;border-radius:3px;line-height:1.7;margin-top:11px;color:#827558}.proposal-reason{border-top:1px solid var(--line);margin-top:12px;padding-top:11px}.proposal-reason summary{font-size:11px;color:var(--muted);cursor:pointer;list-style:none;display:flex;justify-content:space-between}.proposal-reason summary::after{content:'+';color:#9da391}.proposal-reason[open] summary::after{content:'−'}.proposal-reason p{font-size:11px;line-height:1.9;margin-top:10px;color:#697260}.proposal-alert{font-size:10px;color:#866b46;margin-top:10px;line-height:1.75}.manual-editor{border-top:1px solid var(--line);padding-top:13px}.manual-editor>summary{display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;font-size:11px;min-height:25px;color:var(--ink)}summary::-webkit-details-marker{display:none}.manual-editor summary small{font-size:9px;color:var(--muted);margin-left:auto}.disclosure-arrow{color:var(--muted);font-size:15px}.manual-editor[open] .disclosure-arrow{transform:rotate(180deg)}.manual-fields{padding-top:14px}.form-row{margin-bottom:12px;gap:12px}.form-field{gap:6px;font-size:10px}.form-field input{min-height:34px;font-size:12px;background:var(--paper);border-color:#dfe2d5;border-radius:4px;padding:7px 9px}.spaced-field{margin-top:12px}.group-edit{font-size:11px;line-height:1.7;margin-top:14px}.clear-field{font-size:10px;color:var(--muted);padding:0;min-height:30px;margin-top:7px}.clear-field:disabled{display:none}.selection-note{font-size:10px;color:#919786;line-height:1.8;margin-top:8px}.inspector-footer{padding:13px 21px;background:#f8f9f4;min-height:58px}.save-row{min-height:30px}.save-row p{font-size:10px;line-height:1.7;max-width:160px}.footer-actions{display:flex;align-items:center;gap:9px;flex:none}.save-button{font-size:11px;min-height:33px;padding:7px 12px;border-radius:4px}.discard-draft{font-size:10px;color:var(--muted);min-height:30px}.inspector-footer.is-quiet{min-height:43px;padding-block:6px;border-top-color:#e7e9df}.inspector-footer.is-quiet .save-row{min-height:30px}.section-intro{font-size:11px;line-height:1.8}.note-input{min-height:150px;border-color:#dfe2d5}.ai-context{background:transparent;border:0;border-left:2px solid #c8d2bc;border-radius:0;padding:0 0 0 10px;margin-bottom:15px}.question-buttons button{border-color:#dbe0d1}.statusbar{font-size:9px;color:#8a9081;padding-inline:14px}.statusbar .status-dot{color:#5e7251}.toast{font-size:11px;max-width:calc(100vw - 32px);line-height:1.6;border-radius:5px;padding:9px 13px;pointer-events:none}
+@media(hover:hover) and (pointer:fine){.icon-button:hover,.quiet-button:hover{background:#eef0e7}.ai-launch:hover,.save-button:hover,.apply-all:hover{background:#43523b}.token:not([aria-pressed=true]):hover{background:#f4f3eb}.group-marker:hover{background:#eef0e6}.passage-nav button:not([aria-pressed=true]):hover{background:#e9ebe2}.clear-field:hover,.discard-draft:hover{color:var(--ink)}.proposal-reason summary:hover,.manual-editor>summary:hover{color:var(--green)}}
+button:active:not(:disabled){transform:scale(.98)}.token:active,.group-marker:active,.source-text button:active{transform:none}
+@media(min-width:1500px){.shell{grid-template-columns:188px minmax(0,1fr)}.workbench{grid-template-columns:minmax(0,1fr) 356px}.reader{padding-inline:36px}}
+@media(max-width:1120px){.shell{grid-template-columns:150px minmax(0,1fr)}.reader{padding-inline:20px}.workbench{grid-template-columns:minmax(0,1fr) 306px}.analysis-copy{align-items:flex-start;flex-direction:column;gap:2px}.analysis-actions{gap:8px}.inspector-header,.inspector-body,.inspector-footer{padding-inline:18px}.research-tabs{padding-inline:18px;gap:20px}.selection-name h2{max-width:154px}.proposal-table{grid-template-columns:45px minmax(0,1fr) 10px minmax(0,1.1fr);gap:0 5px}}
+@media(max-width:860px){.shell{grid-template-columns:minmax(0,1fr)}.sidebar{display:none}.workbench{grid-template-columns:minmax(0,1fr) 295px}.screen-heading{padding-inline:18px}.sidebar-toggle{display:none}.reading-controls-right{gap:10px}.reader{padding-inline:18px}.analysis-bar{flex-wrap:wrap}}
+@media(max-width:650px){.screen-heading{position:sticky;top:0;height:auto;min-height:95px;padding:13px 16px 12px;gap:10px;z-index:3}.heading-name h1{font-size:16px}.heading-name>span{display:inline;font-size:10px}.toolbar-actions{gap:15px;width:100%}.passage-control{margin-left:-8px}.ai-launch{min-height:36px}.workbench{display:block}.reader{padding:19px 16px 85px}.reading-controls{margin-top:16px}.source-text{font-size:18px}.analysis-bar{padding:9px 11px;align-items:center;gap:10px;margin-bottom:17px}.analysis-copy{flex-direction:row;align-items:center;gap:7px}.analysis-copy p{font-size:10px}.analysis-actions{margin-left:auto;gap:12px}.analysis-actions button{min-height:36px}.analysis-bar[data-state=idle]{padding:3px 10px}.inspector{height:85dvh;max-height:85dvh;border-radius:12px 12px 0 0}.inspector-header{padding:12px 20px 0}.inspector-label{margin-bottom:3px}.mobile-close{display:inline-flex;min-width:40px;min-height:40px;font-size:25px;margin-right:-10px}.selection-name{margin-bottom:7px;min-height:42px}.selection-name h2{font-size:31px;max-width:205px}.selection-nav button{min-width:40px;min-height:40px}.research-tabs{padding-inline:20px;gap:27px}.research-tabs button{min-height:43px}.inspector-body{padding:18px 20px}.inspector-footer{padding:12px 20px max(14px,env(safe-area-inset-bottom))}.save-button,.discard-draft{min-height:40px;font-size:12px}.form-field input{min-height:40px;font-size:14px}.proposal-table{grid-template-columns:50px minmax(0,1fr) 16px minmax(0,1.2fr);gap:0 8px}.proposal-table>*{font-size:13px;padding:10px 0}.manual-editor>summary,.proposal-reason summary{min-height:36px}.view-detail{min-height:42px;font-size:12px;border-radius:6px;padding:10px 15px;bottom:41px}.toast{bottom:96px}.statusbar{height:26px}.statusbar .status-detail{display:none}.grid-hint{font-size:9px}.token .glyph{font-size:31px}}
+@media(prefers-reduced-motion:reduce){button,.token{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+<aside class="sidebar" aria-label="시연 문서"><div class="brand"><strong>文解</strong><span>MUNHAE STUDIO</span></div><p class="side-label">연구할 구절</p><nav class="passage-nav" id="passageNav"></nav><div class="sidebar-bottom"><span class="demo-tag">INTERACTION DEMO</span><p>AI 응답과 뜻풀이는 시연용 예시입니다.</p><button class="text-button" id="resetDemo">데모 초기화</button></div></aside>
+<div class="app">
+<header class="screen-heading"><div class="heading-name"><button class="sidebar-toggle icon-button" id="sidebarToggle" aria-expanded="true" aria-label="목록 접기" title="목록 접기"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M7.5 4v12" stroke="currentColor" stroke-width="1.3"/></svg></button><h1>구절 연구</h1><span id="passageCount"></span><span id="documentName" hidden></span></div><div class="toolbar-actions"><div class="passage-control"><button class="quiet-button icon-button" id="previousPassage" aria-label="이전 연구 구절" title="이전 연구 구절">‹</button><select id="passageSelect" aria-label="연구할 구절"></select><button class="quiet-button icon-button" id="nextPassage" aria-label="다음 연구 구절" title="다음 연구 구절">›</button></div><button class="ai-launch" id="analyzePassage">AI 구절 분석</button></div></header>
+<main class="workbench"><article class="reader" id="reader"><div class="source-caption"><span>원문</span><span id="sourceCount"></span></div><p class="source-text" id="sourceText" aria-label="연구 원문"></p>
+<div class="reading-controls"><h2>글자별 풀이</h2><div class="reading-controls-right"><div class="view-switch" role="group" aria-label="풀이 보기"><button data-layout="aligned" aria-pressed="true">행 맞춤</button><button data-layout="cards" aria-pressed="false">카드</button></div><div class="toggles"><label><input type="checkbox" id="basicToggle" checked>기본 훈</label><label><input type="checkbox" id="orderToggle">풀이 순서</label></div></div></div>
+<section id="analysisBar" class="analysis-bar" aria-live="polite"></section>
+<div class="reading-grid" id="readingGrid" aria-label="한자별 훈음과 문맥 뜻"></div><p class="grid-hint">글자를 눌러 풀이 편집 · Shift+클릭으로 범위 선택 · 방향키로 이동</p>
+<section class="bottom-reading"><div class="section-title"><b>연결된 번역</b><small>시연용</small></div><p class="translation-text" id="translation"></p></section>
+<section class="research-records"><div class="record-heading"><h2>이 구절의 연구</h2><span id="recordCount"></span></div><div id="recordList"></div></section>
+</article>
+<aside class="inspector" id="inspector" aria-label="선택한 글자와 어휘 연구"><header class="inspector-header"><div class="inspector-label"><span id="selectionType"></span><div class="selection-position"><span id="selectionPosition"></span><button class="mobile-close icon-button" id="closeInspector" aria-label="닫기">×</button></div></div><div class="selection-name"><h2 id="selectedWord"></h2><p id="selectedBasic"></p><div class="selection-nav"><button class="icon-button" id="previousItem" aria-label="이전 제안" title="이전 제안">‹</button><button class="icon-button" id="nextItem" aria-label="다음 제안" title="다음 제안">›</button></div></div></header>
+<div class="research-tabs" role="tablist" aria-label="연구 도구"><button id="tab-dictionary" role="tab" aria-controls="panel-dictionary" aria-selected="true" data-tab="dictionary">글자·어휘</button><button id="tab-notes" role="tab" aria-controls="panel-notes" aria-selected="false" tabindex="-1" data-tab="notes">연구 기록</button><button id="tab-ai" role="tab" aria-controls="panel-ai" aria-selected="false" tabindex="-1" data-tab="ai">AI 검토</button></div>
+<div class="inspector-body" id="inspectorScroll">
+<section id="panel-dictionary" role="tabpanel" aria-labelledby="tab-dictionary">
+<div id="selectionProposal"></div>
+<details class="manual-editor" id="manualEditor" open><summary><span>직접 편집</span><small id="fieldOrigin"></small><span class="disclosure-arrow" aria-hidden="true">⌄</span></summary><div class="manual-fields">
+<div class="form-row"><label class="form-field">독음<input id="readingInput" aria-label="독음" maxlength="100" placeholder="미입력" autocomplete="off"></label><label class="form-field">풀이 순서<input id="orderInput" type="number" min="1" max="99" placeholder="선택" aria-label="풀이 순서"></label></div>
+<label class="form-field spaced-field" id="basicField">기본 훈<input id="basicInput" aria-label="기본 훈 입력" maxlength="100" placeholder="예: 쇠"></label>
+<label class="form-field spaced-field">문맥 뜻<input id="meaningInput" aria-label="문맥 뜻" maxlength="500" placeholder="이 위치에서의 뜻"></label>
+<label class="group-edit" id="linkField"><input type="checkbox" id="linkInput">선택한 범위를 어휘로 연결</label>
+<button class="clear-field" id="clearMeaning">문맥 뜻 지우기</button><p class="selection-note" id="selectionNote"></p></div></details></section>
+<section id="panel-notes" role="tabpanel" aria-labelledby="tab-notes" hidden><p class="section-intro">이 위치에서 확인할 점과 읽은 근거를 남깁니다.</p><label class="field-label" for="noteInput">나의 연구 메모</label><textarea class="note-input" id="noteInput" maxlength="2000" placeholder="다른 독법이나 확인할 출처를 기록하세요."></textarea><p class="note-tip">선택한 글자·어휘의 위치에 저장됩니다.<br>다른 위치의 같은 글자와는 별도로 기록합니다.</p><div class="sense-heading"><h3>AI에서 가져온 기록</h3><small>시연 예시</small></div><div class="ai-notes" id="adoptedNotes"></div></section>
+<section id="panel-ai" role="tabpanel" aria-labelledby="tab-ai" hidden><div class="ai-context"><span>선택한 범위</span><b id="aiSelection"></b></div><p class="section-intro">이 부분에서 무엇을 살펴볼까요?</p><div class="question-buttons"><button data-question="meaning">문맥에서의 뜻</button><button data-question="reading">다른 독법</button><button data-question="evidence">확인할 근거</button></div><div id="aiContent" aria-live="polite"></div></section>
+</div>
+<footer class="inspector-footer" id="inspectorFooter"><div class="save-row"><p id="saveState" role="status" aria-live="polite"></p><div class="footer-actions"><button class="discard-draft" id="discardDraft">취소</button><button class="save-button" id="saveSelection">저장</button><button class="save-button apply-selection" id="applySelection">이 제안 적용</button></div></div></footer></aside>
+</main></div></div>
+<footer class="statusbar"><span id="statusPath"></span><span><span class="status-detail">브라우저에 저장 · AI 응답은 시연 예시</span><span class="status-dot" id="overallStatus">저장됨</span></span></footer>
+<button class="view-detail" id="openInspector">선택한 풀이 보기</button><div class="toast" id="toast" role="status" hidden></div>
+<script id="passage-data">
+/*
+ * UI comparison fixtures, not dictionary exports or reviewed research records.
+ * All Korean senses, explanations, translations and alignments below were
+ * written for this demonstration. Source glyphs are not normalized.
+ * Token indices are zero-based across clauses.flat(); group.to is exclusive.
+ * Public-domain source text checked against:
+ * https://zh.wikisource.org/wiki/論語/學而第一
+ * https://zh.wikisource.org/wiki/禮記/大學
+ */
+(() => {
+  'use strict';
+  const sense = (text, explanation) => ({ text, explanation });
+  const token = (char, reading, basic, senses, chosen = 0) => ({
+    char, reading, basic, senses, chosen
+  });
+  const single = (char, reading, basic, text, explanation, chosen = 0) =>
+    token(char, reading, basic, [sense(text, explanation)], chosen);
+  const group = (id, from, to, label, reading, meaning, explanation) => ({
+    id, from, to, label, reading, sense: meaning, explanation
+  });
+
+  const gwanseo = {
+    id: 'gwanseo',
+    title: '관서악부서',
+    sourceLabel: '시연용 풀이 · 현재 문서의 구절',
+    sourceText: '然金陵 ， 錢塘 皆有唐 ， 宋才子歌詩 輝暎湖山 以餙大平',
+    translation: '그러나 금릉과 전당에는 모두 당·송나라 재자들의 시가 있어 호수와 산을 빛낸다. [以餙大平: 餙의 뜻 확인 후 번역]',
+    clauses: [
+      [
+        token('然', '연', '그러할', [
+          sense('그러나', '앞선 내용에서 화제를 전환하거나 대조하는 접속 표현으로 읽는 시연안입니다.'),
+          sense('그러하다', '앞서 말한 내용을 받아 긍정하는 서술로 읽는 뜻 후보입니다.')
+        ]),
+        token('金', '금', '쇠', [
+          sense('쇠붙이', '낱자의 기본 의미입니다. 이 자리의 金陵은 두 글자를 함께 지명으로 살핍니다.'),
+          sense('금', '금속인 금을 가리키는 뜻 후보입니다. 이 자리에서는 지명 풀이와 구별해야 합니다.')
+        ], null),
+        single('陵', '릉', '언덕', '큰 언덕', '낱자의 기본 의미입니다. 이 자리에서는 金陵의 일부로 읽으므로 어휘 풀이를 함께 봅니다.', null),
+        token('錢', '전', '돈', [
+          sense('돈', '낱자의 기본 의미입니다. 이 자리의 錢塘은 두 글자를 함께 지명으로 살핍니다.'),
+          sense('동전', '금속 화폐를 가리키는 뜻 후보입니다. 지명 錢塘의 번역으로 채택하지는 않습니다.')
+        ], null),
+        single('塘', '당', '못', '못·제방', '낱자의 기본 의미입니다. 이 자리에서는 錢塘의 일부로 읽습니다.', null),
+        single('皆', '개', '다', '모두', '앞에 나온 두 장소에 공통으로 해당함을 나타내는 시연 풀이입니다.'),
+        token('有', '유', '있을', [
+          sense('있다', '뒤의 시가가 존재함을 서술하는 뜻으로 읽습니다.'),
+          sense('가지다', '무언가를 소유하거나 갖추었다는 뜻 후보입니다.')
+        ]),
+        single('唐', '당', '당나라', '당나라', '宋과 나란히 시대 이름으로 읽습니다. 원문의 사이 표점은 그대로 보존했습니다.'),
+        single('宋', '송', '송나라', '송나라', '唐과 나란히 시대 이름으로 읽는 시연 풀이입니다.'),
+        single('才', '재', '재주', '재주', '子와 함께 才子라는 어휘를 이룹니다. 두 글자를 묶은 풀이를 함께 봅니다.'),
+        token('子', '자', '아들', [
+          sense('사람', '才子에서 재주 있는 사람을 가리키는 말의 일부로 읽습니다.'),
+          sense('아들', '낱자의 기본 의미 가운데 하나입니다.'),
+          sense('선생', '높여 부르는 호칭으로 쓰일 때의 뜻 후보입니다.')
+        ]),
+        token('歌', '가', '노래', [
+          sense('노래', '詩와 함께 시가를 가리키는 명사로 읽는 시연 풀이입니다.'),
+          sense('노래하다', '노래를 부르거나 시로 읊는 동작을 나타내는 뜻 후보입니다.')
+        ]),
+        single('詩', '시', '시', '시', '歌와 함께 문학 작품인 시가를 가리키는 것으로 읽습니다.')
+      ],
+      [
+        token('輝', '휘', '빛날', [
+          sense('빛내다', '이 시연에서는 뒤의 湖山에 작용하는 서술로 읽습니다. 원문 자형을 보존합니다.'),
+          sense('빛나다', '대상 스스로 빛을 내거나 두드러진다는 뜻 후보입니다.')
+        ]),
+        token('暎', '영', '비칠', [
+          sense('비추다', '輝와 함께 풍경을 빛내는 표현으로 읽는 시연안입니다. 다른 자형으로 바꾸지 않습니다.'),
+          sense('비치다', '빛이나 모습이 드러나는 것으로 읽는 뜻 후보입니다.')
+        ]),
+        single('湖', '호', '호수', '호수', '山과 함께 호수와 산의 경치를 가리키는 시연 풀이입니다.'),
+        single('山', '산', '메', '산', '湖와 나란히 놓인 지형 명사로 읽습니다.'),
+        token('以', '이', '써', [
+          sense('그로써', '앞의 행위를 이어 뒤의 작용을 나타내는 시연 풀이입니다. 연결 관계는 앞뒤 문맥에서 검토해야 합니다.'),
+          sense('~로써', '도구나 수단을 나타내는 뜻 후보입니다.'),
+          sense('앞뒤 동작을 이어 목적이나 결과를 나타냄', '긴 뜻 후보가 선택되었을 때에도 행 높이와 글자 대응을 유지하는지 살펴볼 수 있는 시연 항목입니다.')
+        ]),
+        token('餙', '희', '', [], null),
+        single('大', '대', '큰', '크다', '낱자의 기본 의미입니다. 여기서는 大平을 함께 읽는 어휘 풀이와 구별합니다.', null),
+        token('平', '평', '평평할', [
+          sense('평안하다', '大平을 함께 읽을 때 참고할 수 있는 뜻 후보입니다.'),
+          sense('평평하다', '높낮이가 고르다는 낱자의 기본 의미입니다.')
+        ])
+      ]
+    ],
+    groups: [
+      group('jinling', 1, 3, '金陵', '금릉', '지명', '지명으로 묶어 읽는 시연입니다. 각 글자의 기본 훈을 더해 번역하지 않습니다.'),
+      group('qiantang', 3, 5, '錢塘', '전당', '지명', '지명으로 묶어 읽는 시연입니다. 구체적인 장소와 역사적 범위는 별도 근거 확인이 필요합니다.'),
+      group('caizi', 9, 11, '才子', '재자', '재주 있는 사람', '이 구절에서는 시가를 지은 사람들을 가리키는 것으로 읽는 시연안입니다.'),
+      group('geshi', 11, 13, '歌詩', '가시', '시가', '노래와 시를 함께 가리키는 어휘로 묶은 시연안입니다.'),
+      group('hushan', 15, 17, '湖山', '호산', '호수와 산', '풍경을 이루는 두 명사를 함께 살피는 시연 묶음입니다.'),
+      group('daping', 19, 21, '大平', '대평', '태평한 시대', '이 풀이와 번역은 시연안입니다. 원문의 大平을 보존하며 글자를 바꿔 적지 않습니다.')
+    ],
+    segments: [
+      { text: '그러나', indices: [0] },
+      { text: '금릉과 전당에는', indices: [1, 2, 3, 4] },
+      { text: '모두', indices: [5] },
+      { text: '당·송나라 재자들의 시가가', indices: [7, 8, 9, 10, 11, 12] },
+      { text: '있어', indices: [6] },
+      { text: '호수와 산을', indices: [15, 16] },
+      { text: '빛내고', indices: [13, 14] },
+      { text: '그로써', indices: [17] },
+      { text: '태평한 시대를', indices: [19, 20] },
+      { text: '[뜻 확인 필요]', indices: [18] }
+    ]
+  };
+
+  const analects = {
+    id: 'analects',
+    title: '논어 · 학이',
+    sourceLabel: '시연용 풀이 · 논어 학이 1장 일부',
+    sourceText: '學而時習之，不亦說乎？有朋自遠方來，不亦樂乎？',
+    translation: '배우고 때때로 그것을 익히면 또한 기쁘지 않은가? 벗이 먼 곳에서 찾아오면 또한 즐겁지 않은가?',
+    clauses: [
+      [
+        single('學', '학', '배울', '배우다', '배우는 행위를 나타내는 시연 풀이입니다.'),
+        single('而', '이', '말 이을', '~하고', '앞뒤의 행위를 이어 주는 것으로 읽습니다.'),
+        token('時', '시', '때', [sense('때때로', '정해진 때에 또는 때때로라는 부사적 풀이의 시연안입니다.'), sense('때', '시점이나 시기를 가리키는 명사 뜻입니다.')]),
+        single('習', '습', '익힐', '익히다', '배운 내용을 거듭 익히는 행위로 읽습니다.'),
+        token('之', '지', '갈', [sense('그것', '앞에서 배운 것을 받는 대명사로 읽습니다.'), sense('~의', '앞말과 뒷말의 수식 관계를 나타내는 용법입니다.'), sense('가다', '움직여 간다는 동사 뜻입니다.')])
+      ],
+      [
+        single('不', '불', '아니', '~하지 않다', '亦·乎와 함께 반문을 이루는 시연 풀이입니다.'),
+        single('亦', '역', '또', '또한', '앞의 내용에 대한 판단을 더하는 말로 읽습니다.'),
+        token('說', '열', '말씀 / 기쁠', [sense('기쁘다', '이 뜻으로 읽을 때의 독음은 열입니다. 말씀하다는 뜻의 설과 구별합니다.'), sense('말하다', '설로 읽는 뜻 후보입니다. 뜻과 독음을 함께 확인하기 위한 시연 항목입니다.'), sense('설득하다', '세로 읽는 뜻 후보입니다. 이 구절에서 채택한 뜻은 아닙니다.')]),
+        single('乎', '호', '어조사', '~인가', '문장 끝에서 물음이나 반문의 어조를 나타내는 것으로 읽습니다.')
+      ],
+      [
+        single('有', '유', '있을', '있다', '朋을 도입하는 말로 읽습니다.'),
+        single('朋', '붕', '벗', '벗', '함께 배우는 벗으로 읽는 시연안입니다.'),
+        token('自', '자', '스스로', [sense('~로부터', '遠方과 연결해 출발한 곳을 나타내는 것으로 읽습니다.'), sense('스스로', '자기 자신이 직접 한다는 뜻 후보입니다.')]),
+        single('遠', '원', '멀', '멀다', '뒤의 方을 꾸미는 것으로 읽습니다.'),
+        token('方', '방', '모', [sense('곳', '遠方에서 장소를 뜻하는 것으로 읽습니다.'), sense('방향', '향하는 쪽을 나타내는 뜻 후보입니다.')]),
+        single('來', '래', '올', '오다', '먼 곳에서 이쪽으로 온다는 동작을 나타냅니다.')
+      ],
+      [
+        single('不', '불', '아니', '~하지 않다', '반문을 이루는 말로 읽습니다.'),
+        single('亦', '역', '또', '또한', '앞의 상황에 대한 판단을 더하는 것으로 읽습니다.'),
+        token('樂', '락', '즐길 / 풍류', [sense('즐겁다', '락으로 읽는 뜻 후보입니다. 이 시연에서는 아직 뜻을 채택하지 않은 상태로 둡니다.'), sense('음악', '악으로 읽는 뜻 후보입니다. 같은 자형의 다른 독음을 비교할 수 있습니다.')], null),
+        single('乎', '호', '어조사', '~인가', '문장 끝의 물음 또는 반문을 나타냅니다.')
+      ]
+    ],
+    groups: [group('yuanfang', 12, 14, '遠方', '원방', '먼 곳', '遠이 方을 꾸미는 어휘로 묶어 읽는 시연입니다.')],
+    segments: [
+      { text: '배우고', indices: [0, 1] }, { text: '때때로', indices: [2] },
+      { text: '그것을', indices: [4] }, { text: '익히면', indices: [3] },
+      { text: '또한', indices: [6] }, { text: '기쁘지 않은가?', indices: [5, 7, 8] },
+      { text: '벗이', indices: [9, 10] }, { text: '먼 곳에서', indices: [11, 12, 13] },
+      { text: '찾아오면', indices: [14] }, { text: '또한', indices: [16] },
+      { text: '즐겁지 않은가?', indices: [15, 17, 18] }
+    ]
+  };
+
+  // Explicit readings supplied for these illustrative sense choices.
+  ['열', '설', '세'].forEach((reading, i) => { analects.clauses[1][2].senses[i].reading = reading; });
+  ['락', '악'].forEach((reading, i) => { analects.clauses[3][2].senses[i].reading = reading; });
+
+  const greatLexicon = {
+    大: ['대', '큰', '크다'], 學: ['학', '배울', '배움'], 之: ['지', '갈', '~의'],
+    道: ['도', '길', '도리'], 在: ['재', '있을', '~에 있다'], 明: ['명', '밝을', '밝다'],
+    德: ['덕', '덕', '덕'], 親: ['친', '친할', '친히 하다'], 民: ['민', '백성', '백성'],
+    止: ['지', '그칠', '머무르다'], 於: ['어', '어조사', '~에'], 至: ['지', '이를', '지극하다'],
+    善: ['선', '착할', '선'], 知: ['지', '알', '알다'], 而: ['이', '말 이을', '~하고'],
+    後: ['후', '뒤', '뒤에'], 有: ['유', '있을', '있다'], 定: ['정', '정할', '정해지다'],
+    能: ['능', '능할', '~할 수 있다'], 靜: ['정', '고요할', '고요하다'], 安: ['안', '편안할', '편안하다'],
+    慮: ['려', '생각할', '생각하다'], 得: ['득', '얻을', '얻다'], 物: ['물', '물건', '사물'],
+    本: ['본', '근본', '근본'], 末: ['말', '끝', '말단'], 事: ['사', '일', '일'],
+    終: ['종', '마칠', '끝'], 始: ['시', '비로소', '시작']
+  };
+  const greatClauses = ['大學之道', '在明明德', '在親民', '在止於至善', '知止而後有定', '定而後能靜', '靜而後能安', '安而後能慮', '慮而後能得', '物有本末', '事有終始'].map(
+    text => Array.from(text, char => {
+      const [reading, basic, meaning] = greatLexicon[char];
+      return single(char, reading, basic, meaning, '긴 구절의 글자별 대응과 반복 글자의 개별 선택을 살펴보기 위한 시연 풀이입니다.');
+    })
+  );
+  const greatTokens = greatClauses.flat();
+  greatTokens[5].senses = [sense('밝히다', '이어지는 明德에 작용하는 동사로 읽습니다. 다음 자리의 明과 뜻을 별도로 선택합니다.'), sense('밝다', '밝은 성질을 나타내는 뜻 후보입니다.')];
+  greatTokens[6].senses = [sense('밝은', '德을 꾸미는 것으로 읽습니다. 앞자리의 明과 같은 글자여도 별개 기록입니다.'), sense('밝히다', '동작을 나타내는 뜻 후보입니다.')];
+  greatTokens[9].chosen = null;
+  greatTokens[9].senses = [sense('친히 하다', '여기서는 원문의 親을 그대로 두었습니다. 이 구절의 해석과 이문 문제를 결정한 자료가 아니므로 뜻은 미선택 상태입니다.')];
+  greatTokens[17].senses = [sense('머무를 곳', '知의 대상으로 읽는 시연 풀이입니다. 앞자리의 止와 기능을 구별합니다.'), sense('머무르다', '그치거나 머무는 동작으로 읽는 뜻 후보입니다.')];
+  greatTokens[41].chosen = null;
+  greatTokens[41].senses = [sense('얻다', '무엇을 얻는지에 대한 구체적 해석은 이 시연에서 확정하지 않았습니다.')];
+  const greatLearning = {
+    id: 'great-learning',
+    title: '대학 · 첫머리',
+    sourceLabel: '시연용 풀이 · 대학 첫머리 50자',
+    sourceText: '大學之道，在明明德，在親民，在止於至善。知止而後有定，定而後能靜，靜而後能安，安而後能慮，慮而後能得。物有本末，事有終始。',
+    translation: '대학의 도는 밝은 덕을 밝히고, 백성을 친히 하며, 지극한 선에 머무는 데 있다. 머무를 곳을 안 뒤에 정해짐이 있고, 정해진 뒤에 고요할 수 있으며, 고요한 뒤에 편안할 수 있고, 편안한 뒤에 생각할 수 있으며, 생각한 뒤에 얻을 수 있다. 사물에는 근본과 말단이 있고, 일에는 끝과 시작이 있다.',
+    clauses: greatClauses,
+    groups: [
+      group('daxue', 0, 2, '大學', '대학', '큰 배움', '두 글자를 함께 읽는 시연 풀이입니다. 학교 이름의 현대적 용법과 구별합니다.'),
+      group('mingde', 6, 8, '明德', '명덕', '밝은 덕', '앞에 놓인 동사 明과 이 묶음의 明을 구별해서 읽습니다.'),
+      group('zhishan', 14, 16, '至善', '지선', '지극한 선', '至가 善을 꾸미는 어휘로 묶은 시연입니다.'),
+      group('benmo', 44, 46, '本末', '본말', '근본과 말단', '서로 대비되는 두 부분을 나란히 묶은 시연입니다.'),
+      group('zhongshi', 48, 50, '終始', '종시', '끝과 시작', '원문의 순서를 보존하여 함께 읽는 시연입니다.')
+    ],
+    segments: []
+  };
+
+  window.DEMO_PASSAGES = [gwanseo, analects, greatLearning];
+})();
+
+</script>
+<script>
+/* Authored, offline UI examples. No AI request or dictionary citation is made. */
+(() => {
+  'use strict';
+  const modes = {
+    passage: ['구절 전체', '이 구절에서 함께 살펴볼 글자와 어휘는 무엇인가요?'],
+    meaning: ['뜻풀이', '선택한 글자나 어휘를 이 문맥에서는 어떻게 읽을 수 있나요?'],
+    reading: ['독음', '선택한 뜻에 맞는 독음을 함께 살펴볼까요?'],
+    evidence: ['근거 확인', '이 풀이를 채택하려면 어떤 근거를 더 확인해야 하나요?']
+  };
+  const sampleNotice = '오프라인 화면 시연용 예시입니다. 실제 AI 분석이나 사전 인용이 아닙니다.';
+
+  // Returns a fresh, occurrence-based result only when the caller requests it.
+  // The authored fixtures are the mock response source, never a dictionary API.
+  // Character indices are zero-based across clauses.flat(); group.to is exclusive.
+  window.createReadingDemoAnalysis = function (passage) {
+    const tokens = Array.isArray(passage?.clauses) ? passage.clauses.flat() : [];
+    const characters = tokens.map((token, index) => {
+      const quote = typeof token?.char === 'string' ? token.char : '';
+      const candidates = Array.isArray(token?.senses) ? token.senses : [];
+      const chosen = Number.isInteger(token?.chosen) && token.chosen >= 0
+        ? candidates[token.chosen] : null;
+      const unknown = quote.startsWith('餙');
+      return {
+        index,
+        quote,
+        reading: unknown ? '희' : chosen?.reading || token?.reading || '',
+        basic: unknown ? '' : token?.basic || '',
+        meaning: unknown ? '' : chosen?.text || '',
+        explanation: unknown
+          ? `원문 餙을 보존합니다. 독음 희만 표시하며 기본 훈과 문맥의 뜻은 근거 확인 전까지 미확인으로 둡니다. 다른 자형으로 바꾸거나 ‘꾸미다’로 확정하지 않습니다. ${sampleNotice}`
+          : `${chosen?.explanation || candidates[0]?.explanation || '이 위치의 글자를 살펴보는 시연안입니다.'}${chosen ? '' : ' 문맥의 뜻은 미확정으로 둡니다.'} ${sampleNotice}`
+      };
+    });
+    const groups = (Array.isArray(passage?.groups) ? passage.groups : [])
+      .filter(group => group && Number.isInteger(group.from) && Number.isInteger(group.to)
+        && group.from >= 0 && group.to > group.from && group.to <= tokens.length)
+      .map(group => {
+        const selected = characters.slice(group.from, group.to);
+        const unknown = selected.some(character => character.quote.startsWith('餙'));
+        return {
+          id: String(group.id || `word-${group.from}-${group.to}`),
+          from: group.from,
+          to: group.to,
+          quote: selected.map(character => character.quote).join(''),
+          reading: unknown ? selected.map(character => character.reading).join('') : group.reading || '',
+          meaning: unknown ? '' : group.sense || '',
+          explanation: unknown
+            ? `원문 餙을 포함한 어휘 묶음입니다. 자형을 보존하며 묶음의 뜻은 근거 확인 전까지 미확인으로 둡니다. ${sampleNotice}`
+            : `${group.explanation || '여러 글자를 함께 읽는 시연 묶음입니다.'} ${sampleNotice}`
+        };
+      });
+    return { characters, groups };
+  };
+
+  window.createReadingDemoProposal = function ({ passage, from = 0, to, mode = 'passage' } = {}) {
+    const tokens = Array.isArray(passage?.clauses) ? passage.clauses.flat() : [];
+    const groups = Array.isArray(passage?.groups) ? passage.groups : [];
+    const kind = Object.hasOwn(modes, mode) ? mode : 'passage';
+    const [label, question] = modes[kind];
+    const bounded = (value, fallback) => Number.isInteger(value) ? Math.max(0, Math.min(tokens.length, value)) : fallback;
+    const start = bounded(from, 0), end = Math.max(start, bounded(to, Math.min(start + 1, tokens.length)));
+    const quote = (a, b) => tokens.slice(a, b).map(token => token.char).join('');
+    const sense = token => {
+      if (token.char.startsWith('餙')) return { text: '뜻 미확인', reading: '희', explanation: '원문 餙을 보존합니다. 이 예시에서는 독음 희만 표시하며 문맥의 뜻은 확정하지 않습니다.' };
+      const candidates = Array.isArray(token.senses) ? token.senses : [];
+      return candidates[Number.isInteger(token.chosen) ? token.chosen : 0] || candidates[0] || { text: '뜻 미확인', explanation: '' };
+    };
+    const reading = token => sense(token).reading || token.reading || '독음 미확인';
+
+    function proposal(a, b) {
+      const selected = tokens.slice(a, b);
+      const exactGroup = groups.find(group => group.from === a && group.to === b);
+      const meanings = [];
+      // Preserve complete fixture word groups; partial selections stay separate.
+      for (let i = a; i < b;) {
+        const group = groups.find(item => item.from === i && item.to <= b && item.to > i);
+        if (group) { meanings.push(group.sense); i = group.to; }
+        else { meanings.push(sense(tokens[i]).text || '뜻 미확인'); i++; }
+      }
+      const hasUnknownGlyph = selected.some(token => token.char.startsWith('餙'));
+      const notes = hasUnknownGlyph ? '원문 餙을 보존하며, 이를 포함한 표현의 뜻은 근거 확인 전까지 미확인으로 둡니다.'
+        : exactGroup?.explanation || (selected.length === 1 ? sense(selected[0]).explanation : '선택 범위의 글자와 완전한 어휘 묶음을 나누어 살펴보는 예시입니다. 나열한 뜻을 문장 번역으로 확정하지 않습니다.');
+      const proposedReading = hasUnknownGlyph ? selected.map(reading).join('') : exactGroup?.reading || selected.map(reading).join('');
+      const explanation = kind === 'reading'
+        ? `독음 후보는 ‘${proposedReading}’입니다. 뜻에 따라 독음이 달라지는 글자는 선택한 의미와 함께 확인합니다. ${notes || ''}`
+        : kind === 'evidence'
+          ? `확인할 항목: 원문 자형, 표제어의 해당 뜻, 앞뒤 문맥의 용법. ${notes || ''} 이 데모에는 실제 근거 자료가 연결되어 있지 않습니다.`
+          : notes || '선택한 뜻 후보를 문맥에서 검토하는 시연입니다.';
+      return {
+        from: a, to: b, quote: quote(a, b), reading: proposedReading,
+        meaning: hasUnknownGlyph ? '뜻 미확인' : exactGroup?.sense || meanings.join(' / '), explanation,
+        caution: hasUnknownGlyph
+          ? `餙의 뜻은 미확인입니다. 다른 자형으로 바꾸거나 ‘꾸미다’로 확정하지 않습니다. ${sampleNotice}`
+          : sampleNotice
+      };
+    }
+
+    let ranges = start < end ? [[start, end]] : [];
+    if (kind === 'passage') {
+      const curated = {
+        gwanseo: [[0, 1], [1, 3], [17, 18], [18, 19]],
+        analects: [[2, 3], [4, 5], [7, 8], [12, 14]],
+        'great-learning': [[5, 6], [6, 8], [9, 10], [14, 16]]
+      };
+      ranges = curated[passage?.id] || groups.slice(0, 3).map(group => [group.from, group.to]);
+      if (ranges.length < 2) {
+        ranges = [...ranges, ...tokens.map((token, i) => [i, i + 1])]
+          .filter((range, i, all) => all.findIndex(other => other[0] === range[0] && other[1] === range[1]) === i).slice(0, 4);
+      }
+    }
+    ranges = ranges.filter(([a, b]) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b > a && b <= tokens.length).slice(0, kind === 'passage' ? 4 : 1);
+    return {
+      summary: ranges.length ? `${label} 검토를 위한 시연 제안 ${ranges.length}건입니다. 채택 전후의 화면 흐름을 살펴볼 수 있습니다.` : '살펴볼 글자나 어휘를 선택하세요.',
+      suggestions: ranges.map(([a, b]) => proposal(a, b)), question,
+      scopeLabel: kind === 'passage' ? `${passage?.title || '현재 구절'} · 전체 ${tokens.length}자` : `${quote(start, end) || '선택 없음'} · ${label}`
+    };
+  };
+})();
+
+</script>
+<script>
+(()=>{'use strict';
+const $=id=>document.getElementById(id),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const passages=window.DEMO_PASSAGES,storageKey='munhae.reading-study-demo.v4.analysis-v1';
+let current=0,selected=[0],anchor=0,columns=8,layout='aligned',tab='dictionary',records={},drafts={},aiRuns={},plans={},runSequence=0,runTimer=null,toastTimer=null,storageError='';
+const passage=()=>passages[current],tokens=()=>passage().clauses.flat(),range=(a,b)=>Array.from({length:b-a},(_,i)=>a+i),same=(a,b)=>a.length===b.length&&a.every((v,i)=>v===b[i]);
+const keyFor=indices=>`${passage().id}:${indices.join('-')}`,key=()=>keyFor(selected),quote=indices=>indices.map(i=>tokens()[i].char).join('');
+const emptyRecord=()=>({reading:'',basic:'',meaning:'',order:'',linked:false,note:'',aiNotes:[],origin:{}});
+function cleanRecord(r){const out=emptyRecord();if(!r||typeof r!=='object')return out;for(const f of ['reading','basic','meaning','note'])out[f]=typeof r[f]==='string'?r[f].slice(0,f==='note'?2000:f==='meaning'?500:100):'';out.order=/^(?:[1-9]\d?)$/.test(String(r.order))?String(r.order):'';out.linked=r.linked===true;out.aiNotes=Array.isArray(r.aiNotes)?r.aiNotes.filter(n=>n&&typeof n.id==='string'&&typeof n.text==='string').slice(0,20).map(n=>({id:n.id.slice(0,100),text:n.text.slice(0,3000)})):[];for(const f of ['reading','basic','meaning','linked'])if(['manual','ai'].includes(r.origin?.[f]))out.origin[f]=r.origin[f];return out;}
+try{const stored=JSON.parse(localStorage.getItem(storageKey)||'{}');if(stored&&typeof stored==='object'&&!Array.isArray(stored))records=stored;}catch{}
+function baseline(indices=selected){return cleanRecord(records[keyFor(indices)]);}
+function draft(){return drafts[key()]||(drafts[key()]=structuredClone(baseline()));}
+const dirty=()=>JSON.stringify(draft())!==JSON.stringify(baseline()),validOrder=()=>draft().order===''||/^(?:[1-9]\d?)$/.test(draft().order);
+function currentRecords(){return Object.entries(records).filter(([k])=>k.startsWith(`${passage().id}:`)).map(([k,v])=>({indices:k.slice(passage().id.length+1).split('-').map(Number),r:cleanRecord(v)})).filter(({indices})=>indices.length&&indices.every((i,n)=>Number.isInteger(i)&&i>=0&&i<tokens().length&&(!n||i===indices[n-1]+1)));}
+const plan=()=>plans[passage().id],pending=()=>plan()?.items.filter(item=>!plan().reviewed.has(item.id))||[],proposalFor=indices=>pending().find(item=>same(item.indices,indices));
+function manualGroupConflict(item){return item.kind==='group'&&currentRecords().some(({indices,r})=>r.linked&&r.origin.linked==='manual'&&!same(indices,item.indices)&&indices.some(i=>item.indices.includes(i)));}
+function mergeProposal(r,item){const next=structuredClone(r);for(const f of ['reading','basic','meaning'])if(r.origin[f]!=='manual'&&typeof item.data[f]==='string'){next[f]=item.data[f];next.origin[f]='ai';}if(item.kind==='group'&&r.origin.linked!=='manual'&&!manualGroupConflict(item)){next.linked=true;next.origin.linked='ai';}return next;}
+function displayRecord(indices){const r=baseline(indices),proposal=proposalFor(indices);return proposal?mergeProposal(r,proposal):r;}
+function groups(){const map=new Map();for(const {indices,r} of currentRecords())if(indices.length>1&&r.linked)map.set(indices.join('-'),indices);for(const item of pending())if(item.kind==='group'&&!manualGroupConflict(item)&&displayRecord(item.indices).linked)map.set(item.indices.join('-'),item.indices);return [...map.values()].map(indices=>{const r=displayRecord(indices);return {id:indices.join('-'),from:indices[0],to:indices.at(-1)+1,label:quote(indices),sense:r.meaning,pending:!!proposalFor(indices)};});}
+function toast(text){clearTimeout(toastTimer);$('toast').textContent=text;$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,2600);}
+function persist(next){try{localStorage.setItem(storageKey,JSON.stringify(next));records=next;storageError='';return true;}catch{storageError='저장하지 못했습니다. 입력 내용은 유지됩니다.';status();toast(storageError);return false;}}
+function status(){const invalid=!validOrder(),changed=dirty(),p=proposalFor(selected),review=!!p&&tab==='dictionary'&&!$('manualEditor').open&&!changed&&!invalid&&!storageError;
+$('orderInput').setCustomValidity(invalid?'1~99 사이 정수를 입력하세요.':'');$('saveState').textContent=storageError||(invalid?'풀이 순서: 1–99':changed?'저장하지 않은 변경':review?'AI 제안 · 적용 전':records[key()]?'저장됨':'아직 저장된 풀이 없음');$('saveState').classList.toggle('footer-error',!!storageError||invalid);$('saveSelection').disabled=!changed||invalid;$('saveSelection').hidden=review||(!changed&&!invalid&&!storageError);$('discardDraft').disabled=!changed;$('discardDraft').hidden=!changed;$('applySelection').hidden=!review;$('clearMeaning').disabled=!draft().meaning;$('inspectorFooter').hidden=tab==='ai'&&!changed&&!invalid&&!storageError;$('inspectorFooter').classList.toggle('is-quiet',!review&&!changed&&!invalid&&!storageError);$('overallStatus').textContent=changed?'미저장 변경':pending().length?`미적용 ${pending().length}개`:'저장됨';}
+function save(silent=false){if(!validOrder()){toast('풀이 순서를 1~99 사이로 입력하세요.');setTab('dictionary');$('manualEditor').open=true;$('orderInput').focus();return false;}if(!dirty())return true;const next={...records,[key()]:structuredClone(draft())};if(selected.length>1&&draft().linked&&draft().origin.linked==='manual'&&!baseline().linked){for(const {indices,r} of currentRecords())if(r.linked&&!same(indices,selected)&&indices.some(i=>selected.includes(i))){r.linked=false;r.origin.linked='manual';next[keyFor(indices)]=r;delete drafts[keyFor(indices)];}}if(!persist(next))return false;delete drafts[key()];renderGrid();renderRecords();status();if(!silent)toast('선택한 위치의 연구를 저장했습니다.');return true;}
+function renderBar(){const n=pending().length,busy=aiRuns[passage().id]?.state==='running'&&aiRuns[passage().id].mode==='passage';const has=currentRecords().some(({r})=>r.reading||r.basic||r.meaning||r.linked);$('analysisBar').dataset.state=busy?'running':n?'review':has?'saved':'idle';$('analysisBar').innerHTML=busy?'<div class="analysis-copy"><strong>구절 분석 중</strong><p>훈음과 어휘 연결을 준비합니다.</p></div><div class="analysis-actions"><button data-cancel-analysis>취소</button></div>':n?`<div class="analysis-copy"><strong>AI 제안 <span class="analysis-count">${n}</span></strong><p>점선: 적용 전</p></div><div class="analysis-actions"><button class="apply-all" data-apply-all title="직접 수정한 값은 유지하고 남은 제안을 적용합니다.">남은 제안 적용</button><button class="discard-analysis" data-discard-analysis aria-label="분석 제안 닫기" title="분석 제안 닫기">닫기</button></div>`:has?'<div class="analysis-copy"><strong>저장된 풀이</strong><p>글자를 눌러 수정할 수 있습니다.</p></div>':'<div class="analysis-copy"><p>위의 <b>AI 구절 분석</b>으로 훈음·뜻·어휘 연결을 만들 수 있습니다.</p></div>';}
+function reviewItems(){return pending().slice().sort((a,b)=>a.indices[0]-b.indices[0]||a.indices.length-b.indices.length);}
+function reviewNeighbours(){const items=reviewItems(),compare=item=>item.indices[0]-selected[0]||item.indices.length-selected.length;return {previous:items.filter(item=>compare(item)<0).at(-1),next:items.find(item=>compare(item)>0)};}
+function shortExplanation(text){return String(text||'').replace(/\s*오프라인 화면 시연용 예시입니다\. 실제 AI 분석이나 사전 인용이 아닙니다\./g,'').trim();}
+function renderInspector(){const dr=draft(),p=proposalFor(selected),word=quote(selected),display=displayRecord(selected);$('selectedWord').textContent=word;$('selectedWord').classList.toggle('small-glyph',selected.length>3);$('selectedBasic').textContent=[display.reading,selected.length===1?display.basic:'어휘'].filter(Boolean).join(' · ')||'풀이 전';$('selectionType').textContent=selected.length===1?'글자 연구':'어휘 연구';$('selectionPosition').textContent=selected.length===1?`${selected[0]+1}번째`:`${selected[0]+1}–${selected.at(-1)+1}번째`;
+for(const f of ['reading','basic','meaning','order','note'])$(f+'Input').value=dr[f];$('linkInput').checked=dr.linked;$('linkField').hidden=selected.length<2;$('basicField').hidden=selected.length>1;
+const neighbours=reviewNeighbours();$('previousItem').disabled=!neighbours.previous;$('nextItem').disabled=!neighbours.next;$('previousItem').parentElement.hidden=!pending().length;
+const manual=Object.values(dr.origin).includes('manual');$('fieldOrigin').textContent=manual?'직접 수정':Object.values(dr.origin).includes('ai')?'AI 적용됨':'';
+renderProposal();
+$('manualEditor').open=!p;$('selectionNote').textContent=selected.length>1?'새 어휘를 연결하면 겹치는 기존 연결은 해제됩니다. 풀이와 메모는 유지합니다.':p?'저장값을 직접 편집합니다. 수정한 항목은 AI 제안보다 우선합니다.':'이 위치의 풀이를 기록합니다. 직접 수정한 값은 재분석해도 유지됩니다.';
+$('adoptedNotes').innerHTML=dr.aiNotes.map(n=>`<article class="saved-ai-note"><span>AI 검토에서 가져옴 · 시연 예시</span><p>${esc(n.text)}</p></article>`).join('')||'<p class="empty-message">아직 가져온 기록이 없습니다.</p>';$('aiSelection').textContent=word;$('openInspector').textContent=`${word.length>8?word.slice(0,8)+'…':word} · 풀이 보기`;renderAi();status();}
+function renderProposal(){const dr=draft(),saved=baseline(),p=proposalFor(selected),display=displayRecord(selected);const row=(field,label)=>{const protectedValue=dr.origin[field]==='manual',v=p?.data[field];return `<span class="field-name">${label}</span><span class="old-value">${esc(saved[field]||'—')}</span><span class="field-arrow">→</span><span class="new-value">${esc(protectedValue?(dr[field]||'비워 둠'):(v||'미확인'))}${protectedValue?'<small class="manual-mark">직접 수정 유지</small>':''}</span>`;};
+$('selectionProposal').innerHTML=p?`<section class="proposal-detail"><div class="proposal-heading"><h3>분석 결과</h3><span class="proposal-badge">AI 제안 · 미적용</span></div><div class="proposal-table"><span></span><span class="column-title">저장값</span><span></span><span class="column-title">적용할 값</span>${row('reading','독음')}${p.kind==='character'?row('basic','기본 훈'):`<span class="field-name">어휘</span><span class="old-value">${saved.linked?'연결됨':'—'}</span><span class="field-arrow">→</span><span class="new-value">${dr.origin.linked==='manual'?(dr.linked?'연결 유지':'연결 안 함'):(display.linked?'연결':'연결 안 함')}${dr.origin.linked==='manual'?'<small class="manual-mark">직접 수정 유지</small>':''}</span>`}${row('meaning','문맥 뜻')}</div>${manualGroupConflict(p)?'<p class="protected-note">직접 연결한 어휘와 겹쳐 기존 연결을 유지합니다.</p>':''}<details class="proposal-reason"><summary>해석 설명</summary><p>${esc(shortExplanation(p.data.explanation))}</p></details>${p.data.quote==='餙'?'<p class="proposal-alert">훈과 뜻 미확인 · 원문 자형을 유지합니다.</p>':''}</section>`:'';
+}
+function punctuationAfter(index){let pos=0;for(let i=0;i<=index;i++){const found=passage().sourceText.indexOf(tokens()[i].char,pos);if(found<0)return '';pos=found+tokens()[i].char.length;}const next=index+1<tokens().length?passage().sourceText.indexOf(tokens()[index+1].char,pos):passage().sourceText.length;return passage().sourceText.slice(pos,next).replace(/\s/g,'');}
+function rows(){const result=[];let pending=[],start=0;for(const clause of passage().clauses){const end=start+clause.length;if(pending.length+clause.length<=columns){pending.push(...range(start,end));start=end;continue;}if(pending.length){result.push(pending);pending=[];}let at=start;while(end-at>columns){let stop=at+columns;const crossing=groups().find(g=>g.from<stop&&g.to>stop&&g.from>at&&g.to-g.from<=columns);if(crossing)stop=crossing.from;result.push(range(at,stop));at=stop;}pending=range(at,end);start=end;}if(pending.length)result.push(pending);return result;}
+
+function renderGrid(){const node=$('readingGrid'),active=document.activeElement,focus=active?.closest('#readingGrid')?{index:active.dataset.index,group:active.dataset.group}:null;node.classList.toggle('mode-cards',layout==='cards');node.classList.toggle('hide-basic',!$('basicToggle').checked);node.style.setProperty('--cols',columns);node.innerHTML=rows().map(indices=>{const offset=layout==='cards'?1:2;return `<div class="study-line">${layout==='aligned'?'<span class="row-label r1">原文</span><span class="row-label r2">독음</span><span class="row-label r3">기본 훈</span><span class="row-label r4">문맥 뜻</span>':''}${indices.map((i,k)=>{const t=tokens()[i],r=displayRecord([i]),p=proposalFor([i]);const valueClass=f=>p&&r.origin[f]!=='manual'?' ai-value':'';return `<button class="token${p?' has-proposal':''}" data-index="${i}" style="grid-column:${k+offset}" aria-pressed="${selected.includes(i)}" aria-label="${esc(t.char)} · ${i+1}번째 · 기본 훈 ${esc(r.basic||'미입력')} · ${esc(r.meaning||'뜻 미입력')}${p?' · AI 제안':''}" tabindex="${i===selected[0]?0:-1}">${$('orderToggle').checked&&r.order?`<span class="order">${esc(r.order)}</span>`:''}<span class="glyph">${esc(t.char)}</span><span class="punctuation" aria-hidden="true">${esc(punctuationAfter(i))}</span><span class="reading${valueClass('reading')}">${esc(r.reading||'—')}</span><span class="basic${valueClass('basic')}">${esc(r.basic||'—')}</span><span class="meaning${r.meaning?'':' empty'}${valueClass('meaning')}">${esc(r.meaning||'—')}</span></button>`;}).join('')}${groups().filter(g=>g.from<=indices.at(-1)&&g.to>indices[0]).map(g=>`<button class="group-marker${g.pending?' ai-pending':''}" data-group="${esc(g.id)}" style="grid-column:${indices.indexOf(Math.max(g.from,indices[0]))+offset} / span ${Math.min(g.to,indices.at(-1)+1)-Math.max(g.from,indices[0])}" aria-label="${esc(g.label)} · ${esc(g.sense||'뜻 미입력')}${g.pending?' · AI 제안':''}" aria-pressed="${same(selected,range(g.from,g.to))}">${g.from<indices[0]?'↳ ':''}${esc(g.label)} · ${esc(g.sense||'뜻 미입력')}${g.to>indices.at(-1)+1?' ↴':''}</button>`).join('')}</div>`;}).join('');highlight();renderBar();if(focus){const selector=focus.index!==undefined?`[data-index="${focus.index}"]`:`[data-group="${focus.group}"]`;node.querySelector(selector)?.focus({preventScroll:true});}}
+function renderSource(){let pos=0;let html='';tokens().forEach((t,i)=>{const at=passage().sourceText.indexOf(t.char,pos);html+=esc(passage().sourceText.slice(pos,at))+`<button data-source-index="${i}" aria-pressed="${selected.includes(i)}" aria-label="${esc(t.char)} · 原文 ${i+1}번째">${esc(t.char)}</button>`;pos=at+t.char.length;});$('sourceText').innerHTML=html+esc(passage().sourceText.slice(pos));}
+function highlight(){document.querySelectorAll('[data-index]').forEach(b=>{const i=Number(b.dataset.index);b.setAttribute('aria-pressed',String(selected.includes(i)));b.tabIndex=i===selected[0]?0:-1;});document.querySelectorAll('[data-source-index]').forEach(b=>b.setAttribute('aria-pressed',String(selected.includes(Number(b.dataset.sourceIndex)))));document.querySelectorAll('[data-group]').forEach(b=>{const g=groups().find(g=>g.id===b.dataset.group);b.setAttribute('aria-pressed',String(!!g&&same(selected,range(g.from,g.to))));});}
+
+function renderRecords(){const items=currentRecords().filter(({r})=>r.note||r.aiNotes.length);$('recordCount').textContent=`${items.length}개의 기록`;$('recordList').innerHTML=items.map(({indices,r})=>`<button class="record-row" data-record="${indices.join('-')}"><strong>${esc(quote(indices))}</strong><span>${esc(r.note||r.aiNotes.at(-1).text)}</span></button>`).join('')||'<p class="empty-record">선택한 글자나 어휘에 연구 메모를 남겨 보세요.</p>';}
+function select(indices,{shift=false,focus=false}={}){const changed=!same(indices,selected);if(changed&&!save(true))return false;const run=aiRuns[passage().id];if(changed&&run&&run.mode!=='passage'){cancelRun();delete aiRuns[passage().id];}selected=indices;if(!shift)anchor=indices[0];renderInspector();highlight();if(changed)$('inspectorScroll').scrollTop=0;if(focus)$('readingGrid').querySelector(`[data-index="${indices[0]}"]`)?.focus();return true;}
+function setTab(next,focus=false){tab=next;document.querySelectorAll('[data-tab]').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.tab===tab));b.tabIndex=b.dataset.tab===tab?0:-1;});['dictionary','notes','ai'].forEach(id=>$('panel-'+id).hidden=id!==tab);$('inspectorScroll').scrollTop=0;status();if(focus)$('tab-'+tab).focus();if(matchMedia('(max-width:650px)').matches)$('inspector').classList.add('is-open');}
+function recalc(){const next=Math.max(3,Math.min(12,Math.floor(($('readingGrid').clientWidth-(layout==='aligned'?46:0))/66)));if(next!==columns){columns=next;renderGrid();}}
+
+function cancelRun(){clearTimeout(runTimer);runSequence++;const run=aiRuns[passage().id];if(run?.state==='running')run.state='canceled';renderAi();renderBar();}
+function load(index){if(!save(true)){$('passageSelect').value=String(current);return;}cancelRun();current=index;selected=[0];anchor=0;$('documentName').textContent=passage().title;$('passageCount').textContent=`${tokens().length}자`;$('sourceCount').textContent=`${passage().clauses.length}개 구간`;$('translation').textContent=passage().translation;$('statusPath').textContent=`${passage().title} › 구절 연구`;$('passageSelect').value=String(index);$('previousPassage').disabled=index===0;$('nextPassage').disabled=index===passages.length-1;document.querySelectorAll('[data-passage]').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.passage)===index)));renderSource();recalc();renderGrid();renderInspector();renderRecords();$('reader').scrollTop=0;}
+function renderAi(){const run=aiRuns[passage().id],busy=run?.state==='running';$('analyzePassage').disabled=busy;$('analyzePassage').textContent=busy?'분석 중…':'AI 구절 분석';document.querySelectorAll('[data-question]').forEach(b=>b.disabled=busy);if(!run||run.state==='canceled'){$('aiContent').innerHTML=`<div class="ai-idle"><strong>${run?'분석을 취소했습니다.':'훈음과 어휘 연결부터 함께 분석합니다.'}</strong>‘AI 구절 분석’은 구절 전체의 독음·기본 훈·문맥 뜻·어휘 연결을 제안합니다. 위 질문은 선택 범위를 더 살펴봅니다.<br>이 데모는 준비된 응답 예시를 사용합니다.</div>`;return;}if(busy){$('aiContent').innerHTML='<div class="ai-progress">구절 분석 예시를 준비하고 있습니다.<progress aria-label="분석 예시 준비 중"></progress><button id="cancelAi">취소</button></div>';return;}if(run.mode==='passage'){const pp=plan(),n=pending().length;$('aiContent').innerHTML=`<section class="ai-analysis-summary"><strong>구절 전체 분석 완료</strong><p>글자 ${pp?.characterCount||0}개 · 어휘 연결 ${pp?.groupCount||0}개</p><p>${n?'중앙의 점선 풀이가 적용 전 제안입니다. 글자나 연결선을 눌러 확인하세요.':'검토한 결과가 저장된 풀이에 반영되었습니다.'}</p><button data-open-editor>선택한 위치의 제안 보기</button></section><p class="note-tip">분석과 적용은 별도입니다. 직접 수정한 항목과 연구 메모는 유지됩니다. 뜻이 불분명한 글자는 미확인으로 남깁니다.</p>`;return;}
+const result=run.result;$('aiContent').innerHTML=`<div class="ai-summary"><b>${esc(result.scopeLabel)}</b>${esc(result.summary)}</div>`+result.suggestions.map((s,i)=>{const id=`${run.id}:${i}`,adopted=baseline(range(s.from,s.to)).aiNotes.some(n=>n.id===id);return `<article class="proposal"><div class="proposal-top"><button class="proposal-range" data-proposal-range="${i}">${esc(s.quote)}</button><span>${s.from+1}–${s.to}번째</span></div><p class="proposal-meaning">${esc(s.reading)} · ${esc(s.meaning)}</p><p>${esc(s.explanation)}</p><p class="caution">${esc(s.caution)}</p><button class="adopt" data-adopt="${i}" ${adopted?'disabled':''}>${adopted?'연구 기록에 담았습니다':'연구 기록에 담기'}</button></article>`;}).join('');}
+function startAi(mode){if(!save(true))return;cancelRun();if(mode!=='passage')setTab('ai');const ticket=++runSequence,p=passage(),from=selected[0],to=selected.at(-1)+1;aiRuns[p.id]={state:'running',mode,id:`${Date.now()}-${ticket}`};renderAi();renderBar();runTimer=setTimeout(()=>{if(ticket!==runSequence||p!==passage())return;const run=aiRuns[p.id];run.state='completed';if(mode==='passage'){const data=window.createReadingDemoAnalysis(p);plans[p.id]={items:[...data.characters.map(c=>({id:`char:${c.index}`,kind:'character',indices:[c.index],data:c})),...data.groups.map(g=>({id:`group:${g.from}-${g.to}`,kind:'group',indices:range(g.from,g.to),data:g}))],reviewed:new Set(),characterCount:data.characters.length,groupCount:data.groups.length};renderGrid();renderInspector();toast('AI 분석안을 확인하세요. 아직 저장된 풀이에는 적용하지 않았습니다.');}else{run.result=window.createReadingDemoProposal({passage:p,from,to,mode});renderAi();}},900);}
+function applyAnalysis(all=false){if(!save(true))return;const items=pending().filter(item=>all||same(item.indices,selected));if(!items.length)return;const next={...records};for(const item of items)next[keyFor(item.indices)]=mergeProposal(baseline(item.indices),item);if(!persist(next))return;for(const item of items){plan().reviewed.add(item.id);delete drafts[keyFor(item.indices)];}renderGrid();renderInspector();renderRecords();toast(`${items.length}개 항목을 적용했습니다. 직접 수정한 값은 유지됩니다.`);}
+function discardAnalysis(){delete plans[passage().id];if(aiRuns[passage().id]?.mode==='passage')delete aiRuns[passage().id];renderGrid();renderInspector();toast('적용하지 않은 제안을 닫았습니다. 저장된 풀이는 유지됩니다.');}
+function adopt(index){const run=aiRuns[passage().id];if(run?.state!=='completed'||run.mode==='passage'||!save(true))return;const s=run.result.suggestions[index];if(!s)return;const indices=range(s.from,s.to),id=`${run.id}:${index}`,r=structuredClone(baseline(indices));if(r.aiNotes.some(n=>n.id===id))return;if(r.aiNotes.length>=20){toast('이 위치에는 AI 검토 기록을 최대 20개까지 담을 수 있습니다.');return;}r.aiNotes.push({id,text:`${s.meaning} — ${s.explanation}`});if(!persist({...records,[keyFor(indices)]:r}))return;delete drafts[keyFor(indices)];renderRecords();renderInspector();toast(`${s.quote}의 연구 기록에 담았습니다.`);}
+$('passageNav').innerHTML=passages.map((p,i)=>`<button data-passage="${i}" aria-pressed="${i===0}"><b>${esc(p.title)}</b><span>${p.clauses.flat().length}자 · ${i===0?'현재 연구 구절':i===1?'짧은 구절':'긴 구절'}</span></button>`).join('');$('passageSelect').innerHTML=passages.map((p,i)=>`<option value="${i}">${esc(p.title)}</option>`).join('');
+$('passageNav').onclick=e=>{const b=e.target.closest('[data-passage]');if(b)load(Number(b.dataset.passage));};$('passageSelect').onchange=e=>load(Number(e.target.value));$('previousPassage').onclick=()=>current>0&&load(current-1);$('nextPassage').onclick=()=>current<passages.length-1&&load(current+1);
+document.querySelectorAll('[data-layout]').forEach(b=>b.onclick=()=>{layout=b.dataset.layout;document.querySelectorAll('[data-layout]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));recalc();renderGrid();});
+$('readingGrid').onclick=e=>{const b=e.target.closest('[data-index]'),g=e.target.closest('[data-group]');if(b){const i=Number(b.dataset.index);select(e.shiftKey?range(Math.min(anchor,i),Math.max(anchor,i)+1):[i],{shift:e.shiftKey});}else if(g){const group=groups().find(x=>x.id===g.dataset.group);select(range(group.from,group.to));}};
+$('sourceText').onclick=e=>{const b=e.target.closest('[data-source-index]');if(!b)return;const i=Number(b.dataset.sourceIndex);select(e.shiftKey?range(Math.min(anchor,i),Math.max(anchor,i)+1):[i],{shift:e.shiftKey});};
+$('readingGrid').onkeydown=e=>{const b=e.target.closest('[data-index]');if(!b||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;e.preventDefault();const from=Number(b.dataset.index);let next=from;if(e.key==='ArrowUp'||e.key==='ArrowDown'){const rr=rows(),r=rr.findIndex(row=>row.includes(from)),col=rr[r].indexOf(from),target=rr[r+(e.key==='ArrowUp'?-1:1)];if(target)next=target[Math.min(col,target.length-1)];}else next=e.key==='Home'?0:e.key==='End'?tokens().length-1:Math.max(0,Math.min(tokens().length-1,from+(e.key==='ArrowRight'?1:-1)));if(select(e.shiftKey?range(Math.min(anchor,next),Math.max(anchor,next)+1):[next],{shift:e.shiftKey}))$('readingGrid').querySelector(`[data-index="${next}"]`)?.focus();};
+document.querySelectorAll('[data-tab]').forEach(b=>{b.onclick=()=>setTab(b.dataset.tab);b.onkeydown=e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const names=['dictionary','notes','ai'];const n=e.key==='Home'?0:e.key==='End'?2:(names.indexOf(tab)+(e.key==='ArrowRight'?1:2))%3;setTab(names[n],true);};});
+
+for(const f of ['reading','basic','meaning','order','note'])$(f+'Input').oninput=e=>{draft()[f]=e.target.value;if(['reading','basic','meaning'].includes(f))draft().origin[f]='manual';status();};$('linkInput').onchange=e=>{draft().linked=e.target.checked;draft().origin.linked='manual';status();};
+$('saveSelection').onclick=()=>{if(save())renderInspector();};$('discardDraft').onclick=()=>{delete drafts[key()];storageError='';renderInspector();};$('clearMeaning').onclick=()=>{draft().meaning='';draft().origin.meaning='manual';$('meaningInput').value='';status();};$('basicToggle').onchange=renderGrid;$('orderToggle').onchange=renderGrid;
+$('applySelection').onclick=()=>applyAnalysis(false);$('manualEditor').ontoggle=()=>{if(!$('manualEditor').open)renderProposal();status();};function moveReview(step){const neighbours=reviewNeighbours(),item=step<0?neighbours.previous:neighbours.next;if(item)select(item.indices);}$('previousItem').onclick=()=>moveReview(-1);$('nextItem').onclick=()=>moveReview(1);$('analysisBar').onclick=e=>{if(e.target.closest('[data-start-analysis]'))startAi('passage');if(e.target.closest('[data-apply-all]'))applyAnalysis(true);if(e.target.closest('[data-discard-analysis]'))discardAnalysis();if(e.target.closest('[data-cancel-analysis]'))cancelRun();};
+$('recordList').onclick=e=>{const b=e.target.closest('[data-record]');if(b&&select(b.dataset.record.split('-').map(Number)))setTab('notes');};$('analyzePassage').onclick=()=>startAi('passage');document.querySelectorAll('[data-question]').forEach(b=>b.onclick=()=>startAi(b.dataset.question));$('aiContent').onclick=e=>{if(e.target.closest('#cancelAi'))cancelRun();if(e.target.closest('[data-open-editor]'))setTab('dictionary');const a=e.target.closest('[data-adopt]'),r=e.target.closest('[data-proposal-range]');if(a)adopt(Number(a.dataset.adopt));else if(r){const s=aiRuns[passage().id]?.result?.suggestions[Number(r.dataset.proposalRange)];if(s)select(range(s.from,s.to));}};
+$('sidebarToggle').onclick=()=>{const hidden=document.body.classList.toggle('hide-sidebar');$('sidebarToggle').setAttribute('aria-label',hidden?'목록 펼치기':'목록 접기');$('sidebarToggle').title=hidden?'목록 펼치기':'목록 접기';$('sidebarToggle').setAttribute('aria-expanded',String(!hidden));recalc();};$('openInspector').onclick=()=>{$('inspector').classList.add('is-open');$('closeInspector').focus();};$('closeInspector').onclick=()=>{$('inspector').classList.remove('is-open');$('openInspector').focus();};
+
+$('resetDemo').onclick=()=>{cancelRun();if(!persist({}))return;drafts={};aiRuns={};plans={};current=0;selected=[0];anchor=0;layout='aligned';$('basicToggle').checked=true;$('orderToggle').checked=false;document.querySelectorAll('[data-layout]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.layout==='aligned')));setTab('dictionary');load(0);toast('분석 전 원문으로 돌아왔습니다.');};
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();if(save())renderInspector();}if(e.key==='Escape'){$('inspector').classList.remove('is-open');if(matchMedia('(max-width:650px)').matches)$('openInspector').focus();}});window.addEventListener('pagehide',cancelRun);
+new ResizeObserver(recalc).observe($('readingGrid'));load(0);
+})();
+</script>
+</body></html>

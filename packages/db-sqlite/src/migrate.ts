@@ -12,7 +12,7 @@ import { loadMigrationSql } from "./sql.ts";
 import { contextItemContentHash, type ContextItemContent } from "./knowledge-content.ts";
 import type { SqliteDb } from "./sqlite.ts";
 
-export const PROJECT_SCHEMA_VERSION = 10;
+export const PROJECT_SCHEMA_VERSION = 11;
 const PROJECT_BASELINE_NAME = "001_init.sql";
 const PROJECT_BASELINE_PATH = "sqlite/001_init.sql";
 const PROJECT_MIGRATIONS = [
@@ -26,6 +26,7 @@ const PROJECT_MIGRATIONS = [
   "008_term_review.sql",
   "009_comment_references.sql",
   "010_remove_change_summary.sql",
+  "011_reading_translation_quote.sql",
 ] as const;
 
 type ProjectMigrationRow = {
@@ -184,6 +185,7 @@ export function migrateProjectDb(db: SqliteDb): void {
   applySqlMigration(db, loadMigrationSql("sqlite/008_term_review.sql"), "008_term_review.sql", 8);
   applySqlMigration(db, loadMigrationSql("sqlite/009_comment_references.sql"), "009_comment_references.sql", 9);
   applySqlMigration(db, loadMigrationSql("sqlite/010_remove_change_summary.sql"), "010_remove_change_summary.sql", 10);
+  applySqlMigration(db, loadMigrationSql("sqlite/011_reading_translation_quote.sql"), "011_reading_translation_quote.sql", 11);
 }
 
 export function migrateAppDb(db: SqliteDb): void {
