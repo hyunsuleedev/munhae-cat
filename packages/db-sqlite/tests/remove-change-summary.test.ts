@@ -26,7 +26,7 @@ it("removes legacy summaries without a backup and preserves all other version da
         expect(check.pragma(`table_info(${table})`)).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: "change_summary" })]));
         expect(check.prepare(`SELECT * FROM ${table} ORDER BY id`).all()).toEqual(before[index]);
       });
-      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 11 });
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
       expect(check.pragma("foreign_key_check")).toEqual([]);
       expect(check.pragma("integrity_check")).toEqual([{ integrity_check: "ok" }]);
       expect(readdirSync(path).filter(name => name.endsWith(".bak"))).toEqual(files);

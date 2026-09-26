@@ -323,6 +323,62 @@
   gap: 16px;
 }
 
+.plugin-group-title {
+  margin: 30px 2px 3px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.plugin-group-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 30px 2px 3px;
+}
+
+.plugin-group-head .plugin-group-title {
+  margin: 0;
+}
+
+.plugin-group-note {
+  margin: 0 2px 12px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.plugin-group-note:empty {
+  display: none;
+}
+
+.plugin-card .cli-pick {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.plugin-card .catalog-pick {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.plugin-actions {
+  align-items: flex-start;
+  margin: 0 14px;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--border);
+  background: transparent;
+}
+
+.plugin-actions .skill-details {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.plugin-actions .skill-details summary {
+  line-height: 26px;
+}
+
 .skill-card {
   min-width: 0;
   padding: 20px;

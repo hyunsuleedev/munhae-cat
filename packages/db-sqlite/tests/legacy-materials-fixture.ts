@@ -31,6 +31,12 @@ export function restoreV9SummaryFixture(db: SqliteDb): void {
 
 /** Drop the local translation link table before constructing a pre-v11 fixture. */
 export function restoreV10AnnotationFixture(db: SqliteDb): void {
+  db.exec(`DROP TABLE IF EXISTS translation_content_snapshots;
+    DROP TABLE IF EXISTS translation_content_revisions;
+    DROP TABLE IF EXISTS translation_content_parts;
+    DROP TABLE IF EXISTS translation_group_source_links;
+    DROP TABLE IF EXISTS translation_groups;
+    DELETE FROM meta_schema_migrations WHERE version=12;`);
   db.exec("DROP TABLE IF EXISTS reading_translation_links");
   db.exec("DELETE FROM meta_schema_migrations WHERE version=11; UPDATE meta_project_state SET schema_version=10");
 }

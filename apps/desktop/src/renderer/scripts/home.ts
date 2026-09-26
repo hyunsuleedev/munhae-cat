@@ -284,7 +284,8 @@ bindSidebar(id => {
   sel = id;
   const doc = view?.documents.find(item => item.id === id);
   if (doc?.nodeRole === "source_unit") { openDoc(id); return; }
-  clearFilters(); selectedContainer = doc && !doc.isMaster ? doc.id : null; showPanel("documents");
+  if (doc?.isMaster) { showPanel("overview"); return; }
+  clearFilters(); selectedContainer = doc ? doc.id : null; showPanel("documents");
 }, tree, (parentId, role) => { void openDocumentDialog(creationParent(parentId), false, role); }, { selectExpandable: true });
 window.addEventListener("munhae:document-created", () => void load());
 window.addEventListener("pageshow", event => { if (event.persisted) void load(); });

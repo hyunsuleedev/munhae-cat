@@ -31,13 +31,12 @@ import {
   type ProjectTransitionHooks,
 } from "./project-transition";
 
-export type ScreenId = "home" | "editor" | "knowledge" | "glossary" | "comments" | "uncertainty" | "context" | "settings" | "account";
+export type ScreenId = "home" | "editor" | "knowledge" | "glossary" | "comments" | "uncertainty" | "context" | "settings" | "community" | "account";
 export type PageId = "welcome" | ScreenId;
 export type IconName =
-  | "home"
   | "folder"
   | "folderOpen"
-  | "sliders"
+  | "library"
   | "book"
   | "sidebar"
   | "panel"
@@ -45,7 +44,8 @@ export type IconName =
   | "chev"
   | "doc"
   | "image"
-  | "comment";
+  | "comment"
+  | "community";
 
 export type MenuEntry = readonly [label: string, kbd: string, id: string, checked?: boolean] | null;
 export type MenuGroup = readonly [title: string, items: readonly MenuEntry[], app?: boolean];
@@ -89,33 +89,40 @@ export const SCREEN_FILES: Record<ScreenId, string> = {
   uncertainty: "uncertainty.html",
   context: "context.html",
   settings: "settings.html",
+  community: "community.html",
   account: "settings.html#account",
 };
 
 const PAGE_ICONS: Partial<Record<PageId, IconName>> = {
   settings: "gear",
-  knowledge: "sliders",
+  community: "community",
+  knowledge: "library",
   glossary: "book",
   comments: "comment",
   uncertainty: "doc",
 };
 
 export const ICONS: Record<IconName, string> = {
-  home: '<path d="M2.5 8.2 8 3.2l5.5 5"/><path d="M4 7.5V13h8V7.5"/>',
-  folder: '<path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/>',
+  folder:
+    '<path d="M13.33 13.33a1.33 1.33 0 0 0 1.33-1.33V5.33a1.33 1.33 0 0 0-1.33-1.33h-5.27a1.33 1.33 0 0 1-1.13-.6L6.4 2.6A1.33 1.33 0 0 0 5.29 2H2.67a1.33 1.33 0 0 0-1.33 1.33v8.67a1.33 1.33 0 0 0 1.33 1.33Z"/>',
   folderOpen:
     '<path d="m4 9.33 1-1.93a1.33 1.33 0 0 1 1.16-.73h7.17a1.33 1.33 0 0 1 1.29 1.67l-1.03 4a1.33 1.33 0 0 1-1.3 1H2.67a1.33 1.33 0 0 1-1.34-1.34V3.33A1.33 1.33 0 0 1 2.67 2h2.6a1.33 1.33 0 0 1 1.12.6l.54.8a1.33 1.33 0 0 0 1.12.6H12a1.33 1.33 0 0 1 1.33 1.33v1.34"/>',
-  sliders:
-    '<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="6" cy="4.5" r="1.7" fill="var(--sidebar)"/><circle cx="10.5" cy="8" r="1.7" fill="var(--sidebar)"/><circle cx="5" cy="11.5" r="1.7" fill="var(--sidebar)"/>',
-  book: '<path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/>',
+  library:
+    '<path d="m10.67 4 2.67 9.33"/><path d="M8 4v9.33"/><path d="M5.33 5.33v8"/><path d="M2.67 2.67v10.67"/>',
+  book:
+    '<path d="M8 3.33v10.67"/><path d="M13.33 12.67A1.33 1.33 0 0 0 14.67 11.33V3.33a1.33 1.33 0 0 0-1.33-1.33L10.67 2A3.33 3.33 0 0 0 8 3.33a3.33 3.33 0 0 0-2.67-1.33H2.67a1.33 1.33 0 0 0-1.33 1.33v8a1.33 1.33 0 0 0 1.33 1.33H5.33a3.33 3.33 0 0 1 2.67 1.33 3.33 3.33 0 0 1 2.67-1.33z"/>',
   sidebar: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10"/>',
   panel: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M10 3v10"/>',
   gear: '<circle cx="8" cy="8" r="2.2"/><path d="M8 2.2v1.2M8 12.6v1.2M2.2 8h1.2M12.6 8h1.2M3.9 3.9l.9.9M11.2 11.2l.9.9M12.1 3.9l-.9.9M4.8 11.2l-.9.9"/>',
   chev: '<path d="M6 4l4 4-4 4"/>',
-  doc: '<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3M6.5 8h3M6.5 10.5h3"/>',
+  doc:
+    '<path d="M4 14.67a1.33 1.33 0 0 1-1.33-1.33V2.67a1.33 1.33 0 0 1 1.33-1.33h5.33a1.6 1.6 0 0 1 1.14 .47l2.39 2.39A1.6 1.6 0 0 1 13.33 5.33v8a1.33 1.33 0 0 1-1.33 1.33z"/><path d="M9.33 1.33v3.33a.67 .67 0 0 0 .67 .67h3.33"/><path d="M6.67 6H5.33"/><path d="M10.67 8.67H5.33"/><path d="M10.67 11.33H5.33"/>',
   image:
     '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="m2.5 11.5 3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.5" cy="6" r="1"/>',
-  comment: '<path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z"/>',
+  community:
+    '<path d="M10.67 14v-1.33a2.67 2.67 0 0 0-2.67-2.67H4a2.67 2.67 0 0 0-2.67 2.67v1.33"/><path d="M10.67 2.09a2.67 2.67 0 0 1 0 5.16"/><path d="M14.67 14v-1.33a2.67 2.67 0 0 0-2-2.58"/><circle cx="6" cy="4.67" r="2.67"/>',
+  comment:
+    '<path d="M14.67 11.33a1.33 1.33 0 0 1-1.33 1.33H4.55a1.33 1.33 0 0 0-.94 .39l-1.47 1.47A.47 .47 0 0 1 1.33 14.19V3.33a1.33 1.33 0 0 1 1.33-1.33h10.67a1.33 1.33 0 0 1 1.33 1.33z"/>',
 };
 
 const GLOBAL_ENABLED = [
@@ -715,16 +722,18 @@ function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
   const kids = !!n.kids?.length;
   const cur = n.contextFor
     ? currentPage === "context" && n.contextFor === sidebarCurrentDoc
-    : n.k
-      ? n.k === currentPage && (!n.docId || n.docId === sidebarCurrentDoc)
-      : n.docId
-        ? currentPage !== "context" && n.docId === sidebarCurrentDoc
-        : false;
+    : n.k === "home"
+      ? currentPage === "home" || (currentPage !== "context" && n.docId === sidebarCurrentDoc)
+      : n.k
+        ? n.k === currentPage && (!n.docId || n.docId === sidebarCurrentDoc)
+        : n.docId
+          ? currentPage !== "context" && n.docId === sidebarCurrentDoc
+          : false;
   const isDocument = !!(n.docId || n.contextFor);
   const exp = isDocument && sidebarNavigation.query ? true : n.id ? expanded.get(n.id) !== false : true;
   const treeAttrs = isDocument ? ` role="treeitem" tabindex="-1" data-sb-key="${esc(n.id)}" aria-level="${d + 1}" aria-posinset="${pos}" aria-setsize="${size}" aria-selected="${cur}"` : "";
   const parts: string[] = [];
-  const rowClass = n.contextFor ? " sb-context" : n.k === "home" ? " sb-home" : n.k && LIBRARY_SCREENS.has(n.k) ? " sb-library" : "";
+  const rowClass = n.contextFor ? " sb-context" : n.k && LIBRARY_SCREENS.has(n.k) ? " sb-library" : "";
   parts.push(`<div class="sb-row${rowClass}"${isDocument ? ' role="none"' : ""}>`);
   parts.push(
     `<button class="sb-item${cur ? " is-current" : ""}" type="button"${treeAttrs} data-depth="${d}" style="--sb-depth:${d}"${kids && n.id ? ` aria-expanded="${exp}"` : ""}${n.k ? ` data-go="${n.k}"` : ""}${n.docId ? ` data-doc-id="${esc(n.docId)}"` : ""}${n.contextFor ? ` data-context-for="${esc(n.contextFor)}"` : ""}${n.t ? ` title="${esc(n.t)}"` : ""}${cur ? ' aria-current="page"' : ""}>`,
@@ -780,7 +789,7 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
       return {
         id: d.id,
         docId: d.id,
-        k: isContainer ? undefined : "editor",
+        k: d.isMaster ? "home" : isContainer ? undefined : "editor",
         lbl: d.originalTitle || d.title,
         searchText: `${d.title} ${d.originalTitle ?? ""}`,
         han: true,
@@ -790,7 +799,7 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
             id: `context:${d.id}`,
             contextFor: d.id,
             lbl: t("문맥"),
-            ic: "sliders",
+            ic: "library",
             cnt: d.contextCount || undefined,
             t: ui`${d.originalTitle || d.title} · 직접 작성한 문맥과 상위에서 이어받은 문맥`,
           },
@@ -798,7 +807,7 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
         ],
         cnt: isContainer ? documentKids.length || undefined : undefined,
         dot,
-        t: `${d.title} · ${d.isMaster ? t("프로젝트 마스터 폴더") : isContainer ? t("목차 폴더") : t("원문 문서")}`,
+        t: `${d.title} · ${d.isMaster ? t("프로젝트 홈") : isContainer ? t("목차 폴더") : t("원문 문서")}`,
         canHaveChildren: isContainer,
       };
     });
@@ -808,13 +817,13 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
 
 export function defaultSidebarTree(docs: DocumentListItem[]): SbNode[] {
   return [
-    { k: "home", ic: "home", lbl: t("홈") },
     { h: t("문서") },
     ...docsToTree(docs),
-    { k: "knowledge", ic: "sliders", lbl: t("문맥") },
+    { k: "knowledge", ic: "library", lbl: t("문맥") },
     { k: "glossary", ic: "book", lbl: t("용어집") },
     { k: "comments", ic: "comment", lbl: t("코멘트") },
     { k: "settings", ic: "gear", lbl: t("설정") },
+    { k: "community", ic: "community", lbl: t("커뮤니티") },
   ];
 }
 
@@ -846,20 +855,20 @@ export function renderSidebar(
       + (!documents.length && sidebarNavigation.query ? `<p class="sb-empty">${esc(t("일치하는 문서가 없습니다"))}</p>` : "");
   };
   const footer = $("#sidebar .sb-foot");
-  const settings = tree.find(n => n.k === "settings");
+  const footerNodes = tree.filter(n => n.k === "settings" || n.k === "community");
   let footerNav = footer?.querySelector<HTMLElement>(".sb-footer-nav");
-  if (footer && settings) {
+  if (footer && footerNodes.length) {
     if (!footerNav) {
       footerNav = document.createElement("div");
       footerNav.className = "sb-footer-nav";
       footer.prepend(footerNav);
     }
-    footerNav.innerHTML = sbNode(settings, 0);
-    footerNav.querySelector("button")?.addEventListener("click", () => go("settings"));
+    footerNav.innerHTML = footerNodes.map(n => sbNode(n, 0)).join("");
+    footerNav.querySelectorAll<HTMLButtonElement>(".sb-item[data-go]").forEach(button => button.addEventListener("click", () => go(button.dataset.go as ScreenId)));
   } else {
     footerNav?.remove();
   }
-  root.innerHTML = tree.map(n => n.docId || (footer && n === settings) ? "" : sbNode(n, 0) + (n.h === t("문서") ? documentMarkup() : "")).join("");
+  root.innerHTML = tree.map(n => n.docId || (footer && footerNodes.includes(n)) ? "" : sbNode(n, 0) + (n.h === t("문서") ? documentMarkup() : "")).join("");
   if (!renderedDocuments) root.insertAdjacentHTML("beforeend", documentMarkup());
   sidebarNavigation.afterRender(reveal);
   refreshSidebarChrome?.();
@@ -941,6 +950,11 @@ export function bindSidebar(
       go("context", b.dataset.contextFor);
       return;
     }
+    if (b.dataset.go === "home" && b.dataset.docId && options?.selectExpandable) {
+      // Pages that select folders in place keep the project root selectable.
+      sidebarOnDoc?.(b.dataset.docId, b.textContent ?? "");
+      return;
+    }
     if (b.hasAttribute("aria-expanded") && b.dataset.docId && !b.dataset.go) {
       e.preventDefault();
       const id = b.dataset.docId;
@@ -951,7 +965,7 @@ export function bindSidebar(
     }
     if (b.dataset.go) {
       const k = b.dataset.go as ScreenId;
-      const docId = b.dataset.docId;
+      const docId = k === "home" ? undefined : b.dataset.docId;
       if (k === "editor" && currentPage === "editor" && docId && sidebarOnDoc) {
         sidebarOnDoc(docId, b.textContent ?? "");
         return;
@@ -1260,7 +1274,7 @@ export async function cmd(id: string): Promise<void> {
     && !["quit", "min", "zoom", "c", "v", "x", "undo", "redo"].includes(id)) return;
   if (PROJECT_COMMANDS.has(id) && !activeProject) return;
   if (pageCmd && (await pageCmd(id))) return;
-  if (id === "home" || id === "editor" || id === "knowledge" || id === "glossary" || id === "comments" || id === "settings") {
+  if (id === "home" || id === "editor" || id === "knowledge" || id === "glossary" || id === "comments" || id === "settings" || id === "community") {
     go(id);
     return;
   }
@@ -1633,6 +1647,7 @@ export function initShell(opts: ShellOptions): Shell {
       uncertainty: t("불확실성"),
       context: t("문맥 편집"),
       settings: t("설정"),
+      community: t("커뮤니티"),
       account: t("문해 계정"),
     }[opts.page] as string);
   ensureSharedDialogs();

@@ -55,3 +55,30 @@ it("uses the translation dialog's disclosure without nesting a second activity g
   expect(markup).toContain("&lt;검토&gt;");
   expect(markup).not.toContain('class="chat-activity"');
 });
+
+it("shows app rejection details and a subsequent successful submission instead of duplicate shell failures", async () => {
+  const { chatActivityMarkup } = await import("../src/renderer/scripts/thinking-ui");
+  const markup = chatActivityMarkup([
+    { kind: "tool", id: "shell1", name: "command_execution", state: "failed", text: "" },
+    { kind: "tool", appTool: true, parentToolId: "shell1", id: "app1", name: "submit-alignment", state: "failed", text: "", detail: "원문 중복 <T7>" },
+    { kind: "tool", appTool: true, id: "app2", name: "submit-alignment", state: "completed", text: "", detail: "연결을 저장했습니다." },
+  ], "run", new Set());
+  expect(markup).toContain("원문 연결 제출");
+  expect(markup).toContain("요청 거부");
+  expect(markup).toContain("원문 중복 &lt;T7&gt;");
+  expect(markup).toContain("이후 요청 성공");
+  expect(markup).not.toContain("command_execution");
+});
+
+it("keeps unresolved app rejections and unexplained shell failures visible", async () => {
+  const { chatActivityMarkup } = await import("../src/renderer/scripts/thinking-ui");
+  const markup = chatActivityMarkup([
+    { kind: "tool", id: "shell1", name: "command_execution", state: "failed", text: "" },
+    { kind: "tool", appTool: true, parentToolId: "shell1", name: "check-alignment", state: "completed", text: "", detail: "검사 완료" },
+    { kind: "tool", appTool: true, name: "submit-alignment", state: "failed", text: "", detail: "연결 해제 사유 필요" },
+    { kind: "tool", appTool: true, name: "check-alignment", state: "completed", text: "" },
+  ], "run", new Set());
+  expect(markup).toContain("command_execution");
+  expect(markup).toContain("연결 해제 사유 필요");
+  expect(markup).not.toContain("이후 요청 성공");
+});

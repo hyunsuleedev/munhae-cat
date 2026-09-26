@@ -387,6 +387,32 @@ describe("run-scoped translation tool bridge", () => {
     expect(retry).toEqual({ status: 409, body: { ok: false, error: "already_submitted" } });
   });
 
+  it("allows full-text JSON repair through the real wrapper, committing only once", async () => {
+    const onSubmit = vi.fn();
+    const grant = await createTranslationToolGrant({ projectId: "project-a", runId: "run-a", onSubmit, retryMalformedSubmission: true });
+    const invalid = await runBuiltWrapperProcess({ grant, body: '{"translation":"first\nsecond"}' });
+    expect(invalid.exitCode).toBe(1);
+    expect(invalid.stderr).toContain("invalid_json");
+    expect(onSubmit).not.toHaveBeenCalled();
+    const body = JSON.stringify({ schemaVersion: 1, translation: "first\n\nsecond" });
+    const repaired = await runBuiltWrapperProcess({ grant, body });
+    expect(repaired.exitCode).toBe(0);
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(body);
+    expect(grant.inspect()).toMatchObject({ committed: true, callCount: 2, error: null, rawBody: body });
+    expect((await runBuiltWrapperProcess({ grant, body })).stderr).toContain("already_submitted");
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("never retries a repository rejection even when JSON repair is enabled", async () => {
+    const onSubmit = vi.fn(() => { throw Error("stale head"); });
+    const grant = await createTranslationToolGrant({ projectId: "project-a", runId: "run-a", onSubmit, retryMalformedSubmission: true });
+    const input = { ...grant, body: '{"translation":"text"}' };
+    expect((await postSubmission(input)).status).toBe(422);
+    expect((await postSubmission(input)).status).toBe(409);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(grant.inspect()).toMatchObject({ committed: false, error: "submission_rejected" });
+  });
+
   it("rejects a revoked grant without recording a call", async () => {
     const grant = await createTranslationToolGrant({ projectId: "project-a", runId: "run-a", onSubmit() {} });
     grant.revoke();

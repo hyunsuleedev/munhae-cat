@@ -4,7 +4,7 @@ import { t, ui, uiText } from "./i18n";
 import { previewNotificationSound } from "./notification-sounds";
 import { BUNDLED_SKILLS } from "@munhae/db-sqlite/bundled-skills";
 import { mountAccount } from "./account-ui";
-import type { AgentProbe, AppConfig, DocumentListItem, HomeView } from "../../shared/munhae-api";
+import type { AgentProbe, AppConfig, DocumentListItem, HomeView, PluginsView, TranslationSkill } from "../../shared/munhae-api";
 import {
   bindSidebar,
   defaultSidebarTree,
@@ -19,7 +19,7 @@ import {
 } from "./shared";
 
 type AgentId = AppConfig["agentId"];
-type SectionId = "account" | "models" | "skills" | "general";
+type SectionId = "account" | "models" | "plugins" | "general";
 
 const shell = initShell({ page: "settings", selfTitle: t("설정") });
 const api = shell.api;
@@ -34,6 +34,10 @@ let hasFreshAgentProbes = false;
 let docs: DocumentListItem[] = [];
 let saveRevision = 0;
 let saveChain: Promise<void> = Promise.resolve();
+let plugins: PluginsView | null = null;
+let pluginBusy = false;
+let catalog: TranslationSkill[] | null = null;
+let catalogError: string | null = null;
 const loginInstructions = new Map<AgentId, { command: string; detail: string }>();
 
 function tree() {
@@ -223,30 +227,157 @@ function scheduleSave(): void {
   });
 }
 
-function renderSkills(): void {
-  const descriptions = {
-    "translate-document": {
-      title: t("전문 번역"),
-      description: t("원문 전체를 읽고 선택한 번역 언어로 문단을 구성합니다. 번역을 제출하기 전에 누락·용어·불확실성을 검토합니다."),
-      timing: t("첫 번째 요청 · 번역 생성"),
-    },
-    "align-translation": {
-      title: t("원문 연결"),
-      description: t("저장된 번역을 바꾸지 않고 번역 문장과 정확한 원문 범위를 연결합니다. 불확실한 대응은 확인이 필요하다고 표시합니다."),
-      timing: t("두 번째 요청 · 번역 저장 후"),
-    },
-  } satisfies Record<keyof typeof BUNDLED_SKILLS, { title: string; description: string; timing: string }>;
+function skillVersion(content: string): string {
+  return content.match(/^version:\s*(.+)$/m)?.[1]?.trim() ?? "—";
+}
 
-  must("#skillList").innerHTML = Object.entries(BUNDLED_SKILLS).map(([id, content]) => {
-    const meta = descriptions[id as keyof typeof descriptions];
-    const version = content.match(/^version:\s*(.+)$/m)?.[1]?.trim() ?? "—";
-    return ui`<article class="skill-card" aria-labelledby="skill-${esc(id)}">
-      <div class="skill-card-head"><div><p class="skill-timing">${esc(meta.timing)}</p><h2 id="skill-${esc(id)}">${esc(meta.title)}</h2></div><span class="tag tag-line mono">v${esc(version)}</span></div>
-      <p class="skill-description">${esc(meta.description)}</p>
-      <p class="skill-name mono">${esc(id)}</p>
-      <details class="skill-details"><summary>SKILL.md 전체 내용</summary><pre class="skill-source" tabindex="0" aria-label="${esc(meta.title)} 스킬 원문"><code>${esc(content)}</code></pre></details>
+function skillSource(title: string, content: string): string {
+  return ui`<details class="skill-details"><summary>SKILL.md 전체 내용</summary><pre class="skill-source" tabindex="0" aria-label="${esc(title)} 스킬 원문"><code>${esc(content)}</code></pre></details>`;
+}
+
+function renderAlignmentSkill(): void {
+  const content = BUNDLED_SKILLS["align-translation"];
+  must("#alignmentSkill").innerHTML = ui`<article class="skill-card" aria-labelledby="skill-align-translation">
+    <div class="skill-card-head"><div><p class="skill-timing">두 번째 요청 · 번역 저장 후</p><h2 id="skill-align-translation">원문 연결</h2></div><span class="tag tag-line mono">v${esc(skillVersion(content))}</span></div>
+    <p class="skill-description">저장된 번역을 바꾸지 않고 번역 문장과 정확한 원문 범위를 연결합니다. 불확실한 대응은 확인이 필요하다고 표시합니다.</p>
+    <p class="skill-name mono">align-translation</p>
+    ${skillSource(t("원문 연결"), content)}
+  </article>`;
+}
+
+type PluginCard = {
+  value: string;
+  title: string;
+  origin: string;
+  description: string;
+  version: string | null;
+  content: string;
+  applied: boolean;
+  note?: string;
+  removable?: string;
+};
+
+function pluginCard(card: PluginCard): string {
+  const disabled = !plugins?.projectOpen || pluginBusy;
+  return `<article class="cli-card plugin-card${card.applied ? " is-selected" : ""}">
+    <label class="cli-pick">
+      <input type="radio" name="translationPlugin" value="${esc(card.value)}"${card.applied ? " checked" : ""}${disabled ? " disabled" : ""}>
+      <span class="cli-copy"><b>${esc(card.title)} <span class="provider-name">· ${esc(card.origin)}</span></b><p>${esc(card.description)}</p></span>
+      <span class="cli-meta">${card.applied ? uiText('<span class="tag tag-draft">적용됨</span>') : ""}${card.note ? `<span class="tag tag-warn">${esc(card.note)}</span>` : ""}${card.version ? `<span class="tag tag-line mono">v${esc(card.version)}</span>` : ""}</span>
+    </label>
+    <div class="cli-actions plugin-actions">${skillSource(card.title, card.content)}${card.removable ? ui`<button class="btn btn-sm" type="button" data-remove-plugin="${esc(card.removable)}"${pluginBusy ? " disabled" : ""}>삭제</button>` : ""}</div>
+  </article>`;
+}
+
+function renderPlugins(): void {
+  const list = must("#translationPlugins");
+  if (!plugins) {
+    list.innerHTML = uiText('<p class="empty" role="status">플러그인을 불러오는 중입니다.</p>');
+    return;
+  }
+  const { installed, applied, projectOpen } = plugins;
+  // A project copy that no longer matches this device's library stays visible and selected.
+  const matching = applied ? installed.find((plugin) => plugin.name === applied.name && plugin.hash === applied.hash) : undefined;
+  const base = BUNDLED_SKILLS["translate-document"];
+  const cards: PluginCard[] = [{
+    value: "default",
+    title: t("전문 번역"),
+    origin: t("기본 제공"),
+    description: t("원문 전체를 읽고 선택한 번역 언어로 문단을 구성합니다. 번역을 제출하기 전에 누락·용어·불확실성을 검토합니다."),
+    version: skillVersion(base),
+    content: base,
+    applied: projectOpen && !applied,
+  }];
+  if (applied && !matching) cards.push({
+    value: "project",
+    title: applied.name,
+    origin: t("프로젝트에 저장됨"),
+    description: applied.description,
+    version: applied.version,
+    content: applied.content,
+    applied: true,
+    note: installed.some((plugin) => plugin.name === applied.name) ? t("설치본과 다름") : t("이 기기에 설치되지 않음"),
+  });
+  for (const plugin of installed) cards.push({
+    value: `installed:${plugin.name}`,
+    title: plugin.name,
+    origin: t("설치됨"),
+    description: plugin.description,
+    version: plugin.version,
+    content: plugin.content,
+    applied: plugin === matching,
+    removable: plugin.name,
+  });
+  list.innerHTML = cards.map(pluginCard).join("");
+  must<HTMLButtonElement>("#btnInstallPlugin").disabled = pluginBusy;
+  must("#translationPluginsNote").textContent = projectOpen
+    ? t("이 프로젝트에서 새 번역을 만들 때 쓸 지침을 하나 고릅니다. 이미 만든 번역은 바뀌지 않습니다.")
+    : t("프로젝트를 열면 적용할 지침을 고를 수 있습니다.");
+  renderCatalog();
+}
+
+function renderCatalog(): void {
+  const list = must("#catalogPlugins");
+  if (catalogError) {
+    list.innerHTML = `<p class="empty" role="status">${esc(catalogError)} ${uiText('<button class="btn btn-sm" type="button" data-retry-catalog>다시 시도</button>')}</p>`;
+    return;
+  }
+  if (!catalog) {
+    list.innerHTML = uiText('<p class="empty" role="status">추천 플러그인을 불러오는 중입니다.</p>');
+    return;
+  }
+  if (!catalog.length) {
+    list.innerHTML = uiText('<p class="empty" role="status">아직 추천 플러그인이 없습니다.</p>');
+    return;
+  }
+  const installed = new Map((plugins?.installed ?? []).map((plugin) => [plugin.name, plugin]));
+  list.innerHTML = catalog.map((skill) => {
+    const local = installed.get(skill.name);
+    const action = local?.hash === skill.hash
+      ? uiText('<span class="tag tag-plain">설치됨</span>')
+      : `<button class="btn btn-sm" type="button" data-install-catalog="${esc(skill.name)}"${pluginBusy ? " disabled" : ""}>${local ? t("업데이트") : t("설치")}</button>`;
+    return `<article class="cli-card plugin-card">
+      <div class="cli-pick catalog-pick">
+        <span class="cli-copy"><b>${esc(skill.name)}</b><p>${esc(skill.description)}</p></span>
+        <span class="cli-meta">${skill.version ? `<span class="tag tag-line mono">v${esc(skill.version)}</span>` : ""}${action}</span>
+      </div>
+      <div class="cli-actions plugin-actions">${skillSource(skill.name, skill.content)}</div>
     </article>`;
   }).join("");
+}
+
+async function loadCatalog(): Promise<void> {
+  catalog = null;
+  catalogError = null;
+  renderCatalog();
+  const result = await api.plugins.catalog();
+  if (result.ok) catalog = result.data;
+  else catalogError = result.error.message;
+  renderCatalog();
+}
+
+async function loadPlugins(): Promise<void> {
+  const result = await api.plugins.list();
+  if (result.ok) plugins = result.data;
+  else notify(result.error.message, t("플러그인"));
+  renderPlugins();
+}
+
+async function pluginAction<T>(action: () => Promise<{ ok: true; data: T } | { ok: false; error: { message: string } }>, done: (data: T) => string | null): Promise<void> {
+  if (pluginBusy) return;
+  pluginBusy = true;
+  renderPlugins();
+  try {
+    const result = await action();
+    if (!result.ok) notify(result.error.message, t("플러그인"));
+    else {
+      const message = done(result.data);
+      if (message) notify(message, t("플러그인"));
+    }
+  } finally {
+    pluginBusy = false;
+    await loadPlugins();
+  }
 }
 
 function setSection(section: SectionId): void {
@@ -259,7 +390,7 @@ function setSection(section: SectionId): void {
     if (current) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
-  const pages: Record<SectionId, string> = { account: "#settingsAccount", models: "#settingsModels", skills: "#settingsSkills", general: "#settingsGeneral" };
+  const pages: Record<SectionId, string> = { account: "#settingsAccount", models: "#settingsModels", plugins: "#settingsPlugins", general: "#settingsGeneral" };
   for (const [id, selector] of Object.entries(pages)) {
     const page = must(selector);
     page.classList.toggle("is-open", section === id);
@@ -267,12 +398,14 @@ function setSection(section: SectionId): void {
   }
   if (section === "account") accountPanel?.activate();
   history.replaceState(null, "", section === "models" ? "settings.html" : `settings.html#${section}`);
-  must("#saveState").hidden = section === "account";
-  must("#settingsPath").textContent = section === "account" ? t("문해 계정") : t("앱 설정 · 프로젝트 밖에 저장");
+  must("#saveState").hidden = section === "account" || section === "plugins";
+  must("#settingsPath").textContent = section === "account" ? t("문해 계정")
+    : section === "plugins" ? t("설치는 이 기기 · 적용은 프로젝트에 저장") : t("앱 설정 · 프로젝트 밖에 저장");
 }
 
 function sectionFromHash(): SectionId {
-  return location.hash === "#account" ? "account" : location.hash === "#skills" ? "skills" : location.hash === "#general" ? "general" : "models";
+  if (location.hash === "#plugins" || location.hash === "#skills") return "plugins";
+  return location.hash === "#account" ? "account" : location.hash === "#general" ? "general" : "models";
 }
 
 window.addEventListener("hashchange", () => setSection(sectionFromHash()));
@@ -329,7 +462,36 @@ document.addEventListener("click", (event) => {
   const loginButton = target.closest<HTMLButtonElement>("[data-login-agent]");
   if (loginButton?.dataset.loginAgent) {
     void showLoginInstruction(loginButton.dataset.loginAgent as AgentId, loginButton);
+    return;
   }
+  const catalogButton = target.closest<HTMLButtonElement>("[data-install-catalog]");
+  const catalogName = catalogButton?.dataset.installCatalog;
+  if (catalogName) {
+    void pluginAction(() => api.plugins.installCatalog(catalogName), (plugin) => ui`${plugin.name} 플러그인을 설치했습니다.`);
+    return;
+  }
+  if (target.closest("[data-retry-catalog]")) {
+    void loadCatalog();
+    return;
+  }
+  const removeButton = target.closest<HTMLButtonElement>("[data-remove-plugin]");
+  const removeName = removeButton?.dataset.removePlugin;
+  if (removeName) {
+    void pluginAction(() => api.plugins.remove(removeName), () => ui`${removeName} 플러그인을 이 기기에서 삭제했습니다.`);
+  }
+});
+
+must("#btnInstallPlugin").addEventListener("click", () => {
+  void pluginAction(() => api.plugins.install(), (plugin) => plugin ? ui`${plugin.name} 플러그인을 설치했습니다.` : null);
+});
+
+must("#translationPlugins").addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.name !== "translationPlugin" || target.value === "project") return;
+  const name = target.value === "default" ? null : target.value.slice("installed:".length);
+  void pluginAction(() => api.plugins.apply(name), () => name
+    ? ui`이 프로젝트의 번역에 ${name} 플러그인을 적용했습니다.`
+    : t("이 프로젝트의 번역을 기본 지침으로 되돌렸습니다."));
 });
 
 must("#cliList").addEventListener("change", (event) => {
@@ -459,6 +621,9 @@ async function load(): Promise<void> {
   setSaveState(t("저장됨"), "saved");
 }
 
-renderSkills();
+renderAlignmentSkill();
+renderPlugins();
 setSection(sectionFromHash());
+void loadPlugins();
+void loadCatalog();
 await load();

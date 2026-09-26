@@ -313,13 +313,20 @@ export function parseSaveDraftInput(value: unknown): SaveTranslationDraftInput {
   if (!Array.isArray(rec.blocks)) fail("blocks");
   return {
     documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    ...(rec.textBaseVersionId === undefined && rec.textBaseRevision === undefined ? {} : {
+      textBaseVersionId: asNonEmptyString(rec.textBaseVersionId, "textBaseVersionId", 80),
+      textBaseRevision: asNonEmptyString(rec.textBaseRevision, "textBaseRevision", 64),
+    }),
     textContent: asString(rec.textContent, "textContent", { max: 20_000_000 }),
     ...(rec.textGroups === undefined ? {} : { textGroups: (() => {
       if (!Array.isArray(rec.textGroups)) fail("textGroups");
       return rec.textGroups.map((value, index) => {
         const group = asRecord(value, `textGroups[${index}]`);
         if (!Array.isArray(group.spans)) fail("spans");
+        const hasRange = group.from !== undefined || group.to !== undefined;
+        if (hasRange && (!Number.isSafeInteger(group.from) || !Number.isSafeInteger(group.to))) fail("group range");
         return { id: asNonEmptyString(group.id, "id", 160), text: asString(group.text, "text", { max: 20_000_000 }),
+          ...(hasRange ? { from: group.from as number, to: group.to as number } : {}),
           spans: group.spans.map(value => {
             const span = asRecord(value, "span");
             if (!Number.isSafeInteger(span.from) || !Number.isSafeInteger(span.to)) fail("span range");
@@ -603,6 +610,13 @@ export function parseStartPunctuationSuggestionInput(value: unknown): StartPunct
     structureMode: asOneOf(rec.structureMode, "structureMode", STRUCTURE_MODES),
     agentId: parseAgentId(rec.agentId),
   };
+}
+
+/** Matches the SKILL.md name rule; installed plugins live in a folder of this name. */
+export function parsePluginName(value: unknown): string {
+  const name = asNonEmptyString(value, "name", 64);
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(name)) fail("name");
+  return name;
 }
 
 export function parseMessageId(value: unknown): string {

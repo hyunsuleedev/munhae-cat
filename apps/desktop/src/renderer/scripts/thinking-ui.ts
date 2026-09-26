@@ -25,6 +25,9 @@ export function thinkingMarkup(text: string | undefined, key: string, open = fal
 }
 
 function toolPresentation(name: string): [string, string] {
+  if (name === "submit-alignment") return ["tool", "원문 연결 제출"];
+  if (name === "check-alignment") return ["check", "원문 연결 검사"];
+  if (name === "finish-alignment") return ["check", "원문 연결 종료"];
   if (/search|grep|glob/i.test(name)) return ["search", "검색"];
   if (/read|open|fetch/i.test(name)) return ["read", "자료 읽기"];
   if (/command|bash|shell|exec/i.test(name)) return ["terminal", "명령 실행"];
@@ -54,12 +57,17 @@ export function chatActivityMarkup(blocks: ChatActivityBlock[] | undefined, key:
     const blockKey = `${key}:${index}`;
     if (block.kind === "thinking") return thinkingMarkup(block.text, blockKey, isOpen(blockKey, false), running && index === visible.length - 1);
     if (block.kind !== "tool") return "";
+    // Replace a known shell wrapper with the app's actual result. Keep an
+    // unexplained shell failure visible even if a tool inside it succeeded.
+    const children = block.id ? visible.filter(item => item.appTool && item.parentToolId === block.id) : [];
+    if (children.length && (block.state !== "failed" || children.some(item => item.state === "failed"))) return "";
     const [symbol, title] = toolPresentation(block.name ?? "tool");
     const active = block.state === "started" && running;
     const failed = block.state === "failed";
     const interrupted = block.state === "started" && !running;
-    const label = failed ? "실패" : active ? "실행 중" : interrupted ? "중단됨" : "완료";
-    return `<div class="chat-tool-activity" data-tool-id="${esc(block.id ?? blockKey)}" data-state="${active ? "running" : failed ? "failed" : interrupted ? "stopped" : "completed"}"><span class="chat-activity-symbol">${icon(symbol)}</span><span class="chat-tool-title">${esc(t(title))}<span class="chat-tool-name">${esc(block.name ?? block.text)}</span></span><span class="chat-tool-status">${active ? spinner : failed ? icon("error") : interrupted ? "" : icon("check")}${esc(t(label))}</span></div>`;
+    const resubmitted = failed && block.appTool && visible.slice(index + 1).some(item => item.appTool && item.name === block.name && item.state === "completed");
+    const label = resubmitted ? "이후 요청 성공" : failed ? (block.appTool ? "요청 거부" : "실패") : active ? "실행 중" : interrupted ? "중단됨" : "완료";
+    return `<div class="chat-tool-activity" data-tool-id="${esc(block.id ?? blockKey)}" data-state="${active ? "running" : failed && !resubmitted ? "failed" : interrupted ? "stopped" : "completed"}"><span class="chat-activity-symbol">${icon(symbol)}</span><span class="chat-tool-title">${esc(t(title))}${failed && block.appTool ? ` · ${esc(t("요청 거부"))}` : ""}<span class="chat-tool-name">${esc(block.appTool ? t(block.detail ?? "") : block.name ?? block.text)}</span></span><span class="chat-tool-status">${active ? spinner : failed && !resubmitted ? icon("error") : interrupted ? "" : icon("check")}${esc(t(label))}</span></div>`;
   }).join("");
   const prose = visible.filter(block => block.kind === "text" && block.text.trim()).map(block => `<div class="msg-body chat-stream-text chat-markdown">${chatMarkdown(block.text)}</div>`).join("");
   if (!activity) return prose;

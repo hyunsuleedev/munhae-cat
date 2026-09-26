@@ -161,7 +161,7 @@ it("upgrades v3 with a backup and no changes to existing translation history or 
   expect(backups).toHaveLength(1);
   const check = openSqlite(sqlitePath(path));
   try {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 11 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
     expect(check.prepare("SELECT * FROM chat_messages ORDER BY id").all()).toEqual(requests);
     expect(check.pragma("foreign_key_check")).toEqual([]);
     expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);

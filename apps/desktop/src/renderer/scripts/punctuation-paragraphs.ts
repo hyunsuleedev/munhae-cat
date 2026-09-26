@@ -1,7 +1,8 @@
+import { segmentHanmun, trimHanmunRange, type HanmunStructureSpan } from "@munhae/domain/hanmun-segmentation";
 import { createPunctuationProjection } from "./punctuation-projection";
 
-export type PunctuationParagraph = {
-  /** Textarea selection positions are UTF-16; source cursors are code points. */
+export type PunctuationParagraph = HanmunStructureSpan & {
+  /** Native textarea offsets are UTF-16; structure and source offsets are code points. */
   from: number;
   to: number;
   sourceFrom: number;
@@ -9,26 +10,23 @@ export type PunctuationParagraph = {
   sourceText: string;
 };
 
-/** Display-only paragraph grouping. Never normalize or rewrite either text. */
-export function punctuationParagraphs(source: string, text: string): PunctuationParagraph[] | null {
+/** Uses the same segmentation as persisted punctuation; never rewrites either text. */
+export function punctuationStructure(source: string, text: string, mode: "prose" | "poetry" = "prose"): PunctuationParagraph[] | null {
   const projection = createPunctuationProjection(source, text);
   if (!projection) return null;
   const points = Array.from(source);
-  const ends = [...text.matchAll(/\r?\n[\t \r]*\n(?:[\t \r]*\n)*/g)].map(match => match.index! + match[0].length);
-  if (ends.at(-1) !== text.length) ends.push(text.length);
-  const paragraphs: PunctuationParagraph[] = [];
-  let from = 0, sourceFrom = 0, pointCursor = 0;
-  for (const to of ends) {
-    pointCursor += Array.from(text.slice(from, to)).length;
-    const sourceTo = projection.sourceBoundaryByPunctuationBoundary[pointCursor]!;
-    if (sourceTo > sourceFrom) {
-      paragraphs.push({ from, to, sourceFrom, sourceTo, sourceText: points.slice(sourceFrom, sourceTo).join("") });
-      sourceFrom = sourceTo;
-      from = to;
-    } else {
-      // Leading blank lines belong to the next real paragraph.
-      pointCursor -= Array.from(text.slice(from, to)).length;
-    }
-  }
-  return paragraphs;
+  const utf16 = [0];
+  for (const point of projection.codepoints) utf16.push(utf16[utf16.length - 1]! + point.length);
+  return segmentHanmun(text, mode).map(span => {
+    const sourceRange = trimHanmunRange(points,
+      projection.sourceBoundaryByPunctuationBoundary[span.codepointFrom]!,
+      projection.sourceBoundaryByPunctuationBoundary[span.codepointTo]!);
+    return { ...span, from: utf16[span.codepointFrom]!, to: utf16[span.codepointTo]!,
+      sourceFrom: sourceRange.from, sourceTo: sourceRange.to,
+      sourceText: points.slice(sourceRange.from, sourceRange.to).join("") };
+  });
+}
+
+export function punctuationParagraphs(source: string, text: string, mode: "prose" | "poetry" = "prose"): PunctuationParagraph[] | null {
+  return punctuationStructure(source, text, mode)?.filter(span => span.spanKind === "paragraph" && span.sourceFrom < span.sourceTo) ?? null;
 }

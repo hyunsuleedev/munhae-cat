@@ -831,6 +831,8 @@ async function executeFullText(
   let firstResult: Awaited<ReturnType<typeof runAgentRuntime>> | null = null;
   const wrapperPath = join(mainDir, "agent-tool-cli.js");
   const execute = async (prompt: string, phase: "translation" | "alignment", accept?: (raw: string) => void) => {
+    const activeCommands = new Set<string>();
+    let alignmentCallCount = 0;
     const stagePrefs = phase === "alignment" ? alignmentPreferences(config, translationAgent) : { agentId: translationAgent, ...config.agentModels[translationAgent] };
     const { agentId: stageAgent, ...prefs } = stagePrefs;
     view.agentId = stageAgent;
@@ -846,9 +848,21 @@ async function executeFullText(
       }
       const alignmentTools = phase === "alignment" ? createAlignmentToolSession(entry.repo, versionId!) : null;
       grant = await createTranslationToolGrant({ projectId:entry.projectId, runId:prepared.messageId,
+        retryMalformedSubmission: phase === "translation",
         ...(alignmentTools ? { onAlignment(command, raw) {
           if (entry.cancelRequested || !grant || containsSensitiveProviderData(raw, providerEnv, [grant.token])) return { ok: false, error: "submission_rejected" };
           const result = alignmentTools(command, raw);
+          const activity = view.activity ??= [];
+          activity.push({ kind: "tool", appTool: true, id: `alignment-tool:${++alignmentCallCount}`,
+            name: command, text: "", state: result.ok ? "completed" : "failed",
+            ...(activeCommands.size === 1 ? { parentToolId: [...activeCommands][0] } : {}),
+            detail: !result.ok ? (typeof result.message === "string" ? result.message : "연결 도구 요청을 처리하지 못했습니다.")
+              : command === "finish-alignment" ? (result.state === "needs_review" ? "검토 필요 항목을 남기고 종료했습니다." : "원문 연결 검사를 마쳤습니다.")
+              : command === "check-alignment" ? (result.canFinish ? "누락·중복 없음 · 의미 대응은 별도 검토" : "확인이 필요한 연결이 있습니다.")
+              : "연결을 저장했습니다.",
+          });
+          if (activity.length > 200) activity.shift();
+          publish(view);
           if (result.ok && command === "submit-alignment") publish(view, "alignment");
           if (result.ok && command === "finish-alignment") {
             alignmentNeedsReview = result.state === "needs_review";
@@ -867,7 +881,7 @@ async function executeFullText(
       if(entry.cancelRequested) throw new AppError("canceled", "실행을 취소했습니다");
       const command = phase === "translation" ? "submit-translation" : "submit-alignment";
       const request: AgentRunRequest = {
-        runId:prepared.messageId, prompt, outputContract:phase === "translation" ? "translation-text.v1" : prompt.includes("## Alignment mode\nboundary-groups.v3") ? "translation-alignment.v3" : "translation-alignment.v1",
+        runId:prepared.messageId, prompt, outputContract:phase === "translation" ? "translation-text.v1" : prompt.includes("## Alignment mode\nsaved-segments.v4") ? "translation-alignment.v4" : prompt.includes("## Alignment mode\nboundary-groups.v3") ? "translation-alignment.v3" : "translation-alignment.v1",
         appTool:{command:process.execPath,args:[wrapperPath,"tools",command],env:{
           ELECTRON_RUN_AS_NODE:"1",MUNHAE_NODE_BIN:process.execPath,MUNHAE_BIN:wrapperPath,
           MUNHAE_TOOL_URL:grant.endpoint,MUNHAE_TOOL_GRANT:grant.token,MUNHAE_TOOL_RUN_ID:prepared.messageId,
@@ -880,11 +894,19 @@ async function executeFullText(
       // Each stage is a fresh CLI request, never a continuation of translation deliberation.
       const result=await runAgentRuntime(view.agentId,request,event=>{
         appendEvent(entry,event);
+        if (event.type === "tool_call" && event.id && /command|bash|shell|exec/i.test(event.name)) {
+          const id = `${phase}:${event.id}`;
+          if (event.state === "started") activeCommands.add(id); else activeCommands.delete(id);
+        }
         updateFromEvent(view, event.type === "tool_call" && event.id ? { ...event, id: `${phase}:${event.id}` } : event);
         if(phase!=="translation") { view.phase="aligning"; view.detail="번역을 저장했습니다. 문장별 원문을 연결하고 있습니다."; }
         publish(view);
       });
-      if(!grant.inspect().committed) throw new AppError(result.ok?"app_submission_missing":result.error.code,result.ok?(phase === "alignment" ? "연결 작업이 finish-alignment로 완료되지 않았습니다" : "AI가 결과를 제출하지 않았습니다"):publicRunError(result.error).message);
+      const submission = grant.inspect();
+      if (!submission.committed) {
+        const code = submission.error ?? (result.ok ? "app_submission_missing" : result.error.code);
+        throw new AppError(code, publicRunError({ code, message: "" }).message);
+      }
       return result;
     } finally {grant?.revoke();entry.translationToolGrant=null;}
   };

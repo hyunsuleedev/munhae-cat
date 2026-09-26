@@ -139,3 +139,15 @@ export function projectSourceRange(
       .map((boundary) => Math.max(from, Math.min(to, boundary))),
   };
 }
+
+/**
+ * Map a source cursor to a UTF-16 caret in the punctuated text: just after the
+ * preceding source character, before any punctuation already placed there.
+ */
+export function punctuationCaretForSource(projection: PunctuationProjection, sourceText: string, cursor: number): number {
+  const points = Array.from(sourceText);
+  let previous = cursor - 1;
+  while (previous >= 0 && SOURCE_WHITESPACE.test(points[previous] ?? "")) previous -= 1;
+  const boundary = previous < 0 ? 0 : lowerBound(projection.sourceBoundaryByPunctuationBoundary, previous + 1);
+  return projection.codepoints.slice(0, boundary).join("").length;
+}

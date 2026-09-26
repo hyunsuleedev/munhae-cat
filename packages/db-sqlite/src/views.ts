@@ -245,6 +245,7 @@ export type EditorView = {
     validationState: "valid" | "needs_review";
     textContent: string;
     textLayout?: {
+      storageRevision?: string;
       state: "pending" | "running" | "ready" | "needs_review" | "failed";
       sentences: Array<{ id: string; from: number; to: number; text: string }>;
       links: Array<{ sentenceId: string; groupId?: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
@@ -265,7 +266,9 @@ export type EditorView = {
 };
 
 export type SaveTranslationDraftInput = {
-  textGroups?: Array<{ id: string; text: string; spans: Array<{ from: number; to: number; quote: string }> }>;
+  textBaseVersionId?: string;
+  textBaseRevision?: string;
+  textGroups?: Array<{ id: string; from?: number; to?: number; text: string; spans: Array<{ from: number; to: number; quote: string }> }>;
 
   documentNodeId: string;
   textContent: string;

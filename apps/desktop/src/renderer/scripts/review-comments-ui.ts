@@ -356,7 +356,7 @@ export function configureReviewComments(deps: Deps) {
       const from = textarea.selectionStart;
       const to = textarea.selectionEnd;
       const range = sentence ? textareaRange(sentence.text, from, to) : null;
-      selected = sentence && range && textarea.value === (textarea.dataset.trailingSeparator ? sentence.text.slice(0, -textarea.dataset.trailingSeparator.length) : sentence.text).replace(/\r\n?/g, "\n") ? {
+      selected = sentence && range && textarea.value === sentence.text.replace(/\r\n?/g, "\n") ? {
         documentNodeId: v.document.id,
         translationVersionId: translation.versionId,
         targetKind: "translation",
@@ -372,7 +372,20 @@ export function configureReviewComments(deps: Deps) {
         const range = selection.getRangeAt(0);
         const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement;
         const source = start?.closest<HTMLElement>("[data-review-source-from]");
-        if (source && source.contains(range.endContainer)) {
+        const flow = start?.closest<HTMLElement>("#bookGroups");
+        if (flow && flow.contains(range.endContainer) && !flow.querySelector(".is-editing")
+          && flow.dataset.translationText === translation.textContent) {
+          const before = document.createRange();
+          before.selectNodeContents(flow); before.setEnd(range.startContainer, range.startOffset);
+          const from = Array.from(before.toString()).length;
+          const quote = range.toString();
+          const to = from + Array.from(quote).length;
+          if (quote.trim() && Array.from(translation.textContent).slice(from, to).join("") === quote) selected = {
+            documentNodeId: v.document.id, translationVersionId: translation.versionId,
+            targetKind: "translation", targetVersionId: translation.versionId,
+            codepointFrom: from, codepointTo: to, quote,
+          };
+        } else if (source && source.contains(range.endContainer)) {
           const before = document.createRange();
           before.selectNodeContents(source);
           before.setEnd(range.startContainer, range.startOffset);
@@ -490,7 +503,7 @@ export function configureReviewComments(deps: Deps) {
 
   el("#translationWorkspace").addEventListener("pointerdown", event => {
     if (event.button !== 0) return;
-    pointerTarget = (event.target as HTMLElement).closest<HTMLElement>("[data-review-source-from], .sentence-edit");
+    pointerTarget = (event.target as HTMLElement).closest<HTMLElement>("[data-review-source-from], .sentence-edit, [data-review-translation-from]");
   });
   document.addEventListener("pointerup", () => {
     const target = pointerTarget;

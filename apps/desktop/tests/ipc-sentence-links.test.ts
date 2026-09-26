@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSaveSentenceLinkInput } from "../src/main/ipc-validate";
+import { parseSaveDraftInput, parseSaveSentenceLinkInput } from "../src/main/ipc-validate";
 
 const input = {
   documentNodeId: "document-1", versionId: "translation-1", sentenceId: "T1", expectedLockVersion: 2,
@@ -25,4 +25,20 @@ describe("manual sentence correspondence IPC", () => {
   ])("rejects malformed or overbroad correction payloads: %j", (invalid) => {
     expect(() => parseSaveSentenceLinkInput({ ...input, ...invalid })).toThrow();
   });
+});
+
+it("passes explicit translation body offsets through IPC and rejects an incomplete range", () => {
+  const draft = { documentNodeId: "doc", textContent: "갑이다.\n\n을이다.", blocks: [], expectedLockVersion: 1,
+    textGroups: [{ id: "g1", from: 0, to: 4, text: "갑이다.", spans: [] }, { id: "g2", from: 6, to: 10, text: "을이다.", spans: [] }] };
+  expect(parseSaveDraftInput(draft).textGroups).toEqual(draft.textGroups);
+  expect(() => parseSaveDraftInput({ ...draft, textGroups: [{ ...draft.textGroups[0], to: undefined }] })).toThrow();
+});
+
+it("preserves the local group editing base and rejects a half-specified base", () => {
+  const draft = { documentNodeId: "doc", textContent: "갑.", blocks: [], expectedLockVersion: 2,
+    textBaseVersionId: "version-1", textBaseRevision: "a".repeat(64),
+    textGroups: [{ id: "g1", from: 0, to: 2, text: "갑.", spans: [] }] };
+  expect(parseSaveDraftInput(draft)).toEqual(draft);
+  expect(() => parseSaveDraftInput({ ...draft, textBaseRevision: undefined })).toThrow();
+  expect(() => parseSaveDraftInput({ ...draft, textBaseVersionId: undefined })).toThrow();
 });

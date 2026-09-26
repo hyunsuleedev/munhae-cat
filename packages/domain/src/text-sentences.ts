@@ -5,6 +5,17 @@ export type TextSentence = {
   text: string;
 };
 
+/** Layout whitespace stays in the full text, outside each editable body range. */
+export function trimTextSentences(text: string, sentences: TextSentence[]): TextSentence[] {
+  const points = Array.from(text);
+  return sentences.map(sentence => {
+    let { from, to } = sentence;
+    while (from < to && /\s/u.test(points[from]!)) from++;
+    while (to > from && /\s/u.test(points[to - 1]!)) to--;
+    return { ...sentence, from, to, text: points.slice(from, to).join("") };
+  });
+}
+
 export function textSentences(text: string): TextSentence[] {
   // Ranges use Unicode code points. Whitespace remains in the canonical text.
   const out: TextSentence[] = [];
@@ -31,7 +42,7 @@ export function textSentences(text: string): TextSentence[] {
     }
   }
   add(points.length);
-  return out;
+  return trimTextSentences(text, out);
 }
 
 export function replaceTextSentence(
@@ -88,10 +99,36 @@ export function groupedTextSentences(text: string, sentences: TextSentence[], li
       last.text = points.slice(last.from, last.to).join("");
     } else result.push({ ...sentence });
   }
-  // Assign inter-segment whitespace to the preceding editing unit.
-  return result.map((sentence, i) => {
-    const from = i === 0 ? 0 : sentence.from;
-    const to = result[i + 1]?.from ?? points.length;
-    return { ...sentence, from, to, text: points.slice(from, to).join("") };
-  });
+  return trimTextSentences(text, result);
+}
+
+/** Apply one full-editor input without losing group identities or unchanged CRLFs. */
+export function editGroupedText(text: string, sentences: TextSentence[], input: string): { text: string; sentences: TextSentence[]; changedIds: string[] } | null {
+  const raw = Array.from(text), normalized: string[] = [], boundaries = [0];
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === "\r") {
+      if (raw[i + 1] === "\n") i++;
+      normalized.push("\n");
+    } else normalized.push(raw[i]!);
+    boundaries.push(i + 1);
+  }
+  const next = Array.from(input.replace(/\r\n?/g, "\n"));
+  let start = 0;
+  while (start < normalized.length && start < next.length && normalized[start] === next[start]) start++;
+  let end = normalized.length, nextEnd = next.length;
+  while (end > start && nextEnd > start && normalized[end - 1] === next[nextEnd - 1]) { end--; nextEnd--; }
+  const from = boundaries[start]!, to = boundaries[end]!, replacement = next.slice(start, nextEnd).join("");
+  if (from === to && !replacement) return { text, sentences, changedIds: [] };
+  const body = sentences.find(s => from >= s.from && to <= s.to && (from !== to || /\S/u.test(replacement) || from > s.from && from < s.to));
+  if (body) {
+    const value = raw.slice(body.from, from).join("") + replacement + raw.slice(to, body.to).join("");
+    if (!value.trim()) return null;
+    const result = replaceTextSentence(text, sentences, body.id, value);
+    return { ...result, sentences: trimTextSentences(result.text, result.sentences), changedIds: [body.id] };
+  }
+  const removed = raw.slice(from, to).join("");
+  if (/\S/u.test(removed + replacement) || sentences.some(s => from < s.to && to > s.from)) return null;
+  const delta = Array.from(replacement).length - (to - from);
+  const result = raw.slice(0, from).join("") + replacement + raw.slice(to).join("");
+  return { text: result, sentences: sentences.map(s => s.from >= to ? { ...s, from: s.from + delta, to: s.to + delta } : s), changedIds: [] };
 }

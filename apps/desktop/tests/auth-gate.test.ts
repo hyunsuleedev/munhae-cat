@@ -121,13 +121,13 @@ describe("global authentication gate", () => {
     expect(f.view.load).toHaveBeenCalledOnce();
     expect(f.view.reveal).toHaveBeenCalledTimes(2);
   });
-  it.each(["index", "home", "editor", "context", "knowledge", "glossary", "comments", "uncertainty", "settings"])("%s cannot bypass the common entry or flash protected UI", (page) => {
+  it.each(["index", "home", "editor", "context", "knowledge", "glossary", "comments", "uncertainty", "settings", "community"])("%s cannot bypass the common entry or flash protected UI", (page) => {
     const html = readFileSync(resolve("src/renderer", `${page}.html`), "utf8");
     expect(html).toContain("<body data-auth-pending");
     expect(html.match(/<script[^>]+src="([^"]+)"/g)).toEqual([expect.stringContaining('src="./scripts/app-entry.ts"')]);
     expect(html.split("</head>")[0]).toContain('<script type="module" blocking="render" src="./scripts/app-entry.ts">');
   });
-  it.each(["index", "home", "editor", "context", "knowledge", "glossary", "comments", "uncertainty", "settings"])("%s production entry installs navigation handling before first paint", (page) => {
+  it.each(["index", "home", "editor", "context", "knowledge", "glossary", "comments", "uncertainty", "settings", "community"])("%s production entry installs navigation handling before first paint", (page) => {
     // The normal desktop test command builds first. Vite otherwise silently
     // strips blocking=render from the source entry, regressing only releases.
     const html = readFileSync(resolve("out/renderer", `${page}.html`), "utf8");

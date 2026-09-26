@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentRunRequest, AgentRunResult } from "@munhae/agent-runtime";
 import { createProject, type ProjectRepo } from "@munhae/db-sqlite";
+import { MunhaeError } from "@munhae/domain";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/shared/munhae-api";
 const runtime = vi.hoisted(() => ({
@@ -172,6 +173,40 @@ it.each(["codex", "antigravity"] as const)("%s saves whole translation before a 
   );
   expect(getTranslationRun("run").state).toBe("completed");
 });
+it("continues to alignment after the provider repairs invalid translation JSON", async () => {
+  const repo = fixture();
+  runtime.runAgentRuntime.mockImplementation(async (_a: string, request: AgentRunRequest) => {
+    if (request.appTool?.env.MUNHAE_TOOL_COMMAND === "submit-translation") {
+      expect((await submit(request, '{"translation":"first\nsecond"}')).status).toBe(400);
+      expect(repo.completeFullTextRun).not.toHaveBeenCalled();
+      expect((await submit(request, text)).status).toBe(200);
+      expect((await submit(request, text)).status).toBe(409);
+    } else {
+      await submit(request, alignment);
+      await finish(request);
+    }
+    return result();
+  });
+  await startTranslationRun(repo as unknown as ProjectRepo, config, { documentNodeId: "doc", agentId: "codex" }, sessions);
+  await done();
+  expect(repo.completeFullTextRun).toHaveBeenCalledTimes(1);
+  expect(repo.finishFullTextRun).toHaveBeenCalledTimes(1);
+  expect(repo.failTranslationRun).not.toHaveBeenCalled();
+  expect(getTranslationRun("run").state).toBe("completed");
+});
+
+it("reports rejected JSON instead of claiming the provider did not submit", async () => {
+  const repo = fixture();
+  runtime.runAgentRuntime.mockImplementation(async (_a: string, request: AgentRunRequest) => {
+    await submit(request, '{"translation":"first\nsecond"}');
+    return result();
+  });
+  await startTranslationRun(repo as unknown as ProjectRepo, config, { documentNodeId: "doc", agentId: "codex" }, sessions);
+  await done();
+  expect(repo.completeFullTextRun).not.toHaveBeenCalled();
+  expect(getTranslationRun("run").error?.message).toBe("AI 응답이 필요한 제출 형식을 충족하지 않았습니다.");
+});
+
 it("preserves submitted translation when the second request fails", async () => {
   const repo = fixture();
   runtime.runAgentRuntime.mockImplementation(
@@ -310,6 +345,44 @@ it.skipIf(!process.versions.electron)("revises from selected comments through th
   expect(repo.listReviewComments(doc.id).map(comment => comment.translationVersionId)).toEqual([baseVersionId, baseVersionId]);
 });
 
+it.skipIf(!process.versions.electron)("connects saved punctuation units through the runtime submit, check and finish tools", async () => {
+  const parentDir = mkdtempSync(join(tmpdir(), "munhae-segments-runtime-"));
+  dirs.push(parentDir);
+  const repo = createProject({ title: "저장 분절 연결", parentDir }).handle;
+  repos.push(repo);
+  const doc = repo.createDocument({ title: "두 문장", nodeRole: "source_unit", sourceText: "甲\n乙", originKind: "paste", parentId: null });
+  let editor = repo.getEditor(doc.id);
+  editor = repo.confirmSource({ documentNodeId: doc.id, expectedLockVersion: editor.source.lockVersion });
+  editor = repo.createPunctuationDraftFromConfirmedSource({ documentNodeId: doc.id, structureMode: "prose", expectedSourceLockVersion: editor.source.lockVersion });
+  editor = repo.savePunctuationDraft({ documentNodeId: doc.id, punctuatedText: "甲？\n\n乙！", structureMode: "prose", expectedLockVersion: editor.punctuation!.lockVersion });
+  editor = repo.confirmPunctuation({ documentNodeId: doc.id, expectedLockVersion: editor.punctuation!.lockVersion });
+  const punctuationVersionId = editor.punctuation!.versionId, anchorSetId = editor.punctuation!.anchorSetId!;
+  const contracts: Array<string | null | undefined> = [];
+  runtime.probeAgentRuntime.mockResolvedValue({ installed: true, loggedIn: true, version: "test-cli" });
+  runtime.runAgentRuntime.mockImplementation(async (_agentId: string, request: AgentRunRequest) => {
+    contracts.push(request.outputContract);
+    if (request.appTool?.env.MUNHAE_TOOL_COMMAND === "submit-translation") {
+      expect((await submit(request, text)).status).toBe(200);
+    } else {
+      const versionId = repo.getEditor(doc.id).translation!.versionId;
+      expect(request.prompt).toContain("[A001]甲？[/A001]\n\n[A002]乙！[/A002]");
+      expect((await submit(request, JSON.stringify({ schemaVersion: 4, versionId, punctuationVersionId, anchorSetId, links: [
+        { sentenceIds: ["T1"], segmentIds: ["A001"], needsReview: false },
+        { sentenceIds: ["T2"], segmentIds: ["A002"], needsReview: false },
+      ] }))).status).toBe(200);
+      await finish(request);
+    }
+    return result();
+  });
+  const started = await startTranslationRun(repo, config, { documentNodeId: doc.id, agentId: "codex" }, sessions);
+  await done();
+  expect(contracts).toEqual(["translation-text.v1", "translation-alignment.v4"]);
+  expect(getTranslationRun(started.messageId).state).toBe("completed");
+  expect(repo.getEditor(doc.id).translation!.textLayout).toMatchObject({ state: "ready", links: [
+    { spans: [{ from: 0, to: 1, quote: "甲" }] }, { spans: [{ from: 2, to: 3, quote: "乙" }] },
+  ] });
+});
+
 it.each([false, true])("uses separate alignment provider, model and effort (retry=%s)", async (retry) => {
   const repo = fixture();
   const settings = { ...config, alignment: { agentId: "claude" as const, model: "claude-sonnet-4-6", reasoning: "low", serviceTier: null } };
@@ -342,4 +415,28 @@ it("does not declare alignment complete when a provider only inputs links withou
   expect(repo.finishAlignment).not.toHaveBeenCalled();
   expect(repo.failAlignment).toHaveBeenCalled();
   expect(getTranslationRun("run").detail).toContain("원문 연결은 완료하지 못해");
+});
+
+it("reports app-owned alignment failures and successful retries alongside the shell call identity", async () => {
+  const repo = fixture();
+  repo.submitAlignment.mockImplementationOnce(() => { throw new MunhaeError("invalid_submission", "원문 구간 중복 배정"); });
+  runtime.runAgentRuntime.mockImplementation(async (_a, request: AgentRunRequest, sink) => {
+    if (request.appTool?.env.MUNHAE_TOOL_COMMAND === "submit-translation") {
+      await submit(request, text);
+    } else {
+      const event = { type: "tool_call", runId: "run", agentId: "codex", at: new Date().toISOString(), name: "command_execution", id: "shell" };
+      sink({ ...event, state: "started" });
+      expect((await submit(request, alignment)).status).not.toBe(200);
+      sink({ ...event, state: "failed" });
+      await submit(request, alignment);
+      await finish(request);
+    }
+    return result();
+  });
+  await startTranslationRun(repo as unknown as ProjectRepo, config, { documentNodeId: "doc", agentId: "codex" }, sessions);
+  await done();
+  const activity = getTranslationRun("run").activity!;
+  expect(activity).toContainEqual(expect.objectContaining({ appTool: true, name: "submit-alignment", state: "failed", parentToolId: "alignment:shell", detail: expect.any(String) }));
+  expect(activity).toContainEqual(expect.objectContaining({ appTool: true, name: "submit-alignment", state: "completed" }));
+  expect(activity).toContainEqual(expect.objectContaining({ appTool: true, name: "finish-alignment", state: "completed" }));
 });

@@ -4,6 +4,8 @@ export type { ReadingAnalysisInput, ReadingAnalysisRun, ReadingAnalysisSuggestio
 import type { TermGlossarySelection } from "./term-glossary";
 import type { BillingStatus } from "./billing";
 export type { BillingStatus } from "./billing";
+import type { CommunityComment, CommunityFeed, CommunityPost, CommunityPostInput, CommunityReport, CommunityThread } from "./community";
+export type { CommunityCategory, CommunityComment, CommunityFeed, CommunityMember, CommunityPost, CommunityPostInput, CommunityReport, CommunityThread } from "./community";
 /**
  * Renderer ↔ preload ↔ main typed IPC contract.
  * Keep this file free of Node/Electron imports so the renderer can import types.
@@ -16,6 +18,7 @@ import type { MaterialOrigin, MaterialsView, SetMaterialPreferenceInput, ReuseCo
 export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
 
 import type { TermEntry, SaveTermInput } from "@munhae/db-sqlite";
+import type { TranslationSkill } from "@munhae/db-sqlite";
 import type { OnlineProject, CreateOnlineProjectInput, OnlineWorkspaceStatus, OpenOnlineProjectInput, ProjectChangeEvent } from "./online-projects";
 export type { OnlineProject, CreateOnlineProjectInput, OnlineWorkspaceStatus, OpenOnlineProjectInput, ProjectChangeEvent } from "./online-projects";
 export type { TermEntry, TermContent, SaveTermInput } from "@munhae/db-sqlite";
@@ -58,6 +61,19 @@ export const IPC_CHANNELS = {
   billingGetStatus: "munhae:billing:getStatus",
   billingOpenCheckout: "munhae:billing:openCheckout",
   billingOpenPortal: "munhae:billing:openPortal",
+
+  communityFeed: "munhae:community:feed",
+  communityThread: "munhae:community:thread",
+  communityCreatePost: "munhae:community:createPost",
+  communityUpdatePost: "munhae:community:updatePost",
+  communityDeletePost: "munhae:community:deletePost",
+  communityResolvePost: "munhae:community:resolvePost",
+  communityAddComment: "munhae:community:addComment",
+  communityDeleteComment: "munhae:community:deleteComment",
+  communitySetBookmark: "munhae:community:setBookmark",
+  communityReport: "munhae:community:report",
+  communityReports: "munhae:community:reports",
+  communityDismissReport: "munhae:community:dismissReport",
 
   projectChanged: "munhae:project:changed",
   projectCreate: "munhae:project:create",
@@ -135,6 +151,12 @@ export const IPC_CHANNELS = {
   knowledgeResolveUncertainty: "munhae:knowledge:resolveUncertainty",
 
   contextPreview: "munhae:context:preview",
+  pluginsList: "munhae:plugins:list",
+  pluginsInstall: "munhae:plugins:install",
+  pluginsRemove: "munhae:plugins:remove",
+  pluginsApply: "munhae:plugins:apply",
+  pluginsCatalog: "munhae:plugins:catalog",
+  pluginsInstallCatalog: "munhae:plugins:installCatalog",
   researchSearchFootnotes: "munhae:research:searchFootnotes",
   researchStartMaterialRefinement: "munhae:research:startMaterialRefinement",
   researchGetMaterialRefinement: "munhae:research:getMaterialRefinement",
@@ -448,6 +470,7 @@ export type EditorView = {
     validationState: "valid" | "needs_review";
     textContent: string;
     textLayout?: {
+      storageRevision?: string;
       state: "pending" | "running" | "ready" | "needs_review" | "failed";
       sentences: Array<{ id: string; from: number; to: number; text: string }>;
       links: Array<{ sentenceId: string; groupId?: string; spans: Array<{ from: number; to: number; quote: string }>; needsReview: boolean; reviewedBy?: "human" }>;
@@ -498,7 +521,9 @@ export type ConfirmPunctuationInput = {
 };
 
 export type SaveTranslationDraftInput = {
-  textGroups?: Array<{ id: string; text: string; spans: Array<{ from: number; to: number; quote: string }> }>;
+  textBaseVersionId?: string;
+  textBaseRevision?: string;
+  textGroups?: Array<{ id: string; from?: number; to?: number; text: string; spans: Array<{ from: number; to: number; quote: string }> }>;
 
   documentNodeId: string;
   textContent: string;
@@ -684,6 +709,16 @@ export type KnowledgeView = {
   contextItems: NodeContextView[];
 };
 
+export type { TranslationSkill };
+/** A SKILL.md kept in the app's plugin library on this device. */
+export type InstalledPlugin = TranslationSkill & { installedAt: string };
+export type PluginsView = {
+  installed: InstalledPlugin[];
+  /** Translation plugin stored in the open project; null means the bundled translate-document skill. */
+  applied: TranslationSkill | null;
+  projectOpen: boolean;
+};
+
 export type ContextPreview = {
   characterCount: number;
   utf8ByteCount: number;
@@ -773,7 +808,7 @@ export type PunctuationSuggestionApplyResult = Pick<
 
 export type AiCompletionStage = "chat" | "translation" | "alignment" | "punctuation";
 
-export type ChatActivityBlock = { kind: "text" | "thinking" | "tool"; text: string; id?: string; name?: string; state?: "started" | "completed" | "failed" };
+export type ChatActivityBlock = { kind: "text" | "thinking" | "tool"; text: string; id?: string; name?: string; state?: "started" | "completed" | "failed"; appTool?: boolean; parentToolId?: string; detail?: string };
 
 export type AiRunView = {
   /** Ordered, display-only activity for this run. */
@@ -1037,6 +1072,23 @@ export type MunhaeApi = {
     openCheckout(): Promise<IpcResult<void>>;
     openPortal(): Promise<IpcResult<void>>;
   };
+  /** The munhaestudio.com community, read and written as the signed-in account. */
+  community: {
+    feed(): Promise<IpcResult<CommunityFeed>>;
+    /** null when the post was deleted or is a private question of someone else. */
+    thread(postId: string): Promise<IpcResult<CommunityThread | null>>;
+    createPost(input: CommunityPostInput): Promise<IpcResult<CommunityPost>>;
+    updatePost(postId: string, input: CommunityPostInput): Promise<IpcResult<CommunityPost>>;
+    deletePost(postId: string): Promise<IpcResult<void>>;
+    resolvePost(postId: string, resolved: boolean): Promise<IpcResult<void>>;
+    addComment(postId: string, body: string): Promise<IpcResult<CommunityComment>>;
+    deleteComment(commentId: string): Promise<IpcResult<void>>;
+    setBookmark(postId: string, saved: boolean): Promise<IpcResult<void>>;
+    report(postId: string, reason: string): Promise<IpcResult<void>>;
+    /** Moderators only; RLS returns nothing to other accounts. */
+    reports(): Promise<IpcResult<CommunityReport[]>>;
+    dismissReport(reportId: string): Promise<IpcResult<void>>;
+  };
   dictionary: {
     search(input: DictionarySearchInput): Promise<IpcResult<DictionarySearchResult>>;
     getStatus(): Promise<IpcResult<DictionaryStatus>>;
@@ -1161,6 +1213,16 @@ export type MunhaeApi = {
   };
   context: {
     preview(input: ContextPreviewInput): Promise<IpcResult<ContextPreview>>;
+  };
+  plugins: {
+    list(): Promise<IpcResult<PluginsView>>;
+    install(): Promise<IpcResult<InstalledPlugin | null>>;
+    remove(name: string): Promise<IpcResult<void>>;
+    /** null restores the bundled translation skill for the open project. */
+    apply(name: string | null): Promise<IpcResult<TranslationSkill | null>>;
+    /** Recommended plugins published on the Munhae server. */
+    catalog(): Promise<IpcResult<TranslationSkill[]>>;
+    installCatalog(name: string): Promise<IpcResult<InstalledPlugin>>;
   };
   research: ReadingAnalysisApi & {
     startMaterialRefinement(input: MaterialRefinementInput): Promise<IpcResult<MaterialRefinementRun>>;

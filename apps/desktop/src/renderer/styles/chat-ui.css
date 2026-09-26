@@ -32,6 +32,8 @@
 .chat-composer .chat-scope-info { grid-column: 1 / -1; font-size: 10px; color: var(--muted); }
 .chat-scope-info summary { cursor: pointer; width: fit-content; }
 .chat-scope-info p,.chat-scope-info span { line-height: 1.6; margin: 5px 0 0; }
+#chatForm.chat-composer { gap: 6px !important; padding: 10px 12px 8px !important; }
+#chatForm.chat-composer textarea { min-height: 40px !important; }
 .chat-composer .chat-model-info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
 .chat-composer .chat-run-status:empty,.chat-composer #contextChatStatus:empty { display: none; }
 .chat-composer .chat-run-status { min-height: 0; font-size: 11px; }

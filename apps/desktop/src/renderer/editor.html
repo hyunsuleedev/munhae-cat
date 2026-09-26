@@ -113,7 +113,6 @@
             <span class="sp"></span>
             <button class="btn btn-ghost btn-sm editor-menu-trigger" id="btnEditorView" type="button" popovertarget="editorViewTools"><span data-i18n="보기">보기</span><span aria-hidden="true">⌄</span></button>
             <div class="editor-tool-popover" id="editorViewTools" popover aria-label="본문 보기 설정" data-i18n-aria-label="본문 보기 설정">
-              <button class="btn" id="btnReadingSize" type="button" aria-pressed="false" data-i18n="본문 크게 보기">본문 크게 보기</button>
               <label class="check editor-view-check"><input type="checkbox" id="chkWhitespace"><span data-i18n="공백·줄바꿈 표시">공백·줄바꿈 표시</span></label>
             </div>
             <span id="stateBadge" class="tag tag-draft" data-i18n="번역안">번역안</span><span id="validBadge" class="tag tag-plain">valid</span>
@@ -143,8 +142,10 @@
               </div>
             </div>
             <div class="editor-command-group editor-type-tools">
-              <button class="btn btn-ghost btn-sm" id="btnToolbarReadingSize" type="button" aria-pressed="false" aria-label="본문 크게 보기" data-i18n-aria-label="본문 크게 보기" title="본문 크게 보기" data-i18n-title="본문 크게 보기"><span class="reading-size-normal" aria-hidden="true">가</span><span class="reading-size-large" aria-hidden="true">가</span></button>
+              <button class="btn btn-ghost btn-sm reading-type-trigger" id="btnTranslationView" type="button" popovertarget="translationViewSettings" aria-expanded="false" aria-controls="translationViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
+              <div class="editor-tool-popover reading-type-settings" id="translationViewSettings" popover aria-label="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격"><div data-reading-type-fields="translation"></div></div>
             </div>
+            <div class="book-edit-toolbar" id="bookEditToolbar" role="group" hidden aria-label="선택한 번역 묶음 도구"><span class="book-group-position"></span><span class="book-edit-state" role="status"></span><div class="book-edit-actions"><button class="book-edit-button" type="button" data-edit-sentence=""><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg><span data-edit-caption>편집</span></button><span class="book-bookmark-indicator"></span><details class="book-group-menu"><summary aria-label="묶음 작업" title="묶음 작업"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary><div class="book-group-menu-items"></div></details></div></div>
             <div class="editor-command-actions" id="translationCommandActions">
               <button class="btn btn-sm" type="button" id="btnSaveFullTranslation" title="번역 저장 (⌘S)" hidden data-i18n-title="번역 저장 (⌘S)">번역 저장</button>
             </div>
@@ -169,10 +170,9 @@
                       <span class="tag tag-plain" id="sourceStateBadge">—</span>
                     </div>
                     <span class="sp"></span>
-                    <button class="btn btn-ghost btn-sm" id="btnSourceView" type="button" popovertarget="sourceViewSettings" aria-expanded="false" aria-controls="sourceViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
-                    <div class="editor-tool-popover" id="sourceViewSettings" popover aria-label="원문 보기 설정" data-i18n-aria-label="원문 보기 설정">
-                      <div class="field"><label for="sourceFontSize" data-i18n="글자 크기">글자 크기</label><select class="select" id="sourceFontSize"><option value="18">18 px</option><option value="20" selected>20 px</option><option value="22">22 px</option><option value="24">24 px</option></select></div>
-                      <div class="field"><label for="sourceLineHeight" data-i18n="줄 간격">줄 간격</label><select class="select" id="sourceLineHeight"><option value="1.7" data-i18n="좁게">좁게</option><option value="2" selected data-i18n="보통">보통</option><option value="2.2" data-i18n="넓게">넓게</option></select></div>
+                    <button class="btn btn-ghost btn-sm reading-type-trigger" id="btnSourceView" type="button" popovertarget="sourceViewSettings" aria-expanded="false" aria-controls="sourceViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
+                    <div class="editor-tool-popover reading-type-settings" id="sourceViewSettings" popover aria-label="원문 보기 설정" data-i18n-aria-label="원문 보기 설정">
+                      <div data-reading-type-fields="source"></div>
                     </div>
                     <div class="source-actions">
                       <button class="btn btn-ghost btn-sm" id="btnEditSource" type="button" hidden><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m10.5 2.5 3 3M3 10l7.5-7.5a2.12 2.12 0 0 1 3 3L6 13l-4 1z"></path></svg><span data-i18n="수정">수정</span></button>
@@ -194,11 +194,11 @@
                   <div class="punctuation-toolbar-tools" role="group" aria-label="표점 보기 설정" data-i18n-aria-label="표점 보기 설정">
                     <button class="btn btn-ghost btn-sm" id="btnPunctuationCompare" type="button" aria-pressed="true" aria-controls="punctuationSourcePane"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12v12H2ZM8 2v12"/></svg><span data-i18n="원문 대조">원문 대조</span></button>
                     <div id="punctuationDraftFields" title="글 형식은 표점과 함께 저장됩니다." data-i18n-title="글 형식은 표점과 함께 저장됩니다."><select class="select" id="punctuationMode" aria-label="글 형식" data-i18n-aria-label="글 형식" aria-describedby="documentFormHelp"><option value="prose" data-i18n="산문">산문</option><option value="poetry" data-i18n="운문">운문</option></select><span id="documentFormHelp" hidden data-i18n="글 형식은 표점과 함께 저장됩니다.">글 형식은 표점과 함께 저장됩니다.</span></div>
-                    <button class="btn btn-ghost btn-sm" id="btnPunctuationView" type="button" popovertarget="punctuationViewSettings" aria-expanded="false" aria-controls="punctuationViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
+                    <button class="btn btn-ghost btn-sm reading-type-trigger" id="btnPunctuationView" type="button" popovertarget="punctuationViewSettings" aria-expanded="false" aria-controls="punctuationViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
+                    <button class="btn btn-ghost btn-sm" id="btnPunctuationSegments" type="button" aria-pressed="false" aria-controls="punctuationSegments" hidden data-i18n="분절 표시">분절 표시</button>
                   </div>
-                  <div class="editor-tool-popover" id="punctuationViewSettings" popover aria-label="표점 보기 설정" data-i18n-aria-label="표점 보기 설정">
-                    <div class="field"><label for="punctuationFontSize" data-i18n="글자 크기">글자 크기</label><select class="select" id="punctuationFontSize"><option value="18">18 px</option><option value="20">20 px</option><option value="22">22 px</option><option value="24">24 px</option></select></div>
-                    <div class="field"><label for="punctuationLineHeight" data-i18n="줄 간격">줄 간격</label><select class="select" id="punctuationLineHeight"><option value="1.7" data-i18n="좁게">좁게</option><option value="1.9" selected data-i18n="보통">보통</option><option value="2.2" data-i18n="넓게">넓게</option></select></div>
+                  <div class="editor-tool-popover reading-type-settings" id="punctuationViewSettings" popover aria-label="표점 보기 설정" data-i18n-aria-label="표점 보기 설정">
+                    <div data-reading-type-fields="punctuation"></div>
                     <label class="check"><input id="punctuationSync" type="checkbox" checked><span data-i18n="대조 위치 함께 이동">대조 위치 함께 이동</span></label>
                   </div>
                   <div class="punctuation-toolbar-actions">
@@ -230,6 +230,8 @@
                           <button class="btn" id="btnCreatePunctuationDraft" type="button" data-i18n="확정 원문으로 표점안 만들기">확정 원문으로 표점안 만들기</button>
                         </div>
                         <textarea class="textarea hanmun draft-textarea" id="punctuationDraftText" spellcheck="false" placeholder="원문에 구두점을 추가하세요" aria-describedby="punctuationTextCount" data-i18n-placeholder="원문에 구두점을 추가하세요"></textarea>
+                        <span id="punctuationCaretMark" aria-hidden="true" hidden></span>
+                        <div id="punctuationSegments" aria-hidden="true" hidden><div id="punctuationSegmentsText" class="hanmun"></div><div id="punctuationSegmentMarks"></div></div>
                         <div class="punctuation-proposal" id="punctuationProposal" hidden>
                           <div class="punctuation-proposal-meta"><span class="tag tag-line" id="punctuationProposalState" data-i18n="원문 보존 확인 · 미적용">원문 보존 확인 · 미적용</span><span class="muted" id="punctuationProposalMeta"></span></div>
                           <p id="punctuationProposalHelp" data-i18n="현재 표점안은 아직 바뀌지 않았습니다.">현재 표점안은 아직 바뀌지 않았습니다.</p>
@@ -333,14 +335,14 @@
           <div class="rpanel is-open" id="rp-chat" role="tabpanel">
             <div class="chat-list" id="chatList"></div>
             <form class="chat-compose" id="chatForm">
+              <textarea class="textarea" id="chatInput" aria-label="AI에게 보낼 질문" data-i18n-aria-label="AI에게 보낼 질문" rows="1" placeholder="이 문서에 대해 질문하거나 검토를 요청하세요" data-i18n-placeholder="이 문서에 대해 질문하거나 검토를 요청하세요" aria-describedby="chatScopeNote"></textarea>
+              <div class="chat-run-status" id="chatRunStatus" role="status" aria-live="polite"></div>
               <div class="chat-agent-row">
                 <select class="select" id="chatScope" aria-label="채팅 범위" data-i18n-aria-label="채팅 범위"><option value="document_node" data-i18n="현재 문서">현재 문서</option><option value="project" data-i18n="프로젝트 전체">프로젝트 전체</option></select>
                 <span class="chat-model-info muted" id="chatModelInfo" role="status" aria-label="채팅 모델과 effort" data-i18n="설정 확인 중…" data-i18n-aria-label="채팅 모델과 effort">설정 확인 중…</span>
-                <details class="chat-scope-info"><summary data-i18n="참고하는 자료">참고하는 자료</summary><span class="muted chat-scope-note" id="chatScopeNote" data-i18n="현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.">현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.</span></details>
+                <span class="chat-scope-info" tabindex="0" role="note" aria-label="참고하는 자료" data-i18n-aria-label="참고하는 자료">ⓘ<span class="chat-scope-note" id="chatScopeNote" data-i18n="현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.">현재 문서의 원문·표점·현재 번역을 전송합니다. 번역 데이터는 변경하지 않습니다.</span></span>
+                <button class="btn btn-sm" id="chatCancel" type="button" hidden data-i18n="취소">취소</button><button class="btn btn-sm" id="chatSend" type="submit"><span data-i18n="보내기 ">보내기 </span><kbd>⌘↩</kbd></button>
               </div>
-              <textarea class="textarea" id="chatInput" aria-label="AI에게 보낼 질문" data-i18n-aria-label="AI에게 보낼 질문" style="min-height:56px" placeholder="이 문서에 대해 질문하거나 검토를 요청하세요" data-i18n-placeholder="이 문서에 대해 질문하거나 검토를 요청하세요"></textarea>
-              <div class="chat-run-status" id="chatRunStatus" role="status" aria-live="polite"></div>
-              <div class="row" style="justify-content:flex-end"><button class="btn btn-sm" id="chatCancel" type="button" hidden data-i18n="취소">취소</button><button class="btn btn-sm" id="chatSend" type="submit"><span data-i18n="보내기 ">보내기 </span><kbd>⌘↩</kbd></button></div>
             </form>
           </div>
           <div class="rpanel" id="rp-reading" role="tabpanel" aria-label="뜻풀이" data-i18n-aria-label="뜻풀이"></div>

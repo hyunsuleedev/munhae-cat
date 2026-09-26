@@ -1,3 +1,4 @@
+import { loadContent, projectContent } from "./translation-content.ts";
 import { getTableColumns } from "drizzle-orm";
 import { MunhaeError } from "@munhae/domain";
 import { schema } from "./drizzle-schema.ts";
@@ -8,7 +9,7 @@ export type OnlineTableData = Record<string, OnlineRow[]>;
 export type OnlineRowChange = { table: string; key: OnlineRow; before: OnlineRow | null; after: OnlineRow | null };
 export type OnlineTableMetadata = { name: string; columns: string[]; primaryKey: string[] };
 // reading_translation_links is display-only local research state; the v10 online row protocol does not carry it.
-const EXCLUDED = new Set(["meta_schema_migrations", "meta_project_state", "chat_agent_sessions", "reading_translation_links"]);
+const EXCLUDED = new Set(["meta_schema_migrations", "meta_project_state", "chat_agent_sessions", "reading_translation_links", "translation_groups", "translation_group_source_links", "translation_content_parts", "translation_content_revisions", "translation_content_snapshots"]);
 const COMPOSITE_KEYS: Record<string, string[]> = {
   material_preferences: ["project_id", "document_node_id", "source_kind", "source_id"],
   src_node_assets: ["document_node_id", "asset_id", "ordinal"],
@@ -117,6 +118,13 @@ function normalizeRow(table: string, source: OnlineRow): OnlineRow | null {
 export function readOnlineRows(db: SqliteDb): OnlineTableData {
   return Object.fromEntries(ONLINE_TABLE_METADATA.map(table => {
     const rows = db.prepare(`SELECT ${table.columns.map(quote).join(",")} FROM ${quote(table.name)}`).all() as OnlineRow[];
+    if (table.name === "translation_text_layouts") for (const row of rows) {
+      const content = loadContent(db, String(row.version_id));
+      if (content && row.alignment_state !== "running") {
+        const projected = projectContent(content, { state: "ready", error: null });
+        row.sentences_json = JSON.stringify(projected.sentences); row.links_json = JSON.stringify(projected.links);
+      }
+    }
     return [table.name, rows.flatMap(row => { const normalized = normalizeRow(table.name, row); return normalized ? [normalized] : []; })];
   }));
 }
@@ -141,6 +149,8 @@ export function hydrateOnlineRows(db: SqliteDb, projectId: string, tables: Onlin
     db.pragma("defer_foreign_keys = ON");
     for (const trigger of triggers) db.exec(`DROP TRIGGER ${quote(trigger.name)}`);
     db.exec("DELETE FROM chat_agent_sessions");
+    // The server protocol owns its legacy projection; local entity caches are rebuilt on local editing.
+    for (const name of ["translation_content_snapshots", "translation_content_revisions", "translation_content_parts", "translation_group_source_links", "translation_groups"]) db.exec(`DELETE FROM ${quote(name)}`);
     for (const table of ONLINE_TABLE_METADATA) db.exec(`DELETE FROM ${quote(table.name)}`);
     for (const table of ONLINE_TABLE_METADATA) {
       const insert = db.prepare(`INSERT INTO ${quote(table.name)} (${table.columns.map(quote).join(",")}) VALUES (${table.columns.map(() => "?").join(",")})`);

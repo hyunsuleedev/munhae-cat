@@ -1,3 +1,4 @@
+import { loadContent, projectContent } from "./translation-content.ts";
 import { MunhaeError, nowIso, sliceCodepoints } from "@munhae/domain";
 import { and, eq, isNull } from "drizzle-orm";
 import { orm } from "./drizzle-db.ts";
@@ -62,8 +63,10 @@ function pairsFor(db: SqliteDb, item: Translation): Pair[] {
     .get();
   if (layout) {
     try {
-      const sentences = JSON.parse(layout.sentences_json) as unknown;
-      const links = JSON.parse(layout.links_json) as unknown;
+      const content = loadContent(db, item.version_id);
+      const projected = content ? projectContent(content, { state: "ready", error: null }) : null;
+      const sentences = projected?.sentences ?? JSON.parse(layout.sentences_json) as unknown;
+      const links = projected?.links ?? JSON.parse(layout.links_json) as unknown;
       if (!Array.isArray(sentences) || !Array.isArray(links) || !sentences.length) return unlinked(item.translation);
       let end = 0;
       const ids = new Set<string>();

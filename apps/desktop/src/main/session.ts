@@ -89,7 +89,7 @@ const RETRYABLE_SAVE_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.knowledgeSetMaterialPreference, IPC_CHANNELS.knowledgeReuseCommentAsMaterial, IPC_CHANNELS.knowledgeUpsertGlossary,
   IPC_CHANNELS.knowledgeCreateContext, IPC_CHANNELS.knowledgeUpdateContext, IPC_CHANNELS.knowledgeSetContextEnabled,
   IPC_CHANNELS.knowledgeSetContextPriority, IPC_CHANNELS.knowledgeDeleteContext, IPC_CHANNELS.knowledgeCreateUncertainty,
-  IPC_CHANNELS.knowledgeVersionUncertainty, IPC_CHANNELS.knowledgeResolveUncertainty,
+  IPC_CHANNELS.knowledgeVersionUncertainty, IPC_CHANNELS.knowledgeResolveUncertainty, IPC_CHANNELS.pluginsApply,
   IPC_CHANNELS.termsSave, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsPromote, IPC_CHANNELS.termsStart, IPC_CHANNELS.termsCancel,
   IPC_CHANNELS.aiStartTranslation, IPC_CHANNELS.aiStartChat, IPC_CHANNELS.aiStartPunctuation, IPC_CHANNELS.aiApplyPunctuationSuggestion,
   IPC_CHANNELS.aiCancelRun, IPC_CHANNELS.researchStartMaterialRefinement, IPC_CHANNELS.researchCancelMaterialRefinement,
@@ -733,6 +733,27 @@ export async function pickTextFile(): Promise<string | null> {
   if (st.size > 20_000_000) {
     throw new AppError("too_large", "파일이 20MB를 넘습니다.");
   }
+  return readFileSync(path, "utf8");
+}
+
+export function pluginLibraryDir(): string {
+  return join(state.userDataDir, "plugins");
+}
+
+/** A plugin is a SKILL.md file, or a folder that contains one. */
+export async function pickSkillFile(): Promise<string | null> {
+  const result = await openDialog({
+    title: "플러그인 가져오기",
+    message: "SKILL.md 파일이나 SKILL.md가 들어 있는 폴더를 선택하세요.",
+    buttonLabel: "가져오기",
+    properties: process.platform === "darwin" ? ["openFile", "openDirectory"] : ["openFile"],
+    filters: [{ name: "SKILL.md", extensions: ["md"] }],
+  });
+  const picked = result.filePaths[0];
+  if (result.canceled || !picked) return null;
+  const path = statSync(picked).isDirectory() ? join(picked, "SKILL.md") : picked;
+  if (!existsSync(path)) throw new AppError("not_found", "선택한 폴더에 SKILL.md가 없습니다.");
+  if (statSync(path).size > 1_000_000) throw new AppError("too_large", "SKILL.md가 1MB를 넘습니다.");
   return readFileSync(path, "utf8");
 }
 

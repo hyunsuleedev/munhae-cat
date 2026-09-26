@@ -1,3 +1,4 @@
+import { loadContent, projectContent } from "./translation-content.ts";
 import { MunhaeError } from "@munhae/domain";
 import { and, desc, eq, isNull, notExists, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
@@ -329,6 +330,11 @@ export function searchConcordance(db: SqliteDb, projectId: string, input: Concor
     // parameterized query through the same connection instead of loading every
     // matching document before the result limit can stop the search.
     for (const row of db.prepare(statement.sql).iterate(...statement.params) as Iterable<Row>) {
+      const content = row.translation_id ? loadContent(db, row.translation_id) : null;
+      if (content) {
+        const projected = projectContent(content, { state: "ready", error: null });
+        row.sentences_json = JSON.stringify(projected.sentences); row.links_json = JSON.stringify(projected.links);
+      }
       for (const result of pairs(row, query, scope)) {
         if (results.length === limit) return { query, scope, state, results, hasMore: true };
         results.push(result);

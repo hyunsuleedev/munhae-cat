@@ -1,3 +1,4 @@
+import { isHanmunWhitespaceGap } from "@munhae/domain/hanmun-segmentation";
 import { and, eq, ne, isNull, inArray, sql, getTableColumns } from "drizzle-orm";
 import { orm } from "./drizzle-db.ts";
 import { schema as tables } from "./drizzle-schema.ts";
@@ -11,6 +12,7 @@ import * as fullText from "./full-text.ts";
 import * as materials from "./materials.ts";
 import type { MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "./views.ts";
 import * as reviewComments from "./review-comments.ts";
+import { parseTranslationSkill, readProjectTranslationSkill, writeProjectTranslationSkill, type TranslationSkill } from "./translation-skill.ts";
 import * as readingAnnotations from "./reading-annotations.ts";
 import type { SaveReadingAnnotationInput, ReadingAnnotationCasInput } from "./reading-annotations.ts";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -36,6 +38,7 @@ import {
   insertPunctuationVersionWithAnchors,
   insertSourceLayer,
   prepareStructureSpans,
+  punctuationSegmentationVersion,
   punctuationSpanKind,
   validatePunctuationText,
 } from "./source-layer.ts";
@@ -246,6 +249,8 @@ const WORKSPACE_OPERATIONS = {
   createUncertaintyVersion: true,
   resolveUncertainty: true,
   previewContext: false,
+  getTranslationSkill: false,
+  setTranslationSkill: true,
   listReviewComments: false,
   saveSentenceLink: true,
   createReviewComment: true,
@@ -1237,6 +1242,7 @@ export class ProjectRepo {
         punctuation.currentPunctuatedText,
         punctuation.structureMode,
         storedSpans,
+        punctuation.segmentationVersion,
       );
       ensureTranslationAnchorsForPunctuationVersion({
         db: this.db,
@@ -1463,7 +1469,12 @@ export class ProjectRepo {
 
   saveTranslationDraft(input: SaveTranslationDraftInput): EditorView {
     if (this.getEditor(input.documentNodeId).translation?.textLayout) {
-      fullText.saveText(this.fullTextContext(), input.documentNodeId, input.textContent ?? "", requirePositiveLockVersion(input.expectedLockVersion), input.textGroups);
+      if (input.textBaseVersionId !== undefined || input.textBaseRevision !== undefined) {
+        if (!input.textBaseVersionId || !input.textBaseRevision || !input.textGroups) throw new MunhaeError("invalid_input", "묶음 저장에는 기준 버전과 묶음 정보가 필요합니다");
+        fullText.saveContentDraft(this.fullTextContext(), input.documentNodeId, input.textContent, input.textGroups.map(g => ({ ...g, from: g.from!, to: g.to! })), input.textBaseVersionId, input.textBaseRevision);
+      } else {
+        fullText.saveText(this.fullTextContext(), input.documentNodeId, input.textContent ?? "", requirePositiveLockVersion(input.expectedLockVersion), input.textGroups);
+      }
       return this.getEditor(input.documentNodeId);
     }
     const expectedLockVersion = requirePositiveLockVersion(input.expectedLockVersion);
@@ -1889,11 +1900,19 @@ export class ProjectRepo {
   }
 
   private fullTextContext() {
-    return { db:this.db, actors:this.actors, policyVersionId:this.policyVersionId, projectId:this.projectId,
+    return { db:this.db, actors:this.actors, policyVersionId:this.policyVersionId, projectId:this.projectId, localContent: this.summary().storageMode === "local",
       getEditor:(id:string)=>this.getEditor(id), getHome:()=>this.getHome(), getKnowledge:()=>this.getKnowledge() };
   }
 
   previewContext(input: ContextPreviewInput): fullText.FullTextPreview { return fullText.previewText(this.fullTextContext(), input); }
+
+  getTranslationSkill(): TranslationSkill | null { return readProjectTranslationSkill(this.db, this.projectId); }
+  /** null restores the bundled translate-document skill. */
+  setTranslationSkill(content: string | null): TranslationSkill | null {
+    const skill = content === null ? null : parseTranslationSkill(content);
+    writeProjectTranslationSkill(this.db, this.projectId, skill);
+    return skill;
+  }
 
   listReviewComments(documentNodeId: string) { return reviewComments.listReviewComments(this.fullTextContext(), documentNodeId); }
   saveSentenceLink(input: SaveSentenceLinkInput): EditorView {
@@ -2756,6 +2775,7 @@ export class ProjectRepo {
       currentPunctuatedText: row.punctuated_text,
       sourceVersionId: row.source_text_version_id,
       structureMode: structureModeFromJson(row.structure_json),
+      segmentationVersion: punctuationSegmentationVersion(row.structure_json),
     };
   }
 
@@ -2852,6 +2872,7 @@ export class ProjectRepo {
         source_text_version_id: tables.punctuation_versions.source_text_version_id,
         source_text: tables.src_text_versions.content_text,
         punctuated_text: tables.punctuation_versions.punctuated_text,
+        structure_json: tables.punctuation_versions.structure_json,
         set_source_version_id:
           tables.translation_anchor_sets.source_text_version_id,
       })
@@ -2882,6 +2903,10 @@ export class ProjectRepo {
       .orderBy(sql`${tables.translation_anchors.ordinal}`)
       .all();
     if (!anchors.length) throw new MunhaeError("invalid_anchor_set", "번역 앵커가 비어 있습니다");
+    const modern = punctuationSegmentationVersion(dependency.structure_json) === 2;
+    const punctuationPoints = Array.from(dependency.punctuated_text);
+    const sourcePoints = Array.from(dependency.source_text);
+    const validGap = (points: string[], from: number, to: number) => modern ? isHanmunWhitespaceGap(points, from, to) : from === to;
     let punctuationCursor = 0;
     let sourceCursor = 0;
     anchors.forEach((anchor, index) => {
@@ -2900,8 +2925,8 @@ export class ProjectRepo {
       );
       if (
         anchor.required !== 1 ||
-        anchor.punctuation_codepoint_from !== punctuationCursor ||
-        anchor.source_codepoint_from !== sourceCursor ||
+        !validGap(punctuationPoints, punctuationCursor, anchor.punctuation_codepoint_from) ||
+        !validGap(sourcePoints, sourceCursor, anchor.source_codepoint_from) ||
         punctuatedQuote !== anchor.punctuated_quote ||
         sha256Hex(punctuatedQuote) !== anchor.punctuated_quote_hash ||
         sourceQuote !== anchor.source_quote ||
@@ -2927,8 +2952,8 @@ export class ProjectRepo {
       sourceCursor = anchor.source_codepoint_to;
     });
     if (
-      punctuationCursor !== codepointCount(dependency.punctuated_text) ||
-      sourceCursor !== codepointCount(dependency.source_text)
+      !validGap(punctuationPoints, punctuationCursor, punctuationPoints.length) ||
+      !validGap(sourcePoints, sourceCursor, sourcePoints.length)
     ) {
       throw new MunhaeError("invalid_anchor_set", "required 번역 앵커가 원문 전체를 덮지 않습니다");
     }
@@ -3609,6 +3634,7 @@ type SourceCtx = {
 };
 
 type PunctuationCtx = {
+  segmentationVersion: 1 | 2;
   punctuationSetId: string;
   currentVersionId: string;
   confirmedVersionId: string | null;

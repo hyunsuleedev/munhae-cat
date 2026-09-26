@@ -1,0 +1,8 @@
+{
+  "plugins": [
+    { "name": "sillok-style", "published": true },
+    { "name": "hansi-verse", "published": true },
+    { "name": "plain-korean", "published": true },
+    { "name": "english-academic", "published": true }
+  ]
+}

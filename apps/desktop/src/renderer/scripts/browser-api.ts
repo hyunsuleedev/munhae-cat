@@ -26,6 +26,20 @@ export function createBrowserApi(): MunhaeApi {
       openCheckout: () => invoke(IPC_CHANNELS.billingOpenCheckout),
       openPortal: () => invoke(IPC_CHANNELS.billingOpenPortal),
     },
+    community: {
+      feed: () => invoke(IPC_CHANNELS.communityFeed),
+      thread: (postId) => invoke(IPC_CHANNELS.communityThread, postId),
+      createPost: (input) => invoke(IPC_CHANNELS.communityCreatePost, input),
+      updatePost: (postId, input) => invoke(IPC_CHANNELS.communityUpdatePost, postId, input),
+      deletePost: (postId) => invoke(IPC_CHANNELS.communityDeletePost, postId),
+      resolvePost: (postId, resolved) => invoke(IPC_CHANNELS.communityResolvePost, postId, resolved),
+      addComment: (postId, body) => invoke(IPC_CHANNELS.communityAddComment, postId, body),
+      deleteComment: (commentId) => invoke(IPC_CHANNELS.communityDeleteComment, commentId),
+      setBookmark: (postId, saved) => invoke(IPC_CHANNELS.communitySetBookmark, postId, saved),
+      report: (postId, reason) => invoke(IPC_CHANNELS.communityReport, postId, reason),
+      reports: () => invoke(IPC_CHANNELS.communityReports),
+      dismissReport: (reportId) => invoke(IPC_CHANNELS.communityDismissReport, reportId),
+    },
     dictionary: {
       search: (input) => invoke(IPC_CHANNELS.dictionarySearch, input),
       getStatus: () => invoke(IPC_CHANNELS.dictionaryGetStatus),
@@ -166,6 +180,14 @@ export function createBrowserApi(): MunhaeApi {
     },
     context: {
       preview: (input) => invoke(IPC_CHANNELS.contextPreview, input),
+    },
+    plugins: {
+      list: () => invoke(IPC_CHANNELS.pluginsList),
+      install: () => invoke(IPC_CHANNELS.pluginsInstall),
+      remove: (name) => invoke(IPC_CHANNELS.pluginsRemove, name),
+      apply: (name) => invoke(IPC_CHANNELS.pluginsApply, name),
+      catalog: () => invoke(IPC_CHANNELS.pluginsCatalog),
+      installCatalog: (name) => invoke(IPC_CHANNELS.pluginsInstallCatalog, name),
     },
     ai: {
       startTranslation: (input) => invoke(IPC_CHANNELS.aiStartTranslation, input),

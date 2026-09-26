@@ -205,7 +205,7 @@ it("upgrades v5 once with a consistent backup and leaves existing project data u
     assertSqliteIntegrity(backup);
   } finally { backup.close(); }
   inspect(reopened, check => {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 11 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
     expect(Object.fromEntries(tables.map(table => [table, check.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()]))).toEqual(oldRows);
     assertSqliteIntegrity(check);
   });

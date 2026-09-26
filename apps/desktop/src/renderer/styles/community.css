@@ -1,0 +1,56 @@
+/* Community reuses the materials hub: list on the left, reading pane on the right. */
+.community-hub #split { grid-template-columns: minmax(300px, 1fr) minmax(360px, 1.25fr); }
+.community-hub #q { width: 220px; flex: 0 1 220px; }
+.community-hub #sort { width: auto; flex: 0 0 auto; }
+.community-heading-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.community-row { margin-bottom: 2px; }
+.community-row-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.community-row-title { display: block; font-size: 13px; line-height: 1.7; font-weight: 600; margin-top: 6px; overflow-wrap: anywhere; }
+.community-row-excerpt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-size: 12px; line-height: 1.8; color: var(--muted); margin-top: 3px; }
+
+.community-skeleton { pointer-events: none; }
+.community-row.community-skeleton:hover { background: transparent; }
+.community-skeleton-bar { display: block; height: 9px; margin-top: 10px; border-radius: 3px; background: var(--fg-soft); animation: community-skeleton 1.6s ease-in-out infinite; }
+.community-skeleton-bar.is-tag { height: 18px; margin-top: 0; border-radius: 4px; }
+.community-skeleton-bar.is-title { height: 12px; margin-top: 14px; }
+.community-skeleton-bar.is-meta { height: 8px; margin-top: 16px; }
+.community-skeleton-bar.is-heading { height: 22px; margin-top: 16px; }
+.community-skeleton-bar.is-body { margin-top: 26px; }
+.community-skeleton-bar.is-block { height: 72px; margin-top: 28px; border-radius: 4px; }
+@keyframes community-skeleton { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .community-skeleton-bar { animation: none; } }
+
+.community-meta { font-size: 11px; color: var(--muted); margin: -4px 0 16px; }
+.community-body { margin-bottom: 4px; }
+.community-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.community-prompt { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); font: 11.5px/1.7 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.community-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 16px; }
+.community-tags .tag { cursor: pointer; }
+.community-tags .tag:hover { color: var(--fg); border-color: var(--ctl-border); }
+
+.community-comment { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.community-comment:first-of-type { padding-top: 0; }
+.community-comment-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.community-comment-meta strong { color: var(--fg); font-weight: 600; }
+.community-comment-meta .btn { margin-left: auto; }
+.community-comment .material-body { font-size: 12.5px; line-height: 1.85; }
+.community-comment-form { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.community-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+.community-muted { font-size: 11.5px; color: var(--muted); line-height: 1.7; }
+.community-error { font-size: 11.5px; color: var(--danger); }
+.community-error:empty, .community-muted:empty { display: none; }
+
+.community-form { display: flex; flex-direction: column; gap: 12px; }
+.community-form [hidden] { display: none !important; }
+.community-form [data-for] { display: flex; flex-direction: column; gap: 12px; }
+.community-form .field label small { color: var(--muted); font-size: 10.5px; margin-left: 2px; }
+.community-field-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 10px; }
+.community-form .textarea.hanmun { font-family: var(--font-hanmun); font-size: 14px; }
+.community-mono { font-family: var(--font-mono); font-size: 11.5px; }
+
+.community-reports { max-height: min(60vh, 520px); overflow: auto; }
+.community-report { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.community-report:first-child { padding-top: 0; }
+.community-report strong { font-size: 12.5px; }

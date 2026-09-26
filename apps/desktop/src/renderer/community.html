@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
+<title data-i18n="커뮤니티 — 문해 Munhae Studio">커뮤니티 — 문해 Munhae Studio</title>
+<link rel="stylesheet" href="./styles/tokens.css">
+<link rel="stylesheet" href="./styles/chrome.css">
+<link rel="stylesheet" href="./styles/knowledge.css">
+<link rel="stylesheet" href="./styles/community.css">
+<script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
+</head>
+<body data-auth-pending class="materials-hub community-hub">
+
+<div class="win" id="win" data-od-id="app-window">
+  <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색" data-i18n-aria-label="탐색">
+    <div class="sb-top"><div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div></div>
+    <div class="sb-scroll" id="sbTree"></div>
+    <div class="sb-foot"><a class="sb-account" href="settings.html#account" aria-label="계정 설정 열기" data-i18n-aria-label="계정 설정 열기"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><circle cx="8" cy="5" r="2.5"/><path d="M3 14v-1a5 5 0 0 1 10 0v1"/></svg><span class="sb-account-label" data-i18n="문해 계정">문해 계정</span></a></div>
+  </aside>
+
+  <div class="main">
+    <header class="titlebar" data-od-id="titlebar">
+      <div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" data-i18n-title="사이드바 (⌃⌘S)" aria-label="사이드바 토글" data-i18n-aria-label="사이드바 토글"></button></div>
+      <div class="tb-c"><span data-i18n="커뮤니티">커뮤니티</span></div>
+      <div class="tb-r"></div>
+    </header>
+
+    <div class="content materials-content">
+      <header class="materials-heading">
+        <div class="materials-title-row">
+          <div class="materials-title-group">
+            <h1 data-i18n="커뮤니티">커뮤니티</h1>
+            <p class="materials-project" id="communityMember"></p>
+          </div>
+          <div class="community-heading-actions">
+            <button class="btn" id="btnReports" type="button" hidden data-i18n="신고 관리">신고 관리</button>
+            <button class="btn btn-primary" id="btnCompose" type="button" disabled data-i18n="글 쓰기">글 쓰기</button>
+          </div>
+        </div>
+      </header>
+      <div class="scope" id="scopeBar">
+        <input class="input" id="q" type="search" placeholder="구절·주제·태그 검색" aria-label="커뮤니티 글 검색" data-i18n-placeholder="구절·주제·태그 검색" data-i18n-aria-label="커뮤니티 글 검색">
+        <div class="seg" id="categorySeg" role="tablist" aria-label="글 분류" data-i18n-aria-label="글 분류"></div>
+        <span class="sp"></span>
+        <select class="select" id="sort" aria-label="글 정렬" data-i18n-aria-label="글 정렬">
+          <option value="newest" data-i18n="최신순">최신순</option>
+          <option value="oldest" data-i18n="오래된순">오래된순</option>
+          <option value="comments" data-i18n="댓글 많은순">댓글 많은순</option>
+        </select>
+      </div>
+
+      <div class="split" id="split">
+        <div class="tbl-wrap">
+          <div id="postList" class="community-list" aria-busy="true" aria-label="커뮤니티 글" data-i18n-aria-label="커뮤니티 글"></div>
+        </div>
+        <aside class="insp" id="insp" aria-label="글 내용" data-i18n-aria-label="글 내용">
+          <div id="detail" class="materials-detail"></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <footer class="statusbar" data-od-id="statusbar">
+    <span data-i18n="munhaestudio.com 커뮤니티와 같은 글과 의견">munhaestudio.com 커뮤니티와 같은 글과 의견</span>
+    <span class="sp"></span>
+    <span id="communityCount"></span>
+    <button id="sbPalette" type="button" title="명령 검색" data-i18n-title="명령 검색">⌘K</button>
+  </footer>
+</div>
+
+<dialog id="dlgCommunity" aria-labelledby="dlgCommunityTitle"></dialog>
+
+<div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle" data-i18n="문해">문해</b><span id="nMsg"></span></div></div>
+
+<dialog id="dlgPalette" class="palette" data-od-id="command-palette">
+  <input class="input" id="palIn" placeholder="명령 검색…" data-i18n-placeholder="명령 검색…" aria-label="명령 검색" data-i18n-aria-label="명령 검색">
+  <div class="pl-list" id="palList"></div>
+</dialog>
+
+</body>
+</html>

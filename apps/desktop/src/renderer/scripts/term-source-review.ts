@@ -4,6 +4,8 @@ import { esc, ICONS, notify } from "./shared";
 import { termHits, termSegments, type TermHit } from "./term-highlights";
 import { currentTermQuotes, nextReviewTerm, sourceOrderedTerms, termIsStale, termReviewProgress, termSaveValue } from "./term-review-model";
 import { configureTermSourceResize } from "./term-source-resize";
+import { t } from "./i18n";
+import { readingTypeFields } from "./reading-type";
 import "../styles/term-source-review.css";
 
 const kinds: Record<TermEntry["kind"], string> = { person: "인물", place: "장소", office: "관직", institution: "제도", work: "작품", object: "사물", concept: "개념", allusion: "전고", expression: "표현" };
@@ -18,7 +20,6 @@ export function configureTermSourceReview(options: { api: MunhaeApi; host: HTMLE
   let selectedId: string | null = null, occurrence = 0, draft: Draft | null = null, saving = false;
   let showMarks = true, mobileTerms = false, error = "", chooser: string[] = [];
   let scope = "", comparing = false, quoteChoices: string[] = [], checkedQuotes = new Set<string>();
-  let fontSize = "21", lineHeight = "2.1";
   const popoverId = `${options.host.id || "terms"}-reading-settings`;
   const menuId = `${options.host.id || "terms"}-entry-actions`;
   const active = () => entries.find(entry => entry.id === selectedId);
@@ -206,8 +207,6 @@ export function configureTermSourceReview(options: { api: MunhaeApi; host: HTMLE
   options.host.addEventListener("change", event => {
     const input = event.target as HTMLInputElement;
     if (input.matches("[data-linked-marks]")) { showMarks = input.checked; root?.classList.toggle("hide-marks", !showMarks); }
-    if (input.matches("[data-linked-font]")) { fontSize = input.value; options.host.style.setProperty("--term-font-size", `${fontSize}px`); }
-    if (input.matches("[data-linked-leading]")) { lineHeight = input.value; options.host.style.setProperty("--term-line-height", lineHeight); }
     if (input.dataset.linkedQuote !== undefined) {
       const quote = quoteChoices[Number(input.dataset.linkedQuote)]; if (!quote || saving) return;
       if (input.checked) checkedQuotes.add(quote); else checkedQuotes.delete(quote);
@@ -227,7 +226,7 @@ export function configureTermSourceReview(options: { api: MunhaeApi; host: HTMLE
       const list = root?.querySelector<HTMLElement>("[data-linked-list]");
       if (list) list.scrollTop = 0;
     },
-    toolbarControls: () => `<div class="term-toolbar-group"><label class="term-toolbar-toggle"><input type="checkbox" data-linked-marks ${showMarks ? "checked" : ""}>용어 표시</label></div><div class="term-toolbar-group"><button class="btn btn-ghost btn-sm term-reading-trigger" type="button" popovertarget="${popoverId}" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button><div class="editor-tool-popover term-reading-settings" id="${popoverId}" popover><label>글자 크기<select data-linked-font>${[18, 21, 24, 27].map(size => `<option value="${size}" ${fontSize === String(size) ? "selected" : ""}>${size} px</option>`).join("")}</select></label><label>줄 간격<select data-linked-leading>${[["1.8", "좁게"], ["2.1", "보통"], ["2.5", "넓게"]].map(([value, label]) => `<option value="${value}" ${value === lineHeight ? "selected" : ""}>${label}</option>`).join("")}</select></label></div></div>`,
+    toolbarControls: () => `<div class="term-toolbar-group"><label class="term-toolbar-toggle"><input type="checkbox" data-linked-marks ${showMarks ? "checked" : ""}>용어 표시</label></div><div class="term-toolbar-group"><button class="btn btn-ghost btn-sm reading-type-trigger term-reading-trigger" type="button" popovertarget="${popoverId}" aria-label="${t("글자 크기와 줄 간격")}" title="${t("글자 크기와 줄 간격")}"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button><div class="editor-tool-popover reading-type-settings term-reading-settings" id="${popoverId}" popover>${readingTypeFields(popoverId)}</div></div>`,
     render(target: HTMLElement, nextView: EditorView, filtered: TermEntry[], all: TermEntry[]) {
       const scroll = root?.querySelector("[data-linked-source]")?.scrollTop ?? 0;
       const listScroll = root?.querySelector("[data-linked-list]")?.scrollTop ?? 0;

@@ -96,6 +96,8 @@ import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
 import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
 import { ONLINE_PROJECT_CHANNELS, dispatchOnlineProject } from "./online-project-handlers";
 import { BILLING_CHANNELS, dispatchBilling } from "./billing-handlers";
+import { COMMUNITY_CHANNELS, dispatchCommunity } from "./community";
+import { PLUGIN_CHANNELS, dispatchPlugin } from "./plugins";
 import { leaveOnlineWorkspace } from "./session";
 
 const runtimeSessionStore = {
@@ -159,6 +161,9 @@ export function registerIpcHandlers(): void {
   for (const channel of BILLING_CHANNELS) {
     handleResult(channel, () => dispatchBilling(channel));
   }
+  for (const channel of COMMUNITY_CHANNELS) {
+    handleResult(channel, (_event, ...args) => dispatchCommunity(channel, args));
+  }
   for (const channel of ONLINE_PROJECT_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchOnlineProject(channel, input));
   }
@@ -170,6 +175,9 @@ export function registerIpcHandlers(): void {
   }
   for (const channel of READING_ANNOTATION_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchReadingAnnotation(channel, input));
+  }
+  for (const channel of PLUGIN_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchPlugin(channel, input));
   }
   handleResult(IPC_CHANNELS.dictionarySearch, (_event, input) => dictionarySearch(input));
   handleResult(IPC_CHANNELS.dictionaryGetStatus, () => dictionaryGetStatus());

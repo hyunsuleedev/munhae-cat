@@ -83,6 +83,7 @@ export default defineConfig({
           uncertainty: resolve(rendererRoot, "uncertainty.html"),
           context: resolve(rendererRoot, "context.html"),
           settings: resolve(rendererRoot, "settings.html"),
+          community: resolve(rendererRoot, "community.html"),
           account: resolve(rendererRoot, "account.html"),
         },
       },

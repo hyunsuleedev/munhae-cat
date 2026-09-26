@@ -602,6 +602,49 @@ const translation_blocks = sqliteTable("translation_blocks", {
   validation_state: text("validation_state", { enum: ["valid","needs_review"] }).notNull(),
 });
 
+const translation_content_parts = sqliteTable("translation_content_parts", {
+  id: text("id").primaryKey().notNull(),
+  document_translation_id: text("document_translation_id").notNull(),
+  group_id: text("group_id"),
+  part_kind: text("part_kind", { enum: ["text","whitespace"] }).notNull(),
+  order_key: text("order_key").notNull(),
+  content: text("content").notNull(),
+  revision: integer("revision").notNull(),
+  deleted_at: text("deleted_at"),
+});
+
+const translation_content_revisions = sqliteTable("translation_content_revisions", {
+  id: text("id").primaryKey().notNull(),
+  document_translation_id: text("document_translation_id").notNull(),
+  entity_id: text("entity_id").notNull(),
+  entity_kind: text("entity_kind", { enum: ["group","part"] }).notNull(),
+  revision: integer("revision").notNull(),
+  value_json: text("value_json").notNull(),
+});
+
+const translation_content_snapshots = sqliteTable("translation_content_snapshots", {
+  version_id: text("version_id").primaryKey().notNull(),
+  group_revisions_json: text("group_revisions_json").notNull(),
+  part_revisions_json: text("part_revisions_json").notNull(),
+});
+
+const translation_group_source_links = sqliteTable("translation_group_source_links", {
+  group_id: text("group_id").primaryKey().notNull(),
+  source_version_id: text("source_version_id").notNull(),
+  spans_json: text("spans_json").notNull(),
+});
+
+const translation_groups = sqliteTable("translation_groups", {
+  id: text("id").primaryKey().notNull(),
+  document_translation_id: text("document_translation_id").notNull(),
+  group_key: text("group_key").notNull(),
+  sentence_id: text("sentence_id").notNull(),
+  revision: integer("revision").notNull(),
+  needs_review: integer("needs_review").notNull(),
+  reviewed_by: text("reviewed_by"),
+  deleted_at: text("deleted_at"),
+});
+
 const translation_staleness = sqliteTable("translation_staleness", {
   id: text("id").primaryKey().notNull(),
   project_id: text("project_id").notNull(),
@@ -735,6 +778,11 @@ export const schema = {
   translation_anchors,
   translation_block_anchors,
   translation_blocks,
+  translation_content_parts,
+  translation_content_revisions,
+  translation_content_snapshots,
+  translation_group_source_links,
+  translation_groups,
   translation_staleness,
   translation_text_layouts,
   uncertainties,

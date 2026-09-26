@@ -746,7 +746,7 @@ describe("project chat ledger", () => {
 });
 
 describe("AI punctuation proposals", () => {
-  it("accepts an omitted trailing space and keeps source bytes and anchor coverage", () => {
+  it("accepts omitted whitespace, preserves source bytes, and anchors only content", () => {
     const sourceText = " \t天地玄黃\n宇宙洪荒〇𠀀 ";
     const { repo, db, document } = setup(sourceText);
     const before = repo.getEditor(document.id).source;
@@ -764,9 +764,17 @@ describe("AI punctuation proposals", () => {
     expect(draft.source).toEqual(before);
     const confirmed = repo.confirmPunctuation({ documentNodeId: document.id, expectedLockVersion: draft.punctuation!.lockVersion });
     expect(confirmed.source.contentText).toBe(sourceText);
-    const anchors = db.prepare(`SELECT source_quote FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`)
-      .all(confirmed.punctuation!.anchorSetId) as Array<{ source_quote: string }>;
-    expect(anchors.map((anchor) => anchor.source_quote).join("")).toBe(sourceText);
+    const anchors = db.prepare(`SELECT source_quote, source_codepoint_from, source_codepoint_to FROM translation_anchors WHERE anchor_set_id = ? ORDER BY ordinal`)
+      .all(confirmed.punctuation!.anchorSetId) as Array<{ source_quote: string; source_codepoint_from: number; source_codepoint_to: number }>;
+    expect(anchors.map(anchor => anchor.source_quote)).toEqual(["天地玄黃", "宇宙洪荒〇𠀀"]);
+    const points = Array.from(sourceText);
+    let cursor = 0;
+    for (const anchor of anchors) {
+      expect(points.slice(cursor, anchor.source_codepoint_from).join("").trim()).toBe("");
+      expect(points.slice(anchor.source_codepoint_from, anchor.source_codepoint_to).join("")).toBe(anchor.source_quote);
+      cursor = anchor.source_codepoint_to;
+    }
+    expect(points.slice(cursor).join("").trim()).toBe("");
   });
 
   it.each(["munhae.punctuation-suggest.v3", "munhae.punctuation-suggest.v4"])(

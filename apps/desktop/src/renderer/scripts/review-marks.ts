@@ -53,7 +53,8 @@ function markedText(text: string, intervals: readonly Interval[]): DocumentFragm
   return fragment;
 }
 
-const textStyleProperties = [
+/** Typography a textarea overlay must copy to wrap exactly like the field. */
+export const textStyleProperties = [
   "font-family", "font-size", "font-weight", "font-style", "font-stretch", "font-variant",
   "font-feature-settings", "font-variation-settings", "font-kerning", "font-optical-sizing",
   "line-height", "letter-spacing", "word-spacing", "text-align", "text-indent", "text-transform",
@@ -135,9 +136,26 @@ export function configureReviewMarks(rows: HTMLElement) {
     }
 
     const translationRanges = ranges.filter((range) => range.targetKind === "translation");
+    // Inline book text can span several groups and whitespace gaps. Validate
+    // the full quote, then decorate each intersecting fragment in place.
+    for (const body of rows.querySelectorAll<HTMLElement>("[data-review-translation-from]")) {
+      const raw = body.closest<HTMLElement>("#bookGroups")?.dataset.translationText ?? "";
+      const points = Array.from(raw), from = Number(body.dataset.reviewTranslationFrom), to = Number(body.dataset.reviewTranslationTo);
+      const text = body.textContent ?? "";
+      const intervals = translationRanges.flatMap(range => {
+        if (points.slice(range.codepointFrom, range.codepointTo).join("") !== range.quote) return [];
+        const start = Math.max(from, range.codepointFrom), end = Math.min(to, range.codepointTo);
+        return start < end ? [{ from: points.slice(from, start).join("").length, to: points.slice(from, end).join("").length, emphasized: range.emphasized }] : [];
+      });
+      const signature = JSON.stringify([text, intervals]);
+      if (sourceSignatures.get(body) === signature) continue;
+      if (intervals.length || body.querySelector(".review-range-mark")) body.replaceChildren(markedText(text, intervals));
+      sourceSignatures.set(body, signature);
+    }
     const sentenceById = new Map(sentences.map((sentence) => [sentence.id, sentence]));
     const retained = new Set<HTMLTextAreaElement>();
     for (const textarea of rows.querySelectorAll<HTMLTextAreaElement>(".sentence-edit[data-sentence-edit]")) {
+      if (textarea.hidden) continue;
       const sentence = sentenceById.get(textarea.dataset.sentenceEdit ?? "");
       if (!sentence || textarea.value !== normalizeNewlines(sentence.text)) continue;
       const intervals = localIntervals(sentence.text, sentence.from, translationRanges).map((range) => ({

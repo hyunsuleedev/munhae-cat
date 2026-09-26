@@ -1,3 +1,4 @@
+import { loadContent, projectContent } from "./translation-content.ts";
 import {
   canonicalJson,
   MunhaeError,
@@ -527,7 +528,11 @@ function loadConfirmedExportDocuments(db: SqliteDb, projectId: string, documentN
     translationPolicy: { versionId: row.policy_version_id, contentHash: row.policy_hash },
     blocks: loadHistoryBlocks(db, row.translation_version_id),
     ...(() => { const layout=orm(db).select({ alignment_state: layouts.alignment_state, sentences_json: layouts.sentences_json, links_json: layouts.links_json })
-      .from(layouts).where(eq(layouts.version_id, row.translation_version_id)).get(); return layout ? {alignment:{state:layout.alignment_state,sentences:JSON.parse(layout.sentences_json),links:JSON.parse(layout.links_json)}} : {}; })(),
+      .from(layouts).where(eq(layouts.version_id, row.translation_version_id)).get();
+      if (!layout) return {};
+      const content = loadContent(db, row.translation_version_id);
+      const projected = content ? projectContent(content, { state: layout.alignment_state, error: null }) : null;
+      return {alignment:{state:layout.alignment_state,sentences:projected?.sentences ?? JSON.parse(layout.sentences_json),links:projected?.links ?? JSON.parse(layout.links_json)}}; })(),
   }));
 }
 

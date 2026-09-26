@@ -19,6 +19,7 @@ const pages: Record<string, () => Promise<unknown>> = {
   "comments.html": () => import("./knowledge"),
   "uncertainty.html": () => import("./knowledge"),
   "settings.html": () => import("./settings"),
+  "community.html": () => import("./community"),
 };
 
 async function boot(): Promise<void> {

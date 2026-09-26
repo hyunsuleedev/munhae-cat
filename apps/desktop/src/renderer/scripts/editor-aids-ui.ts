@@ -22,6 +22,7 @@ type Context = {
 };
 type Deps = {
   root: HTMLElement; escape(text: unknown): string; notify(message: string, title?: string): void;
+  bookmarkRoot?: HTMLElement;
   context(): Context | null; capture(): TranslationDraft; restore(value: TranslationDraft): void;
   recovery(): EditorRecovery; restoreRecovery(value: EditorRecovery): void;
   position(): ReadingPosition; restorePosition(value: ReadingPosition): void;
@@ -143,7 +144,7 @@ export function configureEditorAids(deps: Deps) {
     const marked = isBookmarked(id), label = (number === undefined ? "" : `${number}. `) + (marked ? t("다시 볼 곳 표시 해제") : t("다시 볼 곳 표시"));
     return `<button class="btn btn-ghost btn-sm editor-bookmark${marked ? " is-marked" : ""}" type="button" data-editor-bookmark="${deps.escape(id)}" aria-pressed="${marked}" title="${label}" aria-label="${label}"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8v11l-4-2.8-4 2.8z"/></svg></button>`;
   }
-  deps.root.addEventListener("click", event => {
+  (deps.bookmarkRoot ?? deps.root).addEventListener("click", event => {
     const button = (event.target as Element).closest<HTMLButtonElement>("[data-editor-bookmark]");
     const c = deps.context(); if (!button || !c || !local) return;
     const id = button.dataset.editorBookmark!, sentence = c.sentences.find(s => s.id === id); if (!sentence) return;

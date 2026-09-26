@@ -164,7 +164,7 @@ it("undoes group boundaries after saving, and redo returns to the newly saved cl
       saved: value => { view.translation = value; } };
   `)(initial, groupedTextSentences);
   const original = editor.capture();
-  const merged = { ...structuredClone(original), sentences: [{ ...sentences[0]!, text, from: 0, to: Array.from(text).length }], links: [{ ...links[0]!, spans: links.flatMap(l => l.spans) }], structureDirty: true };
+  const merged = { ...structuredClone(original), sentences: [{ ...sentences[0]!, text: text.trim(), from: 0, to: Array.from(text.trim()).length }], links: [{ ...links[0]!, spans: links.flatMap(l => l.spans) }], structureDirty: true };
   const history = new EditHistory<typeof merged>(); history.reset(original); history.record(merged);
   editor.restore(merged); expect(editor.state().dirty).toBe(true);
   editor.saved({ textContent: text, textLayout: { sentences: merged.sentences, links: merged.links } });

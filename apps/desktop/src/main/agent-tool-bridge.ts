@@ -19,6 +19,7 @@ type TranslationGrantRecord = {
   runId: string;
   onSubmit(rawBody: string): void | Promise<void>;
   onAlignment?: AlignmentHandler;
+  retryMalformedSubmission?: boolean;
   busy?: boolean;
   expiresAt: number;
   revoked: boolean;
@@ -184,11 +185,16 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (command !== "submit-translation") { sendJson(response, 403, { ok: false, error: "wrong_tool" }); return; }
 
   grant.callCount += 1;
-  if (grant.callCount !== 1) {
+  const retryMalformed = grant.retryMalformedSubmission && !grant.committed && !grant.busy
+    && (grant.error === "invalid_json" || grant.error === "invalid_payload");
+  if (grant.callCount !== 1 && !retryMalformed) {
     sendJson(response, 409, { ok: false, error: "already_submitted" });
     return;
   }
 
+  grant.busy = true;
+  grant.error = null;
+  grant.value = undefined;
   try {
     const rawBody = await requestBody(request);
     if (grant.revoked || grant.expiresAt <= Date.now() || grants.get(hash) !== grant) {
@@ -235,7 +241,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
     sendJson(response, 500, { ok: false, error: "bridge_unavailable" });
-  }
+  } finally { grant.busy = false; }
 }
 
 async function ensureBridge(): Promise<string> {
@@ -273,6 +279,8 @@ export async function createTranslationToolGrant(input: {
   onSubmit(rawBody: string): void | Promise<void>;
   ttlMs?: number;
   onAlignment?: AlignmentHandler;
+  /** Retry parsing errors only; a repository rejection or committed write is terminal. */
+  retryMalformedSubmission?: boolean;
 }): Promise<TranslationToolGrant> {
   if (!input.projectId.trim() || !input.runId.trim() || typeof input.onSubmit !== "function") {
     throw new Error("projectId, runId, and onSubmit are required for an app tool grant");
@@ -287,6 +295,7 @@ export async function createTranslationToolGrant(input: {
     runId: input.runId,
     onSubmit: input.onSubmit,
     onAlignment: input.onAlignment,
+    retryMalformedSubmission: input.retryMalformedSubmission,
     expiresAt,
     revoked: false,
     callCount: 0,

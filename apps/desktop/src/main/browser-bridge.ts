@@ -90,8 +90,10 @@ import {
 import { getAgentLoginInstruction } from "./agent-runtime-client";
 import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
 import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
+import { PLUGIN_CHANNELS, dispatchPlugin } from "./plugins";
 import { ONLINE_PROJECT_CHANNELS, dispatchOnlineProject } from "./online-project-handlers";
 import { BILLING_CHANNELS, dispatchBilling } from "./billing-handlers";
+import { COMMUNITY_CHANNELS, dispatchCommunity } from "./community";
 import { leaveOnlineWorkspace } from "./session";
 import { subscribeAccountState, withAccount } from "./auth";
 import { serveProjectEvents } from "./project-events";
@@ -111,8 +113,10 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.dictionarySetKey,
   ...ACCOUNT_CHANNELS,
   ...BILLING_CHANNELS,
+  ...COMMUNITY_CHANNELS,
   ...ONLINE_PROJECT_CHANNELS,
   ...READING_ANNOTATION_CHANNELS,
+  ...PLUGIN_CHANNELS,
   ...READING_ANALYSIS_CHANNELS,
   ...MATERIAL_CHANNELS,
   IPC_CHANNELS.appGetVersion,
@@ -241,9 +245,11 @@ async function readBody(req: IncomingMessage, limit = BODY_LIMIT): Promise<unkno
 async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> {
   const wrap = <T>(fn: () => T | Promise<T>, allowTransition = false) => wrapResult(fn, allowTransition, onlineSaveRequestKey(channel, args));
   if (BILLING_CHANNELS.includes(channel)) return wrap(() => dispatchBilling(channel));
+  if (COMMUNITY_CHANNELS.includes(channel)) return wrap(() => dispatchCommunity(channel, args));
   if (ONLINE_PROJECT_CHANNELS.includes(channel)) return wrap(() => dispatchOnlineProject(channel, args[0]), channel === IPC_CHANNELS.onlineProjectsOpen);
   if (READING_ANALYSIS_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnalysis(channel, args[0]));
   if (READING_ANNOTATION_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnnotation(channel, args[0]));
+  if (PLUGIN_CHANNELS.includes(channel)) return wrap(() => dispatchPlugin(channel, args[0]));
   if (channel === IPC_CHANNELS.dictionarySearch) return wrap(() => dictionarySearch(args[0]));
   if (channel === IPC_CHANNELS.dictionaryGetStatus) return wrap(() => dictionaryGetStatus());
   if (channel === IPC_CHANNELS.dictionarySetKey) return wrap(() => dictionarySetKey(args[0]));

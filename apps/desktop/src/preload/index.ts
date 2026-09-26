@@ -10,6 +10,20 @@ const api = {
     openCheckout: () => ipcRenderer.invoke(IPC_CHANNELS.billingOpenCheckout),
     openPortal: () => ipcRenderer.invoke(IPC_CHANNELS.billingOpenPortal),
   },
+  community: {
+    feed: () => ipcRenderer.invoke(IPC_CHANNELS.communityFeed),
+    thread: (postId) => ipcRenderer.invoke(IPC_CHANNELS.communityThread, postId),
+    createPost: (input) => ipcRenderer.invoke(IPC_CHANNELS.communityCreatePost, input),
+    updatePost: (postId, input) => ipcRenderer.invoke(IPC_CHANNELS.communityUpdatePost, postId, input),
+    deletePost: (postId) => ipcRenderer.invoke(IPC_CHANNELS.communityDeletePost, postId),
+    resolvePost: (postId, resolved) => ipcRenderer.invoke(IPC_CHANNELS.communityResolvePost, postId, resolved),
+    addComment: (postId, body) => ipcRenderer.invoke(IPC_CHANNELS.communityAddComment, postId, body),
+    deleteComment: (commentId) => ipcRenderer.invoke(IPC_CHANNELS.communityDeleteComment, commentId),
+    setBookmark: (postId, saved) => ipcRenderer.invoke(IPC_CHANNELS.communitySetBookmark, postId, saved),
+    report: (postId, reason) => ipcRenderer.invoke(IPC_CHANNELS.communityReport, postId, reason),
+    reports: () => ipcRenderer.invoke(IPC_CHANNELS.communityReports),
+    dismissReport: (reportId) => ipcRenderer.invoke(IPC_CHANNELS.communityDismissReport, reportId),
+  },
   dictionary: {
     search: (input) => ipcRenderer.invoke(IPC_CHANNELS.dictionarySearch, input),
     getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.dictionaryGetStatus),
@@ -177,6 +191,14 @@ const api = {
   },
   context: {
     preview: (input) => ipcRenderer.invoke(IPC_CHANNELS.contextPreview, input),
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.pluginsList),
+    install: () => ipcRenderer.invoke(IPC_CHANNELS.pluginsInstall),
+    remove: (name) => ipcRenderer.invoke(IPC_CHANNELS.pluginsRemove, name),
+    apply: (name) => ipcRenderer.invoke(IPC_CHANNELS.pluginsApply, name),
+    catalog: () => ipcRenderer.invoke(IPC_CHANNELS.pluginsCatalog),
+    installCatalog: (name) => ipcRenderer.invoke(IPC_CHANNELS.pluginsInstallCatalog, name),
   },
   ai: {
     startTranslation: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiStartTranslation, input),

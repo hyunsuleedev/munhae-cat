@@ -3,6 +3,7 @@ import { validatePunctuationText } from "../../../packages/db-sqlite/src/source-
 import {
   createPunctuationProjection,
   projectSourceRange,
+  punctuationCaretForSource,
 } from "../src/renderer/scripts/punctuation-projection";
 
 function project(source: string, punctuation: string, from: number, to: number) {
@@ -118,5 +119,24 @@ describe("punctuation display over canonical source ranges", () => {
     for (const [from, to] of [[0, 0], [-1, 1], [0, 3], [1, 0], [0.5, 1], [0, Number.NaN], [0, Infinity]]) {
       expect(projectSourceRange(mapping, from!, to!)).toBeNull();
     }
+  });
+
+  it("maps a source click to a caret after the preceding character", () => {
+    const source = "錢塘 國朝昇平";
+    const punctuation = "錢塘，國朝昇平。";
+    const mapping = createPunctuationProjection(source, punctuation)!;
+    // Before and after the source space, the caret stays on 塘 ahead of the comma.
+    expect(punctuationCaretForSource(mapping, source, 2)).toBe(2);
+    expect(punctuationCaretForSource(mapping, source, 3)).toBe(2);
+    expect(punctuationCaretForSource(mapping, source, 0)).toBe(0);
+    expect(punctuationCaretForSource(mapping, source, 7)).toBe(7);
+  });
+
+  it("counts supplementary Hanja in UTF-16 caret offsets", () => {
+    const source = "蛾眉𥊑睩 管絃";
+    const punctuation = "蛾眉𥊑睩，管絃。";
+    const mapping = createPunctuationProjection(source, punctuation)!;
+    expect(punctuationCaretForSource(mapping, source, 4)).toBe(5);
+    expect(punctuation.slice(0, 5)).toBe("蛾眉𥊑睩");
   });
 });

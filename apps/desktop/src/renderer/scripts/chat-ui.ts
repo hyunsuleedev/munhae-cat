@@ -57,7 +57,7 @@ export function configureChatSurface(list: HTMLElement, input: HTMLTextAreaEleme
   let currentKey = "";
   let pinned = true;
   let savedTop = 0;
-  const resize = () => { input.style.height = "auto"; input.style.height = `${Math.min(180, Math.max(56, input.scrollHeight))}px`; };
+  const resize = () => { const min = parseFloat(getComputedStyle(input).minHeight) || 56; input.style.height = "auto"; input.style.height = `${Math.min(180, Math.max(min, input.scrollHeight))}px`; };
   const updateJump = () => { jump.hidden = list.scrollHeight - list.scrollTop - list.clientHeight < 64; };
   const bottom = () => { pinned = true; list.scrollTop = list.scrollHeight; savedTop = list.scrollTop; updateJump(); };
   jump.addEventListener("click", bottom);

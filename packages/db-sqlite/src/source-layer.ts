@@ -1,3 +1,4 @@
+import { HANMUN_SEGMENTATION_VERSION, segmentHanmun, trimHanmunRange, isHanmunWhitespaceGap } from "@munhae/domain/hanmun-segmentation";
 import {
   canonicalJson,
   canonicalJsonHash,
@@ -103,13 +104,16 @@ export function prepareStructureSpans(
   punctuatedText: string,
   mode: PunctuationStructureMode,
   supplied?: PunctuationStructureSpanInput[],
+  segmentationVersion: 1 | 2 = HANMUN_SEGMENTATION_VERSION,
 ): PreparedStructureSpan[] {
-  const raw = supplied?.length ? supplied : deriveStructureSpans(punctuatedText, mode);
+  const modern = segmentationVersion === 2;
+  const raw: PunctuationStructureSpanInput[] = supplied?.length ? supplied : modern ? segmentHanmun(punctuatedText, mode) : deriveStructureSpans(punctuatedText, mode);
   const length = codepointCount(punctuatedText);
-  if (length === 0) throw new MunhaeError("empty_punctuation", "표점안이 비어 있습니다");
+  if (length === 0 || (modern && !punctuatedText.trim())) throw new MunhaeError("empty_punctuation", "표점안이 비어 있습니다");
 
   const allowed = new Set<PunctuationSpanKind>(
-    mode === "poetry" ? ["verse_line", "couplet", "stanza"] : ["paragraph", "sentence"],
+    modern ? ["paragraph", mode === "poetry" ? "verse_line" : "sentence"]
+      : mode === "poetry" ? ["verse_line", "couplet", "stanza"] : ["paragraph", "sentence"],
   );
   const byKey = new Map<string, PreparedStructureSpan>();
   for (const input of raw) {
@@ -133,6 +137,9 @@ export function prepareStructureSpans(
       throw new MunhaeError("invalid_structure", `structure span ${key}의 code-point 범위가 잘못되었습니다`);
     }
     const quote = sliceCodepoints(punctuatedText, input.codepointFrom, input.codepointTo);
+    if (modern && (!quote.trim() || quote !== quote.trim())) {
+      throw new MunhaeError("invalid_structure", "구간 앞뒤에 공백이나 줄바꿈을 포함할 수 없습니다");
+    }
     byKey.set(key, {
       spanKey: key,
       spanKind: input.spanKind,
@@ -160,15 +167,16 @@ export function prepareStructureSpans(
       if (span.codepointFrom < parent.codepointFrom || span.codepointTo > parent.codepointTo) {
         throw new MunhaeError("invalid_structure", `structure span ${span.spanKey}이 parent 범위를 벗어났습니다`);
       }
-      const validParent =
-        (mode === "prose" && span.spanKind === "sentence" && parent.spanKind === "paragraph") ||
+      const validParent = modern
+        ? parent.spanKind === "paragraph" && span.spanKind === (mode === "poetry" ? "verse_line" : "sentence")
+        : (mode === "prose" && span.spanKind === "sentence" && parent.spanKind === "paragraph") ||
         (mode === "poetry" && span.spanKind === "verse_line" && parent.spanKind === "couplet") ||
         (mode === "poetry" && span.spanKind === "couplet" && parent.spanKind === "stanza");
       if (!validParent) {
         throw new MunhaeError("invalid_structure", `${span.spanKind}의 parent로 ${parent.spanKind}을 사용할 수 없습니다`);
       }
     } else {
-      const validRoot =
+      const validRoot = modern ? span.spanKind === "paragraph" :
         (mode === "prose" && span.spanKind === "paragraph") ||
         (mode === "poetry" && span.spanKind === "stanza");
       if (!validRoot) {
@@ -182,7 +190,16 @@ export function prepareStructureSpans(
     siblingOrdinals.add(siblingKey);
   }
 
-  if (mode === "prose") {
+  if (modern) {
+    const points = Array.from(punctuatedText);
+    const paragraphs = [...byKey.values()].filter(span => span.spanKind === "paragraph");
+    const leaves = [...byKey.values()].filter(span => span.spanKind === (mode === "poetry" ? "verse_line" : "sentence"));
+    assertContentPartition(paragraphs, points, 0, length);
+    assertContentPartition(leaves, points, 0, length);
+    for (const paragraph of paragraphs) {
+      assertContentPartition(leaves.filter(span => span.parentSpanKey === paragraph.spanKey), points, paragraph.codepointFrom, paragraph.codepointTo);
+    }
+  } else if (mode === "prose") {
     const paragraphs = [...byKey.values()].filter((span) => span.spanKind === "paragraph");
     const sentences = [...byKey.values()].filter((span) => span.spanKind === "sentence");
     assertPartition(paragraphs, 0, length, "paragraph");
@@ -275,7 +292,8 @@ export function insertPunctuationVersionWithAnchors(opts: {
   const sourceMap = validatePunctuationText(opts.sourceText, opts.punctuatedText);
   const spans = prepareStructureSpans(opts.punctuatedText, opts.structureMode, opts.structureSpans);
   const spanByKey = new Map(spans.map((span) => [span.spanKey, span]));
-  const structureJson = canonicalJson({ mode: opts.structureMode });
+  const structure = { mode: opts.structureMode, segmentationVersion: HANMUN_SEGMENTATION_VERSION };
+  const structureJson = canonicalJson(structure);
   const spanManifest = spans
     .map((span) => ({
       spanKind: span.spanKind,
@@ -289,7 +307,7 @@ export function insertPunctuationVersionWithAnchors(opts: {
     .sort(compareSpanManifest);
   const contentHash = canonicalJsonHash({
     punctuatedText: opts.punctuatedText,
-    structureJson: { mode: opts.structureMode },
+    structureJson: structure,
     spans: spanManifest,
   });
   const punctuationVersionId = createId();
@@ -345,6 +363,7 @@ export function insertPunctuationVersionWithAnchors(opts: {
     punctuationVersionId,
     punctuationContentHash: contentHash,
     structureMode: opts.structureMode,
+    segmentationVersion: HANMUN_SEGMENTATION_VERSION,
     sourceMap,
     spans,
     spanIdByKey,
@@ -365,19 +384,22 @@ function insertPreparedTranslationAnchors(opts: {
   punctuationVersionId: string;
   punctuationContentHash: string;
   structureMode: PunctuationStructureMode;
+  segmentationVersion: 1 | 2;
   sourceMap: PunctuationSourceMap;
   spans: PreparedStructureSpan[];
   spanIdByKey: Map<string, string>;
   anchorActorId: string;
   now: string;
 }): string {
-  const strategyKey = opts.structureMode === "poetry" ? "poetry-verse-line-v1" : "prose-sentence-v1";
+  const strategyVersion = opts.segmentationVersion;
+  const strategyKey = `${opts.structureMode === "poetry" ? "poetry-verse-line" : "prose-sentence"}-v${strategyVersion}`;
+  const coveragePolicy = strategyVersion === 2 ? "non_whitespace" : "full_text";
   const anchorSets = schema.translation_anchor_sets;
   const existing = orm(opts.db).select({ id: anchorSets.id }).from(anchorSets).where(and(
     eq(anchorSets.punctuation_version_id, opts.punctuationVersionId),
     eq(anchorSets.strategy_key, strategyKey),
-    eq(anchorSets.strategy_version, 1),
-    eq(anchorSets.coverage_policy, "full_text"),
+    eq(anchorSets.strategy_version, strategyVersion),
+    eq(anchorSets.coverage_policy, coveragePolicy),
   )).get();
   if (existing) return existing.id;
 
@@ -386,11 +408,17 @@ function insertPreparedTranslationAnchors(opts: {
   const leaves = opts.spans
     .filter((span) => span.spanKind === leafKind)
     .sort((a, b) => a.codepointFrom - b.codepointFrom || a.codepointTo - b.codepointTo || a.ordinal - b.ordinal);
+  const sourcePoints = Array.from(opts.sourceText);
   const anchors = leaves.map((span, index) => {
-    const sourceFrom = opts.sourceMap.sourceBoundaryByPunctuationBoundary[span.codepointFrom];
-    const sourceTo = opts.sourceMap.sourceBoundaryByPunctuationBoundary[span.codepointTo];
+    let sourceFrom = opts.sourceMap.sourceBoundaryByPunctuationBoundary[span.codepointFrom];
+    let sourceTo = opts.sourceMap.sourceBoundaryByPunctuationBoundary[span.codepointTo];
     if (sourceFrom === undefined || sourceTo === undefined || sourceTo <= sourceFrom) {
       throw new MunhaeError("invalid_structure", `${span.spanKey} span에 대응하는 원문 문자가 없습니다`);
+    }
+    if (strategyVersion === 2) {
+      const range = trimHanmunRange(sourcePoints, sourceFrom, sourceTo);
+      sourceFrom = range.from; sourceTo = range.to;
+      if (sourceFrom === sourceTo) throw new MunhaeError("invalid_structure", `${span.spanKey} 구간에 대응하는 원문 본문이 없습니다`);
     }
     const sourceQuote = sliceCodepoints(opts.sourceText, sourceFrom, sourceTo);
     const linkedSpans = ancestorChain(span, spanByKey);
@@ -426,8 +454,8 @@ function insertPreparedTranslationAnchors(opts: {
     punctuationVersionId: opts.punctuationVersionId,
     punctuationHash: opts.punctuationContentHash,
     strategyKey,
-    strategyVersion: 1,
-    coveragePolicy: "full_text",
+    strategyVersion,
+    coveragePolicy,
     anchors: anchors.map(({ spanKeys: _spanKeys, punctuatedQuote: _punctuatedQuote, sourceQuote: _sourceQuote, ...anchor }) => anchor),
   });
   const anchorSetId = createId();
@@ -438,8 +466,8 @@ function insertPreparedTranslationAnchors(opts: {
     source_text_version_id: opts.sourceVersionId,
     punctuation_version_id: opts.punctuationVersionId,
     strategy_key: strategyKey,
-    strategy_version: 1,
-    coverage_policy: "full_text",
+    strategy_version: strategyVersion,
+    coverage_policy: coveragePolicy,
     anchor_set_hash: anchorSetHash,
     created_by_actor_id: opts.anchorActorId,
     created_at: opts.now,
@@ -545,7 +573,8 @@ export function ensureTranslationAnchorsForPunctuationVersion(opts: {
     label: span.label,
   }));
   const sourceMap = validatePunctuationText(dependency.source_text, dependency.punctuated_text);
-  const spans = prepareStructureSpans(dependency.punctuated_text, structureMode, supplied);
+  const segmentationVersion = punctuationSegmentationVersion(dependency.structure_json);
+  const spans = prepareStructureSpans(dependency.punctuated_text, structureMode, supplied, segmentationVersion);
   const spanIdByKey = new Map(spans.map((span) => [span.spanKey, span.spanKey]));
   return insertPreparedTranslationAnchors({
     db: opts.db,
@@ -557,6 +586,7 @@ export function ensureTranslationAnchorsForPunctuationVersion(opts: {
     punctuationVersionId: opts.punctuationVersionId,
     punctuationContentHash: dependency.punctuation_hash,
     structureMode,
+    segmentationVersion,
     sourceMap,
     spans,
     spanIdByKey,
@@ -797,6 +827,27 @@ function assertAcyclic(byKey: Map<string, PreparedStructureSpan>): void {
       seen.add(current.spanKey);
       current = byKey.get(current.parentSpanKey);
     }
+  }
+}
+
+/** Missing metadata belongs to the pre-existing, whitespace-inclusive format. */
+export function punctuationSegmentationVersion(structureJson: string | null): 1 | 2 {
+  const version = structureJson ? JSON.parse(structureJson).segmentationVersion : undefined;
+  if (version === undefined || version === 1) return 1;
+  if (version === 2) return 2;
+  throw new MunhaeError("invalid_structure", "지원하지 않는 한문 분할 버전입니다");
+}
+
+function assertContentPartition(spans: PreparedStructureSpan[], points: string[], from: number, to: number): void {
+  let cursor = from;
+  for (const span of [...spans].sort((a, b) => a.codepointFrom - b.codepointFrom)) {
+    if (span.codepointTo > to || !isHanmunWhitespaceGap(points, cursor, span.codepointFrom)) {
+      throw new MunhaeError("invalid_structure", "구간이 겹치거나 본문이 누락되었습니다");
+    }
+    cursor = span.codepointTo;
+  }
+  if (!isHanmunWhitespaceGap(points, cursor, to)) {
+    throw new MunhaeError("invalid_structure", "구간에서 본문이 누락되었습니다");
   }
 }
 
