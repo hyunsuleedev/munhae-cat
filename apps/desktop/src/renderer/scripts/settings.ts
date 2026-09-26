@@ -453,7 +453,6 @@ async function load(): Promise<void> {
   renderSidebar(tree());
   bindSidebar(
     (documentNodeId) => go("editor", documentNodeId),
-    undefined,
     tree,
   );
   renderAgents();

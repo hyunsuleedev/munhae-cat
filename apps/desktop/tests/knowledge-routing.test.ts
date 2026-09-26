@@ -1,18 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { knowledgeTabFromHash } from "../src/renderer/scripts/knowledge-model";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { knowledgePage } from "../src/renderer/scripts/knowledge-model";
 import { parseSearchQueryInput } from "../src/main/ipc-validate";
 
 describe("knowledge workspace routing", () => {
-  it.each(["#persons", "#places", "", "#unknown"])("opens context for %s", (hash) => {
-    expect(knowledgeTabFromHash(hash)).toBe("context");
+  it.each([
+    ["knowledge", "context"],
+    ["glossary", "glossary"],
+    ["comments", "comments"],
+    ["uncertainty", "uncertainty"],
+  ] as const)("%s.html is its own %s page without tabs", (file, page) => {
+    const html = readFileSync(resolve("src/renderer", `${file}.html`), "utf8");
+    expect(knowledgePage(html.match(/data-knowledge-page="([^"]+)"/)?.[1])).toBe(page);
+    expect(html).not.toContain('role="tablist"');
   });
 
-  it.each(["context", "glossary", "comments", "uncertainty"] as const)("preserves the %s bookmark", (tab) => {
-    expect(knowledgeTabFromHash(`#${tab}`)).toBe(tab);
-  });
-
-  it("opens the background tab using the design prototype's name", () => {
-    expect(knowledgeTabFromHash("#background")).toBe("context");
+  it.each([undefined, "", "unknown"])("falls back to the context page for %s", (value) => {
+    expect(knowledgePage(value)).toBe("context");
   });
 
   it("accepts glossary search filters and rejects removed entity filters", () => {

@@ -466,7 +466,7 @@ window.addEventListener("munhae:document-created", (event) => {
   if (node) revealSidebarNode(docs, node.id);
   renderSidebar(defaultSidebarTree(docs), { currentDocId: node?.id ?? null });
 });
-bindSidebar(undefined, undefined, () => defaultSidebarTree(docs));
+bindSidebar(undefined, () => defaultSidebarTree(docs));
 await boot();
 
 registerProjectRefresh({

@@ -1,14 +1,12 @@
 import { t } from "./i18n";
 import type { DocumentListItem, GlossaryEntryView, MaterialPreferenceView, NodeContextView } from "../../shared/munhae-api";
 
-export const KNOWLEDGE_TABS = ["context", "glossary", "comments", "uncertainty"] as const;
-export type KnowledgeTab = typeof KNOWLEDGE_TABS[number];
+export const KNOWLEDGE_PAGES = ["context", "glossary", "comments", "uncertainty"] as const;
+export type KnowledgePage = typeof KNOWLEDGE_PAGES[number];
 
-export function knowledgeTabFromHash(hash: string): KnowledgeTab {
-  const requested = hash.startsWith("#") ? hash.slice(1) : hash;
-  if (requested === "background") return "context";
-  // Older bookmarks for the removed person/place editors open the shared context workspace.
-  return KNOWLEDGE_TABS.find(tab => tab === requested) ?? "context";
+/** Each translation-material page names itself on `<body data-knowledge-page>`. */
+export function knowledgePage(value: string | undefined): KnowledgePage {
+  return KNOWLEDGE_PAGES.find(page => page === value) ?? "context";
 }
 
 export const USAGE_LABELS: Record<GlossaryEntryView["usageStatus"], string> = {

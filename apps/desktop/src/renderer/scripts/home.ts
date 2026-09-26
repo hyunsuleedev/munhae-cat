@@ -40,7 +40,7 @@ function stageBadge(doc: DocumentListItem): string {
   const label = HOME_STAGES.find(item => item.key === stage)?.label ?? t("원문");
   return `<span class="tag study-stage-${stage}">${esc(label)}</span>`;
 }
-function infoUrl(id: string): string { return `knowledge.html?node=${encodeURIComponent(id)}#context`; }
+function infoUrl(id: string): string { return `knowledge.html?node=${encodeURIComponent(id)}`; }
 function contextUrl(): string { return master() ? `context.html?node=${encodeURIComponent(master()!.id)}` : "context.html"; }
 
 function renderHeader(): void {
@@ -148,9 +148,9 @@ function renderDocuments(): void {
   must("#docBody").innerHTML = docs.length ? docs.map(doc => ui`<div class="study-document-row" data-id="${esc(doc.id)}">
     <button type="button" class="study-document-open" data-open-doc="${esc(doc.id)}"><span class="study-document-title"><strong>${esc(titleOf(doc))}</strong><small>${esc(homeDocumentPath(doc, view!.documents) || t("프로젝트 원문"))}</small></span></button>
     <div class="study-document-states">${([[t('원문'), 'source', doc.sourceState], [t('표점'), 'punctuation', doc.punctuationState], [t('번역'), 'translation', doc.translationState]] as const).map(([label, kind, state]) => `<span><small>${label}</small>${tagHtml(stateLabel(kind, state))}</span>`).join("")}</div>
-    <a class="study-uncertainty ${doc.uncertaintyCount ? "has-uncertainty" : ""}" href="knowledge.html#uncertainty" aria-label="불확실성 기록 보기 · 이 원문에 연결된 ${doc.uncertaintyCount}건">${doc.uncertaintyCount ? ui`의문 ${doc.uncertaintyCount}` : "—"}</a>
+    <a class="study-uncertainty ${doc.uncertaintyCount ? "has-uncertainty" : ""}" href="uncertainty.html" aria-label="불확실성 기록 보기 · 이 원문에 연결된 ${doc.uncertaintyCount}건">${doc.uncertaintyCount ? ui`의문 ${doc.uncertaintyCount}` : "—"}</a>
     <a class="study-metadata" href="${infoUrl(doc.id)}" aria-label="${esc(titleOf(doc))} 문서 정보">정보 ↗</a></div>`).join("")
-    : `<div class="home-empty"><h3>${sourceUnits().length ? t("조건에 맞는 원문이 없습니다") : t("아직 원문이 없습니다")}</h3><p>${sourceUnits().length ? (status === "uncertain" && view.uncertainties.length ? t("연결된 원문이 없는 불확실성은 불확실성 기록에서 확인할 수 있습니다.") : t("검색어나 상태 필터를 바꿔 보세요.")) : t("번역할 문헌의 원문을 추가해 작업을 시작하세요.")}</p>${sourceUnits().length ? uiText('<button class="btn" type="button" data-reset-filters>필터 초기화</button>') : uiText('<button class="btn btn-primary" type="button" data-add-source>원문 추가</button>')}${status === "uncertain" ? uiText('<a class="study-text-button" href="knowledge.html#uncertainty">모든 불확실성 기록 보기 →</a>') : ""}</div>`;
+    : `<div class="home-empty"><h3>${sourceUnits().length ? t("조건에 맞는 원문이 없습니다") : t("아직 원문이 없습니다")}</h3><p>${sourceUnits().length ? (status === "uncertain" && view.uncertainties.length ? t("연결된 원문이 없는 불확실성은 불확실성 기록에서 확인할 수 있습니다.") : t("검색어나 상태 필터를 바꿔 보세요.")) : t("번역할 문헌의 원문을 추가해 작업을 시작하세요.")}</p>${sourceUnits().length ? uiText('<button class="btn" type="button" data-reset-filters>필터 초기화</button>') : uiText('<button class="btn btn-primary" type="button" data-add-source>원문 추가</button>')}${status === "uncertain" ? uiText('<a class="study-text-button" href="uncertainty.html">모든 불확실성 기록 보기 →</a>') : ""}</div>`;
 }
 
 function showPanel(name: string, focus = false): void {
@@ -285,7 +285,7 @@ bindSidebar(id => {
   const doc = view?.documents.find(item => item.id === id);
   if (doc?.nodeRole === "source_unit") { openDoc(id); return; }
   clearFilters(); selectedContainer = doc && !doc.isMaster ? doc.id : null; showPanel("documents");
-}, undefined, tree, (parentId, role) => { void openDocumentDialog(creationParent(parentId), false, role); }, { selectExpandable: true });
+}, tree, (parentId, role) => { void openDocumentDialog(creationParent(parentId), false, role); }, { selectExpandable: true });
 window.addEventListener("munhae:document-created", () => void load());
 window.addEventListener("pageshow", event => { if (event.persisted) void load(); });
 await load();

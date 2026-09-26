@@ -66,7 +66,7 @@ export function installApplicationMenu(language: UiLanguage = "ko"): void {
     shortcut("번역안 확정", "Shift+CommandOrControl+Return", "confirm"),
     shortcut("프로젝트 홈", "Shift+CommandOrControl+1", "home"),
     shortcut("편집", "Shift+CommandOrControl+2", "editor"),
-    shortcut("번역 자료", "Shift+CommandOrControl+3", "knowledge"),
+    shortcut("문맥", "Shift+CommandOrControl+3", "knowledge"),
     shortcut("명령 검색…", "CommandOrControl+K", "palette"),
   ];
   const prefs = shortcut("설정…", "CommandOrControl+,", "prefs");

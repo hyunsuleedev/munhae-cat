@@ -31,11 +31,12 @@ import {
   type ProjectTransitionHooks,
 } from "./project-transition";
 
-export type ScreenId = "home" | "editor" | "knowledge" | "context" | "settings" | "account";
+export type ScreenId = "home" | "editor" | "knowledge" | "glossary" | "comments" | "uncertainty" | "context" | "settings" | "account";
 export type PageId = "welcome" | ScreenId;
 export type IconName =
   | "home"
   | "folder"
+  | "folderOpen"
   | "sliders"
   | "book"
   | "sidebar"
@@ -43,7 +44,8 @@ export type IconName =
   | "gear"
   | "chev"
   | "doc"
-  | "image";
+  | "image"
+  | "comment";
 
 export type MenuEntry = readonly [label: string, kbd: string, id: string, checked?: boolean] | null;
 export type MenuGroup = readonly [title: string, items: readonly MenuEntry[], app?: boolean];
@@ -62,7 +64,6 @@ export type SbNode = {
   cnt?: number;
   dot?: "ok" | "warn" | "draft";
   t?: string;
-  tab?: string;
   docId?: string;
   contextFor?: string;
   canHaveChildren?: boolean;
@@ -83,14 +84,27 @@ export const SCREEN_FILES: Record<ScreenId, string> = {
   home: "home.html",
   editor: "editor.html",
   knowledge: "knowledge.html",
+  glossary: "glossary.html",
+  comments: "comments.html",
+  uncertainty: "uncertainty.html",
   context: "context.html",
   settings: "settings.html",
   account: "settings.html#account",
 };
 
+const PAGE_ICONS: Partial<Record<PageId, IconName>> = {
+  settings: "gear",
+  knowledge: "sliders",
+  glossary: "book",
+  comments: "comment",
+  uncertainty: "doc",
+};
+
 export const ICONS: Record<IconName, string> = {
   home: '<path d="M2.5 8.2 8 3.2l5.5 5"/><path d="M4 7.5V13h8V7.5"/>',
   folder: '<path d="M2 4.5h4.2l1.5 1.5H14V13H2z"/>',
+  folderOpen:
+    '<path d="m4 9.33 1-1.93a1.33 1.33 0 0 1 1.16-.73h7.17a1.33 1.33 0 0 1 1.29 1.67l-1.03 4a1.33 1.33 0 0 1-1.3 1H2.67a1.33 1.33 0 0 1-1.34-1.34V3.33A1.33 1.33 0 0 1 2.67 2h2.6a1.33 1.33 0 0 1 1.12.6l.54.8a1.33 1.33 0 0 0 1.12.6H12a1.33 1.33 0 0 1 1.33 1.33v1.34"/>',
   sliders:
     '<path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="6" cy="4.5" r="1.7" fill="var(--sidebar)"/><circle cx="10.5" cy="8" r="1.7" fill="var(--sidebar)"/><circle cx="5" cy="11.5" r="1.7" fill="var(--sidebar)"/>',
   book: '<path d="M2.5 3.5h4A1.5 1.5 0 0 1 8 5v8.5a1.5 1.5 0 0 0-1.5-1.5h-4z"/><path d="M13.5 3.5h-4A1.5 1.5 0 0 0 8 5v8.5A1.5 1.5 0 0 1 9.5 12h4z"/>',
@@ -101,6 +115,7 @@ export const ICONS: Record<IconName, string> = {
   doc: '<path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3M6.5 8h3M6.5 10.5h3"/>',
   image:
     '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="m2.5 11.5 3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.5" cy="6" r="1"/>',
+  comment: '<path d="M2.5 3.5h11v7.5H7l-3 2.5V11H2.5z"/>',
 };
 
 const GLOBAL_ENABLED = [
@@ -128,6 +143,8 @@ const GLOBAL_ENABLED = [
   "editor",
   "prepare",
   "knowledge",
+  "glossary",
+  "comments",
   "min",
   "zoom",
   "self",
@@ -138,7 +155,7 @@ const GLOBAL_ENABLED = [
 ] as const;
 
 const PALETTE_SKIP = new Set(["self", "x", "c", "v", "undo", "redo", "quit", "min", "zoom", "palette"]);
-const PROJECT_COMMANDS = new Set(["projects", "close", "newdoc", "newfolder", "import", "backup", "export", "find", "prepare", "home", "editor", "knowledge"]);
+const PROJECT_COMMANDS = new Set(["projects", "close", "newdoc", "newfolder", "import", "backup", "export", "find", "prepare", "home", "editor", "knowledge", "glossary", "comments"]);
 
 const DOC_KEY = "munhae.doc";
 const SB_KEY = "munhae.sb";
@@ -167,9 +184,7 @@ let sidebarTree: SbNode[] = [];
 let sidebarRevealed: string | null = null;
 let sidebarDocs: DocumentListItem[] = [];
 let sidebarCurrentDoc: string | null = null;
-let sidebarTab: string | null = null;
 let sidebarOnDoc: ((id: string, label: string) => void) | null = null;
-let sidebarOnTab: ((tab: string) => void) | null = null;
 let fallbackApi: MunhaeApi | null = null;
 
 export const store = {
@@ -511,7 +526,9 @@ function commandGroups(): MenuGroup[] {
       [
         [t("프로젝트 홈"), "⇧⌘1", "home"],
         [t("편집"), "⇧⌘2", "editor"],
-        [t("번역 자료"), "⇧⌘3", "knowledge"],
+        [t("문맥"), "⇧⌘3", "knowledge"],
+        [t("용어집"), "", "glossary"],
+        [t("코멘트"), "", "comments"],
         null,
         [t("명령 검색…"), "⌘K", "palette"],
       ],
@@ -688,6 +705,8 @@ export function toggleInsp(): void {
   btn?.classList.toggle("is-on", !s.classList.contains("no-insp"));
 }
 
+const LIBRARY_SCREENS = new Set<ScreenId>(["knowledge", "glossary", "comments"]);
+
 function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
   if (n.h === t("문서")) {
     return ui`<div class="sb-h-row"><div class="sb-h">문서</div><button class="sb-app-trigger sb-add-document" type="button" data-sb-app="add" aria-label="문서 추가" title="문서 추가" aria-haspopup="menu" aria-expanded="false" aria-controls="sbAppMenu">+</button></div>`;
@@ -696,8 +715,6 @@ function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
   const kids = !!n.kids?.length;
   const cur = n.contextFor
     ? currentPage === "context" && n.contextFor === sidebarCurrentDoc
-    : n.tab
-    ? n.tab === sidebarTab
     : n.k
       ? n.k === currentPage && (!n.docId || n.docId === sidebarCurrentDoc)
       : n.docId
@@ -707,10 +724,10 @@ function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
   const exp = isDocument && sidebarNavigation.query ? true : n.id ? expanded.get(n.id) !== false : true;
   const treeAttrs = isDocument ? ` role="treeitem" tabindex="-1" data-sb-key="${esc(n.id)}" aria-level="${d + 1}" aria-posinset="${pos}" aria-setsize="${size}" aria-selected="${cur}"` : "";
   const parts: string[] = [];
-  const rowClass = n.contextFor ? " sb-context" : n.k === "home" ? " sb-home" : n.k === "knowledge" ? " sb-library" : "";
+  const rowClass = n.contextFor ? " sb-context" : n.k === "home" ? " sb-home" : n.k && LIBRARY_SCREENS.has(n.k) ? " sb-library" : "";
   parts.push(`<div class="sb-row${rowClass}"${isDocument ? ' role="none"' : ""}>`);
   parts.push(
-    `<button class="sb-item${cur ? " is-current" : ""}" type="button"${treeAttrs} data-depth="${d}" style="--sb-depth:${d}"${kids && n.id ? ` aria-expanded="${exp}"` : ""}${n.k ? ` data-go="${n.k}"` : ""}${n.tab ? ` data-tab="${esc(n.tab)}"` : ""}${n.docId ? ` data-doc-id="${esc(n.docId)}"` : ""}${n.contextFor ? ` data-context-for="${esc(n.contextFor)}"` : ""}${n.t ? ` title="${esc(n.t)}"` : ""}${cur ? ' aria-current="page"' : ""}>`,
+    `<button class="sb-item${cur ? " is-current" : ""}" type="button"${treeAttrs} data-depth="${d}" style="--sb-depth:${d}"${kids && n.id ? ` aria-expanded="${exp}"` : ""}${n.k ? ` data-go="${n.k}"` : ""}${n.docId ? ` data-doc-id="${esc(n.docId)}"` : ""}${n.contextFor ? ` data-context-for="${esc(n.contextFor)}"` : ""}${n.t ? ` title="${esc(n.t)}"` : ""}${cur ? ' aria-current="page"' : ""}>`,
   );
   if (kids && n.id) {
     parts.push(
@@ -767,7 +784,7 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
         lbl: d.originalTitle || d.title,
         searchText: `${d.title} ${d.originalTitle ?? ""}`,
         han: true,
-        ic: isContainer ? "folder" : "doc",
+        ic: d.isMaster ? "folderOpen" : isContainer ? "folder" : "doc",
         kids: [
           {
             id: `context:${d.id}`,
@@ -789,24 +806,21 @@ export function docsToTree(docs: DocumentListItem[]): SbNode[] {
   return walk("root");
 }
 
-export function defaultSidebarTree(docs: DocumentListItem[], opts?: { knowledgeKids?: SbNode[] }): SbNode[] {
-  const docTree = docsToTree(docs);
-  const kn: SbNode = opts?.knowledgeKids
-    ? { id: "kn", ic: "book", lbl: t("번역 자료"), k: "knowledge", kids: opts.knowledgeKids }
-    : { k: "knowledge", ic: "book", lbl: t("번역 자료") };
-  if (opts?.knowledgeKids && !expanded.has("kn")) expanded.set("kn", true);
+export function defaultSidebarTree(docs: DocumentListItem[]): SbNode[] {
   return [
     { k: "home", ic: "home", lbl: t("홈") },
     { h: t("문서") },
-    ...docTree,
-    kn,
+    ...docsToTree(docs),
+    { k: "knowledge", ic: "sliders", lbl: t("문맥") },
+    { k: "glossary", ic: "book", lbl: t("용어집") },
+    { k: "comments", ic: "comment", lbl: t("코멘트") },
     { k: "settings", ic: "gear", lbl: t("설정") },
   ];
 }
 
 export function renderSidebar(
   tree: SbNode[],
-  opts?: { currentDocId?: string | null; currentTab?: string | null },
+  opts?: { currentDocId?: string | null },
 ): void {
   const root = $("#sbTree");
   if (!root) return;
@@ -814,7 +828,6 @@ export function renderSidebar(
   sidebarNavigation.mount(root, () => renderSidebar(sidebarTree));
   sidebarNavigation.beforeRender();
   if (opts?.currentDocId !== undefined) sidebarCurrentDoc = opts.currentDocId;
-  if (opts?.currentTab !== undefined) sidebarTab = opts.currentTab;
   const activeKey = currentPage === "context" ? `context:${sidebarCurrentDoc}` : currentPage === "editor" ? sidebarCurrentDoc : null;
   let reveal = false;
   if (activeKey && activeKey !== sidebarRevealed) {
@@ -872,13 +885,11 @@ export async function openDocumentDialog(parentId: string | null = null, importT
 
 export function bindSidebar(
   onDoc?: (id: string, label: string) => void,
-  onTab?: (tab: string) => void,
   treeFn?: () => SbNode[],
   onNew?: (parentId: string | null, role: DocumentNodeRole) => void,
   options?: { selectExpandable?: boolean },
 ): void {
   sidebarOnDoc = onDoc ?? null;
-  sidebarOnTab = onTab ?? null;
   sidebarOnNew =
     onNew ??
     ((parentId, role) => { void openDocumentDialog(parentId, false, role); });
@@ -890,7 +901,7 @@ export function bindSidebar(
     context: id => go("context", id),
     info: id => {
       if (beforeNavigate && !beforeNavigate()) return;
-      location.href = `knowledge.html?node=${encodeURIComponent(id)}&info=1#context`;
+      location.href = `knowledge.html?node=${encodeURIComponent(id)}&info=1`;
     },
     mutate: async action => {
       const transition = await runProjectTransition("organize", projectTransition, action, result => result.ok);
@@ -921,7 +932,7 @@ export function bindSidebar(
       e.stopPropagation();
       const id = exp.dataset.exp;
       if (!sidebarNavigation.query) expanded.set(id, expanded.get(id) === false);
-      if (treeFn) renderSidebar(treeFn(), { currentDocId: sidebarCurrentDoc, currentTab: sidebarTab });
+      if (treeFn) renderSidebar(treeFn(), { currentDocId: sidebarCurrentDoc });
       return;
     }
     const b = target.closest(".sb-item");
@@ -934,12 +945,8 @@ export function bindSidebar(
       e.preventDefault();
       const id = b.dataset.docId;
       if (!sidebarNavigation.query) expanded.set(id, expanded.get(id) === false);
-      if (treeFn) renderSidebar(treeFn(), { currentDocId: sidebarCurrentDoc, currentTab: sidebarTab });
+      if (treeFn) renderSidebar(treeFn(), { currentDocId: sidebarCurrentDoc });
       if (options?.selectExpandable) sidebarOnDoc?.(id, b.textContent ?? "");
-      return;
-    }
-    if (b.dataset.tab) {
-      sidebarOnTab?.(b.dataset.tab);
       return;
     }
     if (b.dataset.go) {
@@ -1253,7 +1260,7 @@ export async function cmd(id: string): Promise<void> {
     && !["quit", "min", "zoom", "c", "v", "x", "undo", "redo"].includes(id)) return;
   if (PROJECT_COMMANDS.has(id) && !activeProject) return;
   if (pageCmd && (await pageCmd(id))) return;
-  if (id === "home" || id === "editor" || id === "knowledge" || id === "settings") {
+  if (id === "home" || id === "editor" || id === "knowledge" || id === "glossary" || id === "comments" || id === "settings") {
     go(id);
     return;
   }
@@ -1544,7 +1551,7 @@ function initTitlebar(): void {
     const icon = document.createElement("span");
     icon.className = "titlebar-page-icon";
     icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML = ic(currentPage === "settings" ? "gear" : currentPage === "knowledge" ? "book" : "folder");
+    icon.innerHTML = ic(PAGE_ICONS[currentPage] ?? "folder");
     title.prepend(icon);
   }
   bar.prepend(navigation);
@@ -1620,7 +1627,10 @@ export function initShell(opts: ShellOptions): Shell {
       welcome: t("시작 화면"),
       home: t("프로젝트 홈"),
       editor: t("편집"),
-      knowledge: t("번역 자료"),
+      knowledge: t("문맥"),
+      glossary: t("용어집"),
+      comments: t("코멘트"),
+      uncertainty: t("불확실성"),
       context: t("문맥 편집"),
       settings: t("설정"),
       account: t("문해 계정"),

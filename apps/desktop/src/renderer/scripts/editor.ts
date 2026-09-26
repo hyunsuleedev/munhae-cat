@@ -246,7 +246,7 @@ const documentMaterials = configureDocumentMaterials({
   openMaterials: id => {
     if (!canLeaveEditor()) return;
     clearUnsavedChanges();
-    location.href = `knowledge.html${id ? `?material=${encodeURIComponent(id)}` : ""}#context`;
+    location.href = `knowledge.html${id ? `?material=${encodeURIComponent(id)}` : ""}`;
   },
   changed: () => {
     prepRequest += 1;
@@ -4796,7 +4796,6 @@ bindSidebar(
     }
     void loadEditor(id);
   },
-  undefined,
   tree,
 );
 

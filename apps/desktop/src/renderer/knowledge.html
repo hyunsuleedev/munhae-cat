@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; script-src 'self'; font-src 'self'; connect-src 'self'">
-<title data-i18n="번역 자료 — 문해 Munhae Studio">번역 자료 — 문해 Munhae Studio</title>
+<title data-i18n="문맥 — 문해 Munhae Studio">문맥 — 문해 Munhae Studio</title>
 <link rel="stylesheet" href="./styles/tokens.css">
 <link rel="stylesheet" href="./styles/chrome.css">
 <link rel="stylesheet" href="./styles/knowledge.css">
 <script type="module" blocking="render" src="./scripts/app-entry.ts"></script>
 </head>
-<body data-auth-pending class="materials-hub">
+<body data-auth-pending class="materials-hub" data-knowledge-page="context">
 
 <div class="win" id="win" data-od-id="app-window">
   <aside class="sidebar" id="sidebar" data-od-id="sidebar" aria-label="탐색" data-i18n-aria-label="탐색">
@@ -24,7 +24,7 @@
       <div class="tl" aria-hidden="true"><i class="r"></i><i class="y"></i><i class="g"></i></div>
       <div class="tb-l"><button class="tb is-on" id="tbSidebar" title="사이드바 (⌃⌘S)" data-i18n-title="사이드바 (⌃⌘S)" aria-label="사이드바 토글" data-i18n-aria-label="사이드바 토글"></button></div>
       <div class="tb-c">
-        <span data-i18n="번역 자료">번역 자료</span>
+        <span data-i18n="문맥">문맥</span>
       </div>
       <div class="tb-r"><button class="tb is-on" id="tbInsp" title="검사기 (⌥⌘I)" aria-label="검사기 토글" data-i18n-title="검사기 (⌥⌘I)" data-i18n-aria-label="검사기 토글"></button></div>
     </header>
@@ -33,21 +33,14 @@
       <header class="materials-heading">
         <div class="materials-title-row">
           <div class="materials-title-group">
-            <h1 data-i18n="번역 자료">번역 자료</h1>
+            <h1 data-i18n="문맥">문맥</h1>
             <p class="materials-project" id="materialsProject"></p>
           </div>
           <button class="btn btn-primary" id="btnAdd" type="button" data-od-id="btn-add-entry" data-i18n="자료 추가">자료 추가</button>
         </div>
-        <div class="materials-tabs" id="ktabs" role="tablist" data-od-id="knowledge-tabs">
-          <button type="button" role="tab" data-tab="context" aria-selected="true"><span data-i18n="배경·지침 ">배경·지침 </span><span class="cnt" id="cntContext">0</span></button>
-          <button type="button" role="tab" data-tab="glossary" aria-selected="false"><span data-i18n="용어집 ">용어집 </span><span class="cnt" id="cntGlossary">0</span></button>
-          <button type="button" role="tab" data-tab="comments" aria-selected="false"><span data-i18n="코멘트 ">코멘트 </span><span class="cnt" id="cntComments">0</span></button>
-          <button type="button" role="tab" data-tab="uncertainty" class="materials-tab-extra" aria-selected="false"><span data-i18n="불확실성 ">불확실성 </span><span class="cnt" id="cntUnc">0</span></button>
-        </div>
       </header>
       <div class="scope" id="scopeBar">
         <input class="input hanmun" id="q" type="search" placeholder="제목·내용·연결 경로 검색" aria-label="자료 검색" style="width:240px" data-i18n-aria-label="자료 검색" data-i18n-placeholder="제목·내용·연결 경로 검색">
-        <select class="select" id="statusSel" aria-label="사용 상태" style="width:auto" hidden data-i18n-aria-label="사용 상태"><option value="" data-i18n="모든 상태">모든 상태</option><option value="preferred" data-i18n="기본">기본</option><option value="allowed" data-i18n="허용">허용</option><option value="forbidden" data-i18n="지양">지양</option></select>
         <select class="select" id="scopeFilter" aria-label="자료를 참고하는 문서 필터" data-i18n-aria-label="자료를 참고하는 문서 필터"><option value="" data-i18n="프로젝트의 모든 자료">프로젝트의 모든 자료</option></select>
         <span class="sp"></span>
         <span class="muted" id="scopeNote" data-i18n="연결 위치와 하위 문서의 상속 범위를 확인하세요">연결 위치와 하위 문서의 상속 범위를 확인하세요</span>
@@ -57,21 +50,10 @@
 
       <div class="split" id="split">
         <div class="tbl-wrap">
-          <section class="panel" id="p-glossary" data-od-id="glossary-table">
-            <div id="scopedGlossary"></div>
-            <table class="tbl"><thead><tr><th data-i18n="원문 용어">원문 용어</th><th data-i18n="번역 용어">번역 용어</th><th data-i18n="사용 기준">사용 기준</th><th data-i18n="메모">메모</th></tr></thead><tbody id="gBody"></tbody></table>
-          </section>
-          <section class="panel" id="p-uncertainty" data-od-id="uncertainty-table">
-            <table class="tbl"><thead><tr><th>ID</th><th data-i18n="진술">진술</th><th data-i18n="범주">범주</th><th data-i18n="위치">위치</th><th data-i18n="상태">상태</th></tr></thead><tbody id="uBody"></tbody></table>
-          </section>
-          <section class="panel is-open" id="p-context" data-od-id="materials-list">
+          <section data-od-id="materials-list">
             <div class="collection-explainer"><span data-i18n="연결된 문서별 자료 ">연결된 문서별 자료 </span><span data-i18n="경로를 따라 자료의 적용 위치를 확인하세요.">경로를 따라 자료의 적용 위치를 확인하세요.</span></div>
             <div id="cBody" class="material-collection"></div>
             <div class="empty" id="contextEmpty" hidden data-i18n="일치하는 자료가 없습니다. 배경·번역 지침을 추가하거나 검색 조건을 바꿔 보세요.">일치하는 자료가 없습니다. 배경·번역 지침을 추가하거나 검색 조건을 바꿔 보세요.</div>
-          </section>
-          <section class="panel" id="p-comments" data-od-id="material-comments">
-            <div class="collection-explainer"><span data-i18n="문서의 검토 기록 ">문서의 검토 기록 </span><span data-i18n="작성 당시의 구절과 연결된 코멘트입니다.">작성 당시의 구절과 연결된 코멘트입니다.</span></div>
-            <div id="commentsBody" class="material-collection"></div>
           </section>
         </div>
 
@@ -95,13 +77,6 @@
 
 <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle" data-i18n="문해">문해</b><span id="nMsg"></span></div></div>
 
-<dialog id="dlgAdd" data-od-id="dialog-add-entry">
-  <form method="dialog" id="addForm">
-    <div class="dl-h" id="addTitle" data-i18n="용어 추가">용어 추가</div>
-    <div class="dl-b" id="addFields"></div>
-    <div class="dl-f"><button class="btn" type="button" id="addCancel" data-i18n="취소">취소</button><button class="btn btn-primary" type="submit" data-i18n="추가">추가</button></div>
-  </form>
-</dialog>
 <dialog id="dlgPalette" class="palette" data-od-id="command-palette">
   <input class="input" id="palIn" placeholder="명령 검색…" data-i18n-placeholder="명령 검색…" aria-label="명령 검색" data-i18n-aria-label="명령 검색">
   <div class="pl-list" id="palList"></div>

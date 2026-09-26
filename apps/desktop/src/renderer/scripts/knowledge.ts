@@ -29,33 +29,30 @@ import {
   setSelfTitle,
   projectLocationLabel,
   unwrap,
+  SCREEN_FILES,
+  type ScreenId,
 } from "./shared";
 
-import { KNOWLEDGE_TABS as TABS, knowledgeTabFromHash, USAGE_LABELS, documentPath, documentPathText, orderedDocumentNodes, materialNodeState, type KnowledgeTab as Tab } from "./knowledge-model";
+import { knowledgePage, USAGE_LABELS, documentPath, documentPathText, orderedDocumentNodes, materialNodeState, type KnowledgePage } from "./knowledge-model";
 import { materialScopeNodes } from "./material-paths";
 import { configureMaterialEditor } from "./material-editor-ui";
 
 const project = await requireProject();
 if (!project) throw new Error("redirect");
 
-const NOTES: Record<Tab, string> = {
-  glossary: t("프로젝트 공통 번역 표현 · 원문에 일치하는 용어를 번역할 때 참고합니다"),
-  uncertainty: t("문서와 구절에 남긴 미해결 해석·근거·대안을 관리합니다"),
-  context: t("연결 위치와 하위 문서의 상속 범위를 확인하세요"),
-  comments: t("작성 당시 구절과 연결된 검토 기록"),
-};
+const page = knowledgePage(document.body.dataset.knowledgePage);
+/** Context and comments filter by the document chosen in the sidebar. */
+const scoped = page === "context" || page === "comments";
+const SCREENS: Record<KnowledgePage, ScreenId> = { context: "knowledge", glossary: "glossary", comments: "comments", uncertainty: "uncertainty" };
+const TITLES: Record<KnowledgePage, string> = { context: t("문맥"), glossary: t("용어집"), comments: t("코멘트"), uncertainty: t("불확실성") };
+
+const CONTEXT_NOTE = t("연결 위치와 하위 문서의 상속 범위를 확인하세요");
 
 const api = initShell({
-  page: "knowledge",
+  page: SCREENS[page],
   extraEnabled: ["ctxpane"],
-  extraPalette: [
-    { g: t("번역 자료"), l: t("배경·지침 보기"), k: "", id: "t-context" },
-    { g: t("번역 자료"), l: t("용어집 보기"), k: "", id: "t-glossary" },
-    { g: t("번역 자료"), l: t("불확실성 보기"), k: "", id: "t-uncertainty" },
-    { g: t("번역 자료"), l: t("코멘트 모아보기"), k: "", id: "t-comments" },
-    { g: t("번역 자료"), l: t("항목 추가…"), k: "", id: "addterm" },
-  ],
-  selfTitle: ui`번역 자료 — ${project.title}`,
+  extraPalette: [{ g: TITLES[page], l: t("항목 추가…"), k: "", id: "addterm" }],
+  selfTitle: `${TITLES[page]} — ${project.title}`,
   pageCmd,
   pageKeys,
   beforeNavigate: () => {
@@ -69,13 +66,13 @@ const api = initShell({
   },
 }).api;
 
-const termReview = configureTermReview({ api, host: must("#scopedGlossary") });
+const termReview = page === "glossary" ? configureTermReview({ api, host: must("#scopedGlossary") }) : null;
+const addDialog = $<HTMLDialogElement>("#dlgAdd");
 
 let data: KnowledgeView = { glossary: [], uncertainties: [], contextItems: [] };
 let docs: DocumentListItem[] = [];
 let materials: MaterialsView = { items: [], comments: [], preferences: [] };
 let materialsError = "";
-let tab: Tab = knowledgeTabFromHash(location.hash);
 let active: string | null = null;
 let selectedNodeId: string | null = null;
 let detailBaseline = "";
@@ -88,12 +85,12 @@ let knowledgeRefreshVersion = 0;
 const materialEditor = configureMaterialEditor({
   api, documents: () => docs, currentDocumentId: () => selectedNodeId, escape: esc, notify,
   onSaved: async (saved) => {
+    if (page !== "context") { openMaterial(saved.id); return; }
     await refreshMaterials();
     selectedNodeId = saved.scopeId;
     clearDetail();
     must<HTMLSelectElement>("#scopeFilter").value = "";
     must<HTMLInputElement>("#q").value = "";
-    setTab("context");
     showContext(materials.items.find(item => item.id === saved.id) ?? saved);
   },
 });
@@ -109,7 +106,7 @@ function detailIsDirty(): boolean {
 }
 
 function addIsDirty(): boolean {
-  return must<HTMLDialogElement>("#dlgAdd").open && formSnapshot("#addFields") !== addBaseline;
+  return !!addDialog?.open && formSnapshot("#addFields") !== addBaseline;
 }
 
 function canLeaveKnowledge(): boolean {
@@ -117,7 +114,7 @@ function canLeaveKnowledge(): boolean {
     notify(t("작업을 마치는 중입니다. 잠시 뒤 다시 시도해 주세요."), t("번역 자료"));
     return false;
   }
-  return (!termReview.hasUnsavedChanges() && !detailIsDirty() && !addIsDirty() && !materialEditor.hasUnsavedDraft())
+  return (!termReview?.hasUnsavedChanges() && !detailIsDirty() && !addIsDirty() && !materialEditor.hasUnsavedDraft())
     || window.confirm(t("저장하지 않은 변경이 있습니다. 변경을 버리고 이동하시겠습니까?"));
 }
 
@@ -185,39 +182,33 @@ function stTag(st: GlossaryEntryView["usageStatus"]): string {
   return `<span class="tag ${cls}">${USAGE_LABELS[st]}</span>`;
 }
 
-function setTab(nextTab: Tab): void {
-  if (!TABS.includes(nextTab)) return;
-  if (nextTab !== tab) {
-    if (!canLeaveKnowledge()) return;
-    clearDetail();
-  }
-  tab = nextTab;
-  history.replaceState(history.state, "", `${location.pathname}${location.search}#${nextTab}`);
-  $$("#ktabs button").forEach((b) => {
-    b.setAttribute("aria-selected", String(b.dataset.tab === nextTab));
-    b.setAttribute("aria-controls", `p-${b.dataset.tab}`);
-    b.tabIndex = b.dataset.tab === nextTab ? 0 : -1;
-  });
-  $$(".panel").forEach((p) => p.classList.toggle("is-open", p.id === `p-${nextTab}`));
-  const g = nextTab === "glossary";
-  must("#btnAdd").hidden = false;
-  const allScopeOption = must<HTMLSelectElement>("#scopeFilter").options[0];
-  if (allScopeOption) allScopeOption.text = nextTab === "comments" ? t("모든 문서의 코멘트") : t("프로젝트의 모든 자료");
-  must("#q").hidden = nextTab === "uncertainty";
-  must<HTMLInputElement>("#q").placeholder = g ? t("원문·번역 용어 검색") : nextTab === "comments" ? t("구절·코멘트·문서 경로 검색") : t("제목·내용·연결 경로 검색");
-  must("#scopeFilter").hidden = g || nextTab === "uncertainty";
-  must<HTMLSelectElement>("#scopeFilter").setAttribute("aria-label", nextTab === "comments" ? t("코멘트 문서 필터") : t("자료를 참고하는 문서 필터"));
-  must("#statusSel").hidden = !g;
-  must("#btnAdd").textContent =
-    nextTab === "glossary" ? t("용어 추가") : nextTab === "uncertainty" ? t("불확실성 추가") : nextTab === "comments" ? t("문서에서 코멘트 쓰기") : t("자료 추가");
-  must("#btnOpenDocument").hidden = nextTab !== "context" || selectedNode()?.nodeRole !== "source_unit";
-  must("#btnEditMetadata").hidden = nextTab !== "context" || !selectedNode();
-  must("#scopeNote").textContent = nextTab === "context" ? contextScopeNote() : NOTES[nextTab];
-  renderSidebar(tree(), { currentDocId: null, currentTab: nextTab });
-  if (nextTab === "glossary") { renderGlossary(); void termReview.load(true); }
-  if (nextTab === "context") renderContext();
-  if (nextTab === "uncertainty") renderUncertainties();
-  if (nextTab === "comments") renderComments();
+function renderPage(): void {
+  if (page === "glossary") renderGlossary();
+  else if (page === "uncertainty") renderUncertainties();
+  else if (page === "comments") renderComments();
+  else renderContext();
+  must("#sbC").textContent = String(materials.items.length);
+  must("#sbG").textContent = String(data.glossary.length);
+  must("#sbU").textContent = String(data.uncertainties.filter((u) => u.state === "open").length);
+}
+
+function syncDocumentActions(): void {
+  if (page !== "context") return;
+  must("#btnEditMetadata").hidden = !selectedNode();
+  must("#btnOpenDocument").hidden = selectedNode()?.nodeRole !== "source_unit";
+}
+
+function renderScopeOptions(): void {
+  const filter = must<HTMLSelectElement>("#scopeFilter");
+  const value = filter.value;
+  filter.innerHTML = `<option value="">${esc(page === "comments" ? t("모든 문서의 코멘트") : t("프로젝트의 모든 자료"))}</option>${documentOptions(null)}`;
+  filter.value = docs.some(doc => doc.id === value) ? value : "";
+}
+
+/** Material rows live on the context page; other pages hand off to it. */
+function openMaterial(id: string): void {
+  allowUnload = true;
+  location.href = `${SCREEN_FILES.knowledge}?material=${encodeURIComponent(id)}`;
 }
 
 function renderGlossary(): void {
@@ -235,8 +226,6 @@ function renderGlossary(): void {
           `<tr data-id="${esc(g.id)}" class="${active === g.id ? "is-active" : ""}" tabindex="0"><td class="term">${esc(g.sourceTerm)}</td><td>${esc(g.targetTerm)}</td><td>${stTag(g.usageStatus)}</td><td class="glossary-note muted">${esc(g.noteMd ?? "")}</td></tr>`,
       )
       .join("") || uiText(`<tr><td colspan="4" class="empty">일치하는 용어가 없습니다.</td></tr>`);
-  must("#cntGlossary").textContent = String(data.glossary.length);
-  must("#sbG").textContent = String(data.glossary.length);
 }
 
 function renderUncertainties(): void {
@@ -246,8 +235,6 @@ function renderUncertainties(): void {
       return `<tr data-u="${esc(u.id)}" class="${active === u.id ? "is-active" : ""}" tabindex="0"><td class="mono">${esc(u.id.slice(0, 8))}</td><td>${esc(u.statementMd)}<div class="muted" style="font-size:12.5px;margin-top:2px">${esc(u.locator)}</div></td><td><span class="tag tag-warn">${esc(u.category)}</span></td><td class="mono muted" style="font-size:11.5px">${esc(u.locator)}</td><td>${open ? uiText('<span class="tag tag-draft">열림</span>') : uiText('<span class="tag tag-ok">해결</span>')}</td></tr>`;
     })
     .join("");
-  must("#cntUnc").textContent = String(data.uncertainties.length);
-  must("#sbU").textContent = String(data.uncertainties.filter((u) => u.state === "open").length);
 }
 
 function selectedNode(): DocumentListItem | undefined {
@@ -271,7 +258,7 @@ function contextRows(): NodeContextView[] {
 }
 function contextScopeNote(): string {
   const scope = must<HTMLSelectElement>("#scopeFilter").value;
-  return scope ? ui`${pathLabel(scope)} · 직접·상속·선택 자료` : NOTES.context;
+  return scope ? ui`${pathLabel(scope)} · 직접·상속·선택 자료` : CONTEXT_NOTE;
 }
 function itemScopeNodes(item: NodeContextView): DocumentListItem[] {
   return materialScopeNodes(docs, item.scopeId, item.inheritToChildren ?? true);
@@ -318,9 +305,7 @@ function renderContext(): void {
   const unlinked = rows.filter(item => !known.has(item.scopeId));
   must("#cBody").innerHTML = materialsError ? `<p class="material-error" role="alert">${esc(materialsError)}</p>` : groups.map(({ node, rows: list }) => ui`<section class="node-materials"><div class="node-group-heading">${ic(node.nodeRole === "container" ? "folder" : "doc")}<div><strong>${esc(node.originalTitle || node.title)}</strong>${trail(node.id)}</div><small>자료 ${list.length}</small></div>${list.filter(item => item.source !== "comment_reference").map(renderRow).join("")}${list.some(item => item.source === "comment_reference") ? `<h3 class="material-help">참고 코멘트 연결</h3>${list.filter(item => item.source === "comment_reference").map(renderRow).join("")}` : ""}</section>`).join("") + (unlinked.length ? ui`<section class="node-materials"><h3>연결 위치 확인 필요</h3>${unlinked.map(renderRow).join("")}</section>` : "");
   must("#contextEmpty").hidden = rows.length > 0 || !!materialsError;
-  must("#cntContext").textContent = String(materials.items.length);
-  must("#sbC").textContent = String(materials.items.length);
-  if (tab === "context") must("#scopeNote").textContent = contextScopeNote();
+  must("#scopeNote").textContent = contextScopeNote();
 }
 function originHtml(item: NodeContextView): string {
   const origin = item.origin;
@@ -357,7 +342,6 @@ function renderComments(): void {
   const scope = must<HTMLSelectElement>("#scopeFilter").value;
   const rows = materials.comments.filter(comment => (!scope || comment.documentNodeId === scope)
     && matchesQuery([comment.quote, comment.bodyMd, pathLabel(comment.documentNodeId), comment.authorName]));
-  must("#cntComments").textContent = String(materials.comments.length);
   must("#commentsBody").innerHTML = materialsError ? `<p class="material-error" role="alert">${esc(materialsError)}</p>` : rows.map(comment => `<button type="button" class="material-row ${active === comment.id ? "is-active" : ""}" data-comment-id="${esc(comment.id)}" aria-pressed="${active === comment.id}">${trail(comment.documentNodeId)}<blockquote class="material-quote">${esc(comment.quote)}</blockquote><p>${esc(comment.bodyMd)}</p><div class="material-row-footer"><span>${esc(comment.authorName)} · ${esc(comment.updatedAt.slice(0, 10))}</span><span>${comment.materialIds.length ? ui`참고 자료 ${comment.materialIds.length}개에 연결됨` : t("원래 구절의 검토 기록")}</span></div></button>`).join("") || uiText('<p class="empty">일치하는 코멘트가 없습니다. 문서의 구절에 남긴 코멘트가 여기에 모입니다.</p>');
 }
 function showComment(comment: MaterialCommentView): void {
@@ -380,8 +364,8 @@ async function refreshMaterials(): Promise<void> {
   materialsError = "";
   data.contextItems = materials.items;
   if (home.ok) docs = home.data.documents;
-  renderSidebar(tree(), { currentDocId: null, currentTab: tab });
-  renderContext(); renderComments();
+  renderSidebar(tree(), { currentDocId: null });
+  renderPage();
 }
 
 async function showDocumentMetadata(nodeId: string): Promise<void> {
@@ -423,7 +407,7 @@ function renderDocumentMetadata(metadata: DocumentMetadataView): void {
     docs = docs.map((document) => document.id === saved.id
       ? { ...document, title: saved.title, originalTitle: saved.originalTitle }
       : document);
-    renderSidebar(tree(), { currentDocId: null, currentTab: tab });
+    renderSidebar(tree(), { currentDocId: null });
     const refreshed = await api.knowledge.get();
     const knowledge = unwrap(refreshed, t("번역 자료"));
     if (knowledge) data = knowledge;
@@ -519,7 +503,7 @@ function replaceUncertainty(saved: UncertaintyView): void {
   const index = data.uncertainties.findIndex((item) => item.id === saved.id);
   if (index >= 0) data.uncertainties[index] = saved;
   else data.uncertainties.unshift(saved);
-  renderUncertainties();
+  renderPage();
   showUnc(saved);
 }
 
@@ -564,7 +548,7 @@ async function resolveUncertainty(u: UncertaintyView): Promise<void> {
 }
 
 function addFieldsHtml(): string {
-  if (tab === "uncertainty") {
+  if (page === "uncertainty") {
     return ui`<div class="field"><label for="aScope">연결 문서</label><select class="select" id="aScope">${documentOptions(selectedNodeId)}</select></div>
       <div class="row" style="gap:10px"><div class="field" style="flex:1"><label for="aCategory">범주</label><select class="select" id="aCategory"><option>textual</option><option>interpretive</option><option>identification</option></select></div><div class="field" style="flex:1"><label for="aSeverity">심각도</label><select class="select" id="aSeverity"><option>minor</option><option>major</option><option>critical</option></select></div></div>
       <div class="field"><label for="aStatement">진술</label><textarea class="textarea" id="aStatement" required></textarea></div>
@@ -598,25 +582,20 @@ function documentOptions(selected: string | null): string {
 function openAdd(): void {
   if (!canLeaveKnowledge()) return;
   if (detailIsDirty()) clearDetail();
-  if (tab === "context") { materialEditor.open({ scopeId: selectedNodeId ?? undefined }); return; }
-  if (tab === "comments") {
+  if (page === "context") { materialEditor.open({ scopeId: selectedNodeId ?? undefined }); return; }
+  if (page === "comments") {
     const node = selectedNode()?.nodeRole === "source_unit" ? selectedNode() : docs.find(candidate => candidate.nodeRole === "source_unit");
     if (node) go("editor", node.id);
     else notify(t("먼저 원문 문서를 만들어 주세요."), t("코멘트"));
     return;
   }
-  must("#addTitle").textContent =
-    tab === "glossary" ? t("용어 추가") : tab === "uncertainty" ? t("불확실성 추가") : t("참고 자료 추가");
+  must("#addTitle").textContent = page === "glossary" ? t("용어 추가") : t("불확실성 추가");
   must("#addFields").innerHTML = addFieldsHtml();
   addBaseline = formSnapshot("#addFields");
-  (must("#dlgAdd") as HTMLDialogElement).showModal();
+  must<HTMLDialogElement>("#dlgAdd").showModal();
 }
 
 function pageCmd(id: string): boolean {
-  if (id.startsWith("t-")) {
-    setTab(id.slice(2) as Tab);
-    return true;
-  }
   switch (id) {
     case "ctxpane":
       return false;
@@ -630,60 +609,43 @@ function pageCmd(id: string): boolean {
 }
 
 function pageKeys(e: KeyboardEvent, m: boolean): void {
-  if (m && !e.shiftKey && !e.altKey && e.code === "KeyF") {
+  const search = $<HTMLInputElement>("#q");
+  if (search && m && !e.shiftKey && !e.altKey && e.code === "KeyF") {
     e.preventDefault();
-    must<HTMLInputElement>("#q").focus();
+    search.focus();
   }
 }
 
-must("#ktabs").addEventListener("click", (e) => {
-  const b = (e.target as HTMLElement).closest("button");
-  if (b instanceof HTMLElement && b.dataset.tab) setTab(b.dataset.tab as Tab);
-});
-must("#ktabs").addEventListener("keydown", (event) => {
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  event.preventDefault();
-  const index = TABS.indexOf(tab);
-  const next = event.key === "Home" ? TABS[0] : event.key === "End" ? TABS[TABS.length - 1]
-    : TABS[(index + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length];
-  if (!next) return;
-  setTab(next);
-  if (tab === next) $<HTMLButtonElement>(`#ktabs [data-tab="${next}"]`)?.focus();
-});
 ["#q", "#statusSel", "#scopeFilter"].forEach((s) => {
   $(s)?.addEventListener("input", () => {
     if (s === "#scopeFilter") {
       selectedNodeId = must<HTMLSelectElement>("#scopeFilter").value || docs.find(node => node.isMaster)?.id || null;
-      must("#btnEditMetadata").hidden = tab !== "context" || !selectedNode();
-      must("#btnOpenDocument").hidden = tab !== "context" || selectedNode()?.nodeRole !== "source_unit";
+      syncDocumentActions();
     }
-    renderGlossary();
-    renderUncertainties();
-    renderContext();
-    renderComments();
+    renderPage();
   });
 });
-must("#gBody").addEventListener("click", (e) => {
+$("#gBody")?.addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-id]");
   if (tr instanceof HTMLElement && tr.dataset.id) {
     const g = data.glossary.find((x) => x.id === tr.dataset.id);
     if (g && canLeaveKnowledge()) showGlossary(g);
   }
 });
-must("#uBody").addEventListener("click", (e) => {
+$("#uBody")?.addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("tr[data-u]");
   if (tr instanceof HTMLElement && tr.dataset.u) {
     const u = data.uncertainties.find((x) => x.id === tr.dataset.u);
     if (u && canLeaveKnowledge()) showUnc(u);
   }
 });
-must("#cBody").addEventListener("click", (e) => {
+$("#cBody")?.addEventListener("click", (e) => {
   const tr = (e.target as HTMLElement).closest("[data-cid]");
   if (!(tr instanceof HTMLElement) || !tr.dataset.cid) return;
   const item = materials.items.find((candidate) => candidate.id === tr.dataset.cid);
   if (item && canLeaveKnowledge()) showContext(item);
 });
-must("#commentsBody").addEventListener("click", event => {
+$("#commentsBody")?.addEventListener("click", event => {
   const row = (event.target as HTMLElement).closest<HTMLElement>("[data-comment-id]");
   const comment = materials.comments.find(item => item.id === row?.dataset.commentId);
   if (comment && canLeaveKnowledge()) showComment(comment);
@@ -692,19 +654,18 @@ must("#detail").addEventListener("click", event => {
   const target = (event.target as HTMLElement).closest<HTMLElement>("[data-open-material-node], [data-open-origin], [data-show-material]");
   if (!target || !canLeaveKnowledge()) return;
   if (target.dataset.showMaterial) {
-    const item = materials.items.find(candidate => candidate.id === target.dataset.showMaterial);
-    if (item) { setTab("context"); showContext(item); }
+    openMaterial(target.dataset.showMaterial);
     return;
   }
   const id = target.dataset.openMaterialNode ?? target.dataset.openOrigin;
   const node = docs.find(candidate => candidate.id === id);
   if (node) go(node.nodeRole === "source_unit" ? "editor" : "context", node.id);
 });
-must("#btnOpenDocument").addEventListener("click", () => {
+$("#btnOpenDocument")?.addEventListener("click", () => {
   const node = selectedNode();
   if (node?.nodeRole === "source_unit") go("editor", node.id);
 });
-must("#btnEditMetadata").addEventListener("click", () => {
+$("#btnEditMetadata")?.addEventListener("click", () => {
   const node = selectedNode();
   if (node && canLeaveKnowledge()) void runDetailOperation(() => showDocumentMetadata(node.id));
 });
@@ -712,20 +673,20 @@ must("#btnAdd").addEventListener("click", openAdd);
 function canCloseAdd(): boolean {
   return !addSaving && (!addIsDirty() || window.confirm(t("입력한 내용을 버리고 닫으시겠습니까?")));
 }
-must("#addCancel").addEventListener("click", () => {
-  if (canCloseAdd()) must<HTMLDialogElement>("#dlgAdd").close();
+$("#addCancel")?.addEventListener("click", () => {
+  if (canCloseAdd()) addDialog?.close();
 });
-must<HTMLDialogElement>("#dlgAdd").addEventListener("cancel", (event) => {
+addDialog?.addEventListener("cancel", (event) => {
   if (!canCloseAdd()) event.preventDefault();
 });
-must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
+$<HTMLFormElement>("#addForm")?.addEventListener("submit", (e) => {
   e.preventDefault();
   if (addSaving || detailSaving) return;
   addSaving = true;
   must("#addForm").inert = true;
   must("#addForm").setAttribute("aria-busy", "true");
   void (async () => {
-    if (tab === "uncertainty") {
+    if (page === "uncertainty") {
       const scopeId = must<HTMLSelectElement>("#aScope").value;
       const result = await api.knowledge.createUncertainty({
         category: must<HTMLSelectElement>("#aCategory").value as UncertaintyView["category"],
@@ -740,13 +701,13 @@ must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
       const saved = unwrap(result, t("불확실성"));
       if (!saved) return;
       data.uncertainties.unshift(saved);
-      (must("#dlgAdd") as HTMLDialogElement).close();
-      renderUncertainties();
+      addDialog?.close();
+      renderPage();
       showUnc(saved);
       notify(t("불확실성 추가"), t("불확실성"));
       return;
     }
-    if (tab === "glossary") {
+    if (page === "glossary") {
       const src = must<HTMLInputElement>("#aSrc").value.trim();
       const tgt = must<HTMLInputElement>("#aTgt").value.trim();
       const st = (document.querySelector('input[name="st"]:checked') as HTMLInputElement | null)?.value as
@@ -769,9 +730,8 @@ must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
       const saved = unwrap(result, t("용어집"));
       if (!saved) return;
       data.glossary.unshift(saved);
-      (must("#dlgAdd") as HTMLDialogElement).close();
-      renderGlossary();
-      renderSidebar(tree(), { currentTab: tab });
+      addDialog?.close();
+      renderPage();
       showGlossary(saved);
       notify(ui`${src} → ${tgt} 추가`, t("용어집"));
       return;
@@ -786,7 +746,7 @@ must<HTMLFormElement>("#addForm").addEventListener("submit", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.code !== "KeyS") return;
-  if (must<HTMLDialogElement>("#dlgAdd").open) {
+  if (addDialog?.open) {
     e.preventDefault();
     if (!addSaving) must<HTMLFormElement>("#addForm").requestSubmit();
     return;
@@ -798,23 +758,23 @@ document.addEventListener("keydown", (e) => {
 });
 
 bindSidebar(
-  (id) => {
+  scoped ? (id) => {
     if (!canLeaveKnowledge()) return;
     clearDetail();
     selectedNodeId = id;
     must<HTMLSelectElement>("#scopeFilter").value = id;
-    setTab("context");
-  },
-  (nextTab) => setTab(nextTab as Tab),
+    syncDocumentActions();
+    renderPage();
+  } : undefined,
   tree,
   undefined,
-  { selectExpandable: true },
+  { selectExpandable: scoped },
 );
 
 must("#detail").addEventListener("input", updateDetailState);
 must("#detail").addEventListener("change", updateDetailState);
 for (const selector of ["#gBody", "#uBody", "#cBody"]) {
-  must(selector).addEventListener("keydown", (event) => {
+  $(selector)?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     const row = (event.target as HTMLElement).closest<HTMLElement>("tr[tabindex]");
     if (!row) return;
@@ -835,10 +795,12 @@ async function boot(): Promise<void> {
     docs = home.data.documents;
     const requestedNodeId = new URLSearchParams(location.search).get("node");
     selectedNodeId = docs.some((document) => document.id === requestedNodeId) ? requestedNodeId : docs[0]?.id ?? null;
-    setSelfTitle(ui`번역 자료 — ${home.data.project.title}`);
+    setSelfTitle(`${TITLES[page]} — ${home.data.project.title}`);
     must("#materialsProject").textContent = home.data.project.title;
-    must("#scopeFilter").innerHTML = ui`<option value="">프로젝트의 모든 자료</option>${documentOptions(null)}`;
-    if (requestedNodeId && docs.some(node => node.id === requestedNodeId)) must<HTMLSelectElement>("#scopeFilter").value = requestedNodeId;
+    if (scoped) {
+      renderScopeOptions();
+      if (requestedNodeId && docs.some(node => node.id === requestedNodeId)) must<HTMLSelectElement>("#scopeFilter").value = requestedNodeId;
+    }
     const path = $("#sbPath");
     if (path) path.textContent = projectLocationLabel(home.data.project);
   } else {
@@ -849,10 +811,10 @@ async function boot(): Promise<void> {
   const v = unwrap(result, t("번역 자료"));
   if (v) data = v;
   try { await refreshMaterials(); } catch { /* The collection displays the retrieval error. */ }
-  renderGlossary();
-  renderUncertainties();
-  renderContext();
-  setTab(tab);
+  syncDocumentActions();
+  renderPage();
+  if (page === "glossary") void termReview?.load(true);
+  if (page !== "context") return;
   if (new URLSearchParams(location.search).get("info") === "1" && selectedNodeId) {
     await showDocumentMetadata(selectedNodeId);
     revealDetail();
@@ -861,7 +823,6 @@ async function boot(): Promise<void> {
   const requestedMaterial = materials.items.find(item => item.id === requestedMaterialId);
   if (requestedMaterial) {
     must<HTMLSelectElement>("#scopeFilter").value = "";
-    setTab("context");
     showContext(requestedMaterial);
   }
 }
@@ -870,8 +831,8 @@ await boot();
 
 registerProjectRefresh({
   blocked: () => detailSaving || addSaving || detailIsDirty() || addIsDirty() || materialEditor.isBusy()
-    || materialEditor.hasUnsavedDraft() || termReview.hasUnsavedChanges() || termReview.isBusy(),
-  version: () => `${knowledgeRefreshVersion}:${tab}:${active}:${selectedNodeId}:${metadataDetailId}`,
+    || materialEditor.hasUnsavedDraft() || !!termReview?.hasUnsavedChanges() || !!termReview?.isBusy(),
+  version: () => `${knowledgeRefreshVersion}:${page}:${active}:${selectedNodeId}:${metadataDetailId}`,
   async prepare() {
     const [home, nextKnowledge, nextMaterials] = await Promise.all([api.home.get(), api.knowledge.get(), api.knowledge.getMaterials()]);
     if (!home.ok) throw new Error(home.error.message);
@@ -880,21 +841,18 @@ registerProjectRefresh({
     const metadataId = metadataDetailId;
     const metadata = metadataId && home.data.documents.some(doc => doc.id === metadataId) ? await api.home.getDocumentMetadata(metadataId) : null;
     if (metadata && !metadata.ok) throw new Error(metadata.error.message);
-    const applyTerms = await termReview.prepareRefresh();
+    const applyTerms = await termReview?.prepareRefresh();
     return () => {
       const selected = active;
-      const filter = must<HTMLSelectElement>("#scopeFilter").value;
       docs = home.data.documents; data = nextKnowledge.data; materials = nextMaterials.data;
       data.contextItems = materials.items; materialsError = ""; knowledgeRefreshVersion += 1;
       if (selectedNodeId && !docs.some(doc => doc.id === selectedNodeId)) selectedNodeId = null;
-      must<HTMLSelectElement>("#scopeFilter").innerHTML = `<option value="">${esc(tab === "comments" ? t("모든 문서의 코멘트") : t("프로젝트의 모든 자료"))}</option>${documentOptions(null)}`;
-      must<HTMLSelectElement>("#scopeFilter").value = docs.some(doc => doc.id === filter) ? filter : "";
+      if (scoped) renderScopeOptions();
       must("#materialsProject").textContent = home.data.project.title;
-      must("#btnEditMetadata").hidden = tab !== "context" || !selectedNode();
-      must("#btnOpenDocument").hidden = tab !== "context" || selectedNode()?.nodeRole !== "source_unit";
-      setSelfTitle(ui`번역 자료 — ${home.data.project.title}`);
-      renderSidebar(tree(), { currentDocId: null, currentTab: tab });
-      renderGlossary(); renderUncertainties(); renderContext(); renderComments(); applyTerms();
+      syncDocumentActions();
+      setSelfTitle(`${TITLES[page]} — ${home.data.project.title}`);
+      renderSidebar(tree(), { currentDocId: null });
+      renderPage(); applyTerms?.();
       if (metadataId) { if (metadata?.ok) renderDocumentMetadata(metadata.data); else clearDetail(); }
       else if (selected) {
         const glossary = data.glossary.find(item => item.id === selected);

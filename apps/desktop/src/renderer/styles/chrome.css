@@ -365,6 +365,9 @@ html[data-platform="mac"] .sb-top {
 .sb-library {
   margin-top: 21px;
 }
+.sb-library + .sb-library {
+  margin-top: 0;
+}
 .sb-children {
   position: relative;
 }
