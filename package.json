@@ -1,7 +1,7 @@
 {
   "name": "munhae-cat",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "문해(文解) / Munhae CAT — 고한문 번역가를 위한 로컬 Electron CAT 도구",
   "packageManager": "pnpm@10.15.0",
   "scripts": {
