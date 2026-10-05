@@ -1,4 +1,4 @@
-import { canonicalJson, canonicalJsonHash } from "@munhae/domain";
+import { canonicalJsonHash } from "@munhae/domain";
 import type { MaterialOrigin } from "./views.ts";
 
 export function materialOriginFromJson(value: string | null): MaterialOrigin | null {
@@ -26,34 +26,4 @@ export function contextItemContentHash(value: ContextItemContent): string {
     ...(value.inheritToChildren === false ? { inheritToChildren: false } : {}),
     ...(value.conditionMd?.trim() ? { conditionMd: value.conditionMd.trim() } : {}),
   });
-}
-
-export type GlossaryContent = {
-  sourceTerm: string;
-  targetTerm: string;
-  targetLocale: string;
-  termKind: string;
-  reading: string | null;
-  noteMd: string | null;
-  usageStatus: "preferred" | "allowed" | "forbidden";
-};
-
-function glossaryManifest(value: GlossaryContent): GlossaryContent {
-  return {
-    sourceTerm: value.sourceTerm,
-    targetTerm: value.targetTerm,
-    targetLocale: value.targetLocale,
-    termKind: value.termKind,
-    reading: value.reading,
-    noteMd: value.noteMd,
-    usageStatus: value.usageStatus,
-  };
-}
-
-export function glossaryContentJson(value: GlossaryContent): string {
-  return canonicalJson(glossaryManifest(value));
-}
-
-export function glossaryContentHash(value: GlossaryContent): string {
-  return canonicalJsonHash(glossaryManifest(value));
 }

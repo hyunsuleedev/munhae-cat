@@ -897,6 +897,54 @@ Phase 1의 domain command를 재사용하되 SQLite와 PostgreSQL migration 파�
 - server framework, Object Storage 선택. 계정 인증은 운영자 Supabase Auth로 확정
 - 완료 조건: import 전후 row/hash 일치, 자동 sync 없음, 미확정 version 공유 차단, 내부 정보 release 제외
 
+### 15.12 제품 방향 로드맵 — 온라인 기본·MCP·빌트인 AI (2026-09-27)
+
+결정 사항:
+
+- 문해는 데스크톱 앱 전용이다. 브라우저 편집기는 만들지 않는다. 모든 AI 경로는 Electron main을 거친다.
+- 장기적으로 온라인 프로젝트를 기본 작업 방식으로 한다(노션·Paper형). 서버가 원본이어야 한도를 서버에서 강제할 수 있다. `.munhae`는 내보내기·백업·가져오기 형식으로 남긴다.
+- 당분간 로컬 프로젝트 기능은 그대로 두고 앱 고도화를 우선한다. 아래 R1 이후는 착수 시점에 다시 결정한다.
+
+참고한 구조: Paper Desktop은 앱 전용에 가까운 Electron 앱이다. 문서 원본은 서버(`sync.paper.design`)에 있고, 앱이 켜져 있는 동안 로컬 MCP 서버(`127.0.0.1:29979/mcp`, 브라우저 Origin·DNS rebinding 차단, Bearer는 headless 모드에서만)를 열고, 사용자가 앱에서 고른 AI 도구의 설정 파일에 `~/.paper/bin/paper mcp` stdio 중계 CLI를 등록한다. 협업은 무료이고, 한도는 MCP 도구 호출(무료 주 100회)·이미지 생성·첨부 크기에 건다.
+
+#### R0 — 지금: 로컬 유지, 앱 고도화
+
+전환 비용을 늘리지 않기 위한 규칙:
+
+- 앱 도구 핸들러(`submit-translation`, `get-reading-context` 등)는 SQLite·Electron에 묶지 않고 `입력 → 검증 → repository 반영`만 하도록 유지한다. R1·R3·R4가 같은 핸들러를 재사용한다.
+- 새 domain table은 온라인 schema 생성기로 PostgreSQL에도 반영한다. 로컬 파일 경로를 기준 데이터로 쓰는 기능을 추가하지 않는다.
+- AI 실행의 provider 토큰 사용량을 실행 기록에 남긴다. 빌트인 AI 가격과 한도 산정의 실측 근거로 쓴다.
+
+#### R1 — stdio MCP
+
+- Paper처럼 main이 고정 포트 HTTP MCP 서버를 열고(Origin·Host 검사), 홈 폴더의 stdio 중계 명령(`~/.munhae/bin/munhae-mcp`)이 그 서버로 중계한다. 앱을 켤 때마다 중계 명령을 현재 앱 위치로 다시 써서 업데이트·이동에도 등록이 깨지지 않게 한다(2026-09-29 결정, 발견 파일·Bearer 방식을 대체).
+- 설정의 연결 화면에서 Claude Code·Codex·Antigravity 설정 파일에 중계 명령을 직접 등록한다.
+- 문해가 시작한 run은 run별 MCP 설정 주입과 기존 일회성 grant를 유지한다. 외부 AI가 시작한 쓰기는 바로 반영하고 사용자가 되돌릴 수 있게 한다(2026-09-29 결정, 초안 수락 방식을 대체).
+- 앱 AI 작업과 겹치면 그 문서에 대한 외부 쓰기만 거절한다. 세부 설계·도구 목록·전송 방식 비교는 `docs/local-mcp.md`에 둔다.
+- 착수 시 §4.2와 §11.2의 MCP 제외 조항을 개정한다.
+
+#### R2 — 온라인 기본 전환
+
+- 선행: 변경 알림마다 전체 스냅샷을 읽지 않고 `get_online_project_changes`로 변경분만 반영한다. 전송량이 서버비의 주 변수다.
+- 선행: 충돌 단위를 프로젝트 revision에서 문서·블록 단위로 낮춘다.
+- 한도는 서버에서 검사한다. AI 실행은 `persistAiBeforeLaunch`의 예약 commit에서 실행 계정 기준으로 세고, 전용 오류 코드로 업그레이드 안내를 연결한다. MCP 쓰기는 도구 호출 단위로 센다. 첨부 용량에도 한도를 둔다.
+- CLI·MCP 한도는 요금제 구분 장치다. 서버는 AI 입력과 수동 입력을 구분할 수 없으므로 변조된 앱은 우회할 수 있지만, AI 비용은 사용자 부담이다.
+- 로컬 → 온라인 가져오기와 한도 초과 처리, 무료 내보내기를 제공한다. 오프라인 편집·AI 실행 불가를 명시한다.
+- 비용 기준: Supabase Pro 월 $25(DB 8GB, Storage 100GB, egress 250GB, Realtime 동시 500). 텍스트 프로젝트는 수 MB 수준이다.
+
+#### R3 — 빌트인 AI: 앱 안 루프
+
+- `AgentAdapter`에 `munhae` 어댑터를 추가한다. Anthropic SDK Tool Runner로 도구 루프를 돌리고 앱 도구를 정식 API 도구로 정의한다. 브리지·CLI wrapper를 거치지 않고 핸들러를 직접 호출한다.
+- SDK `baseURL`은 Supabase `ai-proxy` 함수다. 프록시는 JWT·Premium·예약 run 소유를 확인하고, 모델 허용 목록과 `max_tokens` 상한을 적용하고, stream usage로 사용자별 월 예산을 강제한다. 이 경로의 한도는 우회할 수 없어야 한다.
+- edge function은 요청당 400초(유료)·무응답 150초 제한이 있으므로 긴 번역은 분절 단위로 호출한다.
+- 앱을 닫으면 실행이 멈춘다. 모델과 한도는 R0 실측 비용으로 정한다.
+
+#### R4 — 원격 MCP + Managed Agents
+
+- 도구 핸들러를 PostgreSQL 위의 원격 MCP 서버로도 노출한다. 사용자가 claude.ai·ChatGPT에서 온라인 프로젝트에 연결하는 경로도 된다.
+- Premium 백그라운드 문서 전체 번역을 Managed Agents로 실행한다. outcome 채점 기준(분절 누락 없음·문장 연결 유효·용어 일관성), 분절 병렬 처리, 세션 금액 상한을 쓴다.
+- 진행 상황은 SSE 중계 대신 웹훅 → PostgreSQL 기록 → Realtime으로 앱에 전달한다. MCP 인증은 사용자별 vault 자격증명으로 하고, 문해 MCP 도구에는 `always_allow`를 설정한다.
+
 ## 16. 검색
 
 MVP:

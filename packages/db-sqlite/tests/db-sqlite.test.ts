@@ -23,7 +23,7 @@ import {
 } from "../src/index.ts";
 import { validatePackagedReferenceAsset } from "../src/reference-assets.ts";
 import { validateBlocks } from "../src/translation.ts";
-import { CONTEXT_WITHOUT_KIND_SQL, FULL_TEXT_SQL, REMOVE_PEOPLE_PLACES_SQL, READING_ANNOTATIONS_SQL, TRANSLATION_MATERIALS_SQL, PROJECT_INIT_SQL, REVIEW_COMMENTS_SQL } from "../src/embedded-sql.ts";
+import { REMOVE_UNCERTAINTIES_SQL, TERM_CONFIDENCE_SQL, TERM_KINDS_SQL, CONTEXT_WITHOUT_KIND_SQL, FULL_TEXT_SQL, REMOVE_PEOPLE_PLACES_SQL, READING_ANNOTATIONS_SQL, TRANSLATION_MATERIALS_SQL, PROJECT_INIT_SQL, REVIEW_COMMENTS_SQL } from "../src/embedded-sql.ts";
 
 const dirs: string[] = [];
 const repos: ProjectRepo[] = [];
@@ -151,8 +151,7 @@ describe("document nodes", () => {
            'search_documents_fts',
            'trg_document_nodes_parent_container_insert',
            'trg_document_nodes_master_delete',
-           'trg_context_items_document_scope_insert',
-           'trg_uncertainty_versions_owner_insert'
+           'trg_context_items_document_scope_insert'
          )
          ORDER BY name`,
       ).all()).toEqual([
@@ -160,8 +159,8 @@ describe("document nodes", () => {
         { name: "trg_context_items_document_scope_insert" },
         { name: "trg_document_nodes_master_delete" },
         { name: "trg_document_nodes_parent_container_insert" },
-        { name: "trg_uncertainty_versions_owner_insert" },
       ]);
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%uncertaint%'").all()).toEqual([]);
 
       const master = handle.getHome().documents.find((node) => node.isMaster)!;
       expect(() => db.prepare(`
@@ -191,12 +190,12 @@ describe("create / open", () => {
   it("ships the original baseline and a mirrored full-text upgrade", () => {
     const packageMigrations = new URL("../migrations/sqlite/", import.meta.url);
     const infraMigrations = new URL("../../../infra/migrations/sqlite/", import.meta.url);
-    expect(readdirSync(packageMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql", "008_term_review.sql", "009_comment_references.sql", "010_remove_change_summary.sql", "011_reading_translation_quote.sql", "012_translation_groups.sql"]);
-    expect(readdirSync(infraMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql", "008_term_review.sql", "009_comment_references.sql", "010_remove_change_summary.sql", "011_reading_translation_quote.sql", "012_translation_groups.sql"]);
+    expect(readdirSync(packageMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql", "008_term_review.sql", "009_comment_references.sql", "010_remove_change_summary.sql", "011_reading_translation_quote.sql", "012_translation_groups.sql", "013_document_terms.sql", "014_term_occurrence_sentences.sql", "015_translation_notes.sql", "016_term_kinds.sql", "017_term_confidence.sql", "018_remove_uncertainties.sql"]);
+    expect(readdirSync(infraMigrations).sort()).toEqual(["001_init.sql", "002_full_text_translation.sql", "003_context_without_kind.sql", "004_review_comments.sql", "005_remove_people_places.sql", "006_reading_annotations.sql", "007_translation_materials.sql", "008_term_review.sql", "009_comment_references.sql", "010_remove_change_summary.sql", "011_reading_translation_quote.sql", "012_translation_groups.sql", "013_document_terms.sql", "014_term_occurrence_sentences.sql", "015_translation_notes.sql", "016_term_kinds.sql", "017_term_confidence.sql", "018_remove_uncertainties.sql"]);
     expect(readFileSync(new URL("001_init.sql", packageMigrations)))
       .toEqual(readFileSync(new URL("001_init.sql", infraMigrations)));
     expect(PROJECT_INIT_SQL).toBe(readFileSync(new URL("001_init.sql", packageMigrations), "utf8"));
-    for (const [name, embedded] of [["002_full_text_translation.sql", FULL_TEXT_SQL], ["003_context_without_kind.sql", CONTEXT_WITHOUT_KIND_SQL], ["004_review_comments.sql", REVIEW_COMMENTS_SQL], ["005_remove_people_places.sql", REMOVE_PEOPLE_PLACES_SQL], ["006_reading_annotations.sql", READING_ANNOTATIONS_SQL], ["007_translation_materials.sql", TRANSLATION_MATERIALS_SQL]]) {
+    for (const [name, embedded] of [["002_full_text_translation.sql", FULL_TEXT_SQL], ["003_context_without_kind.sql", CONTEXT_WITHOUT_KIND_SQL], ["004_review_comments.sql", REVIEW_COMMENTS_SQL], ["005_remove_people_places.sql", REMOVE_PEOPLE_PLACES_SQL], ["006_reading_annotations.sql", READING_ANNOTATIONS_SQL], ["007_translation_materials.sql", TRANSLATION_MATERIALS_SQL], ["016_term_kinds.sql", TERM_KINDS_SQL], ["017_term_confidence.sql", TERM_CONFIDENCE_SQL], ["018_remove_uncertainties.sql", REMOVE_UNCERTAINTIES_SQL]]) {
       const sql = readFileSync(new URL(name!, packageMigrations), "utf8");
       expect(sql).toBe(readFileSync(new URL(name!, infraMigrations), "utf8"));
       expect(embedded).toBe(sql);
@@ -241,7 +240,7 @@ describe("create / open", () => {
          JOIN core_translation_policy_heads head
          JOIN core_translation_policy_versions version ON version.id = head.current_version_id`,
       ).get()).toEqual({
-        schema_version: 12,
+        schema_version: 18,
         style_guide_md: "현재 문서 전체를 빠짐없이 자연스러운 한국어로 번역한다.",
         rules_json: '{"sourceLanguage":"lzh","targetLocale":"ko","audience":"연구자·일반 독자","hanjaPolicy":"중요 용어는 한국어(漢字)로 병기한다.","supplementPolicy":"원문 밖 보충은 별도 표시한다.","uncertaintyPolicy":"textual uncertainty와 interpretive uncertainty를 분리한다."}',
       });
@@ -264,7 +263,7 @@ describe("create / open", () => {
       expect(agentSessionColumns).not.toContain("native_session_id");
       expect(db.prepare(
         "SELECT version, name FROM meta_schema_migrations ORDER BY version",
-      ).all()).toEqual([{ version: 1, name: "001_init.sql" }, { version: 2, name: "002_full_text_translation.sql" }, { version: 3, name: "003_context_without_kind.sql" }, { version: 4, name: "004_review_comments.sql" }, { version: 5, name: "005_remove_people_places.sql" }, { version: 6, name: "006_reading_annotations.sql" }, { version: 7, name: "007_translation_materials.sql" }, { version: 8, name: "008_term_review.sql" }, { version: 9, name: "009_comment_references.sql" }, { version: 10, name: "010_remove_change_summary.sql" }, { version: 11, name: "011_reading_translation_quote.sql" }, { version: 12, name: "012_translation_groups.sql" }]);
+      ).all()).toEqual([{ version: 1, name: "001_init.sql" }, { version: 2, name: "002_full_text_translation.sql" }, { version: 3, name: "003_context_without_kind.sql" }, { version: 4, name: "004_review_comments.sql" }, { version: 5, name: "005_remove_people_places.sql" }, { version: 6, name: "006_reading_annotations.sql" }, { version: 7, name: "007_translation_materials.sql" }, { version: 8, name: "008_term_review.sql" }, { version: 9, name: "009_comment_references.sql" }, { version: 10, name: "010_remove_change_summary.sql" }, { version: 11, name: "011_reading_translation_quote.sql" }, { version: 12, name: "012_translation_groups.sql" }, { version: 13, name: "013_document_terms.sql" }, { version: 14, name: "014_term_occurrence_sentences.sql" }, { version: 15, name: "015_translation_notes.sql" }, { version: 16, name: "016_term_kinds.sql" }, { version: 17, name: "017_term_confidence.sql" }, { version: 18, name: "018_remove_uncertainties.sql" }]);
       expect(db.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'reflection_%'",
       ).all()).toEqual([]);
@@ -282,11 +281,11 @@ describe("create / open", () => {
 
     const db = openSqlite(dbPath);
     try {
-      db.prepare("UPDATE meta_project_state SET schema_version = 13").run();
+      db.prepare("UPDATE meta_project_state SET schema_version = 19").run();
       const insertMigration = db.prepare(
         "INSERT INTO meta_schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
       );
-      for (const version of [13]) {
+      for (const version of [19]) {
         insertMigration.run(
           version,
           `00${String(version)}_legacy.sql`,
@@ -313,10 +312,10 @@ describe("create / open", () => {
       ).toEqual({ id: projectId });
       expect(
         db.prepare("SELECT schema_version FROM meta_project_state").get(),
-      ).toEqual({ schema_version: 13 });
+      ).toEqual({ schema_version: 19 });
       expect(
         db.prepare("SELECT COUNT(*) AS count FROM meta_schema_migrations").get(),
-      ).toEqual({ count: 13 });
+      ).toEqual({ count: 19 });
     } finally {
       db.close();
     }
@@ -1394,11 +1393,12 @@ describe("seed demo", () => {
 });
 
 describe("app db + knowledge", () => {
-  it("loads glossary and general knowledge context in both translation flows", async () => {
+  it("loads terms and general knowledge context in both translation flows", async () => {
     const { openAppDatabase } = await import("../src/index.ts");
     const repo = track(seedDemoProject(tempDir()));
     const knowledge = repo.getKnowledge();
-    expect(knowledge.glossary.some((g) => g.sourceTerm === "文字")).toBe(true);
+    expect(knowledge.terms).toEqual([]);
+    expect(knowledge).not.toHaveProperty("glossary");
     expect(knowledge).not.toHaveProperty("persons");
     expect(knowledge).not.toHaveProperty("places");
     expect(knowledge.contextItems.some((item) => /^(인물|지명) · /u.test(item.title))).toBe(false);
@@ -1456,11 +1456,6 @@ describe("app db + knowledge", () => {
     expect(repo.getHome().documents.find((document) => document.id === id)?.contextCount).toBe(
       documentContexts.length + scopedContexts.length,
     );
-    expect(
-      preview.auxiliary
-        .filter((item) => item.kind === "uncertainty" && item.reason === "project_uncertainty")
-        .every((item) => !item.included),
-    ).toBe(true);
     const confirmedExamples = preview.auxiliary.filter((item) => item.kind === "confirmed_translation");
     expect(confirmedExamples.length).toBeGreaterThan(0);
     expect(confirmedExamples.every((item) => item.reason === "project_confirmed_translation")).toBe(true);

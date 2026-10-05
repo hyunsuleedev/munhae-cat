@@ -1,0 +1,141 @@
+/* Project glossary: quiet rows beside the inspector, sized with the shared hanmun reading type.
+   The tools belong to the list column, so the inspector runs from the titlebar to the status bar. */
+.glossary-main { --glossary-inset: 20px; display: flex; flex-direction: column; min-width: 0; min-height: 0; container-type: inline-size; }
+.glossary-main > .glossary-list { flex: 1; }
+/* Tools follow the editor's command bar: a chrome band of quiet ghost tools split by hairlines. */
+.glossary-tools { position: relative; display: flex; align-items: stretch; flex: 0 0 auto; min-height: 36px; padding-left: 28px; border-bottom: 1px solid var(--border); background: var(--chrome); }
+/* Row checks mirror the editor's sentence groups: a 28px column, with select-all heading it in the tools. */
+.glossary-select-all { position: absolute; left: 0; top: 0; bottom: 0; width: 28px; display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--border); }
+.glossary-selection { gap: 4px; }
+.glossary-selection > span { padding: 3px 7px; border-radius: 4px; background: var(--accent-soft); color: var(--accent-ink); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.glossary-search { flex: 1; min-width: 140px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 var(--glossary-inset); color: var(--muted); }
+.glossary-search .ic { width: 16px; height: 16px; flex-shrink: 0; stroke-width: 1.4; }
+.glossary-search:focus-within .ic { color: var(--accent); }
+.glossary-search input { width: 100%; height: 30px; padding: 0 2px; border: 0; background: transparent; color: var(--fg); font-size: 12px; outline: none; appearance: none; }
+.glossary-search input::placeholder { color: var(--muted); opacity: .85; }
+.glossary-tool-group { position: relative; display: flex; align-items: center; flex-shrink: 0; gap: 2px; padding: 2px 6px; border-left: 1px solid var(--border); }
+.glossary-tools :is(.glossary-kinds button, .glossary-sort, .glossary-type-trigger, .glossary-delete) { height: 30px; padding: 4px 8px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--muted); font: 400 12px/20px var(--font-ui); box-shadow: none; white-space: nowrap; }
+.glossary-kinds button { display: inline-flex; align-items: center; gap: 5px; }
+.glossary-kinds .cnt { font: 10.5px var(--font-mono); opacity: .8; }
+.glossary-tools .glossary-kinds button[aria-pressed="true"] { background: var(--surface); border-color: var(--ctl-border); color: var(--accent-ink); box-shadow: 0 1px 2px #292b2708; }
+.glossary-tools .glossary-sort-menu .glossary-sort { appearance: none; field-sizing: content; padding: 4px 24px 4px 30px; }
+.glossary-sort-menu > .ic { position: absolute; left: 15px; width: 16px; height: 16px; stroke-width: 1.4; color: var(--muted); pointer-events: none; }
+.glossary-sort-menu::after { content: ""; position: absolute; right: 17px; width: 6px; height: 6px; margin-top: -3px; border-right: 1.25px solid var(--muted); border-bottom: 1.25px solid var(--muted); transform: rotate(45deg); opacity: .55; pointer-events: none; }
+.glossary-tools :is(.glossary-kinds button, .glossary-sort, .glossary-type-trigger, .glossary-delete):not(:disabled):active { transform: scale(.97); }
+.glossary-tools :is(.glossary-kinds button, .glossary-sort, .glossary-type-trigger, .glossary-delete):focus-visible { outline: 2px solid var(--accent-ink); outline-offset: -2px; }
+.glossary-tools:has(#glossaryType:popover-open) .glossary-type-trigger { background: var(--fg-softer); color: var(--accent-ink); }
+.glossary-tools .glossary-selection .glossary-delete { display: inline-flex; align-items: center; gap: 5px; color: var(--danger); }
+.glossary-delete .ic { width: 14px; height: 14px; stroke-width: 1.4; }
+@media (hover: hover) and (pointer: fine) {
+  .glossary-tools .glossary-selection .glossary-delete:hover:not(:disabled) { background: var(--danger-soft); }
+  .glossary-tools :is(.glossary-kinds button:not([aria-pressed="true"]), .glossary-sort, .glossary-type-trigger):hover { background: var(--surface); border-color: var(--ctl-border); box-shadow: 0 1px 2px #292b2708; color: var(--fg); }
+}
+.glossary-split { position: relative; }
+.glossary-split > .inspector-resizer { right: var(--iw); margin-right: -4px; }
+.glossary-split.no-insp > .inspector-resizer { display: none; }
+/* The detail's meta row sits in the tools band beside it. */
+.materials-hub .glossary-split > #insp { padding-top: 6px; }
+.glossary-type-trigger { anchor-name: --glossary-type; }
+.glossary-type-trigger span { font: 12px/20px var(--font-hanmun); }
+.glossary-type-trigger span:last-child { font-size: 17px; margin-left: -2px; }
+.glossary-type-settings { position: fixed; inset: auto; position-anchor: --glossary-type; top: anchor(bottom); right: anchor(right); position-try-fallbacks: flip-block; margin: 6px 0 0; width: 232px; max-width: calc(100vw - 24px); padding: 14px; border: 1px solid var(--border); border-radius: 8px; color: var(--fg); background: var(--surface); box-shadow: 0 8px 28px #292b271a, 0 2px 5px #292b270a; }
+.glossary-type-settings .field { display: grid; grid-template-columns: minmax(0, 1fr) 94px; align-items: center; gap: 12px; margin: 0 0 14px; }
+.glossary-type-settings .field:last-child { margin-bottom: 0; }
+.glossary-type-settings .field label { font-size: 12px; }
+.glossary-type-settings .select { width: 100%; min-height: 0; padding: 4px; border: 1px solid var(--border); border-radius: 4px; box-shadow: none; font: 11px var(--font-ui); }
+
+/* Standard scrollbar properties hand the list back to macOS overlay scrollbars: they appear only while
+   scrolling and take no width, so row rules reach the inspector edge. */
+.materials-hub .tbl-wrap.glossary-list { padding: 0 0 24px; scrollbar-width: thin; scrollbar-color: var(--ctl-border) transparent; }
+.glossary-item { display: grid; grid-template-columns: 28px minmax(0, 1fr); border-bottom: 1px solid var(--border); }
+.glossary-item.is-active { background: #f6f0e6; box-shadow: inset 2px 0 var(--accent-ink); }
+.glossary-item.is-checked { background: var(--accent-soft); }
+.glossary-item.is-checked > .glossary-select-cell { box-shadow: inset 3px 0 var(--accent); }
+.glossary-select-cell { display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--border); cursor: pointer; }
+.glossary-row { display: block; width: 100%; min-width: 0; padding: 12px 24px 11px var(--glossary-inset); border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.glossary-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.glossary-row-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+/* Headword, translation and definition share one size; color and typeface carry the hierarchy.
+   0.8 of the reading size keeps dense hanja legible at the smallest setting. */
+.glossary-form, .glossary-translation { font: calc(var(--hanmun-font-size, 20px) * .8)/1.5 var(--font-hanmun); white-space: nowrap; }
+.glossary-form { flex: none; letter-spacing: .03em; }
+.glossary-form sup { margin-left: 1px; color: var(--accent); font: 500 10px/0 var(--font-ui); vertical-align: super; }
+.glossary-translation { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.glossary-row.is-active :is(.glossary-form, .glossary-translation) { color: var(--accent); }
+.glossary-reading { flex: none; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.glossary-row-meta { display: flex; gap: 12px; flex: none; margin-left: auto; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.glossary-documents { color: var(--accent); }
+.glossary-definition { display: block; margin-top: 2px; overflow: hidden; color: var(--muted); font-size: calc(var(--hanmun-font-size, 20px) * .8); line-height: 1.6; white-space: nowrap; text-overflow: ellipsis; }
+:is(.glossary-definition, .glossary-detail-definition).is-empty { opacity: .7; }
+.glossary-empty { display: grid; justify-items: center; gap: 10px; padding: 56px 20px; color: var(--muted); font-size: 13px; line-height: 1.8; text-align: center; }
+.glossary-empty p { margin: 0; }
+
+.glossary-detail-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 24px; margin-bottom: 10px; color: var(--muted); font-size: 10.5px; }
+.glossary-detail-top .ic { width: 12px; height: 12px; }
+.materials-detail .glossary-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 14px; font: calc(var(--hanmun-font-size, 20px) * 1.5)/1.35 var(--font-hanmun); overflow-wrap: anywhere; }
+.glossary-title .glossary-form { font: inherit; white-space: normal; letter-spacing: .04em; }
+.glossary-reading-line { margin: -8px 0 14px; color: var(--muted); font-size: 12px; }
+.glossary-detail-definition { margin: 0; font-size: calc(var(--hanmun-font-size, 20px) * .8); line-height: var(--hanmun-line-height, 2); white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
+.glossary-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.glossary-section h3 { display: flex; align-items: baseline; gap: 6px; margin: 0 0 4px; color: var(--muted); font-size: 11px; font-weight: 500; }
+.glossary-section h3 small { font: 10px var(--font-mono); }
+.glossary-evidence { margin: 6px 0 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.8; }
+.glossary-evidence small { display: block; color: var(--muted); font-size: 10.5px; overflow-wrap: anywhere; }
+.glossary-use { padding: 10px 0; border-bottom: 1px dashed var(--border); }
+.glossary-use:last-child { border-bottom: 0; }
+.glossary-use-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.glossary-use-head strong { min-width: 0; font-size: 12px; font-weight: 500; }
+.glossary-use-head small { margin-left: auto; color: var(--muted); font-size: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.glossary-use.is-previous .glossary-use-head strong { color: var(--muted); }
+.glossary-use-sentences { margin: 6px 0 0; padding: 0; list-style: none; font: calc(var(--hanmun-font-size, 20px) * .8)/var(--hanmun-line-height, 2) var(--font-hanmun); overflow-wrap: anywhere; }
+.glossary-use-sentences li + li { margin-top: 6px; }
+.glossary-use-sentences mark { background: var(--accent-soft); color: inherit; }
+.glossary-use.is-previous .glossary-use-sentences { color: var(--muted); }
+.glossary-use-more { display: block; margin-top: 2px; padding: 2px 0; border: 0; background: transparent; color: var(--muted); font-size: 11px; }
+.glossary-use-note { margin: 6px 0 0; padding: 3px 10px; border-left: 2px solid color-mix(in oklch, var(--accent) 45%, var(--border)); color: var(--muted); font-size: calc(var(--hanmun-font-size, 20px) * .62); line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+.glossary-use-state { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.glossary-use-open { display: inline-flex; align-items: center; gap: 3px; margin-top: 6px; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font-size: 11px; }
+.glossary-use-open .ic { width: 11px; height: 11px; }
+.glossary-homograph { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: baseline; width: 100%; margin-top: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); color: inherit; font: inherit; text-align: left; }
+.glossary-homograph .glossary-form { grid-row: span 2; font-size: 20px; }
+.glossary-homograph span:not(.glossary-form) { font-size: 12px; line-height: 1.6; }
+.glossary-homograph small { color: var(--muted); font-size: 10px; }
+:is(.glossary-use-open, .glossary-use-more, .glossary-homograph):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.glossary-edit { display: grid; gap: 12px; }
+.glossary-edit .glossary-detail-top { margin-bottom: 0; }
+.materials-detail .glossary-edit .glossary-title { margin-bottom: 0; }
+.glossary-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.glossary-field { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; }
+.glossary-field small { font-size: 10px; }
+.glossary-field :is(input, textarea, select) { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid var(--ctl-border); border-radius: 4px; background: var(--surface); color: var(--fg); font: 13px/1.6 var(--font-ui); }
+.glossary-field textarea { resize: vertical; line-height: 1.8; }
+.glossary-field :is(input, textarea, select):focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.glossary-edit-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.glossary-error { margin: 0; color: var(--danger); font-size: 11px; }
+.glossary-error:empty { display: none; }
+.glossary-edit-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .glossary-item:hover:not(.is-active, .is-checked) { background: var(--fg-softer); }
+  :is(.glossary-use-open, .glossary-use-more):hover { text-decoration: underline; text-underline-offset: 3px; }
+  .glossary-homograph:hover { border-color: color-mix(in oklch, var(--border) 60%, var(--accent)); }
+}
+@media (max-width: 1200px) {
+  .glossary-main { --glossary-inset: 16px; }
+}
+@container (max-width: 600px) {
+  .glossary-tools { flex-wrap: wrap; }
+  .glossary-search { flex-basis: 100%; min-height: 36px; border-bottom: 1px solid var(--border); }
+  /* The first tool's label lines up with the search icon and row text. */
+  .glossary-kinds { border-left: 0; padding-left: calc(var(--glossary-inset) - 9px); }
+}
+/* The inspector stacks under the list here; the tools stay pinned while the page scrolls. */
+@media (max-width: 1000px) {
+  .glossary-tools { position: sticky; top: 0; z-index: 2; }
+  .glossary-split > .inspector-resizer { display: none; }
+}
+@media (max-width: 520px) {
+  .glossary-row-meta > :last-child { display: none; }
+  .glossary-field-row { grid-template-columns: 1fr; }
+}

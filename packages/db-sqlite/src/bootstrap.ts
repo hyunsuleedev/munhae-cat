@@ -89,7 +89,7 @@ export function openProjectDb(packagePath: string): BootstrappedProject {
     db = openSqlite(dbPath);
     const migration = db.prepare("SELECT max(version) AS version FROM meta_schema_migrations").get() as {version:number};
     // Retain backups for older translation/schema upgrades. The v4 knowledge
-    // removal intentionally discards person/place data without an archive.
+    // removal and the v13 term reset intentionally discard data without an archive.
     const upgrade = migration.version === 1 ? "full-text" : migration.version === 2 ? "context-without-kind" : migration.version === 3 ? "review-comments" : migration.version === 5 ? "reading-annotations" : migration.version === 6 ? "translation-materials" : migration.version === 7 ? "term-review" : migration.version === 8 ? "comment-references" : migration.version === 10 ? "reading-translation-quote" : migration.version === 11 ? "translation-groups" : null;
     if (migration.version < PROJECT_SCHEMA_VERSION && upgrade) {
       const backupPath = `${dbPath}.before-${upgrade}-${Date.now()}.bak`;

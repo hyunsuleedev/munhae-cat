@@ -608,7 +608,6 @@ export function insertSourceLayer(opts: {
   structureMode?: PunctuationStructureMode;
 }): SourceLayerResult {
   const text = opts.text.replace(/^\uFEFF/, "");
-  if (!text.trim()) throw new MunhaeError("empty_source", "원문이 비어 있습니다");
   const sourceTextId = createId();
   const sourceVersionId = createId();
   const sourceHash = sha256Hex(text);

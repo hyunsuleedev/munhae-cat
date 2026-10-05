@@ -1,20 +1,13 @@
-import type { TermEntry } from "../../shared/munhae-api";
+import type { TermRange } from "../../shared/munhae-api";
+import { utf16Offsets } from "./term-review-model";
 
-export type TermHit = { id: string; start: number; end: number; index: number };
-export function termHits(text: string, version: string, terms: TermEntry[]): TermHit[] {
-  return terms.flatMap(term => {
-    if (!term.sourceForm) return [];
-    const ranges = term.documentId && term.sourceVersion === version
-      ? term.occurrences.filter(o => text.slice(o.start, o.end) === term.sourceForm)
-      : (() => {
-        const result: { start: number; end: number }[] = [];
-        let start = text.indexOf(term.sourceForm);
-        while (start >= 0) { result.push({ start, end: start + term.sourceForm.length }); start = text.indexOf(term.sourceForm, start + term.sourceForm.length); }
-        return result;
-      })();
-    return [...new Map(ranges.map(range => [range.start, range])).values()].sort((a, b) => a.start - b.start)
-      .map((range, index) => ({ id: term.id, start: range.start, end: range.end, index }));
-  });
+/** A stored code point range converted to UTF-16 offsets for rendering. */
+export type TermHit = { id: string; start: number; end: number; index: number; candidate: boolean };
+export function termHits(text: string, items: Array<{ id: string; ranges: TermRange[]; candidate: boolean }>): TermHit[] {
+  const offsets = utf16Offsets(text);
+  return items.flatMap(item => [...item.ranges].sort((a, b) => a.from - b.from)
+    .filter(range => range.to < offsets.length)
+    .map((range, index) => ({ id: item.id, start: offsets[range.from]!, end: offsets[range.to]!, index, candidate: item.candidate })));
 }
 
 export function termSegments(text: string, hits: TermHit[], start = 0, end = text.length) {

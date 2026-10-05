@@ -276,9 +276,20 @@ function environmentValueRedactor(env: NodeJS.ProcessEnv): (text: string) => str
   };
 }
 
+/**
+ * Flags such as CLAUDE_CODE_SESSION_ATTENDED=1 share credential-like names but are not secrets.
+ * Redacting them replaced every "1" in AI answers (and the stored terms) with [REDACTED].
+ */
+function isFlagLikeValue(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length < 4
+    || (/^\d+$/u.test(trimmed) && trimmed.length < 8)
+    || /^(?:true|false|yes|no|on|off|null|none)$/iu.test(trimmed);
+}
+
 function credentialEnvironmentValues(env: NodeJS.ProcessEnv): string[] {
   return [...new Set(Object.entries(env)
-    .filter(([key, value]) => CREDENTIAL_ENV_KEY.test(key) && typeof value === "string" && value.length > 0)
+    .filter(([key, value]) => CREDENTIAL_ENV_KEY.test(key) && typeof value === "string" && !isFlagLikeValue(value))
     .map(([, value]) => value as string))]
     .sort((left, right) => right.length - left.length);
 }

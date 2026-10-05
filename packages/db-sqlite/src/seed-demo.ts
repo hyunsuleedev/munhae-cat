@@ -10,7 +10,6 @@ import {
 import type { BootstrappedProject } from "./bootstrap.ts";
 import {
   contextItemContentHash,
-  glossaryContentHash,
 } from "./knowledge-content.ts";
 import { and, eq } from "drizzle-orm";
 import { orm } from "./drizzle-db.ts";
@@ -81,7 +80,6 @@ type NodeSpec = {
 export function seedDemoContents(boot: BootstrappedProject): void {
   const { db, projectId, actors, policyVersionId } = boot;
   const t = {
-    glossary: "2026-08-20T00:00:00.000Z",
     nodes: "2026-08-21T00:00:00.000Z",
     ye: "2026-08-30T09:00:00.000Z",
     jeong: "2026-08-31T12:00:00.000Z",
@@ -506,8 +504,6 @@ export function seedDemoContents(boot: BootstrappedProject): void {
     created_at: t.v2,
   }).run();
 
-  seedGlossary(db, projectId, actors.humanId, t.glossary);
-  seedUncertainties(db, projectId, actors.humanId, eojeseo.anchors, d1, d9, t.v1);
   orm(db).insert(schema.context_items).values({
     id: createId(),
     project_id: projectId,
@@ -1126,232 +1122,5 @@ function insertTranslationVersion(
       }).run();
       ord += 1;
     }
-  }
-}
-
-function seedGlossary(db: SqliteDb, projectId: string, actorId: string, createdAt: string): void {
-  const rows: Array<{
-    src: string;
-    tgt: string;
-    kind: typeof schema.glossary_entries.$inferInsert["term_kind"];
-    read: string;
-    st: "preferred" | "allowed" | "forbidden";
-    note: string;
-  }> = [
-    {
-      src: "中國",
-      tgt: "중국(中國)",
-      kind: "general",
-      read: "중국",
-      st: "preferred",
-      note: "序文의 中國은 명(明)을 가리킴. 지명 표에도 등록.",
-    },
-    {
-      src: "文字",
-      tgt: "문자(文字)",
-      kind: "general",
-      read: "문자",
-      st: "preferred",
-      note: "문맥상 한자(漢字)를 뜻한다는 해석이 우세. U-01 참조.",
-    },
-    {
-      src: "文字",
-      tgt: "한자(漢字)",
-      kind: "general",
-      read: "한자",
-      st: "allowed",
-      note: "번역에서 사용 가능. 원문 밖 해석이므로 병기 필수.",
-    },
-    {
-      src: "愚民",
-      tgt: "어리석은 백성",
-      kind: "general",
-      read: "우민",
-      st: "allowed",
-      note: "‘글을 모르는 백성’ 해석도 열려 있음. U-02 참조.",
-    },
-    {
-      src: "愚民",
-      tgt: "우민(愚民)",
-      kind: "general",
-      read: "우민",
-      st: "forbidden",
-      note: "음차만으로는 뜻이 전달되지 않음.",
-    },
-    {
-      src: "二十八字",
-      tgt: "스물여덟 자",
-      kind: "technical",
-      read: "이십팔자",
-      st: "preferred",
-      note: "초성 17자 + 중성 11자.",
-    },
-    { src: "正音", tgt: "정음(正音)", kind: "technical", read: "정음", st: "preferred", note: "" },
-    {
-      src: "初聲",
-      tgt: "초성(初聲)",
-      kind: "technical",
-      read: "초성",
-      st: "preferred",
-      note: "中聲·終聲과 같은 방식으로 병기.",
-    },
-    {
-      src: "諺文",
-      tgt: "언문(諺文)",
-      kind: "technical",
-      read: "언문",
-      st: "preferred",
-      note: "실록 기사에서 훈민정음을 가리키는 표현. 풀어 쓰지 않음.",
-    },
-    { src: "集賢殿", tgt: "집현전(集賢殿)", kind: "institution", read: "집현전", st: "preferred", note: "" },
-    { src: "承政院", tgt: "승정원(承政院)", kind: "institution", read: "승정원", st: "preferred", note: "" },
-    {
-      src: "殿下",
-      tgt: "전하(殿下)",
-      kind: "general",
-      read: "전하",
-      st: "preferred",
-      note: "鄭麟趾 序에서 世宗을 지칭.",
-    },
-  ];
-  for (const r of rows) {
-    orm(db).insert(schema.glossary_entries).values({
-      id: createId(),
-      project_id: projectId,
-      source_term: r.src,
-      target_locale: "ko",
-      target_term: r.tgt,
-      term_kind: r.kind,
-      reading: r.read,
-      note_md: r.note || null,
-      usage_status: r.st,
-      content_hash: glossaryContentHash({
-        sourceTerm: r.src,
-        targetTerm: r.tgt,
-        targetLocale: "ko",
-        termKind: r.kind,
-        reading: r.read,
-        noteMd: r.note || null,
-        usageStatus: r.st as "preferred" | "allowed" | "forbidden",
-      }),
-      lock_version: 1,
-      created_by_actor_id: actorId,
-      updated_by_actor_id: actorId,
-      created_at: createdAt,
-      updated_at: createdAt,
-      archived_at: null,
-    }).run();
-  }
-}
-
-function seedUncertainties(
-  db: SqliteDb,
-  projectId: string,
-  actorId: string,
-  anchors: AnchorRec[],
-  eojeseoNodeId: string,
-  jeongNodeId: string,
-  createdAt: string,
-): void {
-  const a002 = anchors.find((a) => a.key === "A002");
-  const a003 = anchors.find((a) => a.key === "A003");
-  const items: Array<{
-    label: string;
-    cat: "textual" | "interpretive" | "identification";
-    sev: string;
-    state: string;
-    stmt: string;
-    locator: string;
-    quote: string;
-    opts: string[];
-    rationale: string;
-    anchorId?: string;
-    nodeId: string;
-  }> = [
-    {
-      label: "U-01",
-      cat: "interpretive",
-      sev: "major",
-      state: "open",
-      stmt: "U-01 文字의 지시 대상 — 한자인가, 문자 일반인가",
-      locator: "御製序 · A002",
-      quote: "與文字不相流通",
-      opts: ["한자 — 명의 문자와 통하지 않는다는 뜻 (우세)", "문자 일반 — 말과 글이 서로 통하지 않는다는 뜻"],
-      rationale: "후행 문장의 ‘新制二十八字’와 대비되는 기존 문자 체계를 가리키므로 한자로 읽는 해석이 자연스럽다.",
-      anchorId: a002?.id,
-      nodeId: eojeseoNodeId,
-    },
-    {
-      label: "U-02",
-      cat: "interpretive",
-      sev: "minor",
-      state: "open",
-      stmt: "U-02 愚民의 愚 — ‘어리석은’ / ‘글을 모르는’",
-      locator: "御製序 · A003",
-      quote: "故愚民有所欲言",
-      opts: ["어리석은 백성", "글을 모르는 백성"],
-      rationale: "번역에서 ‘글을 모르는’으로 의역했으며, 원문 밖 해석임을 명시했다.",
-      anchorId: a003?.id,
-      nodeId: eojeseoNodeId,
-    },
-    {
-      label: "U-03",
-      cat: "identification",
-      sev: "minor",
-      state: "open",
-      stmt: "U-03 서문 말미 학사들의 관직 대응어",
-      locator: "鄭麟趾 序",
-      quote: "集賢殿應敎 …",
-      opts: ["관직명 음차 + 漢字 병기", "직능 설명을 괄호로 보충"],
-      rationale: "용어집 term_kind = office 항목을 먼저 확정해야 한다.",
-      nodeId: jeongNodeId,
-    },
-  ];
-  for (const u of items) {
-    const uid = createId();
-    const vid = createId();
-    orm(db).insert(schema.uncertainties).values({
-      id: uid,
-      project_id: projectId,
-      category: u.cat,
-      severity: u.sev,
-      blocking: 0,
-      state: u.state,
-      created_at: createdAt,
-    }).run();
-    orm(db).insert(schema.uncertainty_versions).values({
-      id: vid,
-      project_id: projectId,
-      uncertainty_id: uid,
-      parent_version_id: null,
-      version_no: 1,
-      statement_md: u.stmt,
-      rationale_md: u.rationale,
-      confidence_label: null,
-      content_hash: sha256Hex(u.stmt),
-      created_by_actor_id: actorId,
-      created_at: createdAt,
-    }).run();
-    u.opts.forEach((label, i) => {
-      orm(db).insert(schema.uncertainty_options).values({
-        id: createId(),
-        project_id: projectId,
-        uncertainty_version_id: vid,
-        label,
-        interpretation_md: null,
-        ordinal: i + 1,
-      }).run();
-    });
-    orm(db).insert(schema.uncertainty_anchors).values({
-      id: createId(),
-      project_id: projectId,
-      uncertainty_version_id: vid,
-      target_kind: u.anchorId ? "translation_anchor" : "document_node",
-      target_version_id: u.anchorId ?? u.nodeId,
-      codepoint_from: null,
-      codepoint_to: null,
-      quote: u.quote,
-      quote_hash: sha256Hex(u.quote),
-    }).run();
   }
 }

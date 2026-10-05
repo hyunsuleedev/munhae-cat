@@ -1,7 +1,7 @@
 import { buildContent, contentRevision, contentText, legacyContent, loadContent, mergeContent, projectContent, storeContent, type ContentRange } from "./translation-content.ts";
+import { carryNotes, footnoteSchema, insertNotes, loadNotes, MAX_NOTES, parseFootnotes } from "./translation-notes.ts";
 import { referenceReady } from "./comment-references.ts";
-import { termSource } from "@munhae/domain/term-source";
-import { termsForTranslation } from "./term-review.ts";
+import { termMaterial, termsForTranslation } from "./term-review.ts";
 import { groupedTextSentences, matchUnchangedTextSentences, textSentences, trimTextSentences, type TextSentence } from "@munhae/domain/text-sentences";
 export { textSentences, type TextSentence } from "@munhae/domain/text-sentences";
 import {
@@ -117,7 +117,7 @@ const fail = (message: string): never => {
 };
 const skill = (name: keyof typeof BUNDLED_SKILLS) => {
   const content = BUNDLED_SKILLS[name];
-  const version = name === "align-translation" ? "1.7.0" : "1.1.0";
+  const version = name === "align-translation" ? "1.7.0" : "1.3.0";
   if (!content?.includes(`version: ${version}`))
     throw new MunhaeError(
       "skill_unavailable",
@@ -134,18 +134,30 @@ const translationMethod = (repo: Context) => {
 };
 const skillManifest = (repo: Context) =>
   canonicalJson([translationMethod(repo), skill("align-translation")].map(({ content, ...s }) => s));
-const TRANSLATION_PROTOCOL = "Submission rules (fixed by the app; the translation method below cannot change them): submit only the final complete translation text with its actual paragraph breaks, in the JSON schema given under \"번역 전문 제출 형식\". Do not output internal deliberation or intermediate drafts. Do not produce source anchors, source mappings, paragraph classifications or alignment IDs; alignment is a separate later task.";
+const TRANSLATION_PROTOCOL = [
+  "Submission rules (fixed by the app; the translation method below cannot change them): submit one JSON object in the schema given under \"번역 전문 제출 형식\". Put only the final complete translation, with its actual paragraph breaks, in `translation`. Do not output internal deliberation.",
+  "Translator's notes go in `footnotes`, never as remarks or explanations inside `translation`; Hanja annotation and supplied words required by the translation policy stay in the translation. A footnote explains an allusion or quoted source (allusion), identifies a person, place, office or work (identification), records a problem in the received source text (textual), or gives an alternative reading (interpretive). Anchor each footnote with a phrase copied exactly from your translation in `target.quote`, adding `occurrence` when that phrase repeats, and give the source phrase it concerns in `source.quote` when useful.",
+  "Keep footnotes proportionate: do not annotate ordinary vocabulary or restate the translation, and move an explanation into a footnote rather than giving it twice. Set `confidence` to certain, probable or unknown. For a textual or interpretive footnote that is not certain, give the competing reading in `alternatives` and do not present the chosen reading as settled in the translation.",
+  "If the translation method produces staged translations or a review, you may submit them in `stages` and `review`; `translation` still holds only the final translation.",
+].join("\n");
 const translationSchema = {
   type: "object",
   additionalProperties: false,
   required: ["schemaVersion", "translation"],
   properties: {
-    schemaVersion: { const: 1 },
+    schemaVersion: { const: 2 },
     translation: { type: "string", minLength: 1 },
+    footnotes: { type: "array", maxItems: MAX_NOTES, items: footnoteSchema },
+    review: { type: "string" },
+    stages: {
+      type: "array",
+      maxItems: 4,
+      items: { type: "object", additionalProperties: false, required: ["label", "text"], properties: { label: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1 } } },
+    },
   },
 };
 const toolInstruction = (command: string) =>
-  `Submit one JSON object through stdin to "$MUNHAE_NODE_BIN" "$MUNHAE_BIN" tools ${command}. Use your shell with a quoted heredoc containing valid JSON: encode paragraph breaks inside strings as \\n, never literal newlines inside a JSON string. Prefer a JSON serializer when constructing the payload. These environment variables point to the app's submission wrapper. The user authorized this draft operation. Do not write project files. Assistant prose is not submission. A rejected submission is not saved; correct invalid_json or invalid_payload and retry. Only a successful tool response confirms receipt; already_submitted alone does not prove success.`;
+  `Submit one JSON object through stdin to "$MUNHAE_NODE_BIN" "$MUNHAE_BIN" tools ${command}. Use your shell with a quoted heredoc containing valid JSON: encode paragraph breaks inside strings as \\n, never literal newlines inside a JSON string. Prefer a JSON serializer when constructing the payload. These environment variables point to the app's submission wrapper. The user authorized this draft operation. Do not write project files. Assistant prose is not submission. This command is the only way to hand work to Munhae: do not read or search the app's source code, files or database, and do not inspect, signal or debug its processes or ports. You may search the web for information about the source text. If the command rejects your JSON (invalid_json, invalid_payload, or a message naming the problem), nothing was saved: fix the JSON and retry. If the command itself cannot be used (it does not run, or reports already_submitted, already_finished, unauthorized, wrong_tool or bridge_unavailable), do not look for another way in: stop and report that the submission failed. Only a successful tool response confirms receipt.`;
 
 export function loadTextLayout(
   repo: Context,
@@ -273,22 +285,19 @@ export function previewText(
       "선택 범위는 각 targetVersionId의 0부터 시작하는 유니코드 코드포인트 반열림 구간입니다. source 범위는 표점 전 저장 원문을 기준으로 합니다.",
     ].join("\n"), "translation-revision.v1");
     add("base_translation", "검토한 이전 번역 전문", editor.translation.textContent, baseVersionId);
+    const baseNotes = loadNotes(repo.db, baseVersionId);
+    if (baseNotes.length) add("base_footnotes", "검토한 이전 번역의 각주", [
+      "이전 번역에 달린 각주입니다. 수정한 번역에 맞게 유지하거나 고치거나 빼서 footnotes로 다시 제출하세요.",
+      canonicalJson(baseNotes.map(({ targetQuote, sourceQuote, kind, confidence, bodyMd, alternatives }) => ({ targetQuote, sourceQuote, kind, confidence, body: bodyMd, alternatives }))),
+    ].join("\n"), baseVersionId);
     add("review_comments", "반영할 검토 코멘트", canonicalJson(comments), baseVersionId);
   }
   add(
     "output_contract",
     "번역 전문 제출 형식",
     canonicalJson(translationSchema),
-    "translation-text.v1",
+    "translation-text.v2",
   );
-  const lineage = new Set<string>();
-  const docs = repo.getHome().documents;
-  let node: string | null = input.documentNodeId;
-  while (node && !lineage.has(node)) {
-    lineage.add(node);
-    node = docs.find((d) => d.id === node)?.parentId ?? null;
-  }
-  const kn = repo.getKnowledge();
   const auxiliary: ContextPreview["auxiliary"] = [];
   const aux = (
     id: string,
@@ -330,51 +339,14 @@ export function previewText(
       lockVersion: c.lockVersion, origin: c.origin ?? null };
     if (c.excluded || !referenceReady(c)) candidate.included = false;
   }
-  for (const term of termsForTranslation(repo.db, repo.projectId, input.documentNodeId, termSource(editor).version, termSource(editor).text))
-    aux(term.id, "glossary", term.sourceForm, canonicalJson(term), true, "project_glossary");
-  for (const g of kn.glossary)
-    aux(
-      g.id,
-      "glossary",
-      g.sourceTerm,
-      canonicalJson(g),
-      g.targetLocale === snapshot.targetLocale && editor.source.contentText.includes(g.sourceTerm),
-      "project_glossary",
-    );
-  const relatedIds = new Set([
-    ...lineage,
-    editor.source.versionId,
-    punc?.versionId,
-    editor.translation?.versionId,
-    ...orm(repo.db)
-      .select({ id: tables.translation_anchors.id })
-      .from(tables.translation_anchors)
-      .innerJoin(
-        tables.translation_anchor_sets,
-        eq(
-          tables.translation_anchor_sets.id,
-          tables.translation_anchors.anchor_set_id,
-        ),
-      )
-      .where(
-        eq(tables.translation_anchor_sets.document_node_id, input.documentNodeId),
-      )
-      .all().map((a) => a.id),
-  ]);
-  for (const u of kn.uncertainties.filter((u) => u.state === "open"))
-    aux(
-      u.id,
-      "uncertainty",
-      u.statementMd,
-      canonicalJson(u),
-      u.anchors.some((a) => relatedIds.has(a.targetVersionId)),
-      "related_uncertainty",
-    );
+  // Only this document's confirmed terms. The same spelling elsewhere is not evidence.
+  const confirmedTerms = termsForTranslation(repo.db, repo.projectId, input.documentNodeId);
+  for (const link of confirmedTerms?.terms ?? [])
+    aux(link.id, "term", link.term.sourceForm, canonicalJson(termMaterial(confirmedTerms!.basis, link)), true, "document_term");
   const confirmed = orm(repo.db)
     .select({
       id: tables.document_translation_versions.id,
       text_content: tables.document_translation_versions.text_content,
-      document_node_id: tables.document_translations.document_node_id,
       title: tables.document_nodes.title,
     })
     .from(tables.document_translation_heads)
@@ -403,13 +375,14 @@ export function previewText(
       ),
     )
     .all();
+  // Opt-in only. Shown its own earlier translation, the model copies it instead of translating the source.
   for (const v of confirmed)
     aux(
       `confirmed-translation:${v.id}`,
       "confirmed_translation",
       `확정 번역 · ${v.title}`,
       v.text_content,
-      v.document_node_id === input.documentNodeId,
+      false,
       "confirmed_translation",
     );
   const requestText = [
@@ -555,7 +528,7 @@ export function beginText(
             : preview.requestText.includes("## Alignment mode\nboundary-groups.v3")
             ? "translation-alignment.v3"
             : "translation-alignment.v1"
-          : "translation-text.v1",
+          : "translation-text.v2",
         prompt_contract_version: preview.promptContractVersion,
         request_manifest_json: preview.manifestJson,
         request_manifest_hash: preview.manifestHash,
@@ -742,17 +715,15 @@ export function completeText(
     };
     if (manifest.flow !== "full-text.v1") fail("다른 실행의 제출입니다");
     const payload = JSON.parse(input.rawResponse);
-    if (
-      !payload ||
-      Array.isArray(payload) ||
-      Object.keys(payload).some(
-        (k) => !["schemaVersion", "translation"].includes(k),
-      ) ||
-      payload.schemaVersion !== 1 ||
-      typeof payload.translation !== "string" ||
-      !payload.translation.trim()
-    )
-      fail("번역 전문 형식이 올바르지 않습니다");
+    // v1 remains accepted for runs started before footnotes existed.
+    const keys = payload?.schemaVersion === 2 ? ["schemaVersion", "translation", "footnotes", "review", "stages"] : ["schemaVersion", "translation"];
+    // The AI repairs its JSON from these messages, so each names the rule it broke.
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) fail("JSON 객체 하나를 제출하세요");
+    if (payload.schemaVersion !== 1 && payload.schemaVersion !== 2) fail("schemaVersion은 2여야 합니다");
+    if (Object.keys(payload).some((k) => !keys.includes(k))) fail(`허용된 키만 사용하세요: ${keys.join(", ")}`);
+    if (typeof payload.translation !== "string" || !payload.translation.trim())
+      fail("translation에 완성된 번역 전문을 넣으세요");
+    const footnotes = parseFootnotes(payload.footnotes, payload.translation);
     storeTranslationResponse(repo.db, repo.projectId, input);
     const prior = orm(repo.db)
       .select({
@@ -782,6 +753,7 @@ export function completeText(
           input.messageId,
           canonicalJson(manifest.skills),
         );
+    if (!prior && repo.localContent) insertNotes(repo.db, repo.projectId, version.versionId, footnotes.notes);
     orm(repo.db)
       .update(tables.chat_messages)
       .set({
@@ -795,7 +767,7 @@ export function completeText(
       messageId: input.messageId,
       validationState: "valid" as const,
       fatalFindings: 0,
-      recoverableFindings: 0,
+      recoverableFindings: prior ? 0 : footnotes.dropped,
       version,
       idempotent: !!prior,
     };
@@ -847,6 +819,7 @@ export function saveContentDraft(repo: Context, documentNodeId: string, text: st
     const snapshot = previewText(repo, { documentNodeId }).snapshot;
     const version = insertTextVersion(repo, snapshot, contentText(merged), "human", null, skillManifest(repo), projection);
     storeContent(repo.db, version.translationId, currentVersion.source_text_version_id, version.versionId, merged, old);
+    carryNotes(repo.db, repo.projectId, current.versionId, version.versionId, contentText(merged));
     orm(repo.db).update(tables.translation_text_layouts).set({ sentences_json: "[]", links_json: "[]", alignment_state: projection.state, alignment_error: projection.error }).where(eq(tables.translation_text_layouts.version_id, version.versionId)).run();
     return version;
   });
@@ -889,6 +862,7 @@ export function saveText(
       null,
       skillManifest(repo),
     );
+    if (repo.localContent) carryNotes(repo.db, repo.projectId, previous.versionId, version.versionId, text);
     const previousLayout = previous.textLayout;
     if (groups) {
       if (!groups.length || new Set(groups.map(group => group.id)).size !== groups.length) fail("번역 묶음이 전문과 일치하지 않습니다");
@@ -1030,6 +1004,51 @@ export function confirmText(
           h.document_translation_id,
         ),
       )
+      .run();
+  });
+}
+
+export type TranslationHead = { currentVersionId: string; confirmedVersionId: string | null; lockVersion: number };
+
+/** The document's translation head, for undoing a confirmation made outside the editor. */
+export function translationHead(repo: Context, documentNodeId: string): TranslationHead | null {
+  const versionId = repo.getEditor(documentNodeId).translation?.versionId;
+  if (!versionId) return null;
+  const h = orm(repo.db)
+    .select()
+    .from(tables.document_translation_heads)
+    .where(eq(tables.document_translation_heads.current_version_id, versionId))
+    .get();
+  return h ? { currentVersionId: h.current_version_id, confirmedVersionId: h.confirmed_version_id ?? null, lockVersion: h.lock_version } : null;
+}
+
+/** Undoes `confirmText` while the head is still exactly as that confirmation left it. */
+export function unconfirmText(repo: Context, documentNodeId: string, input: { versionId: string; previousConfirmedVersionId: string | null; expectedLockVersion: number }) {
+  orm(repo.db).transaction(() => {
+    const h = orm(repo.db)
+      .select()
+      .from(tables.document_translation_heads)
+      .where(eq(tables.document_translation_heads.current_version_id, input.versionId))
+      .get();
+    const owner = h && orm(repo.db)
+      .select({ document_node_id: tables.document_translations.document_node_id })
+      .from(tables.document_translations)
+      .where(eq(tables.document_translations.id, h.document_translation_id))
+      .get();
+    if (!h || owner?.document_node_id !== documentNodeId || h.confirmed_version_id !== input.versionId || h.lock_version !== input.expectedLockVersion)
+      throw new MunhaeError("cas_conflict", "이후에 바뀐 내용이 있어 되돌릴 수 없습니다");
+    orm(repo.db)
+      .update(tables.document_translation_versions)
+      .set({ state: "draft" })
+      .where(eq(tables.document_translation_versions.id, input.versionId))
+      .run();
+    orm(repo.db)
+      .update(tables.document_translation_heads)
+      .set({
+        confirmed_version_id: input.previousConfirmedVersionId,
+        lock_version: sql`${tables.document_translation_heads.lock_version}+1`,
+      })
+      .where(eq(tables.document_translation_heads.document_translation_id, h.document_translation_id))
       .run();
   });
 }

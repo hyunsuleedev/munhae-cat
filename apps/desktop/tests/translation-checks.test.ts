@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { checkTranslation, literalMatches, replaceLiteral, type CheckInput } from "../src/renderer/scripts/translation-checks";
-const fixture = (): CheckInput => ({ source: "𠮷問。太守答。", translation: "길이 묻다. 태수가 답하다.", sentences: [{ id: "T1", from: 0, to: 6, text: "길이 묻다." }, { id: "T2", from: 6, to: 15, text: " 태수가 답하다." }], links: [{ sentenceId: "T1", spans: [{ from: 0, to: 3, quote: "𠮷問。" }], needsReview: false }, { sentenceId: "T2", spans: [{ from: 3, to: 7, quote: "太守答。" }], needsReview: false }], glossary: [], comments: [], currentDependencies: true, dirty: false, hasLayout: true });
+const fixture = (): CheckInput => ({ source: "𠮷問。太守答。", translation: "길이 묻다. 태수가 답하다.", sentences: [{ id: "T1", from: 0, to: 6, text: "길이 묻다." }, { id: "T2", from: 6, to: 15, text: " 태수가 답하다." }], links: [{ sentenceId: "T1", spans: [{ from: 0, to: 3, quote: "𠮷問。" }], needsReview: false }, { sentenceId: "T2", spans: [{ from: 3, to: 7, quote: "太守答。" }], needsReview: false }], terms: [], comments: [], currentDependencies: true, dirty: false, hasLayout: true });
 it("uses codepoint coverage, allows shared source links, and ignores punctuation-only gaps", () => {
   const data = fixture();
   expect(checkTranslation(data)).toEqual([]);
@@ -15,15 +15,14 @@ it("rejects mismatched stored quotes and skips stale source comparisons", () => 
   data.currentDependencies = false;
   expect(checkTranslation(data)).toHaveLength(1);
 });
-it("accepts allowed terminology variants and flags only applicable forbidden forms", () => {
+it("checks confirmed document terms and accepts any homonym's translation", () => {
   const data = fixture();
-  const entry = { id: "1", contentHash: "", lockVersion: 0, sourceTerm: "太守", targetTerm: "군수", targetLocale: "ko", termKind: "office", reading: null, noteMd: null, usageStatus: "preferred" as const };
-  data.glossary = [entry];
+  data.terms = [{ sourceForm: "太守", translation: "군수" }];
   expect(checkTranslation(data).filter(issue => issue.kind === "term")).toHaveLength(1);
-  data.glossary.push({ ...entry, id: "2", targetTerm: "태수", usageStatus: "allowed" });
+  data.terms.push({ sourceForm: "太守", translation: "태수" });
   expect(checkTranslation(data)).toEqual([]);
-  data.glossary.push({ ...entry, id: "3", targetTerm: "태수", usageStatus: "forbidden" });
-  expect(checkTranslation(data).filter(issue => issue.kind === "term")).toHaveLength(1);
+  data.terms = [{ sourceForm: "太守", translation: null }];
+  expect(checkTranslation(data)).toEqual([]);
 });
 it("checks cross-sentence bracket balance without changing any text", () => {
   const data = fixture(); data.translation = "「첫 문장. 다음 문장.」";

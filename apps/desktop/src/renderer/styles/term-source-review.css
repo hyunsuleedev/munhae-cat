@@ -34,6 +34,8 @@ body.is-term-source-resizing, body.is-term-source-resizing * { cursor:col-resize
 .term-linked-line > span:first-child { padding-top:11px; font:10px/1.4 var(--font-ui); color:var(--muted); opacity:.7; user-select:none; font-variant-numeric:tabular-nums; }
 .term-linked-line > span:last-child { min-width:0; font:var(--hanmun-font-size)/var(--hanmun-line-height) var(--font-hanmun); letter-spacing:.025em; white-space:pre-wrap; overflow-wrap:anywhere; }
 .term-linked-hit { display:inline; padding:1px 0; border:0; border-bottom:1px solid color-mix(in srgb,var(--accent) 40%,var(--border)); border-radius:2px; background:transparent; color:inherit; font:inherit; line-height:1.45; letter-spacing:inherit; white-space:pre-wrap; overflow-wrap:anywhere; cursor:pointer; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+/* Undecided AI candidates stay quieter than confirmed terms until they are decided. */
+.term-linked-hit.is-candidate { border-bottom-style:dashed; }
 .term-linked-hit.is-related { background:var(--accent-soft); border-color:var(--accent); }
 .term-linked-hit.is-current { background:var(--accent); border-color:var(--accent); color:var(--surface); }
 .term-linked.hide-marks .term-linked-hit:not(.is-related) { background:transparent; border-color:transparent; }
@@ -71,6 +73,7 @@ body.is-term-source-resizing, body.is-term-source-resizing * { cursor:col-resize
 .term-linked-context { border-left:2px solid color-mix(in srgb,var(--accent) 30%,var(--border)); padding-left:12px; margin-bottom:16px; }
 .term-linked-context small { display:block; margin-bottom:4px; color:var(--accent); font-size:10px; }
 .term-linked-context p { margin:0; font-size:12px; line-height:1.85; color:var(--muted); white-space:pre-wrap; word-break:keep-all; overflow-wrap:anywhere; }
+.term-linked-translation { font-size:11px; color:var(--muted); line-height:1.8; margin:-8px 0 14px; }
 .term-linked-warning { font-size:11px; color:var(--warn); line-height:1.8; margin:0 0 14px; }
 .term-linked-evidence { border-top:1px solid var(--border); color:var(--muted); font-size:11px; line-height:1.85; }
 .term-linked-evidence summary { display:flex; align-items:center; gap:5px; padding:10px 0; cursor:pointer; list-style:none; }
@@ -92,21 +95,8 @@ body.is-term-source-resizing, body.is-term-source-resizing * { cursor:col-resize
 .term-linked-detail textarea { min-height:80px; padding:9px 10px; background:var(--surface); border:1px solid var(--ctl-border); border-radius:4px; font:12px/1.9 var(--font-ui); }
 .term-linked-error { color:var(--danger); font-size:11px; }
 .term-linked-error:empty { display:none; }
-.term-linked-stale { margin-bottom:13px; padding:10px 12px; background:var(--accent-soft); color:var(--accent); border-radius:4px; font-size:11px; line-height:1.75; }
-.term-linked-stale > strong { display:block; font-size:11px; font-weight:500; }
-.term-linked-stale > p { margin:4px 0 8px; }
-.term-linked-stale .btn { min-height:26px; font-size:10px; padding:4px 7px; }
-.term-linked-stale > small { display:block; margin-top:8px; font-size:10px; }
-.term-linked-old-quotes { margin:9px 0 12px; padding:9px; color:var(--muted); background:var(--surface); border-radius:3px; }
-.term-linked-old-quotes small, .term-linked-current-quotes legend { font-size:10px; }
-.term-linked-old-quotes p { margin:4px 0; font:14px/1.8 var(--font-hanmun); white-space:pre-wrap; overflow-wrap:anywhere; }
-.term-linked-current-quotes { padding:0; margin:0 0 10px; border:0; min-width:0; }
-.term-linked-current-quotes label { display:flex; align-items:baseline; gap:8px; margin-top:7px; padding:7px; background:var(--surface); border-radius:3px; cursor:pointer; }
-.term-linked-current-quotes input { flex:none; margin:0; width:14px; height:14px; accent-color:var(--accent); }
-.term-linked-current-quotes label span { min-width:0; font:14px/1.8 var(--font-hanmun); overflow-wrap:anywhere; white-space:pre-wrap; }
-.term-linked-compare-actions { display:flex; flex-wrap:wrap; gap:4px; }
 .term-linked [data-linked-filters] { flex:none; padding:0; }
-.term-linked .term-review-filters { display:flex; flex-wrap:nowrap; align-items:center; gap:8px; height:45px; padding:0 16px 0 23px; border-bottom:1px solid var(--border); }
+.term-linked .term-review-filters { display:flex; flex-wrap:nowrap; align-items:center; gap:8px; height:36px; min-height:36px; flex:none; padding:0 16px 0 23px; border-bottom:1px solid var(--border); }
 .term-linked .term-review-filters > .ic { width:14px; height:14px; color:var(--muted); flex:none; }
 .term-linked .term-review-filters input { min-width:0; width:100%; height:29px; min-height:29px; padding:3px 2px; font-size:11px; border:0; border-radius:0; background:transparent; box-shadow:none; }
 .term-linked .term-review-filters input::placeholder { color:var(--muted); opacity:.8; }

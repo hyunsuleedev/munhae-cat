@@ -2,7 +2,7 @@ type Transition = Pick<ViewTransition, "skipTransition" | "ready" | "finished">;
 type RevealEvent = Event & { viewTransition?: Transition | null };
 type SwapEvent = RevealEvent & { activation?: { entry?: { url?: string } } };
 
-const WORK_PAGES = new Set(["index.html", "home.html", "editor.html", "context.html", "knowledge.html", "glossary.html", "comments.html", "uncertainty.html", "settings.html", "community.html"]);
+const WORK_PAGES = new Set(["index.html", "home.html", "editor.html", "context.html", "knowledge.html", "glossary.html", "comments.html", "settings.html", "community.html"]);
 export const PAGE_TRANSITION_TIMEOUT = 1_500;
 
 /** Keep the browser-owned outgoing snapshot until the authenticated page is ready.

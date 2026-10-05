@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 작업 대장 — 홈 시안</title>
+<link rel="stylesheet" href="../../styles/tokens.css">
+<link rel="stylesheet" href="../../styles/chrome.css">
+<link rel="stylesheet" href="./shared.css">
+<style>
+/* 01 작업 대장: the home is the full chapter ledger. */
+.lg { container: ledger / inline-size; background: var(--surface); }
+.lg-page { max-width: 1240px; margin: 0 auto; padding: 30px 40px 64px; color: var(--fg); font-size: 12.5px; line-height: 1.5; }
+
+.lg-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 28px; flex-wrap: wrap; }
+.lg-id { min-width: 0; }
+.lg-id h1 { margin: 0; font: 500 22px/1.35 var(--font-hanmun); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.lg-meta { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+.lg-tools { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lg-search { display: flex; align-items: center; gap: 6px; width: 220px; min-width: 0; height: 28px; padding: 0 8px; border: 1px solid var(--ctl-border); border-radius: 4px; background: var(--surface); color: var(--muted); }
+.lg-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.lg-search .ic { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.4; flex: 0 0 auto; }
+.lg-search input { flex: 1; min-width: 0; height: 26px; padding: 0; border: 0; background: transparent; color: var(--fg); font: 12px var(--font-ui); outline: none; }
+.lg-search input::placeholder { color: var(--muted); }
+.lg-search input::-webkit-search-cancel-button { display: none; }
+.lg-search kbd { flex: 0 0 auto; color: var(--muted); font: 10px var(--font-ui); }
+.lg .lg-search input:focus-visible { outline: 0; }
+.lg-seg { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--ctl-border); border-radius: 4px; overflow: hidden; }
+.lg-seg button { height: 26px; padding: 0 9px; border: 0; border-left: 1px solid var(--ctl-border); background: transparent; color: var(--muted); font: 11.5px var(--font-ui); white-space: nowrap; }
+.lg-seg button:first-child { border-left: 0; }
+.lg-seg button b { margin-left: 5px; color: inherit; font-weight: 500; font-variant-numeric: tabular-nums; }
+.lg-seg button[aria-pressed="true"] { background: var(--fg-soft); color: var(--fg); }
+.lg .lg-seg button:focus-visible { outline-offset: -2px; }
+
+.lg-progress { display: flex; align-items: center; gap: 8px 16px; margin-top: 20px; }
+.lg-bar { display: flex; flex: 1; gap: 2px; min-width: 120px; height: 5px; }
+.lg-bar > i { display: block; min-width: 3px; border-radius: 1px; }
+.lg-legend { display: flex; gap: 11px; margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 10.5px; white-space: nowrap; }
+.lg-legend i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 1px; vertical-align: 1px; }
+.lg-pct { color: var(--fg); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.lg-sub { display: flex; align-items: center; justify-content: space-between; gap: 10px 20px; margin-top: 22px; padding-bottom: 10px; }
+.lg-resume { display: flex; align-items: baseline; gap: 10px; min-width: 0; max-width: 100%; margin-left: -6px; padding: 4px 6px; border: 0; border-radius: 3px; background: transparent; color: var(--fg); text-align: left; }
+.lg-resume .r-label { flex: 0 0 auto; color: var(--muted); font-size: 10.5px; }
+.lg-resume .r-title { flex: 0 0 auto; font: 500 13px var(--font-hanmun); }
+.lg-resume .r-opening { min-width: 0; overflow: hidden; font: 15px var(--font-hanmun); text-overflow: ellipsis; white-space: nowrap; }
+.lg-resume .r-state { flex: 0 0 auto; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.lg-resume .r-go { flex: 0 0 auto; color: var(--accent); font-size: 11.5px; white-space: nowrap; }
+.lg-sort { display: inline-flex; flex: 0 0 auto; gap: 2px; }
+.lg-sort button { height: 24px; padding: 0 7px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: 11px var(--font-ui); }
+.lg-sort button[aria-pressed="true"] { background: var(--fg-soft); color: var(--fg); }
+
+.lg-head + .lg-table { margin-top: 28px; }
+.lg-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+.lg-table col.c-no { width: 72px; }
+.lg-table.is-flat col.c-no { width: 108px; }
+.lg-table col.c-punct { width: 72px; }
+.lg-table col.c-trans { width: 116px; }
+.lg-table col.c-unc { width: 52px; }
+.lg-table col.c-when { width: 96px; }
+.lg-table thead th { position: sticky; top: 0; z-index: 3; height: 30px; padding: 0 10px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); color: var(--muted); font-size: 10.5px; font-weight: 500; text-align: left; white-space: nowrap; }
+.lg-table :is(th, td).c-unc, .lg-table :is(th, td).c-when { text-align: right; }
+.lg-table td { height: 38px; padding: 0 10px; border-bottom: 1px solid color-mix(in oklch, var(--border) 65%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.lg-group th { position: sticky; top: 31px; z-index: 2; padding: 0; border-bottom: 1px solid var(--border); background: var(--bg); text-align: left; font-weight: 400; }
+.lg-group .g-in { display: flex; align-items: center; gap: 12px; height: 34px; padding-right: 10px; }
+.lg-group .g-toggle { display: flex; flex: 1; align-items: baseline; gap: 9px; min-width: 0; height: 100%; padding: 0 10px; border: 0; background: transparent; color: var(--fg); text-align: left; align-items: center; }
+.lg-group .g-toggle .ic { width: 12px; height: 12px; fill: none; stroke: var(--muted); stroke-width: 1.5; flex: 0 0 auto; transition: transform 140ms ease; }
+.lg-group .g-toggle[aria-expanded="true"] .ic { transform: rotate(90deg); }
+.lg-group .g-title { font: 500 14px var(--font-hanmun); letter-spacing: -.01em; white-space: nowrap; }
+.lg-group .g-ko { color: var(--muted); font-size: 10.5px; }
+.lg-group .g-count { flex: 0 0 auto; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.lg .lg-group .g-toggle:focus-visible { outline-offset: -2px; }
+
+.lg-row { cursor: pointer; }
+.lg-row td.c-no { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.lg-row td.c-no i { display: inline-block; width: 7px; height: 7px; margin-right: 9px; border-radius: 1px; vertical-align: 0; }
+.lg-row td.c-no .bk { color: var(--fg); font: 13px var(--font-hanmun); margin-right: 3px; }
+.lg-row td.c-open { color: var(--fg); font: 15px/1.4 var(--font-hanmun); letter-spacing: .01em; }
+.lg-row td.c-punct, .lg-row td.c-trans { font-size: 12px; }
+.lg-row .muted { color: var(--muted); }
+.lg-row .none { color: color-mix(in oklch, var(--muted) 45%, transparent); }
+.lg-row .v { margin-left: 4px; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.lg-row .is-review { font-weight: 500; }
+.lg-row td.c-unc { color: var(--accent); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.lg-row td.c-when { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.lg-row.is-resume td { background: var(--row-tint); }
+.lg-row.is-resume td:first-child { box-shadow: inset 2px 0 0 var(--accent-ink); }
+.lg .lg-row:focus-visible { outline: 0; }
+.lg-row:focus-visible td { box-shadow: inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+.lg-row:focus-visible td:first-child { box-shadow: inset 2px 0 0 var(--accent), inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+.lg-row:focus-visible td:last-child { box-shadow: inset -2px 0 0 var(--accent), inset 0 2px 0 var(--accent), inset 0 -2px 0 var(--accent); }
+.lg-note td { height: 34px; padding-left: 38px; color: var(--muted); font-size: 11px; }
+.lg-none td { height: auto; padding: 28px 10px; color: var(--muted); font-size: 12px; text-align: center; white-space: normal; }
+.lg-none button { margin-left: 8px; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; }
+.lg-empty td { height: auto; padding: 56px 10px; text-align: center; white-space: normal; }
+.lg-empty p { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .lg-row:hover td { background: var(--fg-softer); }
+  .lg-row.is-resume:hover td { background: color-mix(in oklch, var(--row-tint) 80%, var(--fg-soft)); }
+  .lg-group .g-toggle:hover .g-title { color: var(--accent); }
+  .lg-resume:hover { background: var(--fg-softer); }
+  .lg-resume:hover .r-go { text-decoration: underline; text-underline-offset: 3px; }
+  .lg-seg button:hover:not([aria-pressed="true"]), .lg-sort button:hover:not([aria-pressed="true"]) { color: var(--fg); }
+  .lg-none button:hover { text-decoration: underline; }
+}
+
+@container ledger (max-width: 900px) {
+  .lg-page { padding: 26px 28px 56px; }
+  .lg-legend { display: none; }
+}
+@container ledger (max-width: 760px) {
+  .lg-page { padding: 22px 22px 48px; }
+  .lg-tools { flex: 1 1 100%; }
+  .lg-search { flex: 1; width: auto; }
+  .lg-resume .r-state { display: none; }
+  .lg-table col.c-when { width: 78px; }
+}
+@container ledger (max-width: 640px) {
+  .lg-table col.c-punct { width: 0; }
+  .lg-table .c-punct { padding: 0; font-size: 0; visibility: hidden; }
+  .lg-table col.c-trans { width: 100px; }
+  .lg-table col.c-unc { width: 40px; }
+  .lg-table col.c-no { width: 60px; }
+  .lg-table.is-flat col.c-no { width: 96px; }
+  .lg-tools { flex-wrap: wrap; }
+  .lg-search { flex-basis: 100%; }
+}
+</style>
+</head>
+<body>
+<script type="module">
+import { mountShell, getDemo, esc, STAGES, stageLabel, fmtWhen, toast } from './shared.js';
+
+const demo = getDemo();
+const root = mountShell({ design: '01 작업 대장', status: '' });
+root.classList.add('lg');
+
+const FILTERS = [
+  { key: 'all', label: '전체', test: () => true },
+  { key: 'working', label: '작업 중', test: doc => doc.stage !== 'confirmed' },
+  { key: 'review', label: '재검토', test: doc => doc.stage === 'review' },
+  { key: 'confirmed', label: '확정', test: doc => doc.stage === 'confirmed' },
+];
+const state = { filter: 'all', query: '', sort: 'toc', collapsed: new Set(), active: demo.resume?.id ?? null };
+const chevron = '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>';
+const searchIcon = '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg>';
+const empty = demo.docs.length === 0;
+
+function punctText(doc) {
+  if (doc.punctuation === 'none') return '<span class="none">—</span>';
+  return doc.punctuation === 'draft' ? '초안' : '<span class="muted">확정</span>';
+}
+function transText(doc) {
+  const version = doc.version ? `<span class="v">v${doc.version}</span>` : '';
+  switch (doc.translation) {
+    case 'draft': return `번역안${version}`;
+    case 'review': return `<span class="is-review">재검토</span>${version}`;
+    case 'confirmed': return `<span class="muted">확정</span>${version}`;
+    default: return '<span class="none">—</span>';
+  }
+}
+function stateSummary(doc) {
+  const version = doc.version ? ` v${doc.version}` : '';
+  if (doc.translation === 'draft') return `번역안${version}`;
+  if (doc.translation === 'review') return `재검토${version}`;
+  if (doc.translation === 'confirmed') return `번역 확정${version}`;
+  if (doc.punctuation === 'draft') return '표점 초안';
+  if (doc.punctuation === 'confirmed') return '표점 확정';
+  return '원문';
+}
+
+function head() {
+  const meta = [demo.project.base, demo.project.scope].filter(Boolean).join(' · ');
+  const counts = FILTERS.map(filter => demo.docs.filter(filter.test).length);
+  const tools = empty ? '' : `<div class="lg-tools">
+      <label class="lg-search">${searchIcon}<input id="lgQuery" type="search" placeholder="장·첫 구절 찾기" aria-label="장이나 첫 구절로 찾기" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">/</kbd></label>
+      <div class="lg-seg" role="group" aria-label="상태로 거르기">${FILTERS.map((filter, i) => `<button type="button" data-filter="${filter.key}" aria-pressed="${filter.key === state.filter}">${filter.label}<b>${counts[i]}</b></button>`).join('')}</div>
+    </div>`;
+  return `<header class="lg-head"><div class="lg-id"><h1>${esc(demo.project.title)}</h1>${meta ? `<p class="lg-meta">${esc(meta)}</p>` : ''}</div>${tools}</header>`;
+}
+
+function progress() {
+  if (empty) return '';
+  const { stats } = demo;
+  const parts = STAGES.filter(stage => stats[stage.key]);
+  const label = STAGES.map(stage => `${stage.label} ${stats[stage.key]}`).join(', ');
+  return `<div class="lg-progress">
+    <div class="lg-bar" role="img" aria-label="${esc(label)}">${parts.map(stage => `<i class="st-fill st-${stage.key}" style="flex:${stats[stage.key]}" title="${esc(stage.label)} ${stats[stage.key]}"></i>`).join('')}</div>
+    <ul class="lg-legend" aria-hidden="true">${STAGES.map(stage => `<li><i class="st-fill st-${stage.key}"></i>${esc(stage.label)}</li>`).join('')}</ul>
+    <span class="lg-pct">${Math.round(stats.confirmed / stats.total * 100)}% 확정</span>
+  </div>`;
+}
+
+function sub() {
+  if (empty) return '';
+  const doc = demo.resume;
+  const resume = doc ? `<button type="button" class="lg-resume" data-open-doc="${esc(doc.id)}" aria-label="이어서 작업: ${esc(doc.title)} ${esc(doc.opening)} 열기">
+      <span class="r-label">이어서</span><span class="r-title">${esc(doc.title)}</span>${doc.opening !== doc.title ? `<span class="r-opening">${esc(doc.opening)}</span>` : ''}<span class="r-state">${esc(stateSummary(doc))} · ${esc(fmtWhen(doc.updatedAt))}</span><span class="r-go" aria-hidden="true">열기 →</span>
+    </button>` : '<span></span>';
+  return `<div class="lg-sub">${resume}<div class="lg-sort" role="group" aria-label="정렬">
+      <button type="button" data-sort="toc" aria-pressed="${state.sort === 'toc'}">목차순</button><button type="button" data-sort="recent" aria-pressed="${state.sort === 'recent'}">최근순</button>
+    </div></div>`;
+}
+
+function row(doc, flat) {
+  const chapter = !doc.groupId ? '' : flat ? `<span class="bk">${esc(doc.book)}</span>${doc.no}` : String(doc.no);
+  const resume = doc.id === demo.resume?.id;
+  return `<tr class="lg-row${resume ? ' is-resume' : ''}" data-open-doc="${esc(doc.id)}" data-nav="${esc(doc.id)}" tabindex="-1" aria-label="${esc(doc.title)} ${esc(doc.opening)} · ${esc(stageLabel(doc.stage))}${resume ? ' · 이어서 작업' : ''}">
+    <td class="c-no"><i class="st-fill st-${esc(doc.stage)}" title="${esc(stageLabel(doc.stage))}"></i>${chapter}</td>
+    <td class="c-open" title="${esc(doc.opening)}">${esc(doc.opening)}</td>
+    <td class="c-punct">${punctText(doc)}</td>
+    <td class="c-trans">${transText(doc)}</td>
+    <td class="c-unc">${doc.uncertainties ? `<span aria-label="열린 의문 ${doc.uncertainties}건">${doc.uncertainties}</span>` : ''}</td>
+    <td class="c-when">${esc(fmtWhen(doc.updatedAt))}</td>
+  </tr>`;
+}
+
+function groupRow(group, open) {
+  const done = group.docs.filter(doc => doc.stage === 'confirmed').length;
+  return `<tr class="lg-group"><th colspan="6" scope="colgroup"><div class="g-in">
+    <button type="button" class="g-toggle" data-group="${esc(group.id)}" data-nav="g:${esc(group.id)}" tabindex="-1" aria-expanded="${open}">${chevron}<span class="g-title">${esc(group.title)}</span><span class="g-ko">${esc(group.ko)}</span></button>
+    ${group.docs.length ? `<span class="g-count">${done}/${group.docs.length} 확정</span>` : ''}
+  </div></th></tr>`;
+}
+
+function matches(doc) {
+  const filter = FILTERS.find(item => item.key === state.filter);
+  if (!filter.test(doc)) return false;
+  const query = state.query.trim().toLocaleLowerCase();
+  return !query || `${doc.title} ${doc.opening} ${doc.ko} ${doc.key}`.toLocaleLowerCase().includes(query);
+}
+
+function body() {
+  if (empty) return '<tr class="lg-empty"><td colspan="6"><p>아직 원문이 없습니다.</p><button type="button" class="btn btn-primary" data-add-source>원문 추가</button></td></tr>';
+  const narrowed = state.filter !== 'all' || state.query.trim();
+  const rows = [];
+  if (state.sort === 'recent') {
+    const docs = demo.docs.filter(matches).sort((a, b) => b.updatedAt - a.updatedAt);
+    rows.push(...docs.map(doc => row(doc, true)));
+  } else {
+    rows.push(...demo.docs.filter(doc => !doc.groupId && matches(doc)).map(doc => row(doc, false)));
+    for (const group of demo.groups) {
+      const docs = group.docs.filter(matches);
+      if (narrowed && !docs.length) continue;
+      const open = state.query.trim() ? true : !state.collapsed.has(group.id);
+      rows.push(groupRow(group, open));
+      if (!open) continue;
+      if (!group.docs.length) rows.push('<tr class="lg-note"><td colspan="6">원문 없음</td></tr>');
+      else rows.push(...docs.map(doc => row(doc, false)));
+    }
+  }
+  if (!rows.length) return `<tr class="lg-none"><td colspan="6">조건에 맞는 원문이 없습니다.<button type="button" data-reset>필터 초기화</button></td></tr>`;
+  return rows.join('');
+}
+
+root.innerHTML = `<div class="lg-page">
+  ${head()}
+  ${progress()}
+  ${sub()}
+  <table class="lg-table" aria-label="원문 대장">
+    <colgroup><col class="c-no"><col class="c-open"><col class="c-punct"><col class="c-trans"><col class="c-unc"><col class="c-when"></colgroup>
+    <thead><tr><th class="c-no" scope="col">장</th><th class="c-open" scope="col">첫 구절</th><th class="c-punct" scope="col">표점</th><th class="c-trans" scope="col">번역</th><th class="c-unc" scope="col">의문</th><th class="c-when" scope="col">최근</th></tr></thead>
+    <tbody id="lgBody"></tbody>
+  </table>
+</div>`;
+
+const tbody = root.querySelector('#lgBody');
+const table = root.querySelector('.lg-table');
+const navItems = () => [...tbody.querySelectorAll('[data-nav]')];
+
+function render({ keepFocus = false } = {}) {
+  const hadFocus = keepFocus && tbody.contains(document.activeElement);
+  table.classList.toggle('is-flat', state.sort === 'recent');
+  tbody.innerHTML = body();
+  const items = navItems();
+  const current = items.find(item => item.dataset.nav === state.active) ?? items.find(item => item.classList.contains('is-resume')) ?? items[0];
+  if (current) { current.tabIndex = 0; state.active = current.dataset.nav; }
+  if (hadFocus) current?.focus();
+}
+
+function setActive(item, focus = true) {
+  for (const other of navItems()) other.tabIndex = -1;
+  item.tabIndex = 0;
+  state.active = item.dataset.nav;
+  if (focus) item.focus({ preventScroll: false });
+  if (focus) item.scrollIntoView({ block: 'nearest' });
+}
+
+root.addEventListener('click', event => {
+  const target = event.target.closest('[data-filter], [data-sort], [data-group], [data-reset], [data-add-source]');
+  if (!target) return;
+  if (target.dataset.filter) {
+    state.filter = target.dataset.filter;
+    for (const button of root.querySelectorAll('[data-filter]')) button.setAttribute('aria-pressed', String(button === target));
+    render();
+  } else if (target.dataset.sort) {
+    state.sort = target.dataset.sort;
+    for (const button of root.querySelectorAll('[data-sort]')) button.setAttribute('aria-pressed', String(button === target));
+    render();
+  } else if (target.dataset.group) {
+    const id = target.dataset.group;
+    if (state.query.trim()) return;
+    if (state.collapsed.has(id)) state.collapsed.delete(id); else state.collapsed.add(id);
+    state.active = `g:${id}`;
+    render({ keepFocus: true });
+    tbody.querySelector(`[data-nav="g:${CSS.escape(id)}"]`)?.focus();
+  } else if (target.hasAttribute('data-reset')) {
+    state.filter = 'all'; state.query = '';
+    const input = root.querySelector('#lgQuery');
+    if (input) input.value = '';
+    for (const button of root.querySelectorAll('[data-filter]')) button.setAttribute('aria-pressed', String(button.dataset.filter === 'all'));
+    render();
+  } else if (target.hasAttribute('data-add-source')) {
+    toast('원문 추가 대화상자를 엽니다.');
+  }
+});
+
+tbody.addEventListener('focusin', event => {
+  const item = event.target.closest('[data-nav]');
+  if (item && item.dataset.nav !== state.active) setActive(item, false);
+});
+tbody.addEventListener('keydown', event => {
+  const item = event.target.closest('[data-nav]');
+  if (!item) return;
+  const items = navItems();
+  const index = items.indexOf(item);
+  const move = next => { event.preventDefault(); if (next) setActive(next); };
+  switch (event.key) {
+    case 'ArrowDown': move(items[index + 1]); break;
+    case 'ArrowUp': move(items[index - 1]); break;
+    case 'Home': move(items[0]); break;
+    case 'End': move(items[items.length - 1]); break;
+    case 'ArrowLeft':
+    case 'ArrowRight':
+      if (item.dataset.group && !state.query.trim()) {
+        const open = item.getAttribute('aria-expanded') === 'true';
+        if (open === (event.key === 'ArrowLeft')) { event.preventDefault(); item.click(); }
+      }
+      break;
+    case 'Enter':
+      if (item.matches('tr')) { event.preventDefault(); item.click(); }
+      break;
+  }
+});
+
+const input = root.querySelector('#lgQuery');
+input?.addEventListener('input', () => { state.query = input.value; render(); });
+input?.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && input.value) { event.preventDefault(); input.value = ''; state.query = ''; render(); }
+  else if (event.key === 'ArrowDown') { const first = navItems()[0]; if (first) { event.preventDefault(); setActive(first); } }
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
+  if (!input) return;
+  event.preventDefault(); input.focus(); input.select();
+});
+
+render();
+</script>
+</body>
+</html>

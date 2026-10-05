@@ -218,7 +218,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     grant.value = parsed;
     try {
       await grant.onSubmit(rawBody);
-    } catch {
+    } catch (error) {
+      // Only the app's own format verdict is repairable, and only its message is safe to return.
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "invalid_payload") {
+        grant.error = "invalid_payload";
+        const reason = error instanceof Error ? error.message.slice(0, 200) : "";
+        sendJson(response, 400, { ok: false, error: "invalid_payload", ...(reason ? { reason } : {}) });
+        return;
+      }
       grant.error = "submission_rejected";
       sendJson(response, 422, { ok: false, error: "submission_rejected" });
       return;
@@ -279,7 +286,7 @@ export async function createTranslationToolGrant(input: {
   onSubmit(rawBody: string): void | Promise<void>;
   ttlMs?: number;
   onAlignment?: AlignmentHandler;
-  /** Retry parsing errors only; a repository rejection or committed write is terminal. */
+  /** Retry parsing and app format errors only; a repository rejection or committed write is terminal. */
   retryMalformedSubmission?: boolean;
 }): Promise<TranslationToolGrant> {
   if (!input.projectId.trim() || !input.runId.trim() || typeof input.onSubmit !== "function") {

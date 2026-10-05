@@ -1,12 +1,16 @@
-import { t, ui, uiText } from "./i18n";
-import type { DocumentListItem, DocumentMetadataView, HomeView, KnowledgeView } from "../../shared/munhae-api";
+import { t, ui } from "./i18n";
+import type { DocumentListItem, DocumentMetadataView, HomeView } from "../../shared/munhae-api";
 import {
-  bindSidebar, currentDocId, defaultSidebarTree, esc, fmtWhen, go, initShell,
+  bindSidebar, currentDocId, defaultSidebarTree, esc, go, initShell,
   must, notify, openDocumentDialog, persistDoc, renderSidebar, requireProject, registerProjectRefresh,
-  setSelfTitle, setSidebarDocs, projectLocationLabel, stateLabel, tagHtml,
+  setSelfTitle, setSidebarDocs, projectLocationLabel,
 } from "./shared";
-import { openConfirmedExport } from "./project-tools";
-import { HOME_STAGES, buildHomeGroups, homeDocumentPath, homeStage, resolveHomeCreationParent, resolveHomeResume, resolveRecentDocument } from "./home-model";
+import { openExport } from "./project-tools";
+import {
+  HOME_STAGES, buildHomeGroups, buildHomeSections, homeDocumentPath, homeStage, homeWhen,
+  resolveHomeCreationParent, resolveHomeResume,
+  type HomeGroup, type HomeStage,
+} from "./home-model";
 
 const project = await requireProject();
 if (!project) throw new Error("redirect");
@@ -15,114 +19,67 @@ const api = initShell({
   selfTitle: `${project.title} — ${projectLocationLabel(project)}`, pageCmd, pageKeys,
 }).api;
 
+type Activity = HomeView["activity"][number];
 let view: HomeView | null = null;
 let metadata: DocumentMetadataView | null = null;
-let knowledge: KnowledgeView | null = null;
-let knowledgeFailed = false;
 let metadataFailed = false;
+let activity = new Map<string, Activity>();
 let sel: string | null = null;
 let resumeId: string | null = null;
-let selectedGroup: string | null = null;
-let selectedContainer: string | null = null;
-let currentPanel = location.hash === "#documents" ? "documents" : "overview";
 let loadRevision = 0;
-let showAllGroups = false;
+const filters: { query: string; stage: HomeStage | null; sort: "toc" | "recent"; container: string | null } = {
+  query: "", stage: null, sort: "toc", container: null,
+};
+const collapsed = new Set<string>();
+const chevron = '<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4"/></svg>';
 const titleOf = (doc: DocumentListItem): string => doc.originalTitle || doc.title;
 const tree = (): ReturnType<typeof defaultSidebarTree> => defaultSidebarTree(view?.documents ?? []);
-const sourceUnits = (): DocumentListItem[] => view?.documents.filter(d => d.nodeRole === "source_unit") ?? [];
+const sourceUnits = (): DocumentListItem[] => view?.documents.filter(d => d.nodeRole === "source_unit" && !d.isMaster) ?? [];
 const master = (): DocumentListItem | undefined => view?.documents.find(d => d.isMaster);
-
-function meter(done: number, total: number): string {
-  return ui`<span class="progress-meter" role="progressbar" aria-label="번역 확정" aria-valuemin="0" aria-valuemax="${Math.max(1, total)}" aria-valuenow="${done}" aria-valuetext="${total}개 중 ${done}개 번역 확정"><i style="width:${total ? Math.round(done / total * 100) : 0}%"></i></span>`;
-}
-function stageBadge(doc: DocumentListItem): string {
-  const stage = homeStage(doc);
-  const label = HOME_STAGES.find(item => item.key === stage)?.label ?? t("원문");
-  return `<span class="tag study-stage-${stage}">${esc(label)}</span>`;
-}
-function infoUrl(id: string): string { return `knowledge.html?node=${encodeURIComponent(id)}`; }
-function contextUrl(): string { return master() ? `context.html?node=${encodeURIComponent(master()!.id)}` : "context.html"; }
+const stageOf = (key: HomeStage) => HOME_STAGES.find(stage => stage.key === key)!;
 
 function renderHeader(): void {
   if (!view) return;
-  const docs = sourceUnits();
-  const groups = buildHomeGroups(view.documents);
   must("#projectTitle").textContent = view.project.title;
-  must("#projectDescription").textContent = metadata?.descriptionMd?.trim()
-    || (metadataFailed ? t("프로젝트 설명을 불러오지 못했습니다. 프로젝트 정보에서 확인해 주세요.") : t("프로젝트 정보에 대상 문헌과 작업 범위를 기록해 보세요."));
-  const facts: Array<[string, string]> = [[t("구성"), ui`${groups.length}개 묶음 · 원문 ${docs.length}개`]];
+  const period = [metadata?.periodText, metadata?.dateText].filter(Boolean).join(" · ");
+  const facts: Array<[string, string]> = [];
   if (metadata?.authorName) facts.push([t("저자"), metadata.authorName]);
-  if (metadata?.periodText || metadata?.dateText) facts.push([t("시대·시기"), [metadata.periodText, metadata.dateText].filter(Boolean).join(" · ")]);
+  if (period) facts.push([t("시대·시기"), period]);
   if (metadata?.sourceReference) facts.push([t("출전"), metadata.sourceReference]);
-  must("#projectFacts").innerHTML = facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("");
-  must("#documentTotal").textContent = String(docs.length);
-  const resume = resolveHomeResume(view.documents, currentDocId(), view.recent);
-  resumeId = resume.document?.id ?? null;
-  must("#resumeBlock").hidden = false;
-  must("#resumeLabel").textContent = !resume.document ? t("첫 원문에서 시작하기") : resume.kind === "resume" ? t("마지막으로 열었던 원문") : resume.kind === "recent" ? t("최근 번역한 원문") : t("처음 작업할 원문");
-  must("#resumeTitle").textContent = resume.document ? titleOf(resume.document) : t("작업할 원문을 추가해 주세요");
-  must("#btnContinue").innerHTML = `${resume.document ? (resume.kind === "first" ? t("원문 열기") : t("작업 이어하기")) : t("원문 추가")} <span aria-hidden="true">→</span>`;
-  must("#btnContinue").setAttribute("aria-label", resume.document ? `${titleOf(resume.document)} ${resume.kind === "first" ? t("열기") : t("작업 이어하기")}` : t("첫 원문 추가"));
-  must<HTMLAnchorElement>("#contextLink").href = contextUrl();
-  must<HTMLAnchorElement>("#contextPreviewLink").href = contextUrl();
+  const factList = must("#projectFacts");
+  factList.innerHTML = facts.map(([label, value]) => `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`).join("");
+  factList.hidden = !facts.length;
+  const description = must("#projectDescription");
+  description.textContent = metadata?.descriptionMd?.trim() ?? "";
+  description.hidden = !description.textContent;
 }
 
-function renderProgress(): void {
-  if (!view) return;
+/** The source last worked in, marked in the contents. A project nobody has worked in yet has none. */
+function updateResume(): void {
+  const resume = view ? resolveHomeResume(view.documents, currentDocId(), view.recent) : null;
+  resumeId = resume?.kind === "first" ? null : resume?.document?.id ?? null;
+}
+
+function renderTools(): void {
   const docs = sourceUnits();
-  const counts = HOME_STAGES.map(stage => docs.filter(doc => homeStage(doc) === stage.key).length);
-  const confirmed = docs.filter(doc => homeStage(doc) === "confirmed").length;
-  const review = docs.filter(doc => homeStage(doc) === "review").length;
-  const drafts = docs.filter(doc => homeStage(doc) === "translation").length;
-  must("#progressTotal").textContent = ui`전체 원문 ${docs.length}개`;
-  must("#homeStatus").textContent = ui`원문 ${docs.length}개 · 번역 확정 ${confirmed}개`;
-  must("#progressBody").innerHTML = docs.length ? ui`
-    <div class="study-progress-summary"><div><span class="study-percent mono">${Math.round(confirmed / docs.length * 100)}<small>%</small></span><span class="study-percent-label">번역 확정</span></div><p><strong>${confirmed}개 원문을 확정했습니다.</strong><span>${docs.length - confirmed}개 원문의 작업이 남아 있습니다.</span></p></div>
-    <div class="study-stage-bar" role="img" aria-label="${HOME_STAGES.map((stage, i) => ui`${stage.label} ${counts[i]}개`).join(", ")}">${HOME_STAGES.map((stage, i) => counts[i] ? `<span class="study-stage-${stage.key}" style="flex:${counts[i]}"></span>` : "").join("")}</div>
-    <div class="study-stage-legend">${HOME_STAGES.map((stage, i) => ui`<button type="button" data-filter="${stage.key}" aria-label="${esc(stage.label)} ${counts[i]}개 원문 보기"><i class="study-stage-${stage.key}"></i>${esc(stage.label)}<b class="mono">${counts[i]}</b></button>`).join("")}</div>`
-    : uiText('<div class="study-progress-empty"><h3>첫 원문에서 시작하는 번역</h3><p>원문을 추가하면 문헌의 구성과 번역 진행 상황이 이곳에 모입니다.</p><button class="btn btn-primary" type="button" data-add-source>첫 원문 추가</button></div>');
-  must("#attentionActions").innerHTML = docs.length ? ui`<button type="button" data-filter="review">재검토 필요 <strong>${review}</strong><span aria-hidden="true">→</span></button><button type="button" data-filter="translation">번역안 <strong>${drafts}</strong><span aria-hidden="true">→</span></button><button type="button" data-filter="uncertain">불확실성 <strong>${view.uncertainties.length}</strong><span aria-hidden="true">→</span></button>` : "";
-  must("#uncertaintyMeta").textContent = view.uncertainties.length ? ui`열린 기록 ${view.uncertainties.length}건 · 해석의 의문과 근거` : t("열린 불확실성이 없습니다");
-}
-
-function renderChapters(): void {
-  if (!view) return;
-  const groups = buildHomeGroups(view.documents);
-  const opened = new Set([...document.querySelectorAll<HTMLDetailsElement>(".study-chapter[open]")].map(el => el.dataset.group));
-  must("#chapterCount").textContent = ui`${groups.length}개 묶음 · 확정 / 전체`;
-  must("#chapterList").innerHTML = groups.length ? groups.map((group, index) => {
-    const count = group.documents.filter(doc => homeStage(doc) === "confirmed").length;
-    return `<details class="study-chapter" data-group="${esc(group.id)}" ${opened.has(group.id) ? "open" : ""} ${index >= 6 && !showAllGroups ? "hidden" : ""}>
-      <summary class="study-chapter-toggle"><span class="study-chapter-number mono">${String(index + 1).padStart(2, "0")}</span><span class="study-chapter-name"><strong>${esc(group.title)}</strong><span>${group.documents.length ? `${esc(titleOf(group.documents[0]!))}${group.documents.length > 1 ? ui` 외 ${group.documents.length - 1}개 원문` : ""}` : t("아직 원문이 없습니다")}</span></span><span class="study-chapter-progress">${meter(count, group.documents.length)}<span>${count} / ${group.documents.length}</span></span><span class="study-chevron" aria-hidden="true">⌄</span></summary>
-      <div class="study-chapter-docs">${group.documents.slice(0, 5).map(doc => `<button type="button" data-open-doc="${esc(doc.id)}" class="study-inline-doc"><span>${esc(titleOf(doc))}</span>${stageBadge(doc)}</button>`).join("") || ui`<button class="study-text-button" type="button" data-add-under="${esc(group.containerId ?? "")}">이 목차에 원문 추가 →</button>`}${group.documents.length ? ui`<button type="button" class="study-text-button" data-show-group="${esc(group.id)}">이 묶음의 원문 ${group.documents.length}개 모두 보기 →</button>` : ""}${group.containerId ? ui`<a class="study-text-button" href="${infoUrl(group.containerId)}">목차 정보 ↗</a>` : ""}</div></details>`;
-  }).join("") + (groups.length > 6 ? `<button type="button" class="study-text-button study-more-chapters" id="showAllGroups" aria-expanded="${showAllGroups}">${showAllGroups ? t("6개 묶음만 보기 ↑") : ui`나머지 ${groups.length - 6}개 묶음 펼치기 ↓`}</button>` : "")
-    : uiText('<p class="study-empty-copy">왼쪽 목차에서 문헌의 구성을 정리하거나, 첫 원문을 추가해 보세요.</p>');
-}
-
-function renderKnowledge(): void {
-  const root = master();
-  const contexts = (knowledge?.contextItems ?? []).filter(item => item.enabled && item.scopeId === root?.id);
-  const cards = contexts.filter(item => item.source === "context_item").sort((a, b) => b.priority - a.priority || a.updatedAt.localeCompare(b.updatedAt));
-  must("#contextMeta").textContent = knowledgeFailed ? t("문맥을 불러오지 못했습니다") : contexts.length ? ui`프로젝트 공통 문맥 ${contexts.length}개` : t("문헌의 배경과 번역 원칙");
-  must("#knowledgeMeta").textContent = knowledge ? ui`자료 ${knowledge.contextItems.length} · 용어 ${knowledge.glossary.length} · 미해결 ${knowledge.uncertainties.filter(item => item.state === "open").length}` : knowledgeFailed ? t("자료를 불러오지 못했습니다") : t("배경·지침·용어집·코멘트");
-  must("#contextPreviewTitle").textContent = cards[0]?.title || t("함께 참고할 문맥");
-  must("#contextPreview").textContent = cards[0]?.contentMd || (knowledgeFailed ? t("번역 자료 화면에서 내용을 확인하거나 다시 불러와 주세요.") : t("자료는 연결 노드와 설정한 하위 문서에서 함께 참고합니다. 문헌의 배경과 번역 원칙을 정리해 보세요."));
-}
-
-function renderRecent(): void {
-  if (!view) return;
-  const seen = new Set<string>();
-  const records = view.recent.filter(record => {
-    const doc = resolveRecentDocument(record, view!.documents);
-    if (!doc) return true;
-    if (seen.has(doc.id)) return false;
-    seen.add(doc.id); return true;
-  }).slice(0, 3);
-  must("#recentList").innerHTML = records.length ? records.map(record => {
-    const doc = resolveRecentDocument(record, view!.documents);
-    const content = `<span class="study-recent-meta">${esc(doc ? homeDocumentPath(doc, view!.documents) || t("원문 문서") : t("번역 기록"))}<span>${esc(fmtWhen(record.when))}</span></span><strong class="hanmun">${esc(doc ? titleOf(doc) : record.title)}</strong><p class="study-excerpt">${esc(record.summary)}</p><span class="study-recent-footer">${doc ? stageBadge(doc) : `<span class="tag">${esc(record.tag)}</span>`}<span>${doc ? t("원문 열기 →") : t("연결할 원문을 확인할 수 없습니다")}</span></span>`;
-    return doc ? `<button class="study-recent-doc" type="button" data-open-doc="${esc(doc.id)}">${content}</button>` : `<article class="study-recent-doc">${content}</article>`;
-  }).join("") : uiText('<p class="study-empty-copy">아직 번역 작업 기록이 없습니다. 원문을 열고 번역을 시작해 보세요.</p>');
+  must("#tocTools").hidden = !docs.length;
+  const counts = new Map(HOME_STAGES.map(stage => [stage.key, docs.filter(doc => homeStage(doc) === stage.key).length]));
+  if (filters.stage && !counts.get(filters.stage)) filters.stage = null;
+  must("#stageFilters").innerHTML = [...HOME_STAGES].reverse().map(stage => {
+    const count = counts.get(stage.key) ?? 0;
+    const label = t(stage.label);
+    return `<li><button type="button" data-stage-filter="${stage.key}" aria-pressed="${filters.stage === stage.key}"${count ? "" : " disabled"} aria-label="${esc(ui`${label} ${count}개 보기`)}">`
+      + `<span class="toc-mark toc-stage-${stage.key}" aria-hidden="true">${stage.mark}</span>${esc(label)}<b>${count}</b></button></li>`;
+  }).join("");
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-sort]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.sort === filters.sort));
+  }
+  const container = filters.container ? view?.documents.find(doc => doc.id === filters.container) : undefined;
+  const chip = must("#scopeChip");
+  chip.hidden = !container;
+  chip.innerHTML = container
+    ? `<span>${esc(titleOf(container))}</span><button type="button" data-clear-scope aria-label="${esc(ui`${titleOf(container)} 범위 해제`)}">×</button>`
+    : "";
 }
 
 function belongsTo(doc: DocumentListItem, containerId: string): boolean {
@@ -134,47 +91,95 @@ function belongsTo(doc: DocumentListItem, containerId: string): boolean {
   }
   return false;
 }
-function renderDocuments(): void {
-  if (!view) return;
-  const query = must<HTMLInputElement>("#q").value.trim().toLocaleLowerCase();
-  const status = must<HTMLSelectElement>("#statusSel").value;
-  const group = selectedGroup ? buildHomeGroups(view.documents).find(item => item.id === selectedGroup) : null;
-  const container = selectedContainer ? view.documents.find(doc => doc.id === selectedContainer) : null;
-  const docs = (group?.documents ?? sourceUnits()).filter(doc => (!container || belongsTo(doc, container.id))
-    && (!query || `${doc.title} ${doc.originalTitle ?? ""} ${homeDocumentPath(doc, view!.documents)}`.toLocaleLowerCase().includes(query))
-    && (!status || (status === "uncertain" ? doc.uncertaintyCount > 0 : status === "working" ? homeStage(doc) !== "confirmed" : homeStage(doc) === status)));
-  must("#scopeMeta").textContent = ui`${container ? `${titleOf(container)} · ` : group ? `${group.title} · ` : ""}${docs.length}개 원문${status === "uncertain" ? ui` · 프로젝트 전체 불확실성 ${view.uncertainties.length}건` : ""}`;
-  must("#clearFilters").hidden = !query && !status && !selectedGroup && !selectedContainer;
-  must("#docBody").innerHTML = docs.length ? docs.map(doc => ui`<div class="study-document-row" data-id="${esc(doc.id)}">
-    <button type="button" class="study-document-open" data-open-doc="${esc(doc.id)}"><span class="study-document-title"><strong>${esc(titleOf(doc))}</strong><small>${esc(homeDocumentPath(doc, view!.documents) || t("프로젝트 원문"))}</small></span></button>
-    <div class="study-document-states">${([[t('원문'), 'source', doc.sourceState], [t('표점'), 'punctuation', doc.punctuationState], [t('번역'), 'translation', doc.translationState]] as const).map(([label, kind, state]) => `<span><small>${label}</small>${tagHtml(stateLabel(kind, state))}</span>`).join("")}</div>
-    <a class="study-uncertainty ${doc.uncertaintyCount ? "has-uncertainty" : ""}" href="uncertainty.html" aria-label="불확실성 기록 보기 · 이 원문에 연결된 ${doc.uncertaintyCount}건">${doc.uncertaintyCount ? ui`의문 ${doc.uncertaintyCount}` : "—"}</a>
-    <a class="study-metadata" href="${infoUrl(doc.id)}" aria-label="${esc(titleOf(doc))} 문서 정보">정보 ↗</a></div>`).join("")
-    : `<div class="home-empty"><h3>${sourceUnits().length ? t("조건에 맞는 원문이 없습니다") : t("아직 원문이 없습니다")}</h3><p>${sourceUnits().length ? (status === "uncertain" && view.uncertainties.length ? t("연결된 원문이 없는 불확실성은 불확실성 기록에서 확인할 수 있습니다.") : t("검색어나 상태 필터를 바꿔 보세요.")) : t("번역할 문헌의 원문을 추가해 작업을 시작하세요.")}</p>${sourceUnits().length ? uiText('<button class="btn" type="button" data-reset-filters>필터 초기화</button>') : uiText('<button class="btn btn-primary" type="button" data-add-source>원문 추가</button>')}${status === "uncertain" ? uiText('<a class="study-text-button" href="uncertainty.html">모든 불확실성 기록 보기 →</a>') : ""}</div>`;
+function matches(doc: DocumentListItem): boolean {
+  if (filters.stage && homeStage(doc) !== filters.stage) return false;
+  if (filters.container && !belongsTo(doc, filters.container)) return false;
+  if (!filters.query) return true;
+  const query = filters.query.toLocaleLowerCase();
+  return `${doc.title} ${doc.originalTitle ?? ""} ${homeDocumentPath(doc, view!.documents)}`.toLocaleLowerCase().includes(query);
+}
+/** The path below the chapter heading, so nested folders stay visible inside one group. */
+function subPathOf(doc: DocumentListItem, group: HomeGroup): string {
+  const path = homeDocumentPath(doc, view!.documents);
+  const prefix = `${group.title} › `;
+  return path === group.title ? "" : path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
-function showPanel(name: string, focus = false): void {
-  currentPanel = name;
-  for (const key of ["overview", "documents"]) {
-    const selected = key === name;
-    const tab = must<HTMLButtonElement>(`#study-tab-${key}`);
-    tab.setAttribute("aria-selected", String(selected)); tab.tabIndex = selected ? 0 : -1;
-    must(`#study-${key}`).hidden = !selected;
-    if (selected && focus) tab.focus();
+function lineHtml(doc: DocumentListItem, number: string, subPath: string): string {
+  const entry = activity.get(doc.id);
+  const stage = stageOf(homeStage(doc));
+  // Ledger facts sit where a printed contents page puts its page numbers.
+  const version = entry?.translationVersion ? `v${entry.translationVersion}` : doc.punctuationState === "draft" ? t("초안") : "";
+  const when = entry?.lastActivityAt ? homeWhen(entry.lastActivityAt) : "";
+  const resume = doc.id === resumeId;
+  const summary = [t(stage.label), version, when].filter(Boolean).join(" · ");
+  const label = `${titleOf(doc)}${subPath ? ` (${subPath})` : ""} — ${summary}${resume ? `, ${t("지난 작업")}` : ""}`;
+  return `<li class="toc-entry${resume ? " is-resume" : ""}">`
+    + `<button class="toc-line" type="button" data-open-doc="${esc(doc.id)}" title="${esc(summary)}" aria-label="${esc(label)}">`
+    + `<span class="toc-no" aria-hidden="true">${esc(number)}</span>`
+    + `<span class="toc-name" aria-hidden="true"><span class="toc-doc">${esc(titleOf(doc))}</span>${subPath ? `<small>${esc(subPath)}</small>` : ""}</span>`
+    + '<span class="toc-leader" aria-hidden="true"></span>'
+    + `<span class="toc-ver${entry?.translationVersion ? "" : " is-draft"}" aria-hidden="true">${esc(version)}</span>`
+    + `<span class="toc-when" aria-hidden="true">${esc(when)}</span>`
+    + `<span class="toc-mark toc-stage-${stage.key}" aria-hidden="true">${stage.mark}</span>`
+    + "</button></li>";
+}
+
+function renderContents(): void {
+  if (!view) return;
+  const body = must("#docBody");
+  const docs = sourceUnits();
+  if (!docs.length) {
+    body.innerHTML = `<div class="toc-empty"><p>${esc(t("아직 원문이 없습니다"))}</p><button class="btn btn-primary" type="button" data-add-source>${esc(t("원문 추가"))}</button></div>`;
+    must("#tocStatus").textContent = "";
+    return;
   }
-  history.replaceState(null, "", `${location.pathname}${location.search}${name === "documents" ? "#documents" : ""}`);
-  if (name === "documents") renderDocuments();
+  const filtering = !!(filters.query || filters.stage || filters.container);
+  let shown = 0;
+  let html = "";
+  if (filters.sort === "recent") {
+    const lastAt = (doc: DocumentListItem) => activity.get(doc.id)?.lastActivityAt ?? "";
+    const list = docs.filter(matches).sort((a, b) => lastAt(b).localeCompare(lastAt(a)));
+    shown = list.length;
+    if (list.length) html = `<ol class="toc-list">${list.map(doc => lineHtml(doc, "", homeDocumentPath(doc, view!.documents))).join("")}</ol>`;
+  } else {
+    for (const section of buildHomeSections(view.documents)) {
+      if (section.kind === "loose") {
+        const list = section.documents.filter(matches);
+        shown += list.length;
+        if (list.length) html += `<ol class="toc-list">${list.map(doc => lineHtml(doc, "", "")).join("")}</ol>`;
+        continue;
+      }
+      const group = section.group;
+      const list = group.documents.filter(matches);
+      shown += list.length;
+      if (filtering && !list.length) continue;
+      const open = filtering || !collapsed.has(group.id);
+      const confirmed = group.documents.filter(doc => homeStage(doc) === "confirmed").length;
+      const count = group.documents.length
+        ? `<span class="toc-group-count" aria-label="${esc(ui`확정 ${confirmed} / 전체 ${group.documents.length}`)}"><b>${confirmed}</b> / ${group.documents.length}</span>`
+        : "";
+      const lines = list.length
+        ? `<ol class="toc-list">${list.map(doc => lineHtml(doc, String(group.documents.indexOf(doc) + 1), subPathOf(doc, group))).join("")}</ol>`
+        : `<p class="toc-empty-group">${esc(t("원문 없음"))}</p>`;
+      html += `<section class="toc-group" aria-labelledby="g-${esc(group.id)}">`
+        + `<h3 class="toc-group-heading" id="g-${esc(group.id)}"><button class="toc-group-toggle" type="button" data-toggle-group="${esc(group.id)}" aria-expanded="${open}"${filtering ? " disabled" : ""}>${chevron}<span class="toc-group-title">${esc(group.title)}</span></button>${count}</h3>`
+        + `${open ? lines : ""}</section>`;
+    }
+  }
+  body.innerHTML = html
+    || `<div class="toc-empty"><p>${esc(t("조건에 맞는 원문이 없습니다"))}</p><button class="btn btn-sm" type="button" data-reset-filters>${esc(t("필터 초기화"))}</button></div>`;
+  must("#tocStatus").textContent = filtering ? ui`원문 ${shown}개` : "";
 }
+
+function renderList(): void { renderTools(); renderContents(); }
 function clearFilters(): void {
-  selectedGroup = null; selectedContainer = null;
-  must<HTMLInputElement>("#q").value = ""; must<HTMLSelectElement>("#statusSel").value = "";
-  renderDocuments();
-}
-function applyFilter(status: string): void {
-  clearFilters(); must<HTMLSelectElement>("#statusSel").value = status; showPanel("documents", true);
+  filters.query = ""; filters.stage = null; filters.container = null;
+  must<HTMLInputElement>("#q").value = "";
+  renderList();
 }
 function creationParent(explicitParentId?: string | null): string | null {
-  return resolveHomeCreationParent(view?.documents ?? [], { explicitParentId, containerId: selectedContainer, groupId: selectedGroup, selectedId: sel });
+  return resolveHomeCreationParent(view?.documents ?? [], { explicitParentId, containerId: filters.container, selectedId: sel });
 }
 function openNewSource(parentId?: string | null): void {
   void openDocumentDialog(creationParent(parentId));
@@ -186,15 +191,20 @@ function openDoc(id: string): void {
 function pageCmd(id: string): boolean {
   switch (id) {
     case "newdoc": openNewSource(); return true;
-    case "export": openConfirmedExport(); return true;
+    case "export": openExport(); return true;
     case "import": void openDocumentDialog(creationParent(), true); return true;
-    case "find": showPanel("documents"); must<HTMLInputElement>("#q").focus(); return true;
+    case "find": {
+      if (must("#tocTools").hidden) return true;
+      const input = must<HTMLInputElement>("#q");
+      input.focus(); input.select();
+      return true;
+    }
   }
   return false;
 }
 function pageKeys(e: KeyboardEvent, m: boolean): void {
   if (m && !e.shiftKey && !e.altKey && e.code === "KeyN") { e.preventDefault(); openNewSource(); }
-  else if (m && !e.shiftKey && e.code === "KeyE") { e.preventDefault(); openConfirmedExport(); }
+  else if (m && !e.shiftKey && e.code === "KeyE") { e.preventDefault(); openExport(); }
 }
 function showError(message: string): void {
   must("#homeErrorText").textContent = message; must("#homeError").hidden = false;
@@ -204,22 +214,20 @@ async function prepareHomeRefresh(strict = false): Promise<() => void> {
   if (!result.ok) throw new Error(result.error.message);
   const next = result.data;
   const root = next.documents.find(doc => doc.isMaster);
-  const [metaResult, knowledgeResult] = await Promise.allSettled([root ? api.home.getDocumentMetadata(root.id) : Promise.resolve(null), api.knowledge.get()]);
+  const [metaResult] = await Promise.allSettled([root ? api.home.getDocumentMetadata(root.id) : Promise.resolve(null)]);
   if (strict) {
-    for (const result of [metaResult, knowledgeResult]) {
-      if (result.status === "rejected") throw result.reason;
-      if (result.value && !result.value.ok) throw new Error(result.value.error.message);
-    }
+    if (metaResult.status === "rejected") throw metaResult.reason;
+    if (metaResult.value && !metaResult.value.ok) throw new Error(metaResult.value.error.message);
   }
   return () => {
     view = next;
+    activity = new Map(next.activity.map(entry => [entry.documentId, entry]));
     metadata = metaResult.status === "fulfilled" && metaResult.value?.ok ? metaResult.value.data : null;
     metadataFailed = metaResult.status === "rejected" || (metaResult.status === "fulfilled" && metaResult.value !== null && !metaResult.value.ok);
-    knowledge = knowledgeResult.status === "fulfilled" && knowledgeResult.value.ok ? knowledgeResult.value.data : null;
-    knowledgeFailed = knowledgeResult.status === "rejected" || (knowledgeResult.status === "fulfilled" && !knowledgeResult.value.ok);
     setSidebarDocs(view.documents);
     const remembered = sel ?? currentDocId();
     sel = view.documents.some(doc => doc.id === remembered) ? remembered : master()?.id ?? null;
+    if (filters.container && !view.documents.some(doc => doc.id === filters.container)) filters.container = null;
     must("#tbTitle").textContent = view.project.title;
     must("#tbSub").textContent = t("— 프로젝트 서재");
     must("#projectStorageMode").textContent = t(view.project.storageMode === "online" ? "온라인 프로젝트" : "로컬 프로젝트");
@@ -227,9 +235,9 @@ async function prepareHomeRefresh(strict = false): Promise<() => void> {
     must("#sbPath").textContent = projectLocationLabel(view.project);
     setSelfTitle(`${view.project.title} — ${projectLocationLabel(view.project)}`);
     renderSidebar(tree(), { currentDocId: sel });
-    renderHeader(); renderProgress(); renderChapters(); renderKnowledge(); renderRecent(); showPanel(currentPanel);
+    updateResume(); renderHeader(); renderList();
     must("#homeError").hidden = true;
-    if (metadataFailed || knowledgeFailed) showError(t("프로젝트 소개나 공통 지식 일부를 불러오지 못했습니다. 문서 작업은 계속할 수 있습니다."));
+    if (metadataFailed) showError(t("프로젝트 소개를 불러오지 못했습니다. 문서 작업은 계속할 수 있습니다."));
   };
 }
 async function load(): Promise<void> {
@@ -247,45 +255,63 @@ async function load(): Promise<void> {
   }
 }
 
-must("#q").addEventListener("input", renderDocuments);
-must("#statusSel").addEventListener("change", renderDocuments);
-must("#clearFilters").addEventListener("click", clearFilters);
+must<HTMLInputElement>("#q").addEventListener("input", event => {
+  filters.query = (event.target as HTMLInputElement).value.trim(); renderContents();
+});
+must<HTMLInputElement>("#q").addEventListener("keydown", event => {
+  if (event.key === "Escape" && filters.query) { event.preventDefault(); clearFilters(); }
+});
 must("#btnNewDoc").addEventListener("click", () => openNewSource());
 must("#btnRetryHome").addEventListener("click", () => void load());
-must("#btnContinue").addEventListener("click", () => resumeId ? openDoc(resumeId) : openNewSource());
 must("#btnBackup").addEventListener("click", () => {
   void api.project.backup().then(result => {
     if (!result.ok) notify(result.error.message, t("백업"));
     else if (result.data) notify(ui`백업을 저장했습니다 · ${result.data}`, t("백업"));
   }).catch(() => notify(t("백업을 저장하지 못했습니다."), t("백업")));
 });
-must("#btnExport").addEventListener("click", openConfirmedExport);
+must("#btnExport").addEventListener("click", () => openExport());
 must("#homeStudy").addEventListener("click", event => {
   const target = (event.target as HTMLElement).closest<HTMLElement>("button, a");
   if (!target) return;
   if (target.dataset.openDoc) openDoc(target.dataset.openDoc);
-  else if (target.hasAttribute("data-filter")) applyFilter(target.dataset.filter!);
+  else if (target.dataset.stageFilter) {
+    filters.stage = filters.stage === target.dataset.stageFilter ? null : target.dataset.stageFilter as HomeStage;
+    renderList();
+  } else if (target.dataset.sort) {
+    filters.sort = target.dataset.sort === "recent" ? "recent" : "toc";
+    renderList();
+  } else if (target.dataset.toggleGroup) {
+    const id = target.dataset.toggleGroup;
+    if (collapsed.has(id)) collapsed.delete(id); else collapsed.add(id);
+    renderContents();
+    document.querySelector<HTMLElement>(`[data-toggle-group="${CSS.escape(id)}"]`)?.focus();
+  } else if (target.hasAttribute("data-clear-scope")) { filters.container = null; renderList(); }
   else if (target.hasAttribute("data-add-source")) openNewSource();
-  else if (target.hasAttribute("data-add-under")) openNewSource(target.dataset.addUnder || null);
-  else if (target.hasAttribute("data-project-info") && master()) location.href = infoUrl(master()!.id);
-  else if (target.hasAttribute("data-show-documents")) { clearFilters(); showPanel("documents", true); }
-  else if (target.hasAttribute("data-show-group")) { clearFilters(); selectedGroup = target.dataset.showGroup!; showPanel("documents", true); }
   else if (target.hasAttribute("data-reset-filters")) clearFilters();
-  else if (target.id === "study-tab-overview") showPanel("overview");
-  else if (target.id === "study-tab-documents") showPanel("documents");
-  else if (target.id === "showAllGroups") { showAllGroups = !showAllGroups; renderChapters(); must("#showAllGroups").focus(); }
 });
-must(".study-tabs").addEventListener("keydown", event => {
-  const e = event as KeyboardEvent;
-  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
-  e.preventDefault(); showPanel(e.key === "Home" ? "overview" : e.key === "End" ? "documents" : currentPanel === "overview" ? "documents" : "overview", true);
+must("#docBody").addEventListener("keydown", event => {
+  const line = (event.target as HTMLElement).closest<HTMLElement>(".toc-line");
+  if (!line || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+  const lines = [...document.querySelectorAll<HTMLElement>("#docBody .toc-line")];
+  const index = lines.indexOf(line);
+  const next = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: lines.length - 1 }[event.key]!;
+  if (lines[next]) { event.preventDefault(); lines[next].focus(); }
 });
 bindSidebar(id => {
   sel = id;
   const doc = view?.documents.find(item => item.id === id);
   if (doc?.nodeRole === "source_unit") { openDoc(id); return; }
-  if (doc?.isMaster) { showPanel("overview"); return; }
-  clearFilters(); selectedContainer = doc ? doc.id : null; showPanel("documents");
+  clearFilters();
+  if (!doc || doc.isMaster || !view) { must("#homeScroll").scrollTo({ top: 0 }); return; }
+  const group = buildHomeGroups(view.documents).find(item => item.containerId === doc.id);
+  if (group) {
+    collapsed.delete(group.id); renderContents();
+    document.getElementById(`g-${group.id}`)?.scrollIntoView({ block: "start" });
+    return;
+  }
+  // Nested folders narrow the contents instead of hunting for their lines inside a chapter.
+  filters.container = doc.id; renderList();
+  must("#tocTools").scrollIntoView({ block: "start" });
 }, tree, (parentId, role) => { void openDocumentDialog(creationParent(parentId), false, role); }, { selectExpandable: true });
 window.addEventListener("munhae:document-created", () => void load());
 window.addEventListener("pageshow", event => { if (event.persisted) void load(); });

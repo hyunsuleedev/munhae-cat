@@ -1,5 +1,5 @@
 import type { AppConfig, MunhaeApi } from "../../shared/munhae-api";
-import { translateUi, type UiLanguage } from "../../shared/ui-translations";
+import { EN, translateUi, type UiLanguage } from "../../shared/ui-translations";
 
 let language: UiLanguage = "ko";
 export function setUiLanguage(value: UiLanguage): void {
@@ -7,6 +7,12 @@ export function setUiLanguage(value: UiLanguage): void {
   document.documentElement.lang = value;
 }
 export function t(text: string): string { return translateUi(text, language); }
+/** A label whose English depends on its role, e.g. 용어 naming a list or stage ("용어@plural": "Terms") or 선택 as a step badge ("선택@optional").
+ * Reads "<text>@<role>" from the table and falls back to t(text). Korean is unchanged. */
+export function tAs(role: string, text: string): string {
+  const trimmed = text.trim(), translated = language === "en" ? EN[`${trimmed}@${role}`] : undefined;
+  return translated === undefined ? t(text) : text.replace(trimmed, () => translated);
+}
 
 /** Translate authored markup only, before inserting user-provided values. */
 export function uiText(source: string): string {
@@ -20,7 +26,7 @@ export function ui(parts: TemplateStringsArray, ...values: unknown[]): string {
 }
 export function translateStaticPage(root: ParentNode = document): void {
   // Only explicitly marked, authored leaf nodes and attributes are translated.
-  root.querySelectorAll<HTMLElement>("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n!); });
+  root.querySelectorAll<HTMLElement>("[data-i18n]").forEach(el => { el.textContent = el.dataset.i18nRole ? tAs(el.dataset.i18nRole, el.dataset.i18n!) : t(el.dataset.i18n!); });
   for (const attr of ["title", "placeholder", "aria-label"]) {
     root.querySelectorAll<HTMLElement>(`[data-i18n-${attr}]`).forEach(el => {
       el.setAttribute(attr, t(el.getAttribute(`data-i18n-${attr}`)!));

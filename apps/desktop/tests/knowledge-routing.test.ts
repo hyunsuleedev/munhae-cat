@@ -9,7 +9,6 @@ describe("knowledge workspace routing", () => {
     ["knowledge", "context"],
     ["glossary", "glossary"],
     ["comments", "comments"],
-    ["uncertainty", "uncertainty"],
   ] as const)("%s.html is its own %s page without tabs", (file, page) => {
     const html = readFileSync(resolve("src/renderer", `${file}.html`), "utf8");
     expect(knowledgePage(html.match(/data-knowledge-page="([^"]+)"/)?.[1])).toBe(page);
@@ -20,10 +19,10 @@ describe("knowledge workspace routing", () => {
     expect(knowledgePage(value)).toBe("context");
   });
 
-  it("accepts glossary search filters and rejects removed entity filters", () => {
-    const input = { query: "太守", entityFilter: { entityType: "glossary", entityId: "term-1" } };
+  it("accepts term search filters and rejects removed entity filters", () => {
+    const input = { query: "太守", entityFilter: { entityType: "term", entityId: "term-1" } };
     expect(parseSearchQueryInput(input).entityFilter).toEqual(input.entityFilter);
-    for (const entityType of ["person", "place"]) {
+    for (const entityType of ["person", "place", "glossary"]) {
       expect(() => parseSearchQueryInput({ ...input, entityFilter: { ...input.entityFilter, entityType } })).toThrow();
     }
   });

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { loadAppConfig, mergeAppConfig, parseAppConfig, parseConfigPatch, saveAppConfig } from "../src/main/app-config";
 import { translateUi } from "../src/shared/ui-translations";
-import { setUiLanguage, ui, uiText } from "../src/renderer/scripts/i18n";
+import { setUiLanguage, t, tAs, ui, uiText } from "../src/renderer/scripts/i18n";
 
 afterEach(() => vi.unstubAllGlobals());
 it("migrates old settings, persists English across reopening, and preserves it during unrelated updates", () => {
@@ -50,4 +50,14 @@ it("translates runtime status values without changing interpolated document text
   expect(ui`${3}자`).toBe("3 characters");
   expect(ui`<p>${"{{0}} 한국어 원문 $&"}</p>`).toBe("<p>{{0}} 한국어 원문 $&</p>");
   setUiLanguage("ko");
+});
+
+it("translates a label by its role while the plain label and Korean stay unchanged", () => {
+  vi.stubGlobal("document", { documentElement: {} });
+  setUiLanguage("en");
+  expect(tAs("plural", "용어")).toBe("Terms");
+  expect(t("용어")).toBe("Term");
+  expect(tAs("unknown-role", "용어")).toBe("Term");
+  setUiLanguage("ko");
+  expect(tAs("plural", "용어")).toBe("용어");
 });

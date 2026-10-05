@@ -24,6 +24,7 @@ export default defineConfig({
           index: resolve(__dirname, "src/main/bootstrap.ts"),
           "agent-runtime-worker": resolve(__dirname, "src/main/agent-runtime-worker.ts"),
           "agent-tool-cli": resolve(__dirname, "src/main/agent-tool-cli.ts"),
+          "mcp-relay": resolve(__dirname, "src/main/mcp-relay.ts"),
         },
       },
       rollupOptions: {
@@ -80,7 +81,6 @@ export default defineConfig({
           knowledge: resolve(rendererRoot, "knowledge.html"),
           glossary: resolve(rendererRoot, "glossary.html"),
           comments: resolve(rendererRoot, "comments.html"),
-          uncertainty: resolve(rendererRoot, "uncertainty.html"),
           context: resolve(rendererRoot, "context.html"),
           settings: resolve(rendererRoot, "settings.html"),
           community: resolve(rendererRoot, "community.html"),

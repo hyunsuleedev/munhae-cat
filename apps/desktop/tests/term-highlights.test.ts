@@ -1,26 +1,24 @@
 import { expect, it } from "vitest";
-import type { TermEntry } from "../src/shared/munhae-api";
 import { termHits, termSegments } from "../src/renderer/scripts/term-highlights";
-const term = (id: string, form: string, extra = {}) => ({ id, sourceForm: form, documentId: null, occurrences: [], ...extra } as unknown as TermEntry);
-it("preserves source text and supports overlapping, repeated and supplementary glyph occurrences", () => {
+
+it("renders stored code point ranges at UTF-16 offsets, including supplementary glyphs", () => {
   const text = "𠮷祖生先著鞭。祖生。";
-  const hits = termHits(text, "v1", [term("long", "祖生先著鞭"), term("short", "祖生"), term("glyph", "𠮷")]);
-  expect(hits.filter(h => h.id === "short").map(h => h.start)).toEqual([2, 8]);
+  const hits = termHits(text, [
+    { id: "long", ranges: [{ from: 1, to: 6 }], candidate: false },
+    { id: "short", ranges: [{ from: 8, to: 10 }, { from: 1, to: 3 }], candidate: true },
+    { id: "glyph", ranges: [{ from: 0, to: 1 }], candidate: false },
+  ]);
+  expect(hits.filter(h => h.id === "short").map(h => [h.start, h.index])).toEqual([[2, 0], [9, 1]]);
+  expect(hits.find(h => h.id === "glyph")).toMatchObject({ start: 0, end: 2, candidate: false });
   const segments = termSegments(text, hits);
   expect(segments.map(s => s.text).join("")).toBe(text);
   expect(segments.find(s => s.text === "祖生")?.hits.map(h => h.id)).toEqual(["long", "short"]);
-  expect(hits.find(h => h.id === "glyph")).toMatchObject({ start: 0, end: 2 });
 });
-it("uses saved sense-specific occurrences for current local entries and relocates stale entries by exact glyphs", () => {
-  const text = "王建。王建。";
-  const local = term("a", "王建", { documentId: "doc", sourceVersion: "v1", occurrences: [{ start: 3, end: 5, quote: "王建。" }] });
-  expect(termHits(text, "v1", [local]).map(h => h.start)).toEqual([3]);
-  expect(termHits(text, "v2", [local]).map(h => h.start)).toEqual([0, 3]);
-  expect(termHits("王健。", "v2", [local])).toEqual([]);
-});
-it("splits across lines without changing text or dropping overlapping ranges", () => {
-  const text = "甲乙\n丙丁";
-  const hits = termHits(text, "v1", [term("span", "乙\n丙")]);
-  expect(termSegments(text, hits, 0, 2).map(s => s.text).join("")).toBe("甲乙");
-  expect(termSegments(text, hits, 3, 5)[0]).toMatchObject({ text: "丙", hits: [expect.objectContaining({ id: "span" })] });
+
+it("ignores ranges beyond the text and splits across lines without dropping overlaps", () => {
+  const text = "王建\n宮詞";
+  const hits = termHits(text, [{ id: "a", ranges: [{ from: 0, to: 2 }, { from: 9, to: 10 }], candidate: false }, { id: "b", ranges: [{ from: 1, to: 2 }], candidate: false }]);
+  expect(hits).toHaveLength(2);
+  expect(termSegments(text, hits, 0, 2).map(s => [s.text, s.hits.map(h => h.id)])).toEqual([["王", ["a"]], ["建", ["a", "b"]]]);
+  expect(termSegments(text, hits, 3, 5)).toEqual([{ start: 3, end: 5, text: "宮詞", hits: [] }]);
 });

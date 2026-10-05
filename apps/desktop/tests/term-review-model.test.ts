@@ -1,61 +1,43 @@
-import { describe, expect, it } from "vitest";
-import { termSource } from "@munhae/domain/term-source";
-import type { EditorView, TermEntry } from "../src/shared/munhae-api";
-import { termHits } from "../src/renderer/scripts/term-highlights";
-import { currentTermQuotes, nextReviewTerm, termReviewProgress, termSaveValue } from "../src/renderer/scripts/term-review-model";
+import { expect, it } from "vitest";
+import type { DocumentTerm, DocumentTermsView, TermBasis, TermCandidate } from "../src/shared/munhae-api";
+import { candidateConfirmation, formRanges, judgmentNote, nextCandidate, parseAlternatives, rangeContext, termItems, termReviewProgress, utf16Offsets } from "../src/renderer/scripts/term-review-model";
 
-const view = {
-  document: { id: "doc" },
-  source: { versionId: "source", lockVersion: 1, contentText: "𠮷王建，宮詞。後有王建，建國。" },
-  punctuation: null,
-} as EditorView;
-const version = termSource(view).version;
-const entry = (id: string, extra: Partial<TermEntry> = {}) => ({
-  id, documentId: "doc", projectId: "project", parentTermId: null, sourceForm: "王建", kind: "person",
-  reading: "왕건", translation: null, definition: "시인", contextNote: null, selectionReason: null,
-  uncertainty: null, evidence: [], sourceVersion: version, status: "draft", lockVersion: 7,
-  occurrences: [{ quote: "𠮷王建，宮詞。", start: 2, end: 4 }], ...extra,
-}) as TermEntry;
+const basis: TermBasis = { documentId: "doc", punctuationVersionId: "p1", versionNo: 2, text: "𠮷王建，宮詞。後有王建。", sentences: [{ from: 0, to: 7 }, { from: 7, to: 12 }] };
+const term = { id: "t1", sourceForm: "王建", kind: "person", reading: "왕건", translation: "왕건", definition: "당나라 시인", evidence: [], lockVersion: 1, createdAt: "", updatedAt: "" } as const;
+const link = { id: "l1", documentId: "doc", punctuationVersionId: "p1", term, contextNote: null, confidence: "certain", alternatives: [], origin: "manual", generation: null, occurrences: [{ from: 9, to: 11 }], lockVersion: 1, createdAt: "", updatedAt: "" } as DocumentTerm;
+const candidate = (id: string, from: number, extra: Partial<TermCandidate> = {}) => ({ id, documentId: "doc", punctuationVersionId: "p1", generation: { runId: "r", agentId: "codex", model: "m" },
+  suggestedTermId: null, sourceForm: "王建", kind: "person", reading: "왕건", translation: null, definition: "고려 태조", evidence: [], contextNote: "앞의 인물", confidence: "probable", alternatives: ["고려 태조"],
+  occurrences: [{ from, to: from + 2 }], createdAt: "", ...extra }) as TermCandidate;
+const view: DocumentTermsView = { basis, terms: [link], candidates: [candidate("c2", 5), candidate("c1", 1)], previousCount: 0 };
 
-describe("terminology review saves", () => {
-  it("preserves sense-specific quotes and optimistic locks, and makes an edited reviewed definition a draft", () => {
-    const term = entry("a", { status: "reviewed" });
-    const value = termSaveValue(term, view, { draft: { definition: "당나라 시인", contextNote: "궁사 형식과 연결" } });
-    expect(value).toMatchObject({ expectedLockVersion: 7, sourceVersion: version, status: "draft", quotes: ["𠮷王建，宮詞。"] });
-    expect(term.status).toBe("reviewed");
-    expect(termSaveValue(term, view, { status: "reviewed" }).status).toBe("reviewed");
-  });
-  it("rejects stale edits and cross-document saves without an explicit current quotation", () => {
-    expect(() => termSaveValue(entry("a", { sourceVersion: "old" }), view, { status: "reviewed" })).toThrow(/대조/);
-    expect(() => termSaveValue(entry("a", { documentId: "another" }), view)).toThrow(/현재 문서/);
-    expect(() => termSaveValue(entry("a", { documentId: null }), view)).toThrow(/현재 문서/);
-  });
-  it("relinks only selected exact quotations and never treats reconnection as completed review", () => {
-    const term = entry("a", { sourceVersion: "old", status: "reviewed" });
-    const value = termSaveValue(term, view, { relinkQuotes: ["𠮷王建，宮詞。"], status: "reviewed" });
-    expect(value).toMatchObject({ quotes: ["𠮷王建，宮詞。"], status: "draft", sourceVersion: version, expectedLockVersion: 7 });
-    expect(value.quotes).not.toContain("後有王建，建國。");
-    for (const quotes of [[], ["王健"], ["宮詞"], ["王建。"]]) {
-      expect(() => termSaveValue(term, view, { relinkQuotes: quotes })).toThrow(/구절/);
-    }
-  });
+it("orders confirmed terms and candidates by their first position in the punctuated text", () => {
+  expect(termItems(view).map(item => item.id)).toEqual(["candidate:c1", "candidate:c2", "term:l1"]);
+  expect(termReviewProgress(view)).toEqual({ confirmed: 1, candidates: 2 });
+  const items = termItems(view);
+  expect(nextCandidate(items, "candidate:c2")?.id).toBe("candidate:c1");
+  expect(nextCandidate(items, "term:l1")?.id).toBe("candidate:c1");
+  expect(nextCandidate(items.filter(item => item.id !== "candidate:c2"), "candidate:c1")).toBeNull();
 });
 
-describe("source-led review navigation", () => {
-  it("retains supplementary glyphs and proposes distinct contexts when punctuation changed", () => {
-    const term = entry("a", { sourceVersion: "old", occurrences: [{ quote: "𠮷王建宮詞", start: 2, end: 4 }] });
-    const hits = termHits(view.source.contentText, version, [term]);
-    expect(currentTermQuotes(view.source.contentText, term, hits)).toEqual(["𠮷王建，宮詞。", "後有王建，建國。"]);
-    const current = entry("b");
-    expect(currentTermQuotes(view.source.contentText, current, termHits(view.source.contentText, version, [current]))).toEqual(["𠮷王建，宮詞。"]);
+it("finds exact code point positions of a form and shows each one in its sentence", () => {
+  expect(utf16Offsets("𠮷王")).toEqual([0, 2, 3]);
+  expect(formRanges(basis, "王建")).toEqual([{ from: 1, to: 3 }, { from: 9, to: 11 }]);
+  expect(formRanges(basis, "𠮷")).toEqual([{ from: 0, to: 1 }]);
+  expect(formRanges(basis, "")).toEqual([]);
+  expect(rangeContext(basis, { from: 9, to: 11 })).toEqual({ before: "後有", form: "王建", after: "。" });
+});
+
+it("confirms a candidate with every AI-found position and its link suggestion", () => {
+  expect(candidateConfirmation(basis, candidate("c1", 1, { suggestedTermId: "t1" }))).toMatchObject({
+    documentId: "doc", punctuationVersionId: "p1", candidateId: "c1", termId: "t1",
+    term: { sourceForm: "王建", definition: "고려 태조" }, contextNote: "앞의 인물", confidence: "probable", alternatives: ["고려 태조"], occurrences: [{ from: 1, to: 3 }],
   });
-  it("does not count old reviewed terms as complete or navigate into excluded and common terms", () => {
-    const terms = [entry("done", { status: "reviewed" }), entry("old", { sourceVersion: "old", status: "reviewed" }),
-      entry("shared", { documentId: null, sourceVersion: null, status: "reviewed" }), entry("skip", { status: "excluded" })];
-    const hits = terms.map((term, i) => ({ id: term.id, start: i * 5, end: i * 5 + 2, index: 0 }));
-    expect(termReviewProgress(terms, view)).toEqual({ total: 3, reviewed: 2, remaining: 1 });
-    expect(nextReviewTerm(terms, hits, "done", view)?.id).toBe("old");
-    expect(nextReviewTerm(terms, hits, "old", view)).toBeUndefined();
-    expect(nextReviewTerm(terms.filter(term => term.id !== "old"), hits, "done", view)).toBeUndefined();
-  });
+  expect(candidateConfirmation(basis, candidate("c1", 1)).termId).toBeNull();
+});
+
+it("marks only judgments a person should check, and reads alternatives one per line", () => {
+  expect(judgmentNote({ confidence: "certain", alternatives: [] })).toBe("");
+  expect(judgmentNote({ confidence: "certain", alternatives: ["당 시인"] })).toBe("다른 해석: 당 시인");
+  expect(judgmentNote({ confidence: "unknown", alternatives: ["1749년", "1809년"] })).toBe("미상 · 다른 해석: 1749년 / 1809년");
+  expect(parseAlternatives(" 1749년 \n\n 1809년 ")).toEqual(["1749년", "1809년"]);
 });

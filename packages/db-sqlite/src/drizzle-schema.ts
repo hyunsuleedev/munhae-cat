@@ -193,6 +193,22 @@ const document_nodes = sqliteTable("document_nodes", {
   author_text: text("author_text"),
 });
 
+const document_terms = sqliteTable("document_terms", {
+  id: text("id").primaryKey().notNull(),
+  project_id: text("project_id").notNull(),
+  document_node_id: text("document_node_id").notNull(),
+  term_id: text("term_id").notNull(),
+  punctuation_version_id: text("punctuation_version_id").notNull(),
+  context_note: text("context_note"),
+  origin: text("origin", { enum: ["manual","ai"] }).notNull(),
+  generation_json: text("generation_json"),
+  lock_version: integer("lock_version").notNull().default(sql.raw("1")),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+  confidence: text("confidence", { enum: ["certain","probable","unknown"] }).notNull().default(sql.raw("'certain'")),
+  alternatives_json: text("alternatives_json").notNull().default(sql.raw("'[]'")),
+});
+
 const document_translation_heads = sqliteTable("document_translation_heads", {
   project_id: text("project_id").notNull(),
   document_translation_id: text("document_translation_id").primaryKey().notNull(),
@@ -254,25 +270,6 @@ const document_translations = sqliteTable("document_translations", {
   target_locale: text("target_locale").notNull(),
   created_at: text("created_at").notNull(),
   tombstoned_at: text("tombstoned_at"),
-});
-
-const glossary_entries = sqliteTable("glossary_entries", {
-  id: text("id").primaryKey().notNull(),
-  project_id: text("project_id").notNull(),
-  source_term: text("source_term").notNull(),
-  target_locale: text("target_locale").notNull(),
-  target_term: text("target_term").notNull(),
-  term_kind: text("term_kind", { enum: ["general","office","book_title","institution","era","technical","other"] }).notNull(),
-  reading: text("reading"),
-  note_md: text("note_md"),
-  usage_status: text("usage_status", { enum: ["preferred","allowed","forbidden"] }).notNull(),
-  content_hash: text("content_hash").notNull(),
-  lock_version: integer("lock_version").notNull().default(sql.raw("1")),
-  created_by_actor_id: text("created_by_actor_id").notNull(),
-  updated_by_actor_id: text("updated_by_actor_id").notNull(),
-  created_at: text("created_at").notNull(),
-  updated_at: text("updated_at").notNull(),
-  archived_at: text("archived_at"),
 });
 
 const material_preferences = sqliteTable("material_preferences", {
@@ -519,22 +516,51 @@ const src_texts = sqliteTable("src_texts", {
   tombstoned_at: text("tombstoned_at"),
 });
 
-const term_entries = sqliteTable("term_entries", {
+const term_candidates = sqliteTable("term_candidates", {
   id: text("id").primaryKey().notNull(),
   project_id: text("project_id").notNull(),
-  document_node_id: text("document_node_id"),
-  parent_term_id: text("parent_term_id"),
-  payload_json: text("payload_json").notNull(),
+  document_node_id: text("document_node_id").notNull(),
+  punctuation_version_id: text("punctuation_version_id").notNull(),
+  run_id: text("run_id").notNull(),
+  agent_id: text("agent_id").notNull(),
+  model: text("model").notNull(),
+  suggested_term_id: text("suggested_term_id"),
+  source_form: text("source_form").notNull(),
+  kind: text("kind", { enum: ["person","place","period","event","object","work","concept","allusion","grammar","idu"] }).notNull(),
+  reading: text("reading"),
+  translation: text("translation"),
+  definition: text("definition"),
+  evidence_json: text("evidence_json").notNull().default(sql.raw("'[]'")),
+  context_note: text("context_note"),
+  positions_json: text("positions_json").notNull(),
+  dismissed: integer("dismissed").notNull().default(sql.raw("0")),
+  created_at: text("created_at").notNull(),
+  confidence: text("confidence", { enum: ["certain","probable","unknown"] }).notNull().default(sql.raw("'certain'")),
+  alternatives_json: text("alternatives_json").notNull().default(sql.raw("'[]'")),
+});
+
+const term_occurrences = sqliteTable("term_occurrences", {
+  id: text("id").primaryKey().notNull(),
+  project_id: text("project_id").notNull(),
+  document_term_id: text("document_term_id").notNull(),
+  punctuation_version_id: text("punctuation_version_id").notNull(),
+  codepoint_from: integer("codepoint_from").notNull(),
+  codepoint_to: integer("codepoint_to").notNull(),
+  sentence_span_id: text("sentence_span_id"),
+});
+
+const terms = sqliteTable("terms", {
+  id: text("id").primaryKey().notNull(),
+  project_id: text("project_id").notNull(),
+  source_form: text("source_form").notNull(),
+  kind: text("kind", { enum: ["person","place","period","event","object","work","concept","allusion","grammar","idu"] }).notNull(),
+  reading: text("reading"),
+  translation: text("translation"),
+  definition: text("definition"),
+  evidence_json: text("evidence_json").notNull().default(sql.raw("'[]'")),
   lock_version: integer("lock_version").notNull().default(sql.raw("1")),
   created_at: text("created_at").notNull(),
   updated_at: text("updated_at").notNull(),
-});
-
-const term_revisions = sqliteTable("term_revisions", {
-  id: text("id").primaryKey().notNull(),
-  term_id: text("term_id").notNull(),
-  payload_json: text("payload_json").notNull(),
-  created_at: text("created_at").notNull(),
 });
 
 const translation_anchor_sets = sqliteTable("translation_anchor_sets", {
@@ -645,6 +671,24 @@ const translation_groups = sqliteTable("translation_groups", {
   deleted_at: text("deleted_at"),
 });
 
+const translation_notes = sqliteTable("translation_notes", {
+  id: text("id").primaryKey().notNull(),
+  project_id: text("project_id").notNull(),
+  version_id: text("version_id").notNull(),
+  ordinal: integer("ordinal").notNull(),
+  kind: text("kind", { enum: ["textual","allusion","identification","interpretive"] }).notNull(),
+  confidence: text("confidence", { enum: ["certain","probable","unknown"] }).notNull(),
+  target_quote: text("target_quote").notNull(),
+  codepoint_from: integer("codepoint_from"),
+  codepoint_to: integer("codepoint_to"),
+  source_quote: text("source_quote"),
+  body_md: text("body_md").notNull(),
+  alternatives_json: text("alternatives_json").notNull().default(sql.raw("'[]'")),
+  origin_kind: text("origin_kind", { enum: ["ai","human"] }).notNull(),
+  previous_note_id: text("previous_note_id"),
+  created_at: text("created_at").notNull(),
+});
+
 const translation_staleness = sqliteTable("translation_staleness", {
   id: text("id").primaryKey().notNull(),
   project_id: text("project_id").notNull(),
@@ -665,51 +709,6 @@ const translation_text_layouts = sqliteTable("translation_text_layouts", {
   alignment_response: text("alignment_response"),
   alignment_error: text("alignment_error"),
   skill_manifest_json: text("skill_manifest_json").notNull(),
-});
-
-const uncertainties = sqliteTable("uncertainties", {
-  id: text("id").primaryKey().notNull(),
-  project_id: text("project_id").notNull(),
-  category: text("category", { enum: ["textual","interpretive","identification"] }).notNull(),
-  severity: text("severity").notNull(),
-  blocking: integer("blocking").notNull().default(sql.raw("0")),
-  state: text("state").notNull(),
-  created_at: text("created_at").notNull(),
-});
-
-const uncertainty_anchors = sqliteTable("uncertainty_anchors", {
-  id: text("id").primaryKey().notNull(),
-  project_id: text("project_id").notNull(),
-  uncertainty_version_id: text("uncertainty_version_id").notNull(),
-  target_kind: text("target_kind").notNull(),
-  target_version_id: text("target_version_id"),
-  codepoint_from: integer("codepoint_from"),
-  codepoint_to: integer("codepoint_to"),
-  quote: text("quote"),
-  quote_hash: text("quote_hash"),
-});
-
-const uncertainty_options = sqliteTable("uncertainty_options", {
-  id: text("id").primaryKey().notNull(),
-  project_id: text("project_id").notNull(),
-  uncertainty_version_id: text("uncertainty_version_id").notNull(),
-  label: text("label").notNull(),
-  interpretation_md: text("interpretation_md"),
-  ordinal: integer("ordinal").notNull(),
-});
-
-const uncertainty_versions = sqliteTable("uncertainty_versions", {
-  id: text("id").primaryKey().notNull(),
-  project_id: text("project_id").notNull(),
-  uncertainty_id: text("uncertainty_id").notNull(),
-  parent_version_id: text("parent_version_id"),
-  version_no: integer("version_no").notNull(),
-  statement_md: text("statement_md").notNull(),
-  rationale_md: text("rationale_md"),
-  confidence_label: text("confidence_label"),
-  content_hash: text("content_hash").notNull(),
-  created_by_actor_id: text("created_by_actor_id").notNull(),
-  created_at: text("created_at").notNull(),
 });
 
 const user_edits = sqliteTable("user_edits", {
@@ -746,12 +745,12 @@ export const schema = {
   core_translation_policy_heads,
   core_translation_policy_versions,
   document_nodes,
+  document_terms,
   document_translation_heads,
   document_translation_validation_findings,
   document_translation_validations,
   document_translation_versions,
   document_translations,
-  glossary_entries,
   material_preferences,
   meta_project_state,
   meta_schema_migrations,
@@ -771,8 +770,9 @@ export const schema = {
   src_text_heads,
   src_text_versions,
   src_texts,
-  term_entries,
-  term_revisions,
+  term_candidates,
+  term_occurrences,
+  terms,
   translation_anchor_sets,
   translation_anchor_structure_spans,
   translation_anchors,
@@ -783,11 +783,8 @@ export const schema = {
   translation_content_snapshots,
   translation_group_source_links,
   translation_groups,
+  translation_notes,
   translation_staleness,
   translation_text_layouts,
-  uncertainties,
-  uncertainty_anchors,
-  uncertainty_options,
-  uncertainty_versions,
   user_edits,
 };

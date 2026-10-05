@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02b 목록 ↔ 대장 — 홈 시안</title>
+<link rel="stylesheet" href="../../styles/tokens.css">
+<link rel="stylesheet" href="../../styles/chrome.css">
+<link rel="stylesheet" href="./shared.css">
+<style>
+/* 02b: the 目錄 page by default; the same lines open into ledger columns on demand. */
+.toc-home {
+  --mk-source: color-mix(in oklch, var(--muted) 72%, var(--surface));
+  --mk-punctuation: #736849;
+  --mk-translation: #766145;
+  --mk-review: #86543d;
+  --mk-confirmed: #486245;
+  --leader: color-mix(in oklch, var(--muted) 42%, transparent);
+  --no-w: 2.6em;
+  /* px, not em: the header and the rows use different font sizes. */
+  --ledger-cols: 34px minmax(0, 1fr) 44px 84px 34px 80px 22px;
+  container: toc / inline-size;
+  background: var(--surface);
+}
+.toc-page {
+  display: grid;
+  grid-template-columns: minmax(0, 720px);
+  justify-content: center;
+  padding: 72px 48px 96px;
+  color: var(--fg);
+}
+@container toc (min-width: 1010px) {
+  .toc-page { grid-template-columns: minmax(0, 720px) minmax(170px, 230px); column-gap: 44px; }
+  .toc-page > :not(.toc-contents) { grid-column: 1; }
+  .toc-contents { grid-column: 1 / -1; }
+  .toc-home:not(.is-ledger) :is(.toc-group-heading, .toc-empty, .toc-empty-group) { max-width: 720px; }
+  .toc-home:not(.is-ledger) .toc-tools-inner { max-width: 740px; }
+  .toc-home:not(.is-ledger) .toc-entry { display: grid; grid-template-columns: minmax(0, 720px) minmax(170px, 230px); column-gap: 44px; align-items: start; }
+  .toc-entry > .toc-line { grid-column: 1; }
+  .toc-entry > .toc-notes { grid-column: 2; }
+}
+
+/* Title block */
+.toc-title { margin: 0; font: 500 40px/1.25 var(--font-hanmun); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.toc-subtitle { margin: 8px 0 0; color: var(--muted); font-size: 13px; letter-spacing: .02em; }
+.toc-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 20px 0 0; padding: 0; font-size: 11px; line-height: 1.6; }
+.toc-meta dt { display: inline; margin-right: 6px; color: var(--muted); }
+.toc-meta dd { display: inline; margin: 0; font-family: var(--font-hanmun); font-size: 12px; }
+.toc-meta > div { white-space: nowrap; }
+.toc-description { max-width: 600px; margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.85; word-break: keep-all; overflow-wrap: anywhere; }
+
+/* Resume: one line under the title. */
+.toc-resume {
+  display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; justify-self: start;
+  max-width: 100%; margin: 30px 0 0; padding: 4px 0; border: 0; background: transparent;
+  color: var(--fg); font: inherit; font-size: 12px; line-height: 1.7; text-align: left;
+}
+.toc-resume-label { color: var(--muted); font-size: 11px; }
+.toc-resume-doc { font: 500 15px/1.6 var(--font-hanmun); }
+.toc-resume-doc span { margin-left: 6px; font-weight: 400; }
+.toc-resume-meta { color: var(--muted); }
+.toc-arrow { color: var(--accent); }
+.toc-sep { color: color-mix(in oklch, var(--muted) 55%, transparent); }
+
+/* Tool line: sticks while reading the contents. */
+.toc-contents { margin-top: 56px; }
+.toc-tools { position: sticky; top: 0; z-index: 2; margin: 0 -10px; padding: 12px 10px 9px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.toc-tools-inner { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; gap: 8px 18px; }
+.toc-contents-label { margin: 0; color: var(--muted); font: 13px/1.6 var(--font-hanmun); letter-spacing: .5em; }
+.toc-view, .toc-sort { display: inline-flex; gap: 2px; font-size: 11.5px; }
+.toc-view button, .toc-sort button { padding: 2px 7px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: inherit; }
+.toc-view button[aria-pressed="true"], .toc-sort button[aria-pressed="true"] { background: var(--fg-soft); color: var(--fg); }
+.toc-search { grid-column: 4; display: flex; align-items: center; gap: 6px; width: 190px; padding: 2px 0; border-bottom: 1px solid var(--ctl-border); color: var(--muted); }
+.toc-search input { width: 100%; min-width: 0; padding: 2px 0; border: 0; background: transparent; color: var(--fg); font: 12px/1.5 var(--font-ui); outline: none; }
+.toc-search input::placeholder { color: var(--muted); }
+.toc-search:focus-within { border-bottom-color: var(--accent); }
+.toc-search kbd { font-size: 10px; }
+.toc-row2 { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; }
+.toc-stages { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin: 0; padding: 0; list-style: none; font-size: 11.5px; }
+.toc-stages li { display: inline-flex; align-items: baseline; gap: 6px; }
+.toc-stages li + li::before { content: "·"; color: color-mix(in oklch, var(--muted) 55%, transparent); }
+.toc-stages button { display: inline-flex; align-items: baseline; gap: 5px; margin: 0 -4px; padding: 2px 4px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: inherit; }
+.toc-stages .toc-mark { flex: none; width: auto; }
+.toc-stages b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+.toc-stages button[aria-pressed="true"] { color: var(--fg); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+.toc-stages button:disabled { opacity: .45; }
+.toc-colhead { grid-column: 1 / -1; display: grid; grid-template-columns: var(--ledger-cols); column-gap: 14px; margin-top: 4px; color: var(--muted); font-size: 10.5px; }
+.toc-colhead > span:first-child { text-align: right; }
+.toc-colhead .num { text-align: right; }
+
+/* Contents */
+.toc-group { margin: 30px 0 0; }
+.toc-list:first-child { margin-top: 16px; }
+.toc-group-heading { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; font: 500 18px/1.5 var(--font-hanmun); letter-spacing: .04em; }
+.toc-group-heading small { color: var(--muted); font: 11px/1.5 var(--font-ui); letter-spacing: 0; }
+.toc-group-count { margin-left: auto; color: var(--muted); font: 11px/1.5 var(--font-ui); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.toc-group-count b { color: var(--mk-confirmed); font-weight: 500; }
+.toc-list { margin: 0; padding: 0; list-style: none; }
+.toc-line {
+  display: flex; align-items: baseline;
+  width: calc(100% + 20px); margin: 0 -10px; padding: 3px 10px;
+  border: 0; border-radius: 0; background: transparent;
+  color: var(--fg); font: inherit; text-align: left;
+}
+.toc-no { flex: 0 0 var(--no-w); margin-right: 14px; color: var(--muted); font: 10.5px/1 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.toc-home.is-recent { --no-w: 3.4em; --ledger-cols: 52px minmax(0, 1fr) 44px 84px 34px 80px 22px; }
+.is-recent .toc-no { font: 12px/1 var(--font-hanmun); }
+.toc-opening { flex: 0 1 auto; min-width: 0; overflow: hidden; font: 16px/1.75 var(--font-hanmun); letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+.toc-leader { flex: 1 1 auto; min-width: 28px; margin: 0 10px; border-bottom: 1.5px dotted var(--leader); transform: translateY(-5px); }
+.toc-mark { flex: 0 0 1.6em; font: 500 13px/1 var(--font-hanmun); text-align: center; }
+.toc-mark.st-source { color: var(--mk-source); }
+.toc-mark.st-punctuation { color: var(--mk-punctuation); }
+.toc-mark.st-translation { color: var(--mk-translation); }
+.toc-mark.st-review { color: var(--mk-review); }
+.toc-mark.st-confirmed { color: var(--mk-confirmed); }
+.toc-cell { color: var(--muted); font: 11px/1.4 var(--font-ui); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toc-cell.num { text-align: right; }
+.toc-cell.is-strong { color: var(--fg); }
+.toc-cell.is-review { color: var(--mk-review); }
+.toc-cell.is-question { color: var(--accent); font-weight: 500; }
+.toc-entry.is-resume .toc-line { background: var(--row-tint); box-shadow: inset 2px 0 0 var(--accent-ink); }
+.toc-empty-group { margin: 0; padding: 5px 0 5px calc(var(--no-w) + 14px); color: var(--muted); font-size: 11px; }
+.toc-empty { margin: 22px 0 14px; color: var(--muted); font-size: 12px; }
+
+/* Marginal notes (난외) */
+.toc-note { margin: 0; padding: 0 0 6px calc(var(--no-w) + 14px); color: var(--muted); font-size: 11px; line-height: 1.55; word-break: keep-all; overflow-wrap: anywhere; }
+.toc-note b { margin-right: 5px; color: var(--mk-review); font: 500 12px/1 var(--font-hanmun); }
+.toc-notes { display: flex; flex-direction: column; gap: 4px; }
+@container toc (min-width: 1010px) {
+  .toc-notes { gap: 6px; padding-top: 8px; }
+  .toc-notes .toc-note { padding: 0; }
+}
+
+/* 목록 view: pure contents. 대장 view: the same lines as ledger rows. */
+.toc-home:not(.is-ledger) :is(.toc-cell, .toc-colhead, .toc-group-count, .toc-sort) { display: none; }
+.is-ledger :is(.toc-leader, .toc-notes) { display: none; }
+.is-ledger .toc-line { display: grid; grid-template-columns: var(--ledger-cols); column-gap: 14px; padding-block: 4px; border-bottom: 1px solid color-mix(in oklch, var(--border) 60%, transparent); }
+.is-ledger .toc-no { margin-right: 0; }
+.is-ledger .toc-opening { font-size: 15px; line-height: 1.6; }
+
+@media (hover: hover) and (pointer: fine) {
+  .toc-line:hover .toc-opening, .toc-resume:hover .toc-resume-doc { color: var(--accent); }
+  .toc-line:hover .toc-leader { border-bottom-color: color-mix(in oklch, var(--muted) 75%, transparent); }
+  .toc-stages button:hover:not(:disabled), .toc-view button:hover, .toc-sort button:hover { color: var(--fg); }
+  .is-ledger .toc-line:hover { background: var(--fg-softer); }
+}
+@container toc (max-width: 700px) {
+  .toc-page { padding: 48px 26px 72px; }
+  .toc-title { font-size: 33px; }
+  .toc-contents { margin-top: 44px; }
+  .toc-opening { font-size: 15px; }
+  /* Set on .toc-page: a container query can't style the container (.toc-home) itself. */
+  .toc-page { --no-w: 2.2em; --ledger-cols: 30px minmax(0, 1fr) 40px 80px 72px 22px; }
+  .is-recent .toc-page { --ledger-cols: 48px minmax(0, 1fr) 40px 80px 72px 22px; }
+  .toc-no { margin-right: 10px; }
+  .toc-search { grid-column: 1 / -1; grid-row: 2; width: auto; }
+  .is-ledger .toc-cell.col-q, .toc-colhead .col-q { display: none; }
+}
+</style>
+</head>
+<body>
+<script type="module">
+import { mountShell, getDemo, esc, STAGES, stageLabel, fmtWhen, toast } from './shared.js';
+
+const demo = getDemo();
+const root = mountShell({ design: '02b 목록↔대장', status: '' });
+root.classList.add('toc-home');
+
+const MARK = Object.fromEntries(STAGES.map(stage => [stage.key, stage.mark]));
+const notesByDoc = new Map();
+for (const item of demo.uncertainties.filter(u => u.state === 'open')) {
+  if (!notesByDoc.has(item.docId)) notesByDoc.set(item.docId, []);
+  notesByDoc.get(item.docId).push(item);
+}
+const VIEW_KEY = 'munhae.prototype.home.02b.view';
+const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'ledger' ? 'ledger' : 'toc'; } catch { return 'toc'; } };
+const state = { view: readView(), query: '', stage: null, sort: 'toc' };
+
+function titleBlock() {
+  const { project } = demo;
+  const meta = [['저본', project.base], ['범위', project.scope]].filter(([, value]) => value);
+  return `
+    <h1 class="toc-title">${esc(project.title)}</h1>
+    ${project.subtitle ? `<p class="toc-subtitle">${esc(project.subtitle)}</p>` : ''}
+    ${meta.length ? `<dl class="toc-meta">${meta.map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : ''}
+    ${project.description ? `<p class="toc-description">${esc(project.description)}</p>` : ''}`;
+}
+
+function resumeLine() {
+  const doc = demo.resume;
+  if (!doc) return '';
+  const last = demo.events.find(event => event.docId === doc.id);
+  const meta = last ? `${esc(last.text)} <span class="toc-sep">·</span> ${esc(fmtWhen(last.at))}` : esc(stageLabel(doc.stage));
+  return `<button class="toc-resume" type="button" data-open-doc="${esc(doc.id)}" aria-label="지난 작업 ${esc(doc.title)} ${esc(doc.opening)} 열기">
+    <span class="toc-resume-label">지난 작업</span><span class="toc-sep">—</span>
+    <span class="toc-resume-doc">${esc(doc.title)}<span>${esc(doc.opening)}</span></span>
+    <span class="toc-resume-meta"><span class="toc-sep">·</span> ${meta}</span><span class="toc-arrow" aria-hidden="true">→</span></button>`;
+}
+
+const punctuationText = doc => ({ confirmed: '확정', draft: '초안', review: '재검토' }[doc.punctuation] ?? '—');
+function translationCell(doc) {
+  if (doc.translation === 'none') return '<span class="toc-cell">—</span>';
+  const label = { draft: '번역안', review: '재검토', confirmed: '확정' }[doc.translation];
+  const tone = doc.translation === 'review' ? ' is-review' : ' is-strong';
+  return `<span class="toc-cell${tone}">${label}${doc.version ? ` v${doc.version}` : ''}</span>`;
+}
+
+function entry(doc) {
+  const notes = notesByDoc.get(doc.id) ?? [];
+  const noteId = notes.length ? `note-${doc.id}` : '';
+  const resume = demo.resume?.id === doc.id;
+  const number = state.sort === 'recent' && state.view === 'ledger' ? (doc.book ? `${doc.book} ${doc.no}` : '序') : (doc.no || '');
+  const detail = [stageLabel(doc.stage), doc.version ? `v${doc.version}` : '', fmtWhen(doc.updatedAt)].filter(Boolean).join(' · ');
+  return `<li class="toc-entry${resume ? ' is-resume' : ''}">
+    <button class="toc-line" type="button" data-open-doc="${esc(doc.id)}" title="${esc(doc.title)} · ${esc(detail)}"
+      aria-label="${esc(doc.title)} ${esc(doc.opening)} — ${esc(detail)}${notes.length ? `, 열린 의문 ${notes.length}` : ''}${resume ? ', 지난 작업' : ''}"${noteId ? ` aria-describedby="${noteId}"` : ''}>
+      <span class="toc-no" aria-hidden="true">${esc(number)}</span>
+      <span class="toc-opening" aria-hidden="true">${esc(doc.opening)}</span>
+      <span class="toc-leader" aria-hidden="true"></span>
+      <span class="toc-cell${doc.punctuation === 'draft' ? '' : doc.punctuation === 'confirmed' ? ' is-strong' : ''}" aria-hidden="true">${punctuationText(doc)}</span>
+      ${translationCell(doc).replace('<span class="toc-cell', '<span aria-hidden="true" class="toc-cell')}
+      <span class="toc-cell num col-q${notes.length ? ' is-question' : ''}" aria-hidden="true">${notes.length || ''}</span>
+      <span class="toc-cell num" aria-hidden="true">${esc(fmtWhen(doc.updatedAt))}</span>
+      <span class="toc-mark st-${doc.stage}" aria-hidden="true">${MARK[doc.stage]}</span>
+    </button>
+    ${notes.length ? `<div class="toc-notes" id="${noteId}">${notes.map(note => `<p class="toc-note"><b aria-hidden="true">問</b>${esc(note.title)}</p>`).join('')}</div>` : ''}
+  </li>`;
+}
+
+function matches(doc) {
+  if (state.stage && doc.stage !== state.stage) return false;
+  if (!state.query) return true;
+  const q = state.query.toLocaleLowerCase();
+  return [doc.title, doc.opening, doc.ko, doc.book].some(text => text?.toLocaleLowerCase().includes(q));
+}
+
+function tools() {
+  const stages = [...STAGES].reverse().map(stage => {
+    const count = demo.stats[stage.key];
+    return `<li><button type="button" data-stage-filter="${stage.key}" aria-pressed="false" ${count ? '' : 'disabled'} aria-label="${stage.label} ${count}개만 보기">
+      <span class="toc-mark st-${stage.key}" aria-hidden="true">${stage.mark}</span>${stage.label}<b>${count}</b></button></li>`;
+  }).join('');
+  return `<div class="toc-tools"><div class="toc-tools-inner">
+    <h2 class="toc-contents-label" id="tocLabel">目錄</h2>
+    <div class="toc-view" role="group" aria-label="보기"><button type="button" data-view="toc" aria-pressed="false">목록</button><button type="button" data-view="ledger" aria-pressed="false">대장</button></div>
+    <label class="toc-search"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg><input id="tocQuery" type="search" placeholder="장·첫 구절 찾기" aria-label="장이나 첫 구절로 찾기" autocomplete="off"><kbd aria-hidden="true">/</kbd></label>
+    <div class="toc-row2"><ul class="toc-stages" aria-label="단계별 원문 수">${stages}</ul>
+      <div class="toc-sort" role="group" aria-label="정렬"><button type="button" data-sort="toc" aria-pressed="true">목차순</button><button type="button" data-sort="recent" aria-pressed="false">최근순</button></div></div>
+    <div class="toc-colhead" aria-hidden="true"><span>장</span><span>첫 구절</span><span>표점</span><span>번역</span><span class="num col-q">의문</span><span class="num">최근</span><span></span></div>
+  </div></div>`;
+}
+
+function listHtml() {
+  const filtering = !!(state.query || state.stage);
+  if (state.view === 'ledger' && state.sort === 'recent') {
+    const docs = demo.docs.filter(matches).sort((a, b) => b.updatedAt - a.updatedAt);
+    return docs.length ? `<ol class="toc-list">${docs.map(entry).join('')}</ol>` : emptyResult();
+  }
+  const loose = demo.docs.filter(doc => !doc.groupId && matches(doc));
+  const groups = demo.groups.map(group => {
+    const docs = group.docs.filter(matches);
+    if (filtering && !docs.length) return '';
+    const confirmed = group.docs.filter(doc => doc.stage === 'confirmed').length;
+    const count = group.docs.length ? `<span class="toc-group-count" aria-label="확정 ${confirmed} / 전체 ${group.docs.length}"><b>${confirmed}</b> / ${group.docs.length}</span>` : '';
+    return `<section class="toc-group" aria-labelledby="g-${group.id}">
+      <h3 class="toc-group-heading" id="g-${group.id}">${esc(group.title)}<small>${esc(group.ko)}</small>${count}</h3>
+      ${docs.length ? `<ol class="toc-list">${docs.map(entry).join('')}</ol>` : '<p class="toc-empty-group">원문 없음</p>'}
+    </section>`;
+  }).join('');
+  if (filtering && !loose.length && !groups) return emptyResult();
+  return `${loose.length ? `<ol class="toc-list">${loose.map(entry).join('')}</ol>` : ''}${groups}`;
+}
+function emptyResult() {
+  return '<p class="toc-empty">찾는 원문이 없습니다. <button class="btn btn-sm" type="button" data-clear>조건 지우기</button></p>';
+}
+
+function contents() {
+  if (!demo.docs.length) {
+    return `<section class="toc-contents" aria-labelledby="tocLabel"><h2 class="toc-contents-label" id="tocLabel">目錄</h2>
+      <p class="toc-empty">목록이 비어 있습니다.</p><button class="btn" type="button" data-add-source>원문 추가</button></section>`;
+  }
+  return `<section class="toc-contents" aria-labelledby="tocLabel">${tools()}<div id="tocList"></div></section>`;
+}
+
+root.innerHTML = `<main class="toc-page">${titleBlock()}${resumeLine()}${contents()}</main>`;
+
+function renderList() {
+  root.classList.toggle('is-ledger', state.view === 'ledger');
+  root.classList.toggle('is-recent', state.view === 'ledger' && state.sort === 'recent');
+  const list = root.querySelector('#tocList');
+  if (!list) return;
+  list.innerHTML = listHtml();
+  for (const button of root.querySelectorAll('[data-stage-filter]')) button.setAttribute('aria-pressed', String(button.dataset.stageFilter === state.stage));
+  for (const button of root.querySelectorAll('[data-sort]')) button.setAttribute('aria-pressed', String(button.dataset.sort === state.sort));
+  for (const button of root.querySelectorAll('[data-view]')) button.setAttribute('aria-pressed', String(button.dataset.view === state.view));
+}
+function clearConditions() {
+  state.query = ''; state.stage = null;
+  const input = root.querySelector('#tocQuery'); if (input) input.value = '';
+  renderList();
+}
+renderList();
+
+root.addEventListener('click', event => {
+  const target = event.target.closest('[data-stage-filter], [data-sort], [data-view], [data-clear], [data-add-source]');
+  if (!target) return;
+  if (target.dataset.stageFilter) state.stage = state.stage === target.dataset.stageFilter ? null : target.dataset.stageFilter;
+  else if (target.dataset.sort) state.sort = target.dataset.sort;
+  else if (target.dataset.view) {
+    state.view = target.dataset.view;
+    try { localStorage.setItem(VIEW_KEY, state.view); } catch { /* per-viewer convenience only */ }
+  } else if (target.hasAttribute('data-clear')) { clearConditions(); return; }
+  else if (target.hasAttribute('data-add-source')) { toast('원문 추가 대화상자가 열립니다.'); return; }
+  renderList();
+});
+root.addEventListener('input', event => {
+  if (event.target.id !== 'tocQuery') return;
+  state.query = event.target.value.trim(); renderList();
+});
+root.addEventListener('keydown', event => {
+  if (event.target.id === 'tocQuery' && event.key === 'Escape') { clearConditions(); return; }
+  const line = event.target.closest('.toc-line');
+  if (!line || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  const lines = [...root.querySelectorAll('.toc-line')];
+  const index = lines.indexOf(line);
+  const next = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: lines.length - 1 }[event.key];
+  if (lines[next]) { event.preventDefault(); lines[next].focus(); }
+});
+document.addEventListener('keydown', event => {
+  if (event.key !== '/' || event.target.closest('input, textarea')) return;
+  const input = root.querySelector('#tocQuery');
+  if (input) { event.preventDefault(); input.focus(); }
+});
+</script>
+</body>
+</html>

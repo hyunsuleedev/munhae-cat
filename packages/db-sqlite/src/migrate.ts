@@ -12,7 +12,7 @@ import { loadMigrationSql } from "./sql.ts";
 import { contextItemContentHash, type ContextItemContent } from "./knowledge-content.ts";
 import type { SqliteDb } from "./sqlite.ts";
 
-export const PROJECT_SCHEMA_VERSION = 12;
+export const PROJECT_SCHEMA_VERSION = 18;
 const PROJECT_BASELINE_NAME = "001_init.sql";
 const PROJECT_BASELINE_PATH = "sqlite/001_init.sql";
 const PROJECT_MIGRATIONS = [
@@ -28,6 +28,12 @@ const PROJECT_MIGRATIONS = [
   "010_remove_change_summary.sql",
   "011_reading_translation_quote.sql",
   "012_translation_groups.sql",
+  "013_document_terms.sql",
+  "014_term_occurrence_sentences.sql",
+  "015_translation_notes.sql",
+  "016_term_kinds.sql",
+  "017_term_confidence.sql",
+  "018_remove_uncertainties.sql",
 ] as const;
 
 type ProjectMigrationRow = {
@@ -188,6 +194,15 @@ export function migrateProjectDb(db: SqliteDb): void {
   applySqlMigration(db, loadMigrationSql("sqlite/010_remove_change_summary.sql"), "010_remove_change_summary.sql", 10);
   applySqlMigration(db, loadMigrationSql("sqlite/011_reading_translation_quote.sql"), "011_reading_translation_quote.sql", 11);
   applySqlMigration(db, loadMigrationSql("sqlite/012_translation_groups.sql"), "012_translation_groups.sql", 12);
+  applySqlMigration(db, loadMigrationSql("sqlite/013_document_terms.sql"), "013_document_terms.sql", 13);
+  applySqlMigration(db, loadMigrationSql("sqlite/014_term_occurrence_sentences.sql"), "014_term_occurrence_sentences.sql", 14);
+  applySqlMigration(db, loadMigrationSql("sqlite/015_translation_notes.sql"), "015_translation_notes.sql", 15);
+  // Rebuilds terms, which document_terms references; foreign keys are checked before commit.
+  db.pragma("foreign_keys = OFF");
+  try { applySqlMigration(db, loadMigrationSql("sqlite/016_term_kinds.sql"), "016_term_kinds.sql", 16); }
+  finally { db.pragma("foreign_keys = ON"); }
+  applySqlMigration(db, loadMigrationSql("sqlite/017_term_confidence.sql"), "017_term_confidence.sql", 17);
+  applySqlMigration(db, loadMigrationSql("sqlite/018_remove_uncertainties.sql"), "018_remove_uncertainties.sql", 18);
 }
 
 export function migrateAppDb(db: SqliteDb): void {

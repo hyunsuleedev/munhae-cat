@@ -159,11 +159,11 @@ export function configureReadingStudy(deps: Deps) {
     el("rsCancelAnalysis").hidden = !state?.starting && run?.state !== "running";
     el<HTMLButtonElement>("rsCancelAnalysis").disabled = !!state?.canceling || !!state?.applyingId;
     el("rsAnalysisState").textContent = state?.starting ? t("현재 구절을 분석하고 있습니다…") : state?.canceling ? t("분석을 취소하고 있습니다…")
-      : run?.state === "running" ? run.detail || t("독음과 뜻풀이를 살펴보고 있습니다…")
+      : run?.state === "running" ? run.detail ? t(run.detail) : t("독음과 뜻풀이를 살펴보고 있습니다…")
       : run?.state === "completed" ? t("제안의 원문을 누르면 해당 위치를 선택합니다. 검토한 제안만 채택하면 풀이에 저장됩니다.")
       : run?.state === "stale" ? t("원문이나 풀이가 변경되었습니다. 다시 분석해 주세요.")
-      : run?.state === "canceled" ? t("분석을 취소했습니다.") : state?.notice ?? "";
-    el("rsAnalysisError").textContent = state?.error || run?.error?.message || "";
+      : run?.state === "canceled" ? t("분석을 취소했습니다.") : t(state?.notice ?? "");
+    el("rsAnalysisError").textContent = t(state?.error || run?.error?.message || "");
     el("rsAnalysisError").hidden = !el("rsAnalysisError").textContent;
     el("rsAnalysisSummary").textContent = run?.result?.summary ?? "";
     const canAdopt = !!state && run?.state === "completed" && !state.applyingId && !adopting && !state.starting && loaded && !loading && !busy && !dirty() && deps.canEdit();
@@ -468,7 +468,7 @@ export function configureReadingStudy(deps: Deps) {
     try {
       const result = await api.editor.listReadingAnnotations(documentId);
       if (ticket !== loadSerial || currentIdentity !== identity()) return;
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(t(result.error.message));
       notes = result.data; loaded = true; renderOld();
       if (!dirty() && selection) activateSelection(selection);
       else renderTokens();
@@ -487,7 +487,7 @@ export function configureReadingStudy(deps: Deps) {
       // records store dictionary meanings only in their source citation.
       const result = await api.editor.saveReadingAnnotation({ ...(note ? { id: note.id } : {}), documentNodeId: view.document.id, sourceVersionId: view.source.versionId, codepointFrom: selection.from, codepointTo: selection.to, quote: selectedQuote(), ...structuredClone(draft), gloss: note?.gloss ?? "", expectedLockVersion: note?.lockVersion ?? 0 });
       if (currentIdentity !== identity()) return false;
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(t(result.error.message));
       note = result.data; notes = notes.filter(row => row.id !== note!.id); notes.push(note);
       draft = draftOf(note); baseline = JSON.stringify(draft);
       renderTokens(); renderForm(); return true;
@@ -500,7 +500,7 @@ export function configureReadingStudy(deps: Deps) {
     try {
       const result = await api.editor.archiveReadingAnnotation({ id: old.id, expectedLockVersion: old.lockVersion });
       if (identity() !== currentIdentity) return;
-      if (!result.ok) throw new Error(result.error.message);
+      if (!result.ok) throw new Error(t(result.error.message));
       notes = notes.filter(row => row.id !== old.id); if (selection) activateSelection(selection);
     } catch (error) { message = error instanceof Error ? error.message : t("기록을 삭제하지 못했습니다."); }
     finally { busy = false; status(); }
@@ -508,7 +508,7 @@ export function configureReadingStudy(deps: Deps) {
   async function cachedLookup(query: string): Promise<DictionaryEntry[]> {
     let pending = dictionaryCache.get(query);
     if (!pending) {
-      pending = api.dictionary.search({ query, provider: "local", page: 1 }).then(result => { if (!result.ok) throw new Error(result.error.message); const entries = result.data.entries.filter(entry => entry.headword === query); characterEntries.set(query, entries); return entries; }).catch(error => { dictionaryCache.delete(query); throw error; });
+      pending = api.dictionary.search({ query, provider: "local", page: 1 }).then(result => { if (!result.ok) throw new Error(t(result.error.message)); const entries = result.data.entries.filter(entry => entry.headword === query); characterEntries.set(query, entries); return entries; }).catch(error => { dictionaryCache.delete(query); throw error; });
       dictionaryCache.set(query, pending);
     }
     return pending;

@@ -79,13 +79,16 @@ async function postTool(body: Buffer): Promise<void> {
   }
   if (result.statusCode < 200 || result.statusCode >= 300) {
     let code = "submission_rejected";
+    let reason = "";
     try {
-      const parsed = JSON.parse(result.body) as { error?: unknown };
+      const parsed = JSON.parse(result.body) as { error?: unknown; reason?: unknown };
       if (typeof parsed.error === "string" && /^[a-z_]{1,64}$/u.test(parsed.error)) code = parsed.error;
+      // Only the app-authored format reason is shown; never the bridge body or submitted translation.
+      if (code === "invalid_payload" && typeof parsed.reason === "string") reason = parsed.reason.replace(/[\p{Cc}\p{Cf}]/gu, " ").slice(0, 200);
     } catch {
       // Do not echo the bridge response or any submitted translation.
     }
-    throw new PublicCliError(`문해 앱이 번역 제출을 거부했습니다: ${code}`);
+    throw new PublicCliError(`문해 앱이 번역 제출을 거부했습니다: ${code}${reason ? ` (${reason})` : ""}`);
   }
   process.stdout.write("문해가 완성 번역 하나를 수신했습니다.\n");
 }

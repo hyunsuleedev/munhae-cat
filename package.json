@@ -8,6 +8,7 @@
     "dev": "pnpm --filter @munhae/desktop dev",
     "build": "pnpm -r --if-present build && pnpm --filter @munhae/desktop build",
     "dist": "pnpm --filter @munhae/desktop dist",
+    "dist:mac:signed": "node scripts/release/build-macos.mjs",
     "pack": "pnpm --filter @munhae/desktop pack:dir",
     "test": "pnpm -r --if-present test",
     "typecheck": "pnpm -r --if-present typecheck"

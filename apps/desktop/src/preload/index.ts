@@ -96,6 +96,7 @@ const api = {
     backup: () => ipcRenderer.invoke(IPC_CHANNELS.projectBackup),
     concordance: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectConcordance, input),
     exportReview: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectExportReview, input),
+    exportTranslation: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectExportTranslation, input),
     exportConfirmed: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectExportConfirmed, input),
     search: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectSearch, input),
     createFromPaste: (input) => ipcRenderer.invoke(IPC_CHANNELS.projectCreateFromPaste, input),
@@ -108,6 +109,8 @@ const api = {
     getDocumentMetadata: (documentNodeId) =>
       ipcRenderer.invoke(IPC_CHANNELS.documentGetMetadata, documentNodeId),
     moveDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.documentMove, input),
+    getDocumentDeletion: (documentNodeId) => ipcRenderer.invoke(IPC_CHANNELS.documentGetDeletion, documentNodeId),
+    deleteDocument: (input) => ipcRenderer.invoke(IPC_CHANNELS.documentDelete, input),
     updateDocumentMetadata: (input) =>
       ipcRenderer.invoke(IPC_CHANNELS.documentUpdateMetadata, input),
   },
@@ -140,6 +143,9 @@ const api = {
     saveSentenceLink: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorSaveSentenceLink, input),
     updateReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorUpdateReviewComment, input),
     archiveReviewComment: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorArchiveReviewComment, input),
+    createTranslationNote: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorCreateTranslationNote, input),
+    deleteTranslationNote: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorDeleteTranslationNote, input),
+    updateTranslationNote: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorUpdateTranslationNote, input),
     listReadingAnnotations: (documentNodeId) => ipcRenderer.invoke(IPC_CHANNELS.editorListReadingAnnotations, documentNodeId),
     saveReadingAnnotation: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorSaveReadingAnnotation, input),
     archiveReadingAnnotation: (input) => ipcRenderer.invoke(IPC_CHANNELS.editorArchiveReadingAnnotation, input),
@@ -165,11 +171,17 @@ const api = {
     cancelFootnoteAnalysis: (id) => ipcRenderer.invoke(IPC_CHANNELS.researchCancelFootnoteAnalysis, id),
   },
   terms: {
-    list: documentId => ipcRenderer.invoke(IPC_CHANNELS.termsList, documentId),
+    document: documentId => ipcRenderer.invoke(IPC_CHANNELS.termsDocument, documentId),
+    project: () => ipcRenderer.invoke(IPC_CHANNELS.termsProject),
+    sentences: (termId, documentId) => ipcRenderer.invoke(IPC_CHANNELS.termsSentences, termId, documentId),
+    references: documentId => ipcRenderer.invoke(IPC_CHANNELS.termsReferences, documentId),
+    confirm: input => ipcRenderer.invoke(IPC_CHANNELS.termsConfirm, input),
+    dismiss: input => ipcRenderer.invoke(IPC_CHANNELS.termsDismiss, input),
+    update: input => ipcRenderer.invoke(IPC_CHANNELS.termsUpdate, input),
+    updateUse: input => ipcRenderer.invoke(IPC_CHANNELS.termsUpdateUse, input),
     delete: input => ipcRenderer.invoke(IPC_CHANNELS.termsDelete, input),
-    save: input => ipcRenderer.invoke(IPC_CHANNELS.termsSave, input),
-    promote: input => ipcRenderer.invoke(IPC_CHANNELS.termsPromote, input),
-    start: (documentId, excludedMaterialIds, glossarySelection) => ipcRenderer.invoke(IPC_CHANNELS.termsStart, documentId, excludedMaterialIds, glossarySelection),
+    deleteProjectTerms: input => ipcRenderer.invoke(IPC_CHANNELS.termsDeleteProjectTerms, input),
+    start: (documentId, excludedMaterialIds, referenceSelection) => ipcRenderer.invoke(IPC_CHANNELS.termsStart, documentId, excludedMaterialIds, referenceSelection),
     getRun: id => ipcRenderer.invoke(IPC_CHANNELS.termsGetRun, id),
     latestRun: id => ipcRenderer.invoke(IPC_CHANNELS.termsLatestRun, id),
     cancel: id => ipcRenderer.invoke(IPC_CHANNELS.termsCancel, id),
@@ -179,15 +191,11 @@ const api = {
     setMaterialPreference: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetMaterialPreference, input),
     reuseCommentAsMaterial: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeReuseCommentAsMaterial, input),
     get: () => ipcRenderer.invoke(IPC_CHANNELS.knowledgeGet),
-    upsertGlossary: (entry) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpsertGlossary, entry),
     createContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeCreateContext, input),
     updateContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeUpdateContext, input),
     setContextEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetContextEnabled, input),
     setContextPriority: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeSetContextPriority, input),
     deleteContext: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeDeleteContext, input),
-    createUncertainty: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeCreateUncertainty, input),
-    versionUncertainty: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeVersionUncertainty, input),
-    resolveUncertainty: (input) => ipcRenderer.invoke(IPC_CHANNELS.knowledgeResolveUncertainty, input),
   },
   context: {
     preview: (input) => ipcRenderer.invoke(IPC_CHANNELS.contextPreview, input),
@@ -199,6 +207,21 @@ const api = {
     apply: (name) => ipcRenderer.invoke(IPC_CHANNELS.pluginsApply, name),
     catalog: () => ipcRenderer.invoke(IPC_CHANNELS.pluginsCatalog),
     installCatalog: (name) => ipcRenderer.invoke(IPC_CHANNELS.pluginsInstallCatalog, name),
+  },
+  mcp: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.mcpStatus),
+    connect: (client) => ipcRenderer.invoke(IPC_CHANNELS.mcpConnect, client),
+    disconnect: (client) => ipcRenderer.invoke(IPC_CHANNELS.mcpDisconnect, client),
+    undo: (changeId) => ipcRenderer.invoke(IPC_CHANNELS.mcpUndo, changeId),
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.mcpList),
+    reportEditing: (documentId) => ipcRenderer.invoke(IPC_CHANNELS.mcpReportEditing, documentId),
+    onChanged: (handler) => {
+      const listen = (_event: unknown, change: unknown) => {
+        if (change && typeof change === "object") handler(change as Parameters<typeof handler>[0]);
+      };
+      ipcRenderer.on(IPC_CHANNELS.mcpChanged, listen);
+      return () => { ipcRenderer.removeListener(IPC_CHANNELS.mcpChanged, listen); };
+    },
   },
   ai: {
     startTranslation: (input) => ipcRenderer.invoke(IPC_CHANNELS.aiStartTranslation, input),

@@ -21,7 +21,7 @@ const success = (): AgentRunResult => ({ ok: true, outputText: "This provider pr
 const proposal = (overrides: Record<string, unknown> = {}) => ({ from: 4, to: 6, quote: "太守", reading: "태수", readingOrder: null, senseId: null, explanation: "이 위치의 관직명을 살펴볼 수 있습니다.", caution: "시대별 제도 차이는 별도로 확인하세요.", ...overrides });
 const payload = (items = [proposal()]) => ({ summary: "선택한 구절의 관직명을 검토했습니다.", suggestions: items });
 type Tool = (command: ReadingToolCommand, value?: unknown) => Promise<ReadingToolReply>;
-function fixture(options: { runtime?: (tool: Tool, request: AgentRunRequest) => Promise<AgentRunResult>; persist?: () => Promise<void>; probe?: () => Promise<AgentProbe>; timeoutMs?: number } = {}) {
+function fixture(options: { runtime?: (tool: Tool, request: AgentRunRequest) => Promise<AgentRunResult>; persist?: () => Promise<void>; probe?: () => Promise<AgentProbe>; timeoutMs?: number; language?: "ko" | "en" } = {}) {
   const view = { project: { id: "project" }, document: { id: "doc", title: "서문", originalTitle: "序", nodeRole: "source_unit", authorName: "저자", periodText: "조선", dateText: null, language: "zh-Hant", sourceReference: "원서 1권" },
     source: { versionId: "source-v1", versionNo: 1, contentText: "甲太守乙太守丙", state: "draft", lockVersion: 1 }, punctuation: null,
     translation: { versionId: "translation-v1", versionNo: 1, textContent: "첫 태수다. 둘째 태수다.", isCurrentDependencies: true, state: "draft", textLayout: { state: "ready", error: null,
@@ -29,7 +29,7 @@ function fixture(options: { runtime?: (tool: Tool, request: AgentRunRequest) => 
       links: [{ sentenceId: "T1", spans: [{ from: 1, to: 3, quote: "太守" }], needsReview: false }, { sentenceId: "T2", spans: [{ from: 4, to: 6, quote: "太守" }], needsReview: false }] } },
   } as EditorView;
   const notes: ReadingAnnotationView[] = [];
-  const repo = { projectId: "project", packagePath: directory(), getEditor: vi.fn(() => view), listReadingAnnotations: vi.fn(() => structuredClone(notes)),
+  const repo = { projectId: "project", packagePath: directory(), getEditor: vi.fn(() => view), listReadingAnnotations: vi.fn(() => structuredClone(notes)), getTranslationLanguage: vi.fn(() => options.language ?? "ko"),
     saveReadingAnnotation: vi.fn((input: SaveReadingAnnotationInput): ReadingAnnotationView => {
       const existing = input.id ? notes.findIndex(note => note.id === input.id) : -1;
       const { expectedLockVersion, ...data } = input;
@@ -73,6 +73,25 @@ function existingNote(overrides: Partial<ReadingAnnotationView> = {}): ReadingAn
 }
 
 describe("explicit reading analysis tools and proposals", () => {
+  it("asks for English prose and romanized readings in an English project and keeps the Korean prompt otherwise", async () => {
+    const prompts: string[] = [];
+    const english = fixture({ language: "en", runtime: async (tool, request) => {
+      prompts.push(request.prompt);
+      await tool("get-reading-context");
+      expect((await tool("submit-reading-analysis", payload([proposal({ reading: "taesu", explanation: "A provincial governor; here the title of the local official.", caution: "" })]))).ok).toBe(true);
+      return success();
+    } });
+    const run = english.start(); await english.finish();
+    expect(english.service.get(english.repo, run.id).result?.suggestions[0]).toMatchObject({ reading: "taesu", explanation: expect.stringContaining("provincial governor") });
+    const korean = fixture({ runtime: async (tool, request) => { prompts.push(request.prompt); await tool("submit-reading-analysis", payload()); return success(); } });
+    korean.start(); await korean.finish();
+    const [en, ko] = prompts;
+    expect(en).toContain("Respond in English"); expect(en).toContain("Revised Romanization"); expect(en).toContain("借 → cha");
+    expect(en).toContain("construed in a natural English rendering"); expect(en).toContain('"reading":"won"');
+    expect(en).not.toContain("Respond in Korean"); expect(en).not.toContain("훈독");
+    expect(ko).toContain("Respond in Korean."); expect(ko).toContain("natural Korean reading order (훈독 order)"); expect(ko).toContain('"reading":"원"');
+    expect(ko).not.toContain("Revised Romanization"); expect(ko).not.toContain("Respond in English");
+  });
   it("never starts when opening history, supplies exact occurrences, and saves only explicitly adopted proposals", async () => {
     let context: Record<string, unknown> | undefined;
     const f = fixture({ runtime: async (tool, request) => {

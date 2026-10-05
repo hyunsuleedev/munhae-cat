@@ -31,58 +31,21 @@
     </header>
 
     <div class="content home-content" id="homeScroll">
-      <main class="study-page" id="homeStudy" aria-busy="true">
-        <div class="study-error" id="homeError" role="alert" hidden><span id="homeErrorText"></span><button class="btn" id="btnRetryHome" type="button" data-i18n="다시 불러오기">다시 불러오기</button></div>
-        <header class="study-project-header">
-          <div class="study-project-intro">
-            <p class="eyebrow" data-i18n="프로젝트 서재">프로젝트 서재</p>
-            <h1 id="projectTitle" data-i18n="프로젝트를 불러오는 중…">프로젝트를 불러오는 중…</h1>
-            <p class="study-description" id="projectDescription"></p>
-            <div class="study-resume" id="resumeBlock" hidden>
-              <div><span class="study-label" id="resumeLabel" data-i18n="이어서 작업할 문서">이어서 작업할 문서</span><strong id="resumeTitle"></strong></div>
-              <button class="btn btn-primary" id="btnContinue" type="button" data-od-id="btn-continue"><span data-i18n="작업 이어하기 ">작업 이어하기 </span><span aria-hidden="true">→</span></button>
-            </div>
-          </div>
-          <div class="study-project-facts"><dl id="projectFacts"></dl><button class="study-text-button" type="button" data-project-info><span data-i18n="프로젝트 정보 ">프로젝트 정보 </span><span aria-hidden="true">↗</span></button></div>
+      <main class="toc-page" id="homeStudy" aria-busy="true">
+        <div class="toc-error" id="homeError" role="alert" hidden><span id="homeErrorText"></span><button class="btn" id="btnRetryHome" type="button" data-i18n="다시 불러오기">다시 불러오기</button></div>
+        <header class="toc-head">
+          <h1 class="toc-title" id="projectTitle" data-i18n="프로젝트를 불러오는 중…">프로젝트를 불러오는 중…</h1>
+          <dl class="toc-meta" id="projectFacts" hidden></dl>
+          <p class="toc-description" id="projectDescription" hidden></p>
         </header>
-        <nav class="study-tabs" role="tablist" aria-label="프로젝트 화면" data-i18n-aria-label="프로젝트 화면">
-          <button type="button" role="tab" id="study-tab-overview" aria-controls="study-overview" aria-selected="true" data-i18n="프로젝트 개요">프로젝트 개요</button>
-          <button type="button" role="tab" id="study-tab-documents" aria-controls="study-documents" aria-selected="false" tabindex="-1"><span data-i18n="전체 원문 ">전체 원문 </span><span id="documentTotal" class="mono">0</span></button>
-        </nav>
-        <section id="study-overview" role="tabpanel" aria-labelledby="study-tab-overview">
-          <div class="study-spread">
-            <div class="study-main-column">
-              <section class="study-progress-section" aria-labelledby="progressTitle">
-                <div class="study-section-heading"><h2 id="progressTitle" data-i18n="번역의 현재 위치">번역의 현재 위치</h2><span class="study-label" id="progressTotal"></span></div>
-                <div id="progressBody"></div>
-                <div class="study-attention-actions" id="attentionActions"></div>
-              </section>
-              <section class="study-chapters-section" aria-labelledby="chaptersTitle">
-                <div class="study-section-heading"><h2 id="chaptersTitle" data-i18n="문헌의 구성">문헌의 구성</h2><span class="study-label" id="chapterCount"></span></div>
-                <div class="study-chapter-list" id="chapterList"></div>
-              </section>
-            </div>
-            <aside class="study-desk" aria-labelledby="researchTitle">
-              <div class="study-section-heading"><h2 id="researchTitle" data-i18n="연구의 바탕">연구의 바탕</h2><span class="study-label" data-i18n="프로젝트 공통">프로젝트 공통</span></div>
-              <p class="study-desk-intro"><span data-i18n="문헌의 배경과 번역의 기준,">문헌의 배경과 번역의 기준,</span><br><span data-i18n="함께 쌓아 가는 연구 지식.">함께 쌓아 가는 연구 지식.</span></p>
-              <a class="study-resource" id="contextLink" href="context.html"><span class="study-resource-icon" aria-hidden="true">文</span><span><strong data-i18n="공통 문맥">공통 문맥</strong><small id="contextMeta" data-i18n="문헌의 배경과 번역 원칙">문헌의 배경과 번역 원칙</small></span><span aria-hidden="true">↗</span></a>
-              <a class="study-resource" href="knowledge.html"><span class="study-resource-icon" aria-hidden="true">冊</span><span><strong data-i18n="번역 자료">번역 자료</strong><small id="knowledgeMeta" data-i18n="배경·지침·용어집·코멘트">배경·지침·용어집·코멘트</small></span><span aria-hidden="true">↗</span></a>
-              <a class="study-resource" id="uncAll" href="uncertainty.html"><span class="study-resource-icon" aria-hidden="true">問</span><span><strong data-i18n="불확실성 기록">불확실성 기록</strong><small id="uncertaintyMeta" data-i18n="해석의 의문과 검토 근거">해석의 의문과 검토 근거</small></span><span aria-hidden="true">↗</span></a>
-              <details class="study-principles" open><summary><span id="contextPreviewTitle" data-i18n="공통 문맥">공통 문맥</span><span aria-hidden="true">⌄</span></summary><p class="study-context-preview" id="contextPreview" data-i18n="공통 문맥을 불러오는 중…">공통 문맥을 불러오는 중…</p><a class="study-text-button" id="contextPreviewLink" href="context.html"><span data-i18n="공통 문맥 살펴보기 ">공통 문맥 살펴보기 </span><span aria-hidden="true">→</span></a></details>
-            </aside>
-          </div>
-          <section class="study-recent-section" aria-labelledby="recentTitle">
-            <div class="study-section-heading"><h2 id="recentTitle" data-i18n="최근 번역 기록">최근 번역 기록</h2><button class="study-text-button" type="button" data-show-documents><span data-i18n="전체 원문 보기 ">전체 원문 보기 </span><span aria-hidden="true">→</span></button></div>
-            <div class="study-recent-docs" id="recentList"></div>
-          </section>
-        </section>
-        <section id="study-documents" role="tabpanel" aria-labelledby="study-tab-documents" hidden>
-          <div class="study-document-toolbar" data-od-id="doc-toolbar">
-            <label class="study-search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="문서 제목이나 목차로 찾기" aria-label="원문 단위 검색" data-i18n-aria-label="원문 단위 검색" data-i18n-placeholder="문서 제목이나 목차로 찾기"></label>
-            <label class="study-filter"><span class="study-sr-only" data-i18n="상태 필터">상태 필터</span><select id="statusSel" aria-label="상태 필터" data-i18n-aria-label="상태 필터"><option value="" data-i18n="모든 상태">모든 상태</option><option value="working" data-i18n="작업 중">작업 중</option><option value="source" data-i18n="원문 준비">원문 준비</option><option value="punctuation" data-i18n="표점 작업">표점 작업</option><option value="translation" data-i18n="번역안">번역안</option><option value="review" data-i18n="재검토 필요">재검토 필요</option><option value="confirmed" data-i18n="번역 확정">번역 확정</option><option value="uncertain" data-i18n="열린 불확실성">열린 불확실성</option></select></label>
-            <button class="btn" id="btnNewDoc" type="button" data-od-id="btn-new-doc"><span data-i18n="원문 추가 ">원문 추가 </span><kbd>⌘N</kbd></button>
-          </div>
-          <div class="study-document-count"><span id="scopeMeta" aria-live="polite"></span><button class="study-text-button" id="clearFilters" type="button" hidden data-i18n="필터 초기화">필터 초기화</button></div>
+        <section class="toc-contents" aria-labelledby="tocLabel">
+          <div class="toc-tools" id="tocTools" data-od-id="doc-toolbar" hidden><div class="toc-tools-inner">
+            <h2 class="toc-contents-label" id="tocLabel" aria-label="목차" data-i18n-aria-label="목차">目錄</h2>
+            <label class="toc-search"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3.5 3.5"/></svg><input id="q" type="search" placeholder="제목·경로로 찾기" aria-label="제목·경로로 찾기" data-i18n-placeholder="제목·경로로 찾기" data-i18n-aria-label="제목·경로로 찾기" autocomplete="off" spellcheck="false"><kbd aria-hidden="true">⌘F</kbd></label>
+            <div class="toc-sort" role="group" aria-label="정렬" data-i18n-aria-label="정렬"><button type="button" data-sort="toc" aria-pressed="true" data-i18n="목차순">목차순</button><button type="button" data-sort="recent" aria-pressed="false" data-i18n="최근순">최근순</button></div>
+            <div class="toc-row2"><ul class="toc-stages" id="stageFilters" aria-label="단계별 원문 수" data-i18n-aria-label="단계별 원문 수"></ul><span class="toc-scope" id="scopeChip" hidden></span><button class="toc-add" id="btnNewDoc" type="button" data-od-id="btn-new-doc"><span data-i18n="원문 추가">원문 추가</span> <kbd>⌘N</kbd></button></div>
+          </div></div>
+          <p class="toc-sr-only" id="tocStatus" role="status"></p>
           <div id="docBody" data-od-id="document-list"></div>
         </section>
       </main>

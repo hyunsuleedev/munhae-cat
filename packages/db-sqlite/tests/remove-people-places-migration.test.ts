@@ -140,9 +140,11 @@ it("deletes active and archived people/places without creating copies, preservin
   })));
   expect(rows(db, "context_items")).toEqual(before.cards.map(withMaterialDefaults));
   expect(rows(db, "provenance_artifacts")).toEqual(before.artifacts);
-  expect(rows(db, "glossary_entries")).toEqual(before.glossary);
+  // v13 later discards the legacy glossary by product decision.
+  expect(before.glossary).toHaveLength(1);
+  expect(db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name='glossary_entries'").get()).toBeUndefined();
   expect(rows(db, "chat_messages")).toEqual(before.messages);
-  expect(db.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
+  expect(db.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 18 });
   assertSqliteIntegrity(db);
 
   const after = {
@@ -201,7 +203,7 @@ it("opens a v4 project without a backup or copied knowledge and remains stable o
     expect(readdirSync(packagePath).filter((name) => name.endsWith(".bak"))).toEqual([]);
     const check = openSqlite(path); databases.push(check);
     try {
-      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 18 });
       expect(check.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name IN ('persons','places')").all()).toEqual([]);
       expect({ cards: rows(check, "context_items"), artifacts: rows(check, "provenance_artifacts") })
         .toEqual({ ...before, cards: before.cards.map(withMaterialDefaults) });

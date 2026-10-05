@@ -222,7 +222,7 @@ export function renderBookFlow(root: HTMLElement, text: string, sentences: reado
         element.className = "book-group";
         element.dataset.bookGroup = part.id;
         element.tabIndex = 0;
-        element.setAttribute("aria-label", `번역 묶음 ${Math.ceil(index / 2)}`);
+        element.setAttribute("aria-label", ui`번역 묶음 ${Math.ceil(index / 2)}`);
         const body = document.createElement("span"); body.className = "book-group-text";
         const field = document.createElement("textarea");
         field.className = "sentence-edit"; field.dataset.sentenceEdit = part.id;

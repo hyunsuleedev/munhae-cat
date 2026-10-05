@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -26,7 +26,7 @@ vi.mock("../src/main/online-projects", () => ({ onlineProjectId: (id: string) =>
 vi.mock("../src/main/online-workspace-remote", () => ({ OnlineWorkspaceRemote: class {} }));
 vi.mock("../src/main/online-workspace", () => ({ OnlineWorkspace: class { static open() { return Promise.resolve(fixture.workspace); } } }));
 
-import { backupProject, exportConfirmedTranslations, exportReviewTranslations, getCurrentSummary, initSession,
+import { backupProject, exportConfirmedTranslations, exportReviewTranslations, exportTranslationDocument, getCurrentSummary, initSession,
   leaveOnlineWorkspace, openOnlineProject, requireRepo, shutdownSession, withOnlineProjectSave, onlineSaveRequestKey, syncOnlineWorkspace } from "../src/main/session";
 
 function deferred<T>() {
@@ -39,7 +39,8 @@ function workspace() {
     confirmedTranslationCount: 1, manifestHash: "hash" };
   const repo = { projectId: "local-id", title: fixture.project.title, packagePath: join(fixture.root, "online-projects", "cache.munhae"), openedAt: "now",
     close: vi.fn(), setTranslationLanguage: vi.fn(), backupTo: vi.fn(), getEditor: vi.fn(),
-    createConfirmedExport: vi.fn(() => payload), createReviewExport: vi.fn(() => payload) };
+    createConfirmedExport: vi.fn(() => payload), createReviewExport: vi.fn(() => payload),
+    createTranslationExport: vi.fn(() => ({ format: "txt", extension: "txt", suggestedBaseName: "번역", documentCount: 1, text: "이전 계정의 번역" })) };
   let savedGeneration = 0, revision = 0;
   const flush = vi.fn(async () => { if (current.changeGeneration !== savedGeneration) { revision++; savedGeneration = current.changeGeneration; } });
   const current = { repo, project: fixture.project,
@@ -83,13 +84,14 @@ it("keeps the current online working copy available when the guarded flush fails
   expect(fixture.workspace.close).not.toHaveBeenCalled();
 });
 
-it.each(["backup", "confirmed", "review"])("rejects an old account's %s export after its native dialog resolves", async kind => {
+it.each(["backup", "confirmed", "review", "translation"])("rejects an old account's %s export after its native dialog resolves", async kind => {
   const save = deferred<{ canceled: boolean; filePath: string }>();
   fixture.saveDialog.mockReturnValueOnce(save.promise);
   const destination = join(fixture.root, "old-account.md");
   const exporting = kind === "backup" ? backupProject() : kind === "confirmed"
     ? exportConfirmedTranslations({} as Parameters<typeof exportConfirmedTranslations>[0])
-    : exportReviewTranslations({} as Parameters<typeof exportReviewTranslations>[0]);
+    : kind === "review" ? exportReviewTranslations({} as Parameters<typeof exportReviewTranslations>[0])
+    : exportTranslationDocument({} as Parameters<typeof exportTranslationDocument>[0]);
   const rejected = expect(exporting).rejects.toThrow("account changed");
   fixture.account = "another-account";
   fixture.listener({ status: "signed_out", user: null });
@@ -104,6 +106,14 @@ it("uses the user's Documents folder for online review exports", async () => {
   fixture.saveDialog.mockResolvedValueOnce({ canceled: true });
   await exportReviewTranslations({} as Parameters<typeof exportReviewTranslations>[0]);
   expect(fixture.saveDialog).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: join(fixture.root, "documents", "번역.md") }));
+});
+
+it("writes a translation export with the chosen extension appended", async () => {
+  const destination = join(fixture.root, "완성본");
+  fixture.saveDialog.mockResolvedValueOnce({ canceled: false, filePath: destination });
+  const result = await exportTranslationDocument({ format: "txt", layout: "translation", state: "current" });
+  expect(result).toEqual({ filePath: `${destination}.txt`, format: "txt", documentCount: 1 });
+  expect(readFileSync(`${destination}.txt`, "utf8")).toBe("이전 계정의 번역");
 });
 
 it("still cancels AI and closes the detached account cache if its recovery journal fails", async () => {

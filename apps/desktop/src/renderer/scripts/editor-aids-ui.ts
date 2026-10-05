@@ -208,6 +208,8 @@ export function configureEditorAids(deps: Deps) {
       ready = false;
     },
     finishView,
+    /** An explicit destination, such as a term opened from the glossary, replaces the saved reading position. */
+    dropPendingPosition() { pendingPosition = null; },
     loaded(options: { saved?: boolean; preserveHistory?: boolean } = {}) {
       const c = deps.context(); if (!c) return;
       const changedScope = scope !== c.scope;

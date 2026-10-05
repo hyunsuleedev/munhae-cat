@@ -1,19 +1,13 @@
 import { t } from "./i18n";
-import type { DocumentListItem, GlossaryEntryView, MaterialPreferenceView, NodeContextView } from "../../shared/munhae-api";
+import type { DocumentListItem, MaterialPreferenceView, NodeContextView } from "../../shared/munhae-api";
 
-export const KNOWLEDGE_PAGES = ["context", "glossary", "comments", "uncertainty"] as const;
+export const KNOWLEDGE_PAGES = ["context", "glossary", "comments"] as const;
 export type KnowledgePage = typeof KNOWLEDGE_PAGES[number];
 
 /** Each translation-material page names itself on `<body data-knowledge-page>`. */
 export function knowledgePage(value: string | undefined): KnowledgePage {
   return KNOWLEDGE_PAGES.find(page => page === value) ?? "context";
 }
-
-export const USAGE_LABELS: Record<GlossaryEntryView["usageStatus"], string> = {
-  preferred: t("기본"),
-  allowed: t("허용"),
-  forbidden: t("지양"),
-};
 
 export function documentPath(documents: readonly DocumentListItem[], nodeId: string): DocumentListItem[] {
   const byId = new Map(documents.map(node => [node.id, node]));

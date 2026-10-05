@@ -10,21 +10,21 @@ afterEach(async () => { vi.useRealTimers(); await cancelAllAiRuns(); });
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: unknown) => void; const promise = new Promise<T>((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; }
 const probe = { agentId: "claude", installed: true, loggedIn: true, version: "test", capabilities: { structuredOutput: true } } as AgentProbe;
 const note = (n: number, bodyText = `태수는 지방의 장관을 이르는 말이다. 예시 ${n}.`): ItkcFootnote => ({ id: `NOTE${n}`, annotatedText: `태수 ${n}`, displayTitle: "태수", bodyText, bookTitle: "문집", translator: "번역자", publisher: "연구소", year: "2026", sourceUrl: `https://db.itkc.or.kr/example?id=${n}` });
-function fixture() {
+function fixture(language: "ko" | "en" = "ko") {
   const view = { project: { id: "project" }, document: { id: "doc", title: "서문", originalTitle: "序", nodeRole: "source_unit", authorName: "저자", periodText: "조선", dateText: null, language: "zh-Hant", sourceReference: "원서 1권" },
     source: { versionId: "source-v1", versionNo: 1, contentText: "甲太守乙太守丙", state: "draft", lockVersion: 1 }, punctuation: null,
     translation: { versionId: "translation-v1", versionNo: 1, textContent: "첫 태수다. 둘째 태수다.", isCurrentDependencies: true, state: "draft", textLayout: { state: "ready", error: null,
       sentences: [{ id: "T1", from: 0, to: 6, text: "첫 태수다." }, { id: "T2", from: 7, to: 14, text: "둘째 태수다." }],
       links: [{ sentenceId: "T1", spans: [{ from: 1, to: 3, quote: "太守" }], needsReview: false }, { sentenceId: "T2", spans: [{ from: 4, to: 6, quote: "太守" }], needsReview: false }] } },
   } as EditorView;
-  const repo = { projectId: "project", getEditor: vi.fn(() => view) };
+  const repo = { projectId: "project", getEditor: vi.fn(() => view), getTranslationLanguage: vi.fn(() => language) };
   const input: FootnoteAnalysisInput = { documentNodeId: "doc", expectedSourceVersionId: "source-v1", expectedTranslationVersionId: "translation-v1", query: "태수", mode: "target", selection: { targetKind: "source", from: 4, to: 6, quote: "太守" } };
   return { view, repo, input };
 }
 function success(output: unknown): AgentRunResult { return { ok: true, outputText: JSON.stringify(output), structuredOutput: output } as AgentRunResult; }
 function recommendation(id = "NOTE0", evidenceQuote = "태수는 지방의 장관을 이르는 말이다.") { return { id, relevance: "contextual", reason: "관직 뜻을 비교하는 근거다.", translationAdvice: "이 문서의 시대를 확인한 뒤 관직명으로 옮긴다.", caution: "같은 인물이라는 뜻은 아니다.", evidenceQuote }; }
-function setup(options: { total?: number; notes?: ItkcFootnote[]; output?: unknown; customProbe?: AgentProbe; runtime?: (request: AgentRunRequest) => Promise<AgentRunResult>; persist?: (projectId: string) => Promise<void>; registerReal?: boolean; collectionTimeoutMs?: number; analysisTimeoutMs?: number } = {}) {
-  const f = fixture();
+function setup(options: { language?: "ko" | "en"; total?: number; notes?: ItkcFootnote[]; output?: unknown; customProbe?: AgentProbe; runtime?: (request: AgentRunRequest) => Promise<AgentRunResult>; persist?: (projectId: string) => Promise<void>; registerReal?: boolean; collectionTimeoutMs?: number; analysisTimeoutMs?: number } = {}) {
+  const f = fixture(options.language);
   const records = options.notes ?? Array.from({ length: options.total ?? 21 }, (_, i) => note(i));
   const completions: Promise<void>[] = [];
   const search = vi.fn(async (input: { query: string; mode: "target" | "content"; start?: number }) => ({ ...input, start: input.start ?? 0, pageSize: 10 as const,
@@ -38,6 +38,13 @@ function setup(options: { total?: number; notes?: ItkcFootnote[]; output?: unkno
   return { ...f, service, search, run, cancel, completions, async finish() { await Promise.all(completions); } };
 }
 describe("AI footnote analysis", () => {
+  it("asks for English analysis in an English project and keeps the Korean instruction otherwise", async () => {
+    const english = setup({ language: "en", total: 1 }); english.service.start(english.repo, DEFAULT_APP_CONFIG, english.input); await english.finish();
+    const korean = setup({ total: 1 }); korean.service.start(korean.repo, DEFAULT_APP_CONFIG, korean.input); await korean.finish();
+    const en = english.run.mock.calls[0]![1].prompt, ko = korean.run.mock.calls[0]![1].prompt;
+    expect(en).toContain("Respond in careful English"); expect(en).not.toContain("Respond in careful Korean");
+    expect(ko).toContain("Respond in careful Korean. Recommend at most 6 relevant notes."); expect(ko).not.toContain("Respond in careful English");
+  });
   it("does not launch analysis when online input persistence fails after collection", async () => {
     const persist = vi.fn(async () => { throw Object.assign(new Error("offline"), { code: "online_workspace_request_failed" }); });
     const f = setup({ persist });

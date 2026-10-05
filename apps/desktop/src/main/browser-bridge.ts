@@ -1,10 +1,10 @@
 import { READING_ANALYSIS_CHANNELS, dispatchReadingAnalysis } from "./reading-analysis-handlers";
 import { onlineSaveRequestKey, withOnlineProjectSave } from "./session";
-import { latestTermExtraction, startTermExtraction, getTermExtraction, cancelTermExtraction } from "./term-review";
+import { latestTermExtraction, startTermExtraction, getTermExtraction, cancelTermExtraction, termReferenceList } from "./term-review";
 import { startMaterialRefinement, getMaterialRefinement, cancelMaterialRefinement } from "./material-refinement";
 import { MATERIAL_CHANNELS, dispatchMaterial } from "./translation-materials";
-import { parseTermGlossarySelection, parseTermMaterialExclusions, parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
-import { exportReviewTranslations } from "./session";
+import { parseTermReferenceSelection, parseTermMaterialExclusions, parseConcordanceInput, parseReviewExportInput, parseTranslationExportInput } from "./ipc-validate";
+import { exportReviewTranslations, exportTranslationDocument } from "./session";
 import { app } from "electron";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
@@ -30,15 +30,14 @@ import {
   parseCreateProjectInput,
   parseCreateTranslationDraftInput,
   parseCreateReviewCommentInput,
-  parseCreateUncertaintyInput,
-  parseCreateUncertaintyVersionInput,
+  parseCreateTranslationNoteInput,
+  parseDeleteTranslationNoteInput,
+  parseUpdateTranslationNoteInput,
   parseDocumentNodeId,
-  parseGlossaryInput,
   parseGetProjectChatInput,
   parseMergeBlocksInput,
   parseMessageId,
   parseOptionalPath,
-  parseResolveUncertaintyInput,
   parseResetTranslationDraftInput,
   parseReviseTranslationInput,
   parseSavePunctuationDraftInput,
@@ -56,6 +55,7 @@ import {
   parseUpdateReviewCommentInput,
   parseUpdateDocumentMetadataInput,
   parseMoveDocumentInput,
+  parseDeleteDocumentInput,
   parseVersionDiffInput,
 } from "./ipc-validate";
 import { attachReferenceInteractive, openReference, readReference } from "./reference-assets";
@@ -91,6 +91,7 @@ import { getAgentLoginInstruction } from "./agent-runtime-client";
 import { ACCOUNT_CHANNELS, dispatchAccount } from "./auth-handlers";
 import { READING_ANNOTATION_CHANNELS, dispatchReadingAnnotation } from "./reading-annotations";
 import { PLUGIN_CHANNELS, dispatchPlugin } from "./plugins";
+import { MCP_CHANNELS, dispatchMcp } from "./mcp-connect";
 import { ONLINE_PROJECT_CHANNELS, dispatchOnlineProject } from "./online-project-handlers";
 import { BILLING_CHANNELS, dispatchBilling } from "./billing-handlers";
 import { COMMUNITY_CHANNELS, dispatchCommunity } from "./community";
@@ -117,6 +118,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   ...ONLINE_PROJECT_CHANNELS,
   ...READING_ANNOTATION_CHANNELS,
   ...PLUGIN_CHANNELS,
+  ...MCP_CHANNELS,
   ...READING_ANALYSIS_CHANNELS,
   ...MATERIAL_CHANNELS,
   IPC_CHANNELS.appGetVersion,
@@ -136,6 +138,7 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.projectExportConfirmed,
   IPC_CHANNELS.projectConcordance,
   IPC_CHANNELS.projectExportReview,
+  IPC_CHANNELS.projectExportTranslation,
   IPC_CHANNELS.projectSearch,
   IPC_CHANNELS.projectCreateFromPaste,
   IPC_CHANNELS.projectSeedDemo,
@@ -145,6 +148,8 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.documentGetMetadata,
   IPC_CHANNELS.documentUpdateMetadata,
   IPC_CHANNELS.documentMove,
+  IPC_CHANNELS.documentGetDeletion,
+  IPC_CHANNELS.documentDelete,
   IPC_CHANNELS.editorGet,
   IPC_CHANNELS.editorSaveSourceDraft,
   IPC_CHANNELS.editorConfirmSource,
@@ -165,22 +170,21 @@ const ALLOWED_CHANNELS = new Set<IpcChannel>([
   IPC_CHANNELS.editorCreateReviewComment,
   IPC_CHANNELS.editorUpdateReviewComment,
   IPC_CHANNELS.editorArchiveReviewComment,
+  IPC_CHANNELS.editorCreateTranslationNote,
+  IPC_CHANNELS.editorDeleteTranslationNote,
+  IPC_CHANNELS.editorUpdateTranslationNote,
   IPC_CHANNELS.editorAttachReference,
   IPC_CHANNELS.editorReadReference,
   IPC_CHANNELS.editorOpenReference,
   IPC_CHANNELS.knowledgeGet,
-  IPC_CHANNELS.knowledgeUpsertGlossary,
   IPC_CHANNELS.knowledgeCreateContext,
   IPC_CHANNELS.knowledgeUpdateContext,
   IPC_CHANNELS.knowledgeSetContextEnabled,
   IPC_CHANNELS.knowledgeSetContextPriority,
   IPC_CHANNELS.knowledgeDeleteContext,
-  IPC_CHANNELS.knowledgeCreateUncertainty,
-  IPC_CHANNELS.knowledgeVersionUncertainty,
-  IPC_CHANNELS.knowledgeResolveUncertainty,
   IPC_CHANNELS.contextPreview,
   IPC_CHANNELS.researchSearchFootnotes,
-  IPC_CHANNELS.termsList, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsSave, IPC_CHANNELS.termsPromote, IPC_CHANNELS.termsStart, IPC_CHANNELS.termsGetRun, IPC_CHANNELS.termsLatestRun, IPC_CHANNELS.termsCancel,
+  IPC_CHANNELS.termsDocument, IPC_CHANNELS.termsProject, IPC_CHANNELS.termsSentences, IPC_CHANNELS.termsReferences, IPC_CHANNELS.termsConfirm, IPC_CHANNELS.termsDismiss, IPC_CHANNELS.termsUpdate, IPC_CHANNELS.termsUpdateUse, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsDeleteProjectTerms, IPC_CHANNELS.termsStart, IPC_CHANNELS.termsGetRun, IPC_CHANNELS.termsLatestRun, IPC_CHANNELS.termsCancel,
   IPC_CHANNELS.researchStartMaterialRefinement,
   IPC_CHANNELS.researchGetMaterialRefinement,
   IPC_CHANNELS.researchCancelMaterialRefinement,
@@ -250,15 +254,22 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
   if (READING_ANALYSIS_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnalysis(channel, args[0]));
   if (READING_ANNOTATION_CHANNELS.includes(channel)) return wrap(() => dispatchReadingAnnotation(channel, args[0]));
   if (PLUGIN_CHANNELS.includes(channel)) return wrap(() => dispatchPlugin(channel, args[0]));
+  if (MCP_CHANNELS.includes(channel)) return wrap(() => dispatchMcp(channel, args[0]));
   if (channel === IPC_CHANNELS.dictionarySearch) return wrap(() => dictionarySearch(args[0]));
   if (channel === IPC_CHANNELS.dictionaryGetStatus) return wrap(() => dictionaryGetStatus());
   if (channel === IPC_CHANNELS.dictionarySetKey) return wrap(() => dictionarySetKey(args[0]));
   if (channel === IPC_CHANNELS.researchSearchFootnotes) return wrap(() => searchItkcFootnotes(args[0]));
-  if (channel === IPC_CHANNELS.termsList) return wrap(() => requireRepo().getTerms(args[0] == null ? undefined : parseMessageId(args[0])));
-  if (channel === IPC_CHANNELS.termsDelete) return wrap(() => requireRepo().deleteTerm(args[0] as { id: string; expectedLockVersion: number }));
-  if (channel === IPC_CHANNELS.termsSave) return wrap(() => requireRepo().saveTerm(args[0] as import("@munhae/db-sqlite").SaveTermInput));
-  if (channel === IPC_CHANNELS.termsPromote) return wrap(() => requireRepo().promoteTerm(args[0] as import("@munhae/db-sqlite").SaveTermInput));
-  if (channel === IPC_CHANNELS.termsStart) return wrap(() => startTermExtraction(requireRepo(), getAppConfig(), parseMessageId(args[0]), parseTermMaterialExclusions(args[1]), parseTermGlossarySelection(args[2])));
+  if (channel === IPC_CHANNELS.termsDocument) return wrap(() => requireRepo().getDocumentTerms(parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.termsProject) return wrap(() => requireRepo().getProjectTerms());
+  if (channel === IPC_CHANNELS.termsSentences) return wrap(() => requireRepo().getTermSentences(parseMessageId(args[0]), args[1] == null ? undefined : parseMessageId(args[1])));
+  if (channel === IPC_CHANNELS.termsReferences) return wrap(() => termReferenceList(requireRepo(), parseMessageId(args[0])));
+  if (channel === IPC_CHANNELS.termsConfirm) return wrap(() => requireRepo().confirmTerm(args[0] as import("@munhae/db-sqlite").ConfirmTermInput));
+  if (channel === IPC_CHANNELS.termsDismiss) return wrap(() => requireRepo().dismissTermCandidate(args[0] as { id: string }));
+  if (channel === IPC_CHANNELS.termsUpdate) return wrap(() => requireRepo().updateTerm(args[0] as import("@munhae/db-sqlite").UpdateTermInput));
+  if (channel === IPC_CHANNELS.termsUpdateUse) return wrap(() => requireRepo().updateDocumentTerm(args[0] as import("@munhae/db-sqlite").UpdateDocumentTermInput));
+  if (channel === IPC_CHANNELS.termsDelete) return wrap(() => requireRepo().deleteDocumentTerm(args[0] as { id: string; expectedLockVersion: number }));
+  if (channel === IPC_CHANNELS.termsDeleteProjectTerms) return wrap(() => requireRepo().deleteTerms(args[0] as { terms: Array<{ id: string; expectedLockVersion: number }> }));
+  if (channel === IPC_CHANNELS.termsStart) return wrap(() => startTermExtraction(requireRepo(), getAppConfig(), parseMessageId(args[0]), parseTermMaterialExclusions(args[1]), parseTermReferenceSelection(args[2])));
   if (channel === IPC_CHANNELS.termsGetRun) return wrap(() => getTermExtraction(requireRepo(), parseMessageId(args[0])));
   if (channel === IPC_CHANNELS.termsLatestRun) return wrap(() => latestTermExtraction(requireRepo(), parseMessageId(args[0])));
   if (channel === IPC_CHANNELS.termsCancel) return wrap(() => cancelTermExtraction(requireRepo(), parseMessageId(args[0])));
@@ -295,6 +306,8 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => requireRepo().concordance(parseConcordanceInput(args[0])));
     case IPC_CHANNELS.projectExportReview:
       return wrap(() => exportReviewTranslations(parseReviewExportInput(args[0])));
+    case IPC_CHANNELS.projectExportTranslation:
+      return wrap(() => exportTranslationDocument(parseTranslationExportInput(args[0])));
     case IPC_CHANNELS.projectExportConfirmed:
       return wrap(() => exportConfirmedTranslations(parseConfirmedExportInput(args[0])));
     case IPC_CHANNELS.projectSearch:
@@ -307,6 +320,8 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
     case IPC_CHANNELS.documentGetMetadata:
       return wrap(() => requireRepo().getDocumentMetadata(parseDocumentNodeId(args[0])));
     case IPC_CHANNELS.documentMove: return wrap(() => requireRepo().moveDocument(parseMoveDocumentInput(args[0])));
+    case IPC_CHANNELS.documentGetDeletion: return wrap(() => requireRepo().getDocumentDeletion(parseDocumentNodeId(args[0])));
+    case IPC_CHANNELS.documentDelete: return wrap(() => requireRepo().deleteDocument(parseDeleteDocumentInput(args[0])));
     case IPC_CHANNELS.documentUpdateMetadata:
       return wrap(() => requireRepo().updateDocumentMetadata(parseUpdateDocumentMetadataInput(args[0])));
     case IPC_CHANNELS.editorGet: return wrap(() => requireRepo().getEditor(parseDocumentNodeId(args[0])));
@@ -344,6 +359,12 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => requireRepo().updateReviewComment(parseUpdateReviewCommentInput(args[0])));
     case IPC_CHANNELS.editorArchiveReviewComment:
       return wrap(() => requireRepo().archiveReviewComment(parseArchiveReviewCommentInput(args[0])));
+    case IPC_CHANNELS.editorCreateTranslationNote:
+      return wrap(() => requireRepo().createTranslationNote(parseCreateTranslationNoteInput(args[0])));
+    case IPC_CHANNELS.editorDeleteTranslationNote:
+      return wrap(() => requireRepo().deleteTranslationNote(parseDeleteTranslationNoteInput(args[0])));
+    case IPC_CHANNELS.editorUpdateTranslationNote:
+      return wrap(() => requireRepo().updateTranslationNote(parseUpdateTranslationNoteInput(args[0])));
     case IPC_CHANNELS.editorAttachReference:
       return wrap(() => attachReferenceInteractive(parseDocumentNodeId(args[0])));
     case IPC_CHANNELS.editorReadReference:
@@ -351,8 +372,6 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
     case IPC_CHANNELS.editorOpenReference:
       return wrap(() => openReference(parseDocumentNodeId(args[0]), parseAssetId(args[1])));
     case IPC_CHANNELS.knowledgeGet: return wrap(() => requireRepo().getKnowledge());
-    case IPC_CHANNELS.knowledgeUpsertGlossary:
-      return wrap(() => requireRepo().upsertGlossary(parseGlossaryInput(args[0])));
     case IPC_CHANNELS.knowledgeCreateContext:
       return wrap(() => requireRepo().createContextItem(parseCreateContextItemInput(args[0])));
     case IPC_CHANNELS.knowledgeUpdateContext:
@@ -363,12 +382,6 @@ async function dispatch(channel: IpcChannel, args: unknown[]): Promise<unknown> 
       return wrap(() => requireRepo().setContextItemPriority(parseSetContextItemPriorityInput(args[0])));
     case IPC_CHANNELS.knowledgeDeleteContext:
       return wrap(() => requireRepo().deleteContextItem(parseContextItemCasInput(args[0])));
-    case IPC_CHANNELS.knowledgeCreateUncertainty:
-      return wrap(() => requireRepo().createUncertainty(parseCreateUncertaintyInput(args[0])));
-    case IPC_CHANNELS.knowledgeVersionUncertainty:
-      return wrap(() => requireRepo().createUncertaintyVersion(parseCreateUncertaintyVersionInput(args[0])));
-    case IPC_CHANNELS.knowledgeResolveUncertainty:
-      return wrap(() => requireRepo().resolveUncertainty(parseResolveUncertaintyInput(args[0])));
     case IPC_CHANNELS.contextPreview:
       return wrap(() => requireRepo().previewContext(parseContextPreviewInput(args[0])));
     case IPC_CHANNELS.aiStartTranslation:

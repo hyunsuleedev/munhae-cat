@@ -20,6 +20,10 @@ apps/desktop/src/renderer/assets/generated/
 /output/
 
 apps/desktop/release-config.generated.yml
+apps/desktop/release-macos-config.generated.yml
 
 !scripts/release/
 !scripts/release/**
+
+# Local research notes and downloaded datasets
+reports/

@@ -65,7 +65,7 @@ it("upgrades v2 context without classifications, preserving text, scopes, settin
       expect(check.prepare("SELECT * FROM provenance_artifacts ORDER BY id").all()).toEqual(artifacts);
       expect(check.pragma("foreign_key_check")).toEqual([]);
       expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
-      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 18 });
       const backups = readdirSync(path).filter((name) => name.includes(".before-context-without-kind-"));
       expect(backups).toHaveLength(1);
       const backup = openSqlite(join(path, backups[0]!));

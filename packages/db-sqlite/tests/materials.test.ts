@@ -214,7 +214,7 @@ it("upgrades v6 with one backup, preserves existing rows and checksums, and reop
   db.close();
   const opened = track(openProject(path));
   inspect(opened, check => {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 18 });
     expect(check.prepare("SELECT * FROM context_items ORDER BY id").all()).toEqual(cards.map(row => ({ ...(row as object), inherit_to_children: 1, condition_md: "", source_comment_id: null, origin_artifact_id: null })));
     expect(check.prepare("SELECT * FROM chat_messages ORDER BY id").all()).toEqual(messages);
     expect(check.prepare("SELECT * FROM provenance_artifacts ORDER BY id").all()).toEqual(artifacts);

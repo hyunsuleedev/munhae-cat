@@ -2,13 +2,14 @@ import { isHanmunWhitespaceGap } from "@munhae/domain/hanmun-segmentation";
 import { and, eq, ne, isNull, inArray, sql, getTableColumns } from "drizzle-orm";
 import { orm } from "./drizzle-db.ts";
 import { schema as tables } from "./drizzle-schema.ts";
-import { moveDocument as moveStoredDocument } from "./document-organization.ts";
+import { deleteDocument as deleteStoredDocument, documentDeletion, moveDocument as moveStoredDocument } from "./document-organization.ts";
 import * as commentReferences from "./comment-references.ts";
-import { termSource } from "@munhae/domain/term-source";
 import * as termReview from "./term-review.ts";
 import { searchConcordance, type ConcordanceInput } from "./concordance.ts";
 import { buildReviewExport, type ReviewExportInput } from "./review-export.ts";
+import { buildTranslationExport, type TranslationExportInput } from "./translation-export.ts";
 import * as fullText from "./full-text.ts";
+import { addNote, loadNotes, removeNote, updateNote, type CreateTranslationNoteInput, type DeleteTranslationNoteInput, type TranslationNote, type UpdateTranslationNoteInput } from "./translation-notes.ts";
 import * as materials from "./materials.ts";
 import type { MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "./views.ts";
 import * as reviewComments from "./review-comments.ts";
@@ -107,19 +108,9 @@ import {
   type VersionDiffView,
 } from "./history-export-search.ts";
 import {
-  glossaryContentHash,
-  glossaryContentJson,
-} from "./knowledge-content.ts";
-import {
   deleteContextItem as deleteStoredContextItem,
-  assertNoOpenBlockingUncertainty,
   createContextItem as createStoredContextItem,
-  createUncertainty as createStoredUncertainty,
-  createUncertaintyVersion as createStoredUncertaintyVersion,
   getDocumentMetadata as loadDocumentMetadata,
-  loadOpenUncertaintyIdsForDocument,
-  loadUncertainties,
-  resolveUncertainty as resolveStoredUncertainty,
   setContextItemEnabled as setStoredContextItemEnabled,
   setContextItemPriority as setStoredContextItemPriority,
   updateContextItem as updateStoredContextItem,
@@ -147,14 +138,11 @@ import type {
   CreateDocumentInput,
   CreatePunctuationDraftInput,
   CreateTranslationDraftInput,
-  CreateUncertaintyInput,
-  CreateUncertaintyVersionInput,
   DocumentMetadataView,
   DocumentNodeRole,
   DocumentListItem,
   EditorView,
   GetProjectChatInput,
-  GlossaryEntryView,
   HomeView,
   KnowledgeView,
   MergeBlocksInput,
@@ -168,18 +156,17 @@ import type {
   ReferenceAssetContent,
   ResetTranslationDraftInput,
   ReviseTranslationInput,
-  ResolveUncertaintyInput,
   SavePunctuationDraftInput,
   SaveSourceDraftInput,
   SaveTranslationDraftInput,
   SetContextItemEnabledInput,
   SetContextItemPriorityInput,
   SplitBlockInput,
-  UncertaintyView,
-  UpsertGlossaryInput,
   UpdateContextItemInput,
   UpdateDocumentMetadataInput,
   MoveDocumentInput,
+  DeleteDocumentInput,
+  DocumentDeletionView,
   VersionUiState,
 } from "./views.ts";
 
@@ -198,6 +185,7 @@ type GuardedOperation = Exclude<PublicOperation, "configureWorkspace" | "close" 
 // policy. Reads may update derived FTS/verified_at data, which is not a user edit.
 const WORKSPACE_OPERATIONS = {
   setTranslationLanguage: true,
+  getTranslationLanguage: false,
   checkpoint: false,
   getHome: false,
   createDocument: true,
@@ -216,6 +204,8 @@ const WORKSPACE_OPERATIONS = {
   resetTranslationDraft: true,
   saveTranslationDraft: true,
   confirmTranslation: true,
+  translationHead: false,
+  unconfirmTranslation: true,
   reviseTranslation: true,
   mergeBlocks: true,
   splitBlock: true,
@@ -224,17 +214,27 @@ const WORKSPACE_OPERATIONS = {
   createConfirmedExport: false,
   concordance: false,
   createReviewExport: false,
+  createTranslationExport: false,
   search: false,
   getTermContext: false,
   getTermReferenceComments: false,
-  getTerms: false,
-  deleteTerm: true,
-  saveTerm: true,
-  promoteTerm: true,
+  getDocumentTerms: false,
+  getProjectTerms: false,
+  getTermSentences: false,
+  getTermGenerationInput: false,
+  confirmTerm: true,
+  dismissTermCandidate: true,
+  updateTerm: true,
+  updateDocumentTerm: true,
+  deleteDocumentTerm: true,
+  deleteTerms: true,
   storeTermCandidates: true,
+  snapshotTermRows: false,
+  restoreTermRows: true,
   getKnowledge: false,
-  upsertGlossary: true,
   moveDocument: true,
+  getDocumentDeletion: false,
+  deleteDocument: true,
   getDocumentMetadata: false,
   updateDocumentMetadata: true,
   getMaterials: false,
@@ -245,13 +245,14 @@ const WORKSPACE_OPERATIONS = {
   setContextItemEnabled: true,
   setContextItemPriority: true,
   deleteContextItem: true,
-  createUncertainty: true,
-  createUncertaintyVersion: true,
-  resolveUncertainty: true,
   previewContext: false,
   getTranslationSkill: false,
   setTranslationSkill: true,
   listReviewComments: false,
+  getTranslationNotes: false,
+  createTranslationNote: true,
+  updateTranslationNote: true,
+  deleteTranslationNote: true,
   saveSentenceLink: true,
   createReviewComment: true,
   updateReviewComment: true,
@@ -294,35 +295,6 @@ function requirePositiveLockVersion(expected: number): number {
     throw new MunhaeError("invalid_input", "expectedLockVersion은 1 이상의 정수여야 합니다");
   }
   return expected;
-}
-
-function requireKnowledgeLock(expected: number | undefined): number {
-  if (!Number.isSafeInteger(expected) || (expected ?? 0) < 1) {
-    throw new MunhaeError("invalid_input", "기존 지식 항목을 저장하려면 expectedLockVersion이 필요합니다");
-  }
-  return expected!;
-}
-
-function throwKnowledgeCasFailure(
-  db: SqliteDb,
-  projectId: string,
-  table: "glossary_entries",
-  id: string,
-): never {
-  const target = tables[table];
-  const row = orm(db)
-    .select({ lock_version: target.lock_version })
-    .from(target)
-    .where(
-      and(
-        eq(target.id, id),
-        eq(target.project_id, projectId),
-        isNull(target.archived_at),
-      ),
-    )
-    .get();
-  if (!row) throw new MunhaeError("not_found", "지식 항목을 찾을 수 없습니다");
-  throw new MunhaeError("cas_conflict", `지식 항목이 다른 편집에서 변경되었습니다 (현재 lock_version ${row.lock_version})`);
 }
 
 function unresolvedStalenessCount() {
@@ -432,6 +404,11 @@ export class ProjectRepo {
     )!.changes;
   }
 
+  /** The target language of the current translation policy; AI output that a translator reads follows it. */
+  getTranslationLanguage(): "ko" | "en" {
+    return this.translationLanguage;
+  }
+
   setTranslationLanguage(language: "ko" | "en"): void {
     if (language !== "ko" && language !== "en") throw new MunhaeError("invalid_payload", "Unsupported translation language");
     const base = orm(this.db)
@@ -531,15 +508,6 @@ export class ProjectRepo {
       translationDraft: target.filter((d) => d.translationState === "draft" || d.translationState === "review").length,
       translationConfirmed: target.filter((d) => d.translationState === "confirmed").length,
     };
-    const uncertainties = loadUncertainties(this.db, this.projectId)
-      .filter((uncertainty) => uncertainty.state === "open")
-      .map((uncertainty) => ({
-        id: uncertainty.id,
-        label: uncertainty.statementMd,
-        category: uncertainty.category,
-        locator: uncertainty.locator,
-      }));
-
     const recent = orm(this.db)
       .select({
         title: tables.document_nodes.title,
@@ -580,18 +548,16 @@ export class ProjectRepo {
       project: this.summary(),
       documents,
       progress,
-      uncertainties,
       recent,
+      activity: this.homeActivity(documents),
       agents: [],
     };
   }
 
   createDocument(input: CreateDocumentInput): DocumentListItem {
     return orm(this.db).transaction(() => {
+      // A new document may start without source text; the editor's source step fills it in.
       const sourceText = input.nodeRole === "source_unit" ? input.sourceText.replace(/^\uFEFF/, "") : "";
-      if (input.nodeRole === "source_unit" && !sourceText.trim()) {
-        throw new MunhaeError("invalid_input", "원문 문서에는 원문 내용이 필요합니다");
-      }
       const id = createId();
       const now = nowIso();
       const master = orm(this.db)
@@ -612,7 +578,7 @@ export class ProjectRepo {
           })
           .from(tables.document_nodes)
           .where(
-            sql`${tables.document_nodes.id} = ${parentId} AND ${tables.document_nodes.project_id} = ${this.projectId}`,
+            sql`${tables.document_nodes.id} = ${parentId} AND ${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.archived_at} IS NULL`,
           )
           .get();
         if (!parent) throw new MunhaeError("not_found", "parent document not found");
@@ -675,7 +641,7 @@ export class ProjectRepo {
       .select({ ...getTableColumns(tables.document_nodes) })
       .from(tables.document_nodes)
       .where(
-        sql`${tables.document_nodes.id} = ${documentNodeId} AND ${tables.document_nodes.project_id} = ${this.projectId}`,
+        sql`${tables.document_nodes.id} = ${documentNodeId} AND ${tables.document_nodes.project_id} = ${this.projectId} AND ${tables.document_nodes.archived_at} IS NULL`,
       )
       .get();
     if (!node) throw new MunhaeError("not_found", "document not found");
@@ -835,6 +801,7 @@ export class ProjectRepo {
         translationRow.translation_anchor_set_id === anchorSet?.id,
       lockVersion: translationRow.lock_version,
       blocks: loadBlocks(this.db, translationRow.id),
+      notes: loadNotes(this.db, translationRow.id),
     } : null;
     const chat = this.loadChat({ documentNodeId, scopeKind: "document_node" });
 
@@ -1012,6 +979,16 @@ export class ProjectRepo {
     if (!contentText.trim()) throw new MunhaeError("empty_source", "원문이 비어 있습니다");
     orm(this.db).transaction(() => {
       const ctx = this.requireSource(input.documentNodeId);
+      if (ctx.currentState === "draft" && !ctx.currentContentText.trim()) {
+        // The empty draft a new document starts with is a placeholder, not a version worth keeping.
+        orm(this.db)
+          .update(tables.src_text_versions)
+          .set({ content_text: contentText, origin_kind: input.originKind, content_hash: sha256Hex(contentText) })
+          .where(eq(tables.src_text_versions.id, ctx.currentVersionId))
+          .run();
+        this.casSourceHead(ctx.sourceTextId, input.expectedLockVersion, ctx.currentVersionId);
+        return;
+      }
       if (ctx.currentState === "draft") {
         orm(this.db)
           .update(tables.src_text_versions)
@@ -1053,6 +1030,7 @@ export class ProjectRepo {
       if (ctx.currentState === "confirmed") {
         throw new MunhaeError("already_confirmed", "이미 확정된 원문안입니다");
       }
+      if (!ctx.currentContentText.trim()) throw new MunhaeError("empty_source", "원문이 비어 있습니다");
       orm(this.db)
         .update(tables.src_text_versions)
         .set({ state: "confirmed" })
@@ -1264,6 +1242,8 @@ export class ProjectRepo {
         punctuation.currentVersionId,
         punctuation.currentVersionId,
       );
+      // Confirmed terms stay on the previous version as reference; undecided candidates cannot.
+      termReview.discardStaleCandidates(this.db, this.projectId, input.documentNodeId, punctuation.currentVersionId);
     });
     return this.getEditor(input.documentNodeId);
   }
@@ -1487,9 +1467,17 @@ export class ProjectRepo {
     return this.getEditor(input.documentNodeId);
   }
 
+  translationHead(documentNodeId: string): fullText.TranslationHead | null {
+    return fullText.translationHead(this.fullTextContext(), documentNodeId);
+  }
+
+  unconfirmTranslation(input: { documentNodeId: string; versionId: string; previousConfirmedVersionId: string | null; expectedLockVersion: number }): EditorView {
+    fullText.unconfirmText(this.fullTextContext(), input.documentNodeId, input);
+    return this.getEditor(input.documentNodeId);
+  }
+
   confirmTranslation(input: ConfirmTranslationInput): EditorView {
     if (this.getEditor(input.documentNodeId).translation?.textLayout) {
-      assertNoOpenBlockingUncertainty(this.db, this.projectId, input.documentNodeId);
       fullText.confirmText(this.fullTextContext(), input.documentNodeId, requirePositiveLockVersion(input.expectedLockVersion));
       return this.getEditor(input.documentNodeId);
     }
@@ -1504,7 +1492,6 @@ export class ProjectRepo {
       if (current.validation_state !== "valid") {
         throw new MunhaeError("needs_review", "재검토가 필요한 번역안은 확정할 수 없습니다");
       }
-      assertNoOpenBlockingUncertainty(this.db, this.projectId, input.documentNodeId);
       orm(this.db)
         .update(tables.document_translation_versions)
         .set({ state: "confirmed" })
@@ -1662,6 +1649,8 @@ export class ProjectRepo {
 
   createReviewExport(input: ReviewExportInput) { return buildReviewExport(this.db, this.projectId, input); }
 
+  createTranslationExport(input: TranslationExportInput) { return buildTranslationExport(this.db, this.projectId, input); }
+
   search(input: SearchQueryInput): SearchView {
     return searchProject(this.db, this.projectId, input);
   }
@@ -1681,139 +1670,73 @@ export class ProjectRepo {
       .map(item => ({ id: item.id, title: item.title, content: materials.materialPromptContent(item) }));
   }
 
-  getTerms(documentId?: string): termReview.TermEntry[] {
-    if (documentId) this.getEditor(documentId);
-    return termReview.listTerms(this.db, this.projectId, documentId);
+  getDocumentTerms(documentId: string): termReview.DocumentTermsView {
+    this.getEditor(documentId);
+    return termReview.documentTerms(this.db, this.projectId, documentId);
   }
-  deleteTerm(input: { id: string; expectedLockVersion: number }): void {
+  getProjectTerms(): termReview.ProjectTermListItem[] {
+    return termReview.projectTerms(this.db, this.projectId);
+  }
+  getTermSentences(termId: string, documentId?: string): Record<string, termReview.TermSentencePage> {
+    return termReview.termSentences(this.db, this.projectId, termId, documentId);
+  }
+  getTermGenerationInput(documentId: string) {
+    this.getEditor(documentId);
+    return termReview.termGenerationInput(this.db, this.projectId, documentId);
+  }
+  confirmTerm(input: termReview.ConfirmTermInput): termReview.DocumentTerm {
+    if (input?.documentId) this.getEditor(input.documentId);
+    return termReview.confirmDocumentTerm(this.db, this.projectId, input);
+  }
+  dismissTermCandidate(input: { id: string }): void {
+    termReview.dismissTermCandidate(this.db, this.projectId, input);
+  }
+  updateTerm(input: termReview.UpdateTermInput): termReview.ProjectTerm {
+    return termReview.updateTerm(this.db, this.projectId, input);
+  }
+  updateDocumentTerm(input: termReview.UpdateDocumentTermInput): termReview.DocumentTerm {
+    return termReview.updateDocumentTerm(this.db, this.projectId, input);
+  }
+  deleteDocumentTerm(input: { id: string; expectedLockVersion: number }): void {
     termReview.deleteDocumentTerm(this.db, this.projectId, input);
   }
+  deleteTerms(input: { terms: Array<{ id: string; expectedLockVersion: number }> }): void {
+    termReview.deleteTerms(this.db, this.projectId, input);
+  }
+  storeTermCandidates(documentId: string, punctuationVersionId: string, items: termReview.TermCandidateInput[], generation: termReview.TermGeneration, keepExisting = false): termReview.TermCandidate[] {
+    this.getEditor(documentId);
+    return termReview.storeTermCandidates(this.db, this.projectId, documentId, punctuationVersionId, items, generation, keepExisting);
+  }
 
-  saveTerm(input: termReview.SaveTermInput): termReview.TermEntry {
-    const editor = input.documentId ? this.getEditor(input.documentId) : null;
-    return termReview.saveTerm(this.db, this.projectId, input, editor ? termSource(editor) : undefined);
+  /** Read after an edit with `since` set to the snapshot taken before it, so undo compares the same terms. */
+  snapshotTermRows(documentId: string, since?: termReview.TermRowsSnapshot): termReview.TermRowsSnapshot {
+    this.getEditor(documentId);
+    return termReview.snapshotTermRows(this.db, this.projectId, documentId, since?.terms.map(term => term.id as string) ?? []);
   }
-  promoteTerm(input: termReview.SaveTermInput): termReview.TermEntry {
-    if (!input.id || !input.documentId) throw new MunhaeError("invalid_input", "저장된 문서 용어를 선택하세요.");
-    return orm(this.db).transaction(() => {
-      const local = this.saveTerm(input);
-      const common = this.saveTerm({ ...input, id: undefined, expectedLockVersion: undefined, documentId: null, parentTermId: null, sourceVersion: null, quotes: [], contextNote: null, status: "draft" });
-      return this.saveTerm({ ...input, expectedLockVersion: local.lockVersion, parentTermId: common.id });
-    });
-  }
-  storeTermCandidates(documentId: string, sourceVersion: string, candidates: Array<termReview.TermContent & { quotes: string[] }>, generation: NonNullable<termReview.TermEntry["generation"]>): termReview.TermEntry[] {
-    const editor = this.getEditor(documentId);
-    return orm(this.db).transaction(() => candidates.map(candidate => termReview.saveTerm(this.db, this.projectId,
-      { ...candidate, documentId, sourceVersion, status: "draft" }, termSource(editor), generation)));
+
+  restoreTermRows(before: termReview.TermRowsSnapshot, after: termReview.TermRowsSnapshot): void {
+    termReview.restoreTermRows(this.db, this.projectId, before, after);
   }
 
   getKnowledge(): KnowledgeView {
-    const glossary = orm(this.db)
-      .select({
-        id: tables.glossary_entries.id,
-        source_term: tables.glossary_entries.source_term,
-        target_term: tables.glossary_entries.target_term,
-        target_locale: tables.glossary_entries.target_locale,
-        term_kind: tables.glossary_entries.term_kind,
-        reading: tables.glossary_entries.reading,
-        note_md: tables.glossary_entries.note_md,
-        usage_status: tables.glossary_entries.usage_status,
-        content_hash: tables.glossary_entries.content_hash,
-        lock_version: tables.glossary_entries.lock_version,
-      })
-      .from(tables.glossary_entries)
-      .where(
-        sql`${tables.glossary_entries.project_id} = ${this.projectId} AND ${tables.glossary_entries.archived_at} IS NULL`,
-      )
-      .orderBy(
-        sql`${tables.glossary_entries.source_term}, ${tables.glossary_entries.usage_status}`,
-      )
-      .all().map((g) => ({
-      id: g.id,
-      contentHash: g.content_hash,
-      lockVersion: g.lock_version,
-      sourceTerm: g.source_term,
-      targetTerm: g.target_term,
-      targetLocale: g.target_locale,
-      termKind: g.term_kind,
-      reading: g.reading,
-      noteMd: g.note_md,
-      usageStatus: g.usage_status,
-    }));
-
-    const uncertainties = loadUncertainties(this.db, this.projectId);
+    const terms = termReview.projectTerms(this.db, this.projectId);
 
     const contextItems = materials.loadMaterialItems(this.db, this.projectId);
 
-    return { glossary, uncertainties, contextItems };
-  }
-
-  upsertGlossary(entry: UpsertGlossaryInput): GlossaryEntryView {
-    const now = nowIso();
-    const id = entry.id ?? createId();
-    const hash = glossaryContentHash(entry);
-    const termKind = tables.glossary_entries.term_kind.enumValues.find(value => value === entry.termKind);
-    if (!termKind) throw new MunhaeError("invalid_input", "올바른 용어 종류가 아닙니다");
-    if (entry.id) {
-      const info = orm(this.db)
-        .update(tables.glossary_entries)
-        .set({
-          source_term: entry.sourceTerm,
-          target_term: entry.targetTerm,
-          target_locale: entry.targetLocale,
-          term_kind: termKind,
-          reading: entry.reading,
-          note_md: entry.noteMd,
-          usage_status: entry.usageStatus,
-          content_hash: hash,
-          lock_version: sql`${tables.glossary_entries.lock_version} + 1`,
-          updated_by_actor_id: this.actors.humanId,
-          updated_at: now,
-        })
-        .where(
-          and(
-            eq(tables.glossary_entries.id, id),
-            eq(tables.glossary_entries.project_id, this.projectId),
-            isNull(tables.glossary_entries.archived_at),
-            eq(
-              tables.glossary_entries.lock_version,
-              requireKnowledgeLock(entry.expectedLockVersion),
-            ),
-          ),
-        )
-        .run();
-      if (info.changes !== 1) throwKnowledgeCasFailure(this.db, this.projectId, "glossary_entries", id);
-    } else {
-      orm(this.db)
-        .insert(tables.glossary_entries)
-        .values({
-          id,
-          project_id: this.projectId,
-          source_term: entry.sourceTerm,
-          target_locale: entry.targetLocale,
-          target_term: entry.targetTerm,
-          term_kind: termKind,
-          reading: entry.reading,
-          note_md: entry.noteMd,
-          usage_status: entry.usageStatus,
-          content_hash: hash,
-          lock_version: 1,
-          created_by_actor_id: this.actors.humanId,
-          updated_by_actor_id: this.actors.humanId,
-          created_at: now,
-          updated_at: now,
-          archived_at: null,
-        })
-        .run();
-    }
-    const row = this.getKnowledge().glossary.find((g) => g.id === id);
-    if (!row) throw new MunhaeError("internal", "glossary upsert failed");
-    return row;
+    return { terms, contextItems };
   }
 
   moveDocument(input: MoveDocumentInput): DocumentMetadataView {
     moveStoredDocument(this.db, this.projectId, input);
     return this.getDocumentMetadata(input.documentNodeId);
+  }
+
+  getDocumentDeletion(documentNodeId: string): DocumentDeletionView {
+    return documentDeletion(this.db, this.projectId, documentNodeId);
+  }
+
+  deleteDocument(input: DeleteDocumentInput): void {
+    deleteStoredDocument(this.db, this.projectId, this.actors.humanId, input);
   }
 
   getDocumentMetadata(documentNodeId: string): DocumentMetadataView {
@@ -1878,27 +1801,6 @@ export class ProjectRepo {
     );
   }
 
-  createUncertainty(input: CreateUncertaintyInput): UncertaintyView {
-    return createStoredUncertainty(
-      { db: this.db, projectId: this.projectId, actors: this.actors },
-      input,
-    );
-  }
-
-  createUncertaintyVersion(input: CreateUncertaintyVersionInput): UncertaintyView {
-    return createStoredUncertaintyVersion(
-      { db: this.db, projectId: this.projectId, actors: this.actors },
-      input,
-    );
-  }
-
-  resolveUncertainty(input: ResolveUncertaintyInput): UncertaintyView {
-    return resolveStoredUncertainty(
-      { db: this.db, projectId: this.projectId, actors: this.actors },
-      input,
-    );
-  }
-
   private fullTextContext() {
     return { db:this.db, actors:this.actors, policyVersionId:this.policyVersionId, projectId:this.projectId, localContent: this.summary().storageMode === "local",
       getEditor:(id:string)=>this.getEditor(id), getHome:()=>this.getHome(), getKnowledge:()=>this.getKnowledge() };
@@ -1915,6 +1817,27 @@ export class ProjectRepo {
   }
 
   listReviewComments(documentNodeId: string) { return reviewComments.listReviewComments(this.fullTextContext(), documentNodeId); }
+  getTranslationNotes(versionId: string): TranslationNote[] { return loadNotes(this.db, versionId); }
+  createTranslationNote(input: CreateTranslationNoteInput): TranslationNote[] {
+    return orm(this.db).transaction(() => {
+      const draft = this.noteDraft(input.documentNodeId, input.versionId);
+      return addNote(this.db, this.projectId, draft.versionId, draft.textContent, input);
+    });
+  }
+  updateTranslationNote(input: UpdateTranslationNoteInput): TranslationNote[] {
+    return orm(this.db).transaction(() => updateNote(this.db, this.noteDraft(input.documentNodeId, input.versionId).versionId, input));
+  }
+  deleteTranslationNote(input: DeleteTranslationNoteInput): TranslationNote[] {
+    return orm(this.db).transaction(() => removeNote(this.db, this.noteDraft(input.documentNodeId, input.versionId).versionId, input.noteId));
+  }
+  /** Notes are edited on the current draft in place; a confirmed version is revised first, like its text. */
+  private noteDraft(documentNodeId: string, versionId: string) {
+    if (this.summary().storageMode !== "local") throw new MunhaeError("unsupported", "각주는 로컬 프로젝트에서만 편집할 수 있습니다");
+    const translation = this.getEditor(documentNodeId).translation;
+    if (!translation || translation.versionId !== versionId) throw new MunhaeError("stale_request", "번역이 바뀌었습니다. 다시 불러온 뒤 각주를 편집하세요");
+    if (translation.state !== "draft") throw new MunhaeError("already_confirmed", "확정된 번역은 ‘새 번역안으로 수정’을 누른 뒤 각주를 편집하세요");
+    return translation;
+  }
   saveSentenceLink(input: SaveSentenceLinkInput): EditorView {
     fullText.saveSentenceLink(this.fullTextContext(), input);
     return this.getEditor(input.documentNodeId);
@@ -2062,7 +1985,6 @@ export class ProjectRepo {
       },
     ];
 
-    const knowledge = this.getKnowledge();
     const source = editor.source.contentText;
     type AuxCandidate = ContextPreview["auxiliary"][number];
     const auxiliary: AuxCandidate[] = [];
@@ -2095,31 +2017,16 @@ export class ProjectRepo {
     });
     const lineage = this.documentLineage(documentNodeId);
     const distanceByNodeId = new Map(lineage.map((node) => [node.id, node.distance]));
-    for (const g of knowledge.glossary) {
-      const hit = source.includes(g.sourceTerm);
-      const content = glossaryContentJson(g);
+    // Only this document's confirmed terms. The same spelling elsewhere is not evidence.
+    const confirmed = termReview.termsForTranslation(this.db, this.projectId, documentNodeId);
+    for (const link of confirmed?.terms ?? []) {
+      const content = canonicalJson(termReview.termMaterial(confirmed!.basis, link));
       addAuxiliary({
-        id: g.id,
-        kind: "glossary",
-        label: `${g.sourceTerm} → ${g.targetTerm}`,
-        reason: hit ? "exact_match" : "project_glossary",
-        defaultIncluded: hit,
-        chars: codepointCount(content),
-        content,
-      });
-    }
-    const relatedUncertaintyIds = new Set(
-      loadOpenUncertaintyIdsForDocument(this.db, this.projectId, documentNodeId),
-    );
-    for (const u of knowledge.uncertainties.filter((x) => x.state === "open")) {
-      const content = canonicalJson(u);
-      const related = relatedUncertaintyIds.has(u.id);
-      addAuxiliary({
-        id: u.id,
-        kind: "uncertainty",
-        label: u.statementMd,
-        reason: related ? "related_uncertainty" : "project_uncertainty",
-        defaultIncluded: related,
+        id: link.id,
+        kind: "term",
+        label: link.term.translation ? `${link.term.sourceForm} → ${link.term.translation}` : link.term.sourceForm,
+        reason: "document_term",
+        defaultIncluded: true,
         chars: codepointCount(content),
         content,
       });
@@ -3312,6 +3219,7 @@ export class ProjectRepo {
       .run();
   }
 
+  /** Documents in tree order. */
   private listDocuments(): DocumentListItem[] {
     const nodes = orm(this.db)
       .select({
@@ -3377,13 +3285,6 @@ export class ProjectRepo {
     };
     walk(null, 0);
 
-    const uncCounts = new Map(
-      ordered.map((node) => [
-        node.id,
-        loadOpenUncertaintyIdsForDocument(this.db, this.projectId, node.id).length,
-      ]),
-    );
-
     return ordered.map((n) => ({
       id: n.id,
       parentId: n.parent_node_id,
@@ -3396,9 +3297,64 @@ export class ProjectRepo {
       sourceState: this.sourceUi(n.id),
       punctuationState: this.puncUi(n.id),
       translationState: this.translationUi(n.id),
-      uncertaintyCount: uncCounts.get(n.id) ?? 0,
       contextCount: effectiveContextCount(n.id),
     }));
+  }
+
+  /** Per-source facts for the home contents: current translation version and latest text activity. */
+  private homeActivity(documents: DocumentListItem[]): HomeView["activity"] {
+    const versions = new Map(
+      (this.db.prepare(
+        `SELECT t.document_node_id AS node_id, MAX(v.version_no) AS version_no
+         FROM document_translations t
+         JOIN document_translation_heads h ON h.document_translation_id = t.id
+         JOIN document_translation_versions v ON v.id = h.current_version_id
+         WHERE t.project_id = ? AND t.target_locale = ? AND t.tombstoned_at IS NULL
+         GROUP BY t.document_node_id`,
+      ).all(this.projectId, this.translationLanguage) as Array<{ node_id: string; version_no: number }>)
+        .map((row) => [row.node_id, row.version_no]),
+    );
+    const lastActivity = new Map(
+      (this.db.prepare(
+        `SELECT node_id, MAX(at) AS at FROM (
+           SELECT s.document_node_id AS node_id, v.created_at AS at
+           FROM src_text_versions v JOIN src_texts s ON s.id = v.source_text_id
+           WHERE s.project_id = ? AND s.tombstoned_at IS NULL
+           UNION ALL
+           SELECT s.document_node_id, v.created_at
+           FROM punctuation_versions v
+           JOIN punctuation_sets p ON p.id = v.punctuation_set_id
+           JOIN src_texts s ON s.id = p.source_text_id
+           WHERE s.project_id = ? AND s.tombstoned_at IS NULL
+           UNION ALL
+           SELECT t.document_node_id, v.created_at
+           FROM document_translation_versions v JOIN document_translations t ON t.id = v.document_translation_id
+           WHERE t.project_id = ? AND t.target_locale = ? AND t.tombstoned_at IS NULL
+           UNION ALL
+           SELECT document_node_id, updated_at FROM review_comments WHERE project_id = ? AND archived_at IS NULL
+         ) GROUP BY node_id`,
+      ).all(this.projectId, this.projectId, this.projectId, this.translationLanguage, this.projectId) as Array<{ node_id: string; at: string }>)
+        .map((row) => [row.node_id, row.at]),
+    );
+    // Review comments have no resolved state; archiving removes them, so every active one counts.
+    const comments = new Map<string, Array<{ id: string; quote: string; bodyMd: string; updatedAt: string }>>();
+    for (const row of this.db.prepare(
+      `SELECT id, document_node_id AS node_id, quote, body_md, updated_at FROM review_comments
+       WHERE project_id = ? AND archived_at IS NULL ORDER BY updated_at DESC, id DESC`,
+    ).all(this.projectId) as Array<{ id: string; node_id: string; quote: string; body_md: string; updated_at: string }>) {
+      const list = comments.get(row.node_id) ?? [];
+      list.push({ id: row.id, quote: row.quote, bodyMd: row.body_md, updatedAt: row.updated_at });
+      comments.set(row.node_id, list);
+    }
+    return documents
+      .filter((document) => document.nodeRole === "source_unit")
+      .map((document) => ({
+        documentId: document.id,
+        translationVersion: versions.get(document.id) ?? null,
+        lastActivityAt: lastActivity.get(document.id) ?? null,
+        commentCount: comments.get(document.id)?.length ?? 0,
+        recentComments: comments.get(document.id)?.slice(0, 2) ?? [],
+      }));
   }
 
   private sourceUi(nodeId: string): VersionUiState {

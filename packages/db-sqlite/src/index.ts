@@ -1,11 +1,15 @@
-export type { TermContent, TermEntry, TermOccurrence, SaveTermInput } from "./term-review.ts";
-export { validateTermContent, termOccurrences } from "./term-review.ts";
+export type {
+  ConfirmTermInput, DocumentTerm, DocumentTermNotes, DocumentTermsView, ProjectTerm, ProjectTermListItem, ProjectTermUse, TermBasis,
+  TermCandidate, TermCandidateInput, TermConfidence, TermContent, TermEvidence, TermGeneration, TermKind, TermRange, TermRowsSnapshot, TermSentence, TermSentencePage, UpdateDocumentTermInput, UpdateTermInput,
+} from "./term-review.ts";
+export { MAX_TERM_ALTERNATIVES, TERM_CONFIDENCE, TERM_KINDS, formPositions, validateTermContent, validateTermNotes } from "./term-review.ts";
 export { assertSqliteIntegrity, openSqlite, type SqliteDb } from "./sqlite.ts";
 export { migrateProjectDb, migrateAppDb, applySqlMigration } from "./migrate.ts";
 export { AppDb, openAppDatabase, type OpenAppDb, type RuntimeSessionKey } from "./app-db.ts";
 export { createProject, openProject, openOnlineCache, seedDemoProject, sqlitePath, ProjectRepo } from "./project-repo.ts";
 export { ONLINE_TABLE_METADATA, diffOnlineRows, applyOnlineRowChanges, isOnlineAssetPath } from "./online-data.ts";
 export { parseTranslationSkill, TRANSLATION_SKILL_MAX_CHARS, type TranslationSkill } from "./translation-skill.ts";
+export { NOTE_KINDS, NOTE_CONFIDENCE, type CreateTranslationNoteInput, type DeleteTranslationNoteInput, type UpdateTranslationNoteInput, type TranslationNote, type TranslationNoteKind, type TranslationNoteConfidence } from "./translation-notes.ts";
 export type { OnlineRow, OnlineTableData, OnlineRowChange, OnlineTableMetadata } from "./online-data.ts";
 export type { ReadingCitation, ReadingAnnotationView, SaveReadingAnnotationInput, ReadingAnnotationCasInput } from "./reading-annotations.ts";
 export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "./views.ts";
@@ -112,13 +116,10 @@ export type {
   CreateDocumentInput,
   CreatePunctuationDraftInput,
   CreateTranslationDraftInput,
-  CreateUncertaintyInput,
-  CreateUncertaintyVersionInput,
   DocumentMetadataView,
   DocumentNodeRole,
   DocumentListItem,
   EditorView,
-  GlossaryEntryView,
   GetProjectChatInput,
   HomeView,
   KnowledgeView,
@@ -142,19 +143,16 @@ export type {
   SaveSourceDraftInput,
   SaveTranslationDraftInput,
   SourceOriginKind,
-  ResolveUncertaintyInput,
   SetContextItemEnabledInput,
   SetContextItemPriorityInput,
   SplitBlockInput,
   TranslationBlockView,
   TranslationHeadSnapshot,
   TranslationRunSnapshot,
-  UncertaintyAnchorInput,
-  UncertaintyOptionInput,
-  UncertaintyView,
-  UpsertGlossaryInput,
   UpdateContextItemInput,
   UpdateDocumentMetadataInput,
   MoveDocumentInput,
+  DeleteDocumentInput,
+  DocumentDeletionView,
   VersionUiState,
 } from "./views.ts";

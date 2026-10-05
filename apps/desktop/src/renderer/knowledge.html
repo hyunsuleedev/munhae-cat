@@ -30,15 +30,6 @@
     </header>
 
     <div class="content materials-content">
-      <header class="materials-heading">
-        <div class="materials-title-row">
-          <div class="materials-title-group">
-            <h1 data-i18n="문맥">문맥</h1>
-            <p class="materials-project" id="materialsProject"></p>
-          </div>
-          <button class="btn btn-primary" id="btnAdd" type="button" data-od-id="btn-add-entry" data-i18n="자료 추가">자료 추가</button>
-        </div>
-      </header>
       <div class="scope" id="scopeBar">
         <input class="input hanmun" id="q" type="search" placeholder="제목·내용·연결 경로 검색" aria-label="자료 검색" style="width:240px" data-i18n-aria-label="자료 검색" data-i18n-placeholder="제목·내용·연결 경로 검색">
         <select class="select" id="scopeFilter" aria-label="자료를 참고하는 문서 필터" data-i18n-aria-label="자료를 참고하는 문서 필터"><option value="" data-i18n="프로젝트의 모든 자료">프로젝트의 모든 자료</option></select>
@@ -46,6 +37,7 @@
         <span class="muted" id="scopeNote" data-i18n="연결 위치와 하위 문서의 상속 범위를 확인하세요">연결 위치와 하위 문서의 상속 범위를 확인하세요</span>
         <button class="btn" id="btnEditMetadata" type="button" hidden data-i18n="문서 정보">문서 정보</button>
         <button class="btn" id="btnOpenDocument" type="button" hidden data-i18n="원문 열기">원문 열기</button>
+        <button class="btn btn-primary" id="btnAdd" type="button" data-od-id="btn-add-entry" data-i18n="자료 추가">자료 추가</button>
       </div>
 
       <div class="split" id="split">
@@ -67,7 +59,7 @@
 
   <footer class="statusbar" data-od-id="statusbar">
     <span class="mono" id="sbPath"></span>
-    <span><span data-i18n="자료 ">자료 </span><b id="sbC">0</b><span data-i18n=" · 용어 "> · 용어 </span><b id="sbG">0</b><span data-i18n=" · 불확실성 열림 "> · 불확실성 열림 </span><b id="sbU">0</b></span>
+    <span><span data-i18n="자료 ">자료 </span><b id="sbC">0</b><span data-i18n=" · 용어 "> · 용어 </span><b id="sbG">0</b></span>
     <span class="sp"></span>
     <span id="sbSel"></span>
     <span id="sbAgent"><i class="dot"></i>AI</span>

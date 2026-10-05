@@ -6,7 +6,7 @@ const master: DocumentListItem = {
   id: "master", parentId: null, depth: 0, nodeRole: "container", isMaster: true,
   title: "문집", originalTitle: null, ordinal: 0,
   sourceState: "none", punctuationState: "none", translationState: "none",
-  uncertaintyCount: 0, contextCount: 1,
+  contextCount: 1,
 };
 const child: DocumentListItem = {
   ...master, id: "child", parentId: master.id, depth: 1,

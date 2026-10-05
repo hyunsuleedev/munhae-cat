@@ -9,7 +9,21 @@ export type OnlineTableData = Record<string, OnlineRow[]>;
 export type OnlineRowChange = { table: string; key: OnlineRow; before: OnlineRow | null; after: OnlineRow | null };
 export type OnlineTableMetadata = { name: string; columns: string[]; primaryKey: string[] };
 // reading_translation_links is display-only local research state; the v10 online row protocol does not carry it.
-const EXCLUDED = new Set(["meta_schema_migrations", "meta_project_state", "chat_agent_sessions", "reading_translation_links", "translation_groups", "translation_group_source_links", "translation_content_parts", "translation_content_revisions", "translation_content_snapshots"]);
+// Document terms (v13) and translation footnotes (v15) are local-only until the online protocol carries them.
+const LOCAL_TERM_TABLES = ["term_occurrences", "term_candidates", "document_terms", "terms"];
+const EXCLUDED = new Set(["meta_schema_migrations", "meta_project_state", "chat_agent_sessions", "reading_translation_links", "translation_groups", "translation_group_source_links", "translation_content_parts", "translation_content_revisions", "translation_content_snapshots", "translation_notes", ...LOCAL_TERM_TABLES]);
+// v13 and v18 dropped these local tables, but the v10 protocol still names them. This device
+// exports them empty and ignores their server rows; the legacy term and uncertainty data is discarded.
+const RETIRED: readonly OnlineTableMetadata[] = [
+  { name: "glossary_entries", columns: ["id", "project_id", "source_term", "target_locale", "target_term", "term_kind", "reading", "note_md", "usage_status", "content_hash", "lock_version", "created_by_actor_id", "updated_by_actor_id", "created_at", "updated_at", "archived_at"], primaryKey: ["id"] },
+  { name: "term_entries", columns: ["id", "project_id", "document_node_id", "parent_term_id", "payload_json", "lock_version", "created_at", "updated_at"], primaryKey: ["id"] },
+  { name: "term_revisions", columns: ["id", "term_id", "payload_json", "created_at"], primaryKey: ["id"] },
+  { name: "uncertainties", columns: ["id", "project_id", "category", "severity", "blocking", "state", "created_at"], primaryKey: ["id"] },
+  { name: "uncertainty_anchors", columns: ["id", "project_id", "uncertainty_version_id", "target_kind", "target_version_id", "codepoint_from", "codepoint_to", "quote", "quote_hash"], primaryKey: ["id"] },
+  { name: "uncertainty_options", columns: ["id", "project_id", "uncertainty_version_id", "label", "interpretation_md", "ordinal"], primaryKey: ["id"] },
+  { name: "uncertainty_versions", columns: ["id", "project_id", "uncertainty_id", "parent_version_id", "version_no", "statement_md", "rationale_md", "confidence_label", "content_hash", "created_by_actor_id", "created_at"], primaryKey: ["id"] },
+];
+const RETIRED_NAMES = new Set(RETIRED.map(table => table.name));
 const COMPOSITE_KEYS: Record<string, string[]> = {
   material_preferences: ["project_id", "document_node_id", "source_kind", "source_id"],
   src_node_assets: ["document_node_id", "asset_id", "ordinal"],
@@ -24,7 +38,8 @@ export const ONLINE_TABLE_METADATA: readonly OnlineTableMetadata[] = Object.entr
     const primaryKey = COMPOSITE_KEYS[name] ?? columns.filter(column => column.primary).map(column => column.name);
     if (!primaryKey.length) throw new Error(`Missing online row key for ${name}`);
     return { name, columns: columns.map(column => column.name), primaryKey };
-  });
+  }).concat(RETIRED).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+const LOCAL_TABLE_METADATA = ONLINE_TABLE_METADATA.filter(table => !RETIRED_NAMES.has(table.name));
 const METADATA = new Map(ONLINE_TABLE_METADATA.map(table => [table.name, table]));
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const invalid = (message: string): never => { throw new MunhaeError("invalid_online_rows", message); };
@@ -117,6 +132,7 @@ function normalizeRow(table: string, source: OnlineRow): OnlineRow | null {
 /** Export only portable domain records. No SQLite bytes, local CLI sessions or FTS. */
 export function readOnlineRows(db: SqliteDb): OnlineTableData {
   return Object.fromEntries(ONLINE_TABLE_METADATA.map(table => {
+    if (RETIRED_NAMES.has(table.name)) return [table.name, []];
     const rows = db.prepare(`SELECT ${table.columns.map(quote).join(",")} FROM ${quote(table.name)}`).all() as OnlineRow[];
     if (table.name === "translation_text_layouts") for (const row of rows) {
       const content = loadContent(db, String(row.version_id));
@@ -150,9 +166,9 @@ export function hydrateOnlineRows(db: SqliteDb, projectId: string, tables: Onlin
     for (const trigger of triggers) db.exec(`DROP TRIGGER ${quote(trigger.name)}`);
     db.exec("DELETE FROM chat_agent_sessions");
     // The server protocol owns its legacy projection; local entity caches are rebuilt on local editing.
-    for (const name of ["translation_content_snapshots", "translation_content_revisions", "translation_content_parts", "translation_group_source_links", "translation_groups"]) db.exec(`DELETE FROM ${quote(name)}`);
-    for (const table of ONLINE_TABLE_METADATA) db.exec(`DELETE FROM ${quote(table.name)}`);
-    for (const table of ONLINE_TABLE_METADATA) {
+    for (const name of ["translation_notes", "translation_content_snapshots", "translation_content_revisions", "translation_content_parts", "translation_group_source_links", "translation_groups", ...LOCAL_TERM_TABLES]) db.exec(`DELETE FROM ${quote(name)}`);
+    for (const table of LOCAL_TABLE_METADATA) db.exec(`DELETE FROM ${quote(table.name)}`);
+    for (const table of LOCAL_TABLE_METADATA) {
       const insert = db.prepare(`INSERT INTO ${quote(table.name)} (${table.columns.map(quote).join(",")}) VALUES (${table.columns.map(() => "?").join(",")})`);
       for (const input of tables[table.name]!) {
         const row = { ...input };

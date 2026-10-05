@@ -318,6 +318,43 @@ body.is-resizing-sidebar * {
   cursor: col-resize !important;
   user-select: none !important;
 }
+/* Row selection checkbox shared by the editor's sentence groups and the glossary. */
+.select-checkbox { appearance: none; flex: 0 0 auto; width: 15px; height: 15px; margin: 0; border: 1px solid var(--border); border-radius: 3px; background: transparent; cursor: pointer; }
+.select-checkbox:indeterminate { border-color: var(--accent); background-color: var(--accent); background-image: linear-gradient(white, white); background-repeat: no-repeat; background-position: center; background-size: 7px 1.5px; }
+.select-checkbox:hover:not(:checked) { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.select-checkbox:checked { border-color: var(--accent); background-color: var(--accent); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 8 2.5 2.5L12 5' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-size: 100% 100%; }
+@media (forced-colors: active) {
+  .select-checkbox { appearance: auto; }
+}
+.select-checkbox:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Inspector edge; each page places it on the boundary between its main column and inspector. */
+.inspector-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+.inspector-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+}
+.inspector-resizer.is-drag::after,
+.inspector-resizer:focus-visible::after {
+  background: var(--accent);
+}
+.inspector-resizer:focus-visible { outline: none; }
+@media (hover: hover) and (pointer: fine) {
+  .inspector-resizer:hover::after { background: var(--accent); }
+}
+body.is-resizing-inspector,
+body.is-resizing-inspector * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 .sb-top {
   height: 38px;
   display: flex;
@@ -338,7 +375,7 @@ html[data-platform="mac"] .sb-top {
   -webkit-app-region: no-drag;
 }
 .sb-h {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--muted);
   padding: 18px 8px 8px;
@@ -396,7 +433,11 @@ html[data-platform="mac"] .sb-top {
   flex: 0 0 auto;
   padding-right: 2px;
 }
-.sb-h-row .sb-create-actions { padding-top: 11px; }
+.sb-h-row .sb-create-actions { padding-top: 10px; }
+/* Sized to the section label beside them, not to the tree rows. */
+.sb-h-row .sb-add { width: 24px; height: 24px; }
+.sb-h-row .sb-add svg.ic { width: 14px; height: 14px; stroke-width: 1.6; }
+.sb-create-actions[hidden] { display: none; }
 .sb-add {
   display: inline-flex;
   align-items: center;
@@ -494,6 +535,14 @@ html[data-platform="mac"] .sb-top {
   flex-direction: column;
   -webkit-app-region: no-drag;
 }
+.sb-library-nav {
+  flex: 0 0 auto;
+  margin: 0 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  -webkit-app-region: no-drag;
+}
+.sb-library-nav .sb-library { margin-top: 0; }
 .sb-footer-nav { width: 100%; }
 .sb-footer-nav .sb-item { height: 32px; min-height: 32px; font-size: 12px; }
 .sb-project-actions { display: flex; align-items: center; gap: 4px; margin: 0 8px 10px; min-width: 0; -webkit-app-region: no-drag; }
@@ -501,7 +550,6 @@ html[data-platform="mac"] .sb-top {
 .sb-app-trigger[hidden] { display: none; }
 .sb-project-switch { flex: 1; justify-content: space-between; min-width: 0; padding: 6px 8px; color: var(--fg); font-size: 12px; font-weight: 500; }
 .sb-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-add-document { align-self: flex-end; margin-bottom: 2px; font-size: 18px; }
 .sb-help { justify-content: flex-start; height: 32px; min-height: 32px; font-size: 12px; }
 .sb-help-icon { display: inline-flex; flex: 0 0 16px; width: 16px; height: 16px; align-items: center; justify-content: center; border: 1px solid currentColor; border-radius: 50%; font-size: 11px; }
 .sb-app-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -1266,23 +1314,6 @@ html[data-platform="mac"] .win.unified-titlebar.sb-hidden > .titlebar { padding-
   .tb:active:not(:disabled) { transform: none; }
 }
 
-/* New document: one primary input flow, with optional metadata disclosed. */
-#dlgNew { width: min(560px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); margin: auto; }
-#dlgNew .dl-b { gap: 18px; }
-#dlgNew .input { font-size: 14px; }
-#dlgNew .nd-kind { display: flex; gap: 4px; padding: 3px; margin: 0; border: 0; border-radius: 7px; background: var(--chrome); align-self: flex-start; }
-#dlgNew .nd-kind label { position: relative; cursor: pointer; }
-#dlgNew .nd-kind input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-#dlgNew .nd-kind span { display: block; padding: 6px 22px; border: 1px solid transparent; border-radius: 5px; font-size: 13px; color: var(--muted); }
-#dlgNew .nd-kind input:checked + span { background: var(--surface); border-color: var(--border); color: var(--fg); }
-#dlgNew .nd-kind input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-#dlgNew .nd-source-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-#dlgNew #ndText { height: 170px; min-height: 120px; resize: vertical; font-size: 16px; line-height: 1.8; }
-#dlgNew .nd-options { border-top: 1px solid var(--border); padding-top: 14px; }
-#dlgNew .nd-options summary { cursor: pointer; font-size: 12px; color: var(--muted); }
-#dlgNew #ndParentSummary { margin-left: 10px; display: inline-block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
-#dlgNew .nd-options-fields { display: grid; gap: 12px; margin-top: 14px; }
-
 /* Keep document finding outside the scrolling tree. */
 .sb-search { position: relative; flex: 0 0 auto; margin: 0 12px 13px; -webkit-app-region: no-drag; }
 .sb-search > .ic { position: absolute; left: 8px; top: 8px; width: 13px; height: 13px; color: var(--muted); pointer-events: none; }
@@ -1317,4 +1348,22 @@ html[data-platform="mac"] .win.unified-titlebar.sb-hidden > .titlebar { padding-
 .sb-move-impact { font-size: 12px; color: var(--muted); line-height: 1.65; }
 .sb-move-impact.is-warning { color: var(--fg); border-left: 2px solid var(--accent); padding-left: 10px; }
 .sb-action-error { color: var(--danger, #a33); font-size: 12px; }
+.sb-delete-cleanup { align-items: flex-start; line-height: 1.5; }
+.sb-delete-cleanup input { flex: none; margin-top: 2px; }
+.sb-delete-note { margin-top: -8px; padding-left: 20px; font-size: 12px; }
+.sb-row.is-dragging { opacity: .45; }
+.sb-row.sb-drop-into > .sb-item { background: var(--sel); box-shadow: inset 0 0 0 1px var(--accent); }
+:is(.sb-row.sb-drop-before, .sb-row.sb-drop-after, .sb-children.sb-drop-after)::after { content: ""; position: absolute; left: 4px; right: 4px; height: 2px; border-radius: 1px; background: var(--accent); pointer-events: none; }
+.sb-row.sb-drop-before::after { top: -1px; }
+:is(.sb-row, .sb-children).sb-drop-after::after { bottom: -1px; }
+/* Line up with the expanded row that owns this block, not with its children. */
+.sb-children.sb-drop-after::after { left: calc(10px + var(--sb-depth) * 12px); }
 @media (hover: none) { .sb-more { opacity: 1; pointer-events: auto; } .sb-row:has(> .sb-more) > .sb-item > :is(.cnt, .dot) { opacity: 0; } }
+.notif.show.has-action {
+  pointer-events: auto;
+}
+.notif .notif-action {
+  margin-left: auto;
+  align-self: center;
+  flex: 0 0 auto;
+}

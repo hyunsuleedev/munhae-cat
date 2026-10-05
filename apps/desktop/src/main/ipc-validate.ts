@@ -1,4 +1,5 @@
-import type { ConcordanceInput, ReviewExportInput } from "../shared/munhae-api";
+import type { ConcordanceInput, CreateTranslationNoteInput, DeleteTranslationNoteInput, ReviewExportInput, TranslationExportInput, UpdateTranslationNoteInput } from "../shared/munhae-api";
+import { NOTE_CONFIDENCE, NOTE_KINDS } from "@munhae/db-sqlite";
 import {
   type ArchiveReviewCommentInput,
   type ReadingAnnotationCasInput,
@@ -20,13 +21,10 @@ import {
   type CreateProjectInput,
   type CreateTranslationDraftInput,
   type CreateReviewCommentInput,
-  type CreateUncertaintyInput,
-  type CreateUncertaintyVersionInput,
   type DocumentNodeRole,
   type MergeBlocksInput,
   type ResetTranslationDraftInput,
   type ReviseTranslationInput,
-  type ResolveUncertaintyInput,
   type SavePunctuationDraftInput,
   type SaveSourceDraftInput,
   type SaveTranslationDraftInput,
@@ -39,12 +37,11 @@ import {
   type StructureSpanInput,
   type SetContextItemEnabledInput,
   type SetContextItemPriorityInput,
-  type UncertaintyAnchorInput,
-  type UpsertGlossaryInput,
   type UpdateContextItemInput,
   type UpdateReviewCommentInput,
   type UpdateDocumentMetadataInput,
   type MoveDocumentInput,
+  type DeleteDocumentInput,
   type VersionDiffInput,
 } from "../shared/munhae-api";
 import { AppError } from "./errors";
@@ -56,16 +53,6 @@ const DOCUMENT_NODE_ROLES: readonly DocumentNodeRole[] = ["container", "source_u
 const ORIGIN_KINDS = ["paste", "manual", "import"] as const;
 const STRUCTURE_MODES = ["prose", "poetry"] as const;
 const STRUCTURE_SPAN_KINDS = ["paragraph", "sentence", "verse_line", "couplet", "stanza"] as const;
-const USAGE_STATUSES = ["preferred", "allowed", "forbidden"] as const;
-const UNCERTAINTY_CATEGORIES = ["textual", "interpretive", "identification"] as const;
-const UNCERTAINTY_TARGET_KINDS: readonly UncertaintyAnchorInput["targetKind"][] = [
-  "document_node",
-  "source_text_version",
-  "punctuation_version",
-  "translation_anchor",
-  "document_translation",
-  "document_translation_version",
-];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -173,7 +160,6 @@ export function parseCreateDocumentInput(value: unknown): CreateDocumentInput {
     return { ...base, nodeRole };
   }
   const sourceText = asString(rec.sourceText, "sourceText", { max: 20_000_000 });
-  if (!sourceText.trim()) fail("sourceText");
   return {
     ...base,
     nodeRole,
@@ -360,6 +346,47 @@ export function parseConfirmInput(value: unknown): ConfirmTranslationInput {
 
 export function parseReviseTranslationInput(value: unknown): ReviseTranslationInput {
   return parseConfirmInput(value);
+}
+
+/** Kind, confidence, text and alternative readings, shared by adding and rewriting a note. */
+function parseNoteContent(rec: Record<string, unknown>) {
+  const alternatives = rec.alternatives === undefined ? [] : asStringArray(rec.alternatives, "alternatives");
+  if (alternatives.length > 3 || alternatives.some(item => item.length > 1_200)) fail("alternatives");
+  return {
+    kind: asOneOf(rec.kind, "kind", NOTE_KINDS),
+    confidence: asOneOf(rec.confidence, "confidence", NOTE_CONFIDENCE),
+    bodyMd: asString(rec.bodyMd, "bodyMd", { max: 8_000 }),
+    alternatives,
+  };
+}
+
+export function parseCreateTranslationNoteInput(value: unknown): CreateTranslationNoteInput {
+  const rec = asRecord(value, "input");
+  const codepointFrom = asInt(rec.codepointFrom, "codepointFrom");
+  const codepointTo = asInt(rec.codepointTo, "codepointTo");
+  if (codepointFrom < 0 || codepointTo <= codepointFrom || codepointTo > 20_000_000) fail("range");
+  return {
+    documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    versionId: asNonEmptyString(rec.versionId, "versionId", 80),
+    codepointFrom,
+    codepointTo,
+    quote: asString(rec.quote, "quote", { max: 1_200 }),
+    ...parseNoteContent(rec),
+  };
+}
+
+export function parseUpdateTranslationNoteInput(value: unknown): UpdateTranslationNoteInput {
+  const rec = asRecord(value, "input");
+  return { ...parseDeleteTranslationNoteInput(rec), ...parseNoteContent(rec) };
+}
+
+export function parseDeleteTranslationNoteInput(value: unknown): DeleteTranslationNoteInput {
+  const rec = asRecord(value, "input");
+  return {
+    documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    versionId: asNonEmptyString(rec.versionId, "versionId", 80),
+    noteId: asNonEmptyString(rec.noteId, "noteId", 80),
+  };
 }
 
 export function parseCreateReviewCommentInput(value: unknown): CreateReviewCommentInput {
@@ -623,24 +650,6 @@ export function parseMessageId(value: unknown): string {
   return asNonEmptyString(value, "messageId", 80);
 }
 
-export function parseGlossaryInput(
-  value: unknown,
-): UpsertGlossaryInput {
-  const rec = asRecord(value, "entry");
-  const id = asOptionalString(rec.id, "id", 80);
-  return {
-    id,
-    expectedLockVersion: id ? parseExpectedLockVersion(rec.expectedLockVersion) : undefined,
-    sourceTerm: asNonEmptyString(rec.sourceTerm, "sourceTerm", 500),
-    targetTerm: asNonEmptyString(rec.targetTerm, "targetTerm", 500),
-    targetLocale: asNonEmptyString(rec.targetLocale, "targetLocale", 32),
-    termKind: asNonEmptyString(rec.termKind, "termKind", 64),
-    reading: rec.reading === null ? null : asOptionalString(rec.reading, "reading", 200) ?? null,
-    noteMd: rec.noteMd === null ? null : asOptionalString(rec.noteMd, "noteMd", 20_000) ?? null,
-    usageStatus: asOneOf(rec.usageStatus, "usageStatus", USAGE_STATUSES),
-  };
-}
-
 function nullableString(value: unknown, field: string, max: number): string | null {
   if (value === undefined || value === null) return null;
   const text = asString(value, field, { max }).trim();
@@ -735,68 +744,6 @@ export function parseSetContextItemPriorityInput(value: unknown): SetContextItem
   return { ...parseContextItemCasInput(value), priority };
 }
 
-function parseUncertaintyBody(value: unknown, field: string): CreateUncertaintyInput {
-  const rec = asRecord(value, field);
-  if (!Array.isArray(rec.options) || rec.options.length > 100) fail(`${field}.options`);
-  if (!Array.isArray(rec.anchors) || rec.anchors.length === 0 || rec.anchors.length > 100) {
-    fail(`${field}.anchors`);
-  }
-  return {
-    category: asOneOf(rec.category, `${field}.category`, UNCERTAINTY_CATEGORIES),
-    severity: asNonEmptyString(rec.severity, `${field}.severity`, 64),
-    blocking: asBoolean(rec.blocking, `${field}.blocking`),
-    statementMd: asNonEmptyString(rec.statementMd, `${field}.statementMd`, 100_000),
-    rationaleMd: nullableString(rec.rationaleMd, `${field}.rationaleMd`, 100_000),
-    confidenceLabel: nullableString(rec.confidenceLabel, `${field}.confidenceLabel`, 100),
-    options: rec.options.map((item, index) => {
-      const option = asRecord(item, `${field}.options[${index}]`);
-      return {
-        label: asNonEmptyString(option.label, `${field}.options[${index}].label`, 2_000),
-        interpretationMd: nullableString(
-          option.interpretationMd,
-          `${field}.options[${index}].interpretationMd`,
-          100_000,
-        ),
-      };
-    }),
-    anchors: rec.anchors.map((item, index) => {
-      const anchor = asRecord(item, `${field}.anchors[${index}]`);
-      const codepointFrom = asOptionalInt(anchor.codepointFrom, `${field}.anchors[${index}].codepointFrom`);
-      const codepointTo = asOptionalInt(anchor.codepointTo, `${field}.anchors[${index}].codepointTo`);
-      if (codepointFrom !== undefined && codepointFrom < 0) fail(`${field}.anchors[${index}].codepointFrom`);
-      if (codepointTo !== undefined && codepointTo < 1) fail(`${field}.anchors[${index}].codepointTo`);
-      return {
-        targetKind: asOneOf(anchor.targetKind, `${field}.anchors[${index}].targetKind`, UNCERTAINTY_TARGET_KINDS),
-        targetVersionId: asNonEmptyString(anchor.targetVersionId, `${field}.anchors[${index}].targetVersionId`, 80),
-        codepointFrom: codepointFrom ?? null,
-        codepointTo: codepointTo ?? null,
-        quote: nullableString(anchor.quote, `${field}.anchors[${index}].quote`, 20_000),
-      };
-    }),
-  };
-}
-
-export function parseCreateUncertaintyInput(value: unknown): CreateUncertaintyInput {
-  return parseUncertaintyBody(value, "input");
-}
-
-export function parseCreateUncertaintyVersionInput(value: unknown): CreateUncertaintyVersionInput {
-  const rec = asRecord(value, "input");
-  return {
-    ...parseUncertaintyBody(value, "input"),
-    uncertaintyId: asNonEmptyString(rec.uncertaintyId, "input.uncertaintyId", 80),
-    expectedVersionId: asNonEmptyString(rec.expectedVersionId, "input.expectedVersionId", 80),
-  };
-}
-
-export function parseResolveUncertaintyInput(value: unknown): ResolveUncertaintyInput {
-  const rec = asRecord(value, "input");
-  return {
-    uncertaintyId: asNonEmptyString(rec.uncertaintyId, "input.uncertaintyId", 80),
-    expectedVersionId: asNonEmptyString(rec.expectedVersionId, "input.expectedVersionId", 80),
-  };
-}
-
 export function parseConfirmedExportInput(value: unknown): ConfirmedExportInput {
   const rec = asRecord(value, "input");
   return {
@@ -829,7 +776,7 @@ export function parseSearchQueryInput(value: unknown): SearchQueryInput {
           entityType: asOneOf(
             filter.entityType,
             "input.entityFilter.entityType",
-            ["glossary"] as const,
+            ["term"] as const,
           ),
           entityId: asNonEmptyString(filter.entityId, "input.entityFilter.entityId", 80),
         };
@@ -865,17 +812,35 @@ export function parseReviewExportInput(value: unknown): ReviewExportInput {
     documentNodeId: nullableString(rec.documentNodeId, "input.documentNodeId", 80), includeComments: rec.includeComments as boolean | undefined };
 }
 
+export function parseTranslationExportInput(value: unknown): TranslationExportInput {
+  const rec = asRecord(value, "input");
+  return { format: asOneOf(rec.format, "input.format", ["docx", "pdf", "txt", "markdown"] as const),
+    layout: asOneOf(rec.layout, "input.layout", ["translation", "bilingual"] as const),
+    state: asOneOf(rec.state, "input.state", ["current", "confirmed"] as const),
+    documentNodeId: nullableString(rec.documentNodeId, "input.documentNodeId", 80) };
+}
+
 export function parseTermMaterialExclusions(value: unknown): string[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length > 10000) throw new AppError("invalid_input", "제외할 참고 자료 목록을 확인하세요.");
   return [...new Set(value.map(id => asNonEmptyString(id, "excludedMaterialId", 200)))];
 }
 
-export function parseTermGlossarySelection(value: unknown): import("../shared/term-glossary").TermGlossarySelection {
+export function parseTermReferenceSelection(value: unknown): import("../shared/term-references").TermReferenceSelection {
   if (value === undefined) return { enabled: true, excludedIds: [] };
-  const rec = asRecord(value, "glossarySelection");
-  if (typeof rec.enabled !== "boolean") throw new AppError("invalid_input", "공통 용어집 참고 여부를 확인하세요.");
+  const rec = asRecord(value, "referenceSelection");
+  if (typeof rec.enabled !== "boolean") throw new AppError("invalid_input", "참고 용어 사용 여부를 확인하세요.");
   return { enabled: rec.enabled, excludedIds: parseTermMaterialExclusions(rec.excludedIds) };
+}
+
+export function parseDeleteDocumentInput(value: unknown): DeleteDocumentInput {
+  const rec = asRecord(value, "input");
+  if (typeof rec.removeTermsAndComments !== "boolean") throw new AppError("invalid_input", "용어·코멘트 정리 여부를 확인하세요.");
+  return {
+    documentNodeId: asNonEmptyString(rec.documentNodeId, "documentNodeId", 80),
+    expectedLockVersion: parseExpectedLockVersion(rec.expectedLockVersion),
+    removeTermsAndComments: rec.removeTermsAndComments,
+  };
 }
 
 export function parseMoveDocumentInput(value: unknown): MoveDocumentInput {

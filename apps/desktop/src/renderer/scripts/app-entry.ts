@@ -17,7 +17,6 @@ const pages: Record<string, () => Promise<unknown>> = {
   "knowledge.html": () => import("./knowledge"),
   "glossary.html": () => import("./knowledge"),
   "comments.html": () => import("./knowledge"),
-  "uncertainty.html": () => import("./knowledge"),
   "settings.html": () => import("./settings"),
   "community.html": () => import("./community"),
 };

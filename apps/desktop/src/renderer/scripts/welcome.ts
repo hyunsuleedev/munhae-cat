@@ -1,5 +1,6 @@
 import { t, uiText, ui } from "./i18n";
 import type { RecentProject } from "../../shared/munhae-api";
+import { ONLINE_PROJECTS_ENABLED } from "../../shared/online-projects";
 import { configureOnlineProjects } from "./online-projects-ui";
 import {
   $,
@@ -93,13 +94,14 @@ function pageKeys(e: KeyboardEvent, _m: boolean): void {
 }
 
 async function boot(): Promise<void> {
-  const onlineProjects = configureOnlineProjects(api.onlineProjects);
+  if (!ONLINE_PROJECTS_ENABLED) for (const node of $$("#btnCreateOnlineProject, .w-online-projects")) node.remove();
+  const onlineProjects = ONLINE_PROJECTS_ENABLED ? configureOnlineProjects(api.onlineProjects) : null;
   const renderAccount = (state: Awaited<ReturnType<typeof api.auth.getState>>) => {
     if (!state.ok) {
-      onlineProjects.accountUnavailable(state.error.message);
+      onlineProjects?.accountUnavailable(state.error.message);
       return;
     }
-    onlineProjects.accountChanged(state.data);
+    onlineProjects?.accountChanged(state.data);
     const user = state.data.user;
     const label = $("#welcomeAccountLabel");
     const link = $("#welcomeAccountLink");
@@ -120,7 +122,7 @@ async function boot(): Promise<void> {
   void api.auth.getState().then(state => {
     if (accountRequest === accountEvent) renderAccount(state);
   }).catch(() => {
-    if (accountRequest === accountEvent) onlineProjects.accountUnavailable(t("계정을 확인하지 못했습니다."));
+    if (accountRequest === accountEvent) onlineProjects?.accountUnavailable(t("계정을 확인하지 못했습니다."));
   });
   const ver = $("#verLine");
   try {

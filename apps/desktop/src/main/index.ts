@@ -31,6 +31,7 @@ import { cancelAllAiRuns, registerAiPersistenceHook } from "./ai-runs";
 import { flushOnlineWorkspace, leaveOnlineWorkspace, getOnlineWorkspaceStatus } from "./session";
 import { shutdownAgentRuntime } from "./agent-runtime-client";
 import { stopAgentToolBridge } from "./agent-tool-bridge";
+import { startMcpServer, stopMcpServer } from "./mcp-connect";
 import { initAccount, shutdownAccount } from "./auth";
 import { createQuitHandler } from "./quit-lifecycle";
 import { installStartup } from "./startup";
@@ -110,6 +111,7 @@ function boot(): void {
     await initAccount();
     if (stopping) return;
     startBrowserBridge();
+    startMcpServer();
     registerIpcHandlers();
     initAppUpdates();
 
@@ -190,6 +192,7 @@ function boot(): void {
       stopAppUpdateChecks();
       startup?.dispose();
       stopBrowserBridge();
+      await stopMcpServer();
       await cancelAllAiRuns();
       await leaveOnlineWorkspace(true);
       await shutdownAgentRuntime();

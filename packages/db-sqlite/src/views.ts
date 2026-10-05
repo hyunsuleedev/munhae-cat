@@ -1,3 +1,5 @@
+import type { TranslationNote } from "./translation-notes.ts";
+import type { ProjectTermListItem } from "./term-review.ts";
 export type AgentProbe = {
   agentId: "codex" | "claude" | "antigravity";
   displayName: string;
@@ -91,7 +93,6 @@ export type DocumentListItem = {
   sourceState: VersionUiState;
   punctuationState: VersionUiState;
   translationState: VersionUiState;
-  uncertaintyCount: number;
   contextCount: number;
 };
 
@@ -105,8 +106,17 @@ export type HomeView = {
     translationConfirmed: number;
     total: number;
   };
-  uncertainties: Array<{ id: string; label: string; category: string; locator: string }>;
   recent: Array<{ title: string; summary: string; when: string; tag: string }>;
+  /** One entry per source unit. */
+  activity: Array<{
+    documentId: string;
+    translationVersion: number | null;
+    /** Latest source, punctuation, translation, or review comment change. */
+    lastActivityAt: string | null;
+    commentCount: number;
+    /** Newest first, at most two. */
+    recentComments: Array<{ id: string; quote: string; bodyMd: string; updatedAt: string }>;
+  }>;
   agents: AgentProbe[];
 };
 
@@ -150,6 +160,24 @@ export type MoveDocumentInput = {
   parentId: string;
   beforeDocumentNodeId: string | null;
   expectedLockVersion: number;
+};
+
+/** What deleting a node hides: the node and its descendants, and what is attached only to them. */
+export type DocumentDeletionView = {
+  documentNodeId: string;
+  /** The node first, then every descendant. */
+  documentIds: string[];
+  /** Project terms confirmed only in these documents. */
+  termCount: number;
+  commentCount: number;
+  lockVersion: number;
+};
+
+export type DeleteDocumentInput = {
+  documentNodeId: string;
+  expectedLockVersion: number;
+  /** Also delete the terms used only in these documents and the documents' review comments. */
+  removeTermsAndComments: boolean;
 };
 
 export type UpdateDocumentMetadataInput = {
@@ -256,6 +284,8 @@ export type EditorView = {
     isCurrentDependencies: boolean;
     lockVersion: number;
     blocks: TranslationBlockView[];
+    /** Footnotes of this exact version, numbered by position; unplaced notes come last. */
+    notes?: TranslationNote[];
   } | null;
   chat: Array<{
     role: "user" | "assistant";
@@ -355,92 +385,6 @@ export type SplitBlockInput = {
   expectedLockVersion: number;
 };
 
-export type GlossaryEntryView = {
-  id: string;
-  contentHash: string;
-  lockVersion: number;
-  sourceTerm: string;
-  targetTerm: string;
-  targetLocale: string;
-  termKind: string;
-  reading: string | null;
-  noteMd: string | null;
-  usageStatus: "preferred" | "allowed" | "forbidden";
-};
-
-export type UpsertGlossaryInput = Omit<GlossaryEntryView, "id" | "contentHash" | "lockVersion"> & {
-  id?: string;
-  expectedLockVersion?: number;
-};
-
-export type UncertaintyView = {
-  id: string;
-  versionId: string;
-  versionNo: number;
-  category: "textual" | "interpretive" | "identification";
-  severity: string;
-  blocking: boolean;
-  state: "open" | "resolved";
-  statementMd: string;
-  rationaleMd: string | null;
-  confidenceLabel: string | null;
-  options: Array<{
-    id: string;
-    label: string;
-    interpretationMd: string | null;
-    ordinal: number;
-  }>;
-  anchors: Array<{
-    id: string;
-    targetKind:
-      | "document_node"
-      | "source_text_version"
-      | "punctuation_version"
-      | "translation_anchor"
-      | "document_translation"
-      | "document_translation_version";
-    targetVersionId: string;
-    codepointFrom: number | null;
-    codepointTo: number | null;
-    quote: string | null;
-  }>;
-  locator: string;
-};
-
-export type UncertaintyOptionInput = {
-  label: string;
-  interpretationMd?: string | null;
-};
-
-export type UncertaintyAnchorInput = {
-  targetKind: UncertaintyView["anchors"][number]["targetKind"];
-  targetVersionId: string;
-  codepointFrom?: number | null;
-  codepointTo?: number | null;
-  quote?: string | null;
-};
-
-export type CreateUncertaintyInput = {
-  category: UncertaintyView["category"];
-  severity: string;
-  blocking: boolean;
-  statementMd: string;
-  rationaleMd?: string | null;
-  confidenceLabel?: string | null;
-  options: UncertaintyOptionInput[];
-  anchors: UncertaintyAnchorInput[];
-};
-
-export type CreateUncertaintyVersionInput = CreateUncertaintyInput & {
-  uncertaintyId: string;
-  expectedVersionId: string;
-};
-
-export type ResolveUncertaintyInput = {
-  uncertaintyId: string;
-  expectedVersionId: string;
-};
-
 export type NodeContextView = {
   id: string;
   source: "context_item" | "document_description" | "comment_reference";
@@ -533,8 +477,8 @@ export type SetContextItemEnabledInput = ContextItemCasInput & { enabled: boolea
 export type SetContextItemPriorityInput = ContextItemCasInput & { priority: number };
 
 export type KnowledgeView = {
-  glossary: GlossaryEntryView[];
-  uncertainties: UncertaintyView[];
+  /** Project terms, each confirmed in at least one document. */
+  terms: ProjectTermListItem[];
   contextItems: NodeContextView[];
 };
 

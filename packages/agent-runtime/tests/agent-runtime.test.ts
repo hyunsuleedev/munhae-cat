@@ -30,6 +30,7 @@ type FakeBehavior =
   | "hang"
   | "tool"
   | "credential-output"
+  | "flag-values"
   | "malformed"
   | "invalid-envelope"
   | "no-effort"
@@ -222,7 +223,7 @@ if (${JSON.stringify(behavior)} === "hang") {
       { type: "result", is_error: false, result: "tool finished 1", usage: {} },
     ].forEach((record) => process.stdout.write(line(record)));
   }
-} else if (${JSON.stringify(behavior)} === "credential-output") {
+} else if (${JSON.stringify(behavior)} === "credential-output" || ${JSON.stringify(behavior)} === "flag-values") {
   const credentialKeys = ["COOKIE", "DATABASE_URL", "GITHUB_PAT", "SESSION", "DSN", "SHORT_SECRET"];
   const values = [
     ...credentialKeys.map((key) => process.env[key] || ""),
@@ -231,7 +232,9 @@ if (${JSON.stringify(behavior)} === "hang") {
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([, value]) => value || ""),
   ].filter(Boolean);
-  const output = "credentials=" + values.join("|");
+  const output = ${JSON.stringify(behavior)} === "flag-values"
+    ? "이혼(李混, ?~1312) true 3000 " + (process.env.SHORT_SECRET || "")
+    : "credentials=" + values.join("|");
   if (${JSON.stringify(agentId)} === "codex") {
     [
       { type: "thread.started", thread_id: "thread-credential-output" },
@@ -1015,6 +1018,22 @@ describe("strict JSONL parsers", () => {
 });
 
 describe("fake CLI integration", () => {
+  it.each(["codex", "claude"] as const)(
+    "keeps flag-like values such as SESSION_ATTENDED=1 in %s output while still redacting short secrets",
+    async (agentId) => {
+      const fake = await makeFakeCli(agentId, "flag-values");
+      // A Claude Code terminal sets CLAUDE_CODE_SESSION_ATTENDED=1; redacting it turned every "1" in answers into [REDACTED].
+      const env = { ...process.env, CLAUDE_CODE_SESSION_ATTENDED: "1", CLAUDE_CODE_CHILD_SESSION: "1", CI_TOKEN: "true", PORT_SECRET: "3000", SHORT_SECRET: "tiny7" };
+      const adapter = agentId === "codex"
+        ? createCodexAdapter({ binary: fake.binary, tempRoot: suiteDir, env })
+        : createClaudeAdapter({ binary: fake.binary, tempRoot: suiteDir, env });
+      const result = await adapter.run({ runId: `${agentId}-flag-values`, prompt: "Return the flag fixture." }, () => undefined);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.outputText).toBe("이혼(李混, ?~1312) true 3000 [REDACTED]");
+    },
+  );
+
   it.each(["codex", "claude"] as const)(
     "redacts every inherited credential value from %s output without a count or length gap",
     async (agentId) => {

@@ -246,6 +246,11 @@ export const getAgentLoginInstruction = async (agentId: AgentId): Promise<AgentL
     detail: instruction.detail,
   };
 };
+/** Main-only: the resolved CLI path, used to run `<cli> mcp add`. Never sent to the renderer. */
+export const resolveAgentExecutable = async (agentId: AgentId): Promise<string | null> => {
+  const instruction = await agentRuntime.beginLogin(agentId);
+  return instruction.available ? instruction.command : null;
+};
 export const runAgentRuntime = (
   agentId: AgentId,
   request: AgentRunRequest,

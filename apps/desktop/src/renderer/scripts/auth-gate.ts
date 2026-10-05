@@ -1,6 +1,6 @@
 import type { AccountState, MunhaeApi } from "../../shared/munhae-api";
 
-const PAGES = new Set(["index.html", "home.html", "editor.html", "context.html", "knowledge.html", "glossary.html", "comments.html", "uncertainty.html", "settings.html", "community.html"]);
+const PAGES = new Set(["index.html", "home.html", "editor.html", "context.html", "knowledge.html", "glossary.html", "comments.html", "settings.html", "community.html"]);
 const SETTINGS_SECTIONS = new Set(["account", "models", "plugins", "skills", "general"]);
 
 /** Only app-owned relative pages can be used after sign-in, including file:// builds. */

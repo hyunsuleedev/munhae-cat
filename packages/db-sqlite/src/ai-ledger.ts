@@ -549,7 +549,7 @@ export function storeTranslationResponse(
     }
     const response = insertArtifact(db, projectId, "llm_response", input.rawResponse, {
       payloadJson,
-      schemaName: message.output_contract === "translation-text.v1" ? "translation-text" : message.output_contract === "translation-alignment.v1" ? "translation-alignment" : "translation-envelope",
+      schemaName: message.output_contract?.startsWith("translation-text.") ? "translation-text" : message.output_contract === "translation-alignment.v1" ? "translation-alignment" : "translation-envelope",
       schemaVersion: message.output_contract === "translation-text.v1" || message.output_contract === "translation-alignment.v1" ? 1 : 2,
     });
     const events = input.eventsJsonl

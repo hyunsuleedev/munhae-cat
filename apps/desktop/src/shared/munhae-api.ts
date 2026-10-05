@@ -1,7 +1,7 @@
 import type { ProjectSharing, ProjectInvitation, InviteProjectMemberInput, UpdateProjectMemberInput } from "./online-projects";
 import type { ReadingAnalysisApi } from "./reading-analysis-types";
 export type { ReadingAnalysisInput, ReadingAnalysisRun, ReadingAnalysisSuggestion, ApplyReadingAnalysisInput } from "./reading-analysis-types";
-import type { TermGlossarySelection } from "./term-glossary";
+import type { TermReference, TermReferenceSelection } from "./term-references";
 import type { BillingStatus } from "./billing";
 export type { BillingStatus } from "./billing";
 import type { CommunityComment, CommunityFeed, CommunityPost, CommunityPostInput, CommunityReport, CommunityThread } from "./community";
@@ -17,17 +17,24 @@ export type { ReadingAnnotationCasInput, ReadingAnnotationView, ReadingCitation,
 import type { MaterialOrigin, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
 export type { MaterialOrigin, MaterialCommentView, MaterialPreferenceView, ResolvedMaterialView, MaterialsView, SetMaterialPreferenceInput, ReuseCommentAsMaterialInput } from "@munhae/db-sqlite";
 
-import type { TermEntry, SaveTermInput } from "@munhae/db-sqlite";
-import type { TranslationSkill } from "@munhae/db-sqlite";
+import type { ConfirmTermInput, DocumentTerm, DocumentTermsView, ProjectTerm, ProjectTermListItem, TermSentencePage, UpdateDocumentTermInput, UpdateTermInput } from "@munhae/db-sqlite";
+import type { CreateTranslationNoteInput, DeleteTranslationNoteInput, TranslationNote, TranslationSkill, UpdateTranslationNoteInput } from "@munhae/db-sqlite";
 import type { OnlineProject, CreateOnlineProjectInput, OnlineWorkspaceStatus, OpenOnlineProjectInput, ProjectChangeEvent } from "./online-projects";
 export type { OnlineProject, CreateOnlineProjectInput, OnlineWorkspaceStatus, OpenOnlineProjectInput, ProjectChangeEvent } from "./online-projects";
-export type { TermEntry, TermContent, SaveTermInput } from "@munhae/db-sqlite";
-export type TermExtractionRun = { startedAt?: string; completedAt?: string | null; id: string; documentId: string; state: "running" | "completed" | "failed" | "canceled"; count: number; activity: ChatActivityBlock[]; error: { code: string; message: string } | null };
+export type { ConfirmTermInput, DocumentTerm, DocumentTermsView, ProjectTerm, ProjectTermListItem, ProjectTermUse, TermBasis, TermCandidate, TermConfidence, TermContent, TermEvidence, TermKind, TermRange, TermSentence, TermSentencePage, UpdateDocumentTermInput, UpdateTermInput } from "@munhae/db-sqlite";
+export type { TermReference, TermReferenceSelection } from "./term-references";
+export type TermExtractionRun = { startedAt?: string; completedAt?: string | null; id: string; documentId: string; state: "running" | "completed" | "failed" | "canceled"; count: number; skipped: string[]; activity: ChatActivityBlock[]; error: { code: string; message: string } | null };
 export const IPC_CHANNELS = {
-  termsList: "munhae:terms:list",
-  termsSave: "munhae:terms:save",
+  termsDocument: "munhae:terms:document",
+  termsProject: "munhae:terms:project",
+  termsSentences: "munhae:terms:sentences",
+  termsReferences: "munhae:terms:references",
+  termsConfirm: "munhae:terms:confirm",
+  termsDismiss: "munhae:terms:dismiss",
+  termsUpdate: "munhae:terms:update",
+  termsUpdateUse: "munhae:terms:updateUse",
   termsDelete: "munhae:terms:delete",
-  termsPromote: "munhae:terms:promote",
+  termsDeleteProjectTerms: "munhae:terms:deleteProjectTerms",
   termsStart: "munhae:terms:start",
   termsGetRun: "munhae:terms:getRun",
   termsLatestRun: "munhae:terms:latestRun",
@@ -99,6 +106,7 @@ export const IPC_CHANNELS = {
   projectSearch: "munhae:project:search",
   projectConcordance: "munhae:project:concordance",
   projectExportReview: "munhae:project:exportReview",
+  projectExportTranslation: "munhae:project:exportTranslation",
   projectCreateFromPaste: "munhae:project:createFromPaste",
   projectSeedDemo: "munhae:project:seedDemo",
 
@@ -107,6 +115,8 @@ export const IPC_CHANNELS = {
   documentPickText: "munhae:document:pickText",
   documentGetMetadata: "munhae:document:getMetadata",
   documentMove: "munhae:document:move",
+  documentGetDeletion: "munhae:document:getDeletion",
+  documentDelete: "munhae:document:delete",
   documentUpdateMetadata: "munhae:document:updateMetadata",
 
   editorGet: "munhae:editor:get",
@@ -129,6 +139,9 @@ export const IPC_CHANNELS = {
   editorCreateReviewComment: "munhae:editor:createReviewComment",
   editorUpdateReviewComment: "munhae:editor:updateReviewComment",
   editorArchiveReviewComment: "munhae:editor:archiveReviewComment",
+  editorCreateTranslationNote: "munhae:editor:createTranslationNote",
+  editorDeleteTranslationNote: "munhae:editor:deleteTranslationNote",
+  editorUpdateTranslationNote: "munhae:editor:updateTranslationNote",
   editorListReadingAnnotations: "munhae:editor:listReadingAnnotations",
   editorSaveReadingAnnotation: "munhae:editor:saveReadingAnnotation",
   editorArchiveReadingAnnotation: "munhae:editor:archiveReadingAnnotation",
@@ -140,15 +153,11 @@ export const IPC_CHANNELS = {
   knowledgeGetMaterials: "munhae:knowledge:getMaterials",
   knowledgeSetMaterialPreference: "munhae:knowledge:setMaterialPreference",
   knowledgeReuseCommentAsMaterial: "munhae:knowledge:reuseCommentAsMaterial",
-  knowledgeUpsertGlossary: "munhae:knowledge:upsertGlossary",
   knowledgeCreateContext: "munhae:knowledge:createContext",
   knowledgeUpdateContext: "munhae:knowledge:updateContext",
   knowledgeSetContextEnabled: "munhae:knowledge:setContextEnabled",
   knowledgeSetContextPriority: "munhae:knowledge:setContextPriority",
   knowledgeDeleteContext: "munhae:knowledge:deleteContext",
-  knowledgeCreateUncertainty: "munhae:knowledge:createUncertainty",
-  knowledgeVersionUncertainty: "munhae:knowledge:versionUncertainty",
-  knowledgeResolveUncertainty: "munhae:knowledge:resolveUncertainty",
 
   contextPreview: "munhae:context:preview",
   pluginsList: "munhae:plugins:list",
@@ -157,6 +166,13 @@ export const IPC_CHANNELS = {
   pluginsApply: "munhae:plugins:apply",
   pluginsCatalog: "munhae:plugins:catalog",
   pluginsInstallCatalog: "munhae:plugins:installCatalog",
+  mcpStatus: "munhae:mcp:status",
+  mcpConnect: "munhae:mcp:connect",
+  mcpDisconnect: "munhae:mcp:disconnect",
+  mcpUndo: "munhae:mcp:undo",
+  mcpList: "munhae:mcp:list",
+  mcpReportEditing: "munhae:mcp:reportEditing",
+  mcpChanged: "munhae:mcp:changed",
   researchSearchFootnotes: "munhae:research:searchFootnotes",
   researchStartMaterialRefinement: "munhae:research:startMaterialRefinement",
   researchGetMaterialRefinement: "munhae:research:getMaterialRefinement",
@@ -288,7 +304,6 @@ export type DocumentListItem = {
   sourceState: VersionUiState;
   punctuationState: VersionUiState;
   translationState: VersionUiState;
-  uncertaintyCount: number;
   contextCount: number;
 };
 
@@ -296,8 +311,17 @@ export type HomeView = {
   project: ProjectSummary;
   documents: DocumentListItem[];
   progress: { sourceConfirmed: number; punctuationConfirmed: number; translationDraft: number; translationConfirmed: number; total: number };
-  uncertainties: Array<{ id: string; label: string; category: string; locator: string }>;
   recent: Array<{ title: string; summary: string; when: string; tag: string }>;
+  /** One entry per source unit. */
+  activity: Array<{
+    documentId: string;
+    translationVersion: number | null;
+    /** Latest source, punctuation, translation, or review comment change. */
+    lastActivityAt: string | null;
+    commentCount: number;
+    /** Newest first, at most two. */
+    recentComments: Array<{ id: string; quote: string; bodyMd: string; updatedAt: string }>;
+  }>;
   agents: AgentProbe[];
 };
 
@@ -341,6 +365,24 @@ export type MoveDocumentInput = {
   parentId: string;
   beforeDocumentNodeId: string | null;
   expectedLockVersion: number;
+};
+
+/** What deleting a node hides: the node and its descendants, and what is attached only to them. */
+export type DocumentDeletionView = {
+  documentNodeId: string;
+  /** The node first, then every descendant. */
+  documentIds: string[];
+  /** Project terms confirmed only in these documents. */
+  termCount: number;
+  commentCount: number;
+  lockVersion: number;
+};
+
+export type DeleteDocumentInput = {
+  documentNodeId: string;
+  expectedLockVersion: number;
+  /** Also delete the terms used only in these documents and the documents' review comments. */
+  removeTermsAndComments: boolean;
 };
 
 export type UpdateDocumentMetadataInput = {
@@ -423,6 +465,9 @@ export type ConcordanceResult = { id: string; documentNodeId: string; documentTi
 export type ConcordanceView = { query: string; scope: "all" | "source" | "translation"; state: "current" | "confirmed"; results: ConcordanceResult[]; hasMore: boolean };
 export type ReviewExportInput = { format: "html" | "markdown"; state: "current" | "confirmed"; documentNodeId?: string | null; includeComments?: boolean };
 export type ReviewExportSaveResult = { filePath: string; format: "html" | "markdown"; documentCount: number };
+export type TranslationExportFormat = "docx" | "pdf" | "txt" | "markdown";
+export type TranslationExportInput = { format: TranslationExportFormat; layout: "translation" | "bilingual"; state: "current" | "confirmed"; documentNodeId?: string | null };
+export type TranslationExportSaveResult = { filePath: string; format: TranslationExportFormat; documentCount: number };
 
 export type EditorView = {
   project: ProjectSummary;
@@ -480,6 +525,8 @@ export type EditorView = {
     isCurrentDependencies: boolean;
     lockVersion: number;
     blocks: TranslationBlockView[];
+    /** Footnotes of this exact version, numbered by position; unplaced notes come last. */
+    notes?: TranslationNote[];
   } | null;
   chat: Array<{
     role: "user" | "assistant";
@@ -596,81 +643,6 @@ export type SplitBlockInput = {
   expectedLockVersion: number;
 };
 
-export type GlossaryEntryView = {
-  id: string;
-  contentHash: string;
-  lockVersion: number;
-  sourceTerm: string;
-  targetTerm: string;
-  targetLocale: string;
-  termKind: string;
-  reading: string | null;
-  noteMd: string | null;
-  usageStatus: "preferred" | "allowed" | "forbidden";
-};
-
-export type UpsertGlossaryInput = Omit<GlossaryEntryView, "id" | "contentHash" | "lockVersion"> & {
-  id?: string;
-  expectedLockVersion?: number;
-};
-
-export type UncertaintyView = {
-  id: string;
-  versionId: string;
-  versionNo: number;
-  category: "textual" | "interpretive" | "identification";
-  severity: string;
-  blocking: boolean;
-  state: "open" | "resolved";
-  statementMd: string;
-  rationaleMd: string | null;
-  confidenceLabel: string | null;
-  options: Array<{ id: string; label: string; interpretationMd: string | null; ordinal: number }>;
-  anchors: Array<{
-    id: string;
-    targetKind: UncertaintyAnchorInput["targetKind"];
-    targetVersionId: string;
-    codepointFrom: number | null;
-    codepointTo: number | null;
-    quote: string | null;
-  }>;
-  locator: string;
-};
-
-export type UncertaintyOptionInput = { label: string; interpretationMd?: string | null };
-
-export type UncertaintyAnchorInput = {
-  targetKind:
-    | "document_node"
-    | "source_text_version"
-    | "punctuation_version"
-    | "translation_anchor"
-    | "document_translation"
-    | "document_translation_version";
-  targetVersionId: string;
-  codepointFrom?: number | null;
-  codepointTo?: number | null;
-  quote?: string | null;
-};
-
-export type CreateUncertaintyInput = {
-  category: UncertaintyView["category"];
-  severity: string;
-  blocking: boolean;
-  statementMd: string;
-  rationaleMd?: string | null;
-  confidenceLabel?: string | null;
-  options: UncertaintyOptionInput[];
-  anchors: UncertaintyAnchorInput[];
-};
-
-export type CreateUncertaintyVersionInput = CreateUncertaintyInput & {
-  uncertaintyId: string;
-  expectedVersionId: string;
-};
-
-export type ResolveUncertaintyInput = { uncertaintyId: string; expectedVersionId: string };
-
 export type NodeContextView = {
   inheritToChildren?: boolean;
   conditionMd?: string;
@@ -704,12 +676,11 @@ export type SetContextItemEnabledInput = ContextItemCasInput & { enabled: boolea
 export type SetContextItemPriorityInput = ContextItemCasInput & { priority: number };
 
 export type KnowledgeView = {
-  glossary: GlossaryEntryView[];
-  uncertainties: UncertaintyView[];
+  terms: ProjectTermListItem[];
   contextItems: NodeContextView[];
 };
 
-export type { TranslationSkill };
+export type { CreateTranslationNoteInput, DeleteTranslationNoteInput, TranslationNote, TranslationSkill, UpdateTranslationNoteInput };
 /** A SKILL.md kept in the app's plugin library on this device. */
 export type InstalledPlugin = TranslationSkill & { installedAt: string };
 export type PluginsView = {
@@ -718,6 +689,28 @@ export type PluginsView = {
   applied: TranslationSkill | null;
   projectOpen: boolean;
 };
+
+export type McpClientId = "claude" | "codex" | "antigravity";
+/** The in-app MCP server and the AI tools that launch its relay command. */
+export type McpStatusView = {
+  server: { state: "running" | "port_in_use" | "failed" | "stopped"; url: string };
+  /** Relay command registered in each AI tool's settings. */
+  command: string;
+  sessions: Array<{ label: string; lastSeenAt: string }>;
+  clients: Array<{ id: McpClientId; label: string; installed: boolean; connected: boolean; detail: string | null }>;
+};
+/** One edit an AI tool made through MCP, kept only until the app quits. */
+export type McpChangeView = {
+  id: string;
+  projectId: string;
+  documentId: string;
+  label: string;
+  summary: string;
+  createdAt: string;
+  undoneAt: string | null;
+};
+/** Sent to every page after an MCP edit or its undo, so open screens reload what changed. */
+export type McpChangeEvent = { change: McpChangeView; documentIds: string[]; scopes: string[] };
 
 export type ContextPreview = {
   characterCount: number;
@@ -924,7 +917,7 @@ export type ExportSaveResult = {
   manifestHash: string;
 };
 
-export type SearchEntityType = "glossary";
+export type SearchEntityType = "term";
 export type SearchEntityFilterInput = {
   entityType: SearchEntityType;
   entityId: string;
@@ -1145,6 +1138,7 @@ export type MunhaeApi = {
     backup(): Promise<IpcResult<string | null>>;
     concordance(input: ConcordanceInput): Promise<IpcResult<ConcordanceView>>;
     exportReview(input: ReviewExportInput): Promise<IpcResult<ReviewExportSaveResult | null>>;
+    exportTranslation(input: TranslationExportInput): Promise<IpcResult<TranslationExportSaveResult | null>>;
     exportConfirmed(input: ConfirmedExportInput): Promise<IpcResult<ExportSaveResult | null>>;
     search(input: SearchQueryInput): Promise<IpcResult<SearchView>>;
     createFromPaste(input: CreateFromPasteInput): Promise<IpcResult<ProjectSummary>>;
@@ -1156,6 +1150,8 @@ export type MunhaeApi = {
     pickTextFile(): Promise<IpcResult<string | null>>;
     getDocumentMetadata(documentNodeId: string): Promise<IpcResult<DocumentMetadataView>>;
     moveDocument(input: MoveDocumentInput): Promise<IpcResult<DocumentMetadataView>>;
+    getDocumentDeletion(documentNodeId: string): Promise<IpcResult<DocumentDeletionView>>;
+    deleteDocument(input: DeleteDocumentInput): Promise<IpcResult<void>>;
     updateDocumentMetadata(input: UpdateDocumentMetadataInput): Promise<IpcResult<DocumentMetadataView>>;
   };
   editor: {
@@ -1179,6 +1175,9 @@ export type MunhaeApi = {
     createReviewComment(input: CreateReviewCommentInput): Promise<IpcResult<ReviewCommentView>>;
     updateReviewComment(input: UpdateReviewCommentInput): Promise<IpcResult<ReviewCommentView>>;
     archiveReviewComment(input: ArchiveReviewCommentInput): Promise<IpcResult<void>>;
+    createTranslationNote(input: CreateTranslationNoteInput): Promise<IpcResult<TranslationNote[]>>;
+    deleteTranslationNote(input: DeleteTranslationNoteInput): Promise<IpcResult<TranslationNote[]>>;
+    updateTranslationNote(input: UpdateTranslationNoteInput): Promise<IpcResult<TranslationNote[]>>;
     listReadingAnnotations(documentNodeId: string): Promise<IpcResult<ReadingAnnotationView[]>>;
     saveReadingAnnotation(input: SaveReadingAnnotationInput): Promise<IpcResult<ReadingAnnotationView>>;
     archiveReadingAnnotation(input: ReadingAnnotationCasInput): Promise<IpcResult<void>>;
@@ -1187,11 +1186,19 @@ export type MunhaeApi = {
     openReference(documentNodeId: string, assetId: string): Promise<IpcResult<void>>;
   };
   terms: {
-    list(documentId?: string): Promise<IpcResult<TermEntry[]>>;
+    document(documentId: string): Promise<IpcResult<DocumentTermsView>>;
+    project(): Promise<IpcResult<ProjectTermListItem[]>>;
+    /** The sentences holding one term, keyed by document id: a preview of the first documents, or all of one document's. */
+    sentences(termId: string, documentId?: string): Promise<IpcResult<Record<string, TermSentencePage>>>;
+    references(documentId: string): Promise<IpcResult<TermReference[]>>;
+    confirm(input: ConfirmTermInput): Promise<IpcResult<DocumentTerm>>;
+    dismiss(input: { id: string }): Promise<IpcResult<void>>;
+    update(input: UpdateTermInput): Promise<IpcResult<ProjectTerm>>;
+    updateUse(input: UpdateDocumentTermInput): Promise<IpcResult<DocumentTerm>>;
     delete(input: { id: string; expectedLockVersion: number }): Promise<IpcResult<void>>;
-    save(input: SaveTermInput): Promise<IpcResult<TermEntry>>;
-    promote(input: SaveTermInput): Promise<IpcResult<TermEntry>>;
-    start(documentId: string, excludedMaterialIds?: string[], glossarySelection?: TermGlossarySelection): Promise<IpcResult<TermExtractionRun>>;
+    /** Removes terms from the whole project, with every document's confirmed use of them; all or none. */
+    deleteProjectTerms(input: { terms: Array<{ id: string; expectedLockVersion: number }> }): Promise<IpcResult<void>>;
+    start(documentId: string, excludedMaterialIds?: string[], referenceSelection?: TermReferenceSelection): Promise<IpcResult<TermExtractionRun>>;
     getRun(id: string): Promise<IpcResult<TermExtractionRun>>;
     latestRun(documentId: string): Promise<IpcResult<TermExtractionRun | null>>;
     cancel(id: string): Promise<IpcResult<TermExtractionRun>>;
@@ -1201,15 +1208,11 @@ export type MunhaeApi = {
     setMaterialPreference(input: SetMaterialPreferenceInput): Promise<IpcResult<void>>;
     reuseCommentAsMaterial(input: ReuseCommentAsMaterialInput): Promise<IpcResult<NodeContextView>>;
     get(): Promise<IpcResult<KnowledgeView>>;
-    upsertGlossary(entry: UpsertGlossaryInput): Promise<IpcResult<GlossaryEntryView>>;
     createContext(input: CreateContextItemInput): Promise<IpcResult<NodeContextView>>;
     updateContext(input: UpdateContextItemInput): Promise<IpcResult<NodeContextView>>;
     setContextEnabled(input: SetContextItemEnabledInput): Promise<IpcResult<NodeContextView>>;
     setContextPriority(input: SetContextItemPriorityInput): Promise<IpcResult<NodeContextView>>;
     deleteContext(input: ContextItemCasInput): Promise<IpcResult<void>>;
-    createUncertainty(input: CreateUncertaintyInput): Promise<IpcResult<UncertaintyView>>;
-    versionUncertainty(input: CreateUncertaintyVersionInput): Promise<IpcResult<UncertaintyView>>;
-    resolveUncertainty(input: ResolveUncertaintyInput): Promise<IpcResult<UncertaintyView>>;
   };
   context: {
     preview(input: ContextPreviewInput): Promise<IpcResult<ContextPreview>>;
@@ -1223,6 +1226,17 @@ export type MunhaeApi = {
     /** Recommended plugins published on the Munhae server. */
     catalog(): Promise<IpcResult<TranslationSkill[]>>;
     installCatalog(name: string): Promise<IpcResult<InstalledPlugin>>;
+  };
+  mcp: {
+    status(): Promise<IpcResult<McpStatusView>>;
+    connect(client: McpClientId): Promise<IpcResult<McpStatusView>>;
+    disconnect(client: McpClientId): Promise<IpcResult<McpStatusView>>;
+    undo(changeId: string): Promise<IpcResult<McpChangeView>>;
+    /** This app run's MCP edits in the open project, newest first. */
+    list(): Promise<IpcResult<McpChangeView[]>>;
+    /** The document with unsaved edits in this window, which MCP edits must not overwrite. */
+    reportEditing(documentId: string | null): Promise<IpcResult<void>>;
+    onChanged(handler: (event: McpChangeEvent) => void): () => void;
   };
   research: ReadingAnalysisApi & {
     startMaterialRefinement(input: MaterialRefinementInput): Promise<IpcResult<MaterialRefinementRun>>;

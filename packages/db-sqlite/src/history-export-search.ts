@@ -31,7 +31,7 @@ const {
   translation_anchors: anchors,
   translation_anchor_sets: anchorSets,
   translation_text_layouts: layouts,
-  glossary_entries: glossary,
+  terms: projectTerms,
 } = schema;
 
 export type VersionHistoryKind = "source" | "punctuation" | "translation";
@@ -138,7 +138,7 @@ export type ConfirmedExportPayload = {
 
 export type SearchScope = "all" | "source" | "translation";
 export type SearchState = "current" | "confirmed" | "all";
-export type SearchEntityType = "glossary";
+export type SearchEntityType = "term";
 
 export type SearchEntityFilterInput = {
   entityType: SearchEntityType;
@@ -769,7 +769,7 @@ function resolveSearchEntityFilter(
   input: SearchEntityFilterInput | null | undefined,
 ): ResolvedSearchEntityFilter | null {
   if (!input) return null;
-  if (input.entityType !== "glossary") {
+  if (input.entityType !== "term") {
     throw new MunhaeError("invalid_search", "지식 엔티티 종류가 올바르지 않습니다");
   }
   const entityId = input.entityId.trim();
@@ -777,14 +777,14 @@ function resolveSearchEntityFilter(
     throw new MunhaeError("invalid_search", "지식 엔티티 ID가 올바르지 않습니다");
   }
 
-  const row = orm(db).select({ source_term: glossary.source_term, target_term: glossary.target_term, reading: glossary.reading })
-    .from(glossary).where(and(eq(glossary.id, entityId), eq(glossary.project_id, projectId), isNull(glossary.archived_at))).get();
+  const row = orm(db).select({ source_form: projectTerms.source_form, translation: projectTerms.translation, reading: projectTerms.reading })
+    .from(projectTerms).where(and(eq(projectTerms.id, entityId), eq(projectTerms.project_id, projectId))).get();
   if (!row) throw new MunhaeError("not_found", "이 프로젝트에서 용어 항목을 찾을 수 없습니다");
   return {
     entityType: input.entityType,
     entityId,
-    label: `${row.source_term} → ${row.target_term}`,
-    terms: entityTerms([row.source_term, row.target_term, row.reading]),
+    label: row.translation ? `${row.source_form} → ${row.translation}` : row.source_form,
+    terms: entityTerms([row.source_form, row.translation, row.reading]),
   };
 }
 

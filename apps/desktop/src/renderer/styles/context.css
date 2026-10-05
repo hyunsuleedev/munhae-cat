@@ -76,14 +76,7 @@
 .context-workspace { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .context-workspace > .context-content { flex: 1; min-width: 0; }
 .context-inspector { position: relative; width: var(--context-inspector-width, clamp(280px, 29vw, 430px)); min-width: 0; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); min-height: 0; }
-.context-inspector-resizer { position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; z-index: 5; cursor: col-resize; touch-action: none; }
-.context-inspector-resizer::after { content: ""; position: absolute; inset: 0 3px; }
-.context-inspector-resizer.is-drag::after,
-.context-inspector-resizer:focus-visible::after { background: var(--accent); }
-.context-inspector-resizer:focus-visible { outline: none; }
-@media (hover: hover) and (pointer: fine) { .context-inspector-resizer:hover::after { background: var(--accent); } }
-body.is-resizing-context-inspector,
-body.is-resizing-context-inspector * { cursor: col-resize !important; user-select: none !important; }
+.context-inspector > .inspector-resizer { left: -4px; }
 .context-inspector-tabs { display: flex; padding: 0 14px; border-bottom: 1px solid var(--border); gap: 20px; }
 .context-inspector-tabs button { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: 14px 0 12px; font: 12px var(--font-ui); cursor: pointer; }
 .context-inspector-tabs button[aria-selected=true] { color: var(--fg); border-bottom-color: var(--accent); }

@@ -64,7 +64,7 @@ it("bundles both skills verbatim and versions them", () => {
         "utf8",
       ),
     ).toBe(text);
-    expect(text).toContain(name === "align-translation" ? "version: 1.7.0" : "version: 1.1.0");
+    expect(text).toContain(name === "align-translation" ? "version: 1.7.0" : "version: 1.3.0");
   }
 });
 it("saves consecutive sentence edits as one exact translation and preserves the previous version", () => {
@@ -238,6 +238,17 @@ it("rejects late translation when source or target changed", () => {
     }),
   ).toThrow(/원문이 변경/);
 });
+it("rejects a malformed translation before storing it, naming the broken rule, so a repaired one completes", () => {
+  const { repo, id } = setup();
+  const run = repo.beginFullTextRun({ documentNodeId: id, agentId: "codex", requestedModel: null, reasoningLevel: null, serviceTier: null, runtimeVersion: null });
+  const complete = (payload: unknown) => repo.completeFullTextRun({ messageId: run.messageId, rawResponse: JSON.stringify(payload), eventsJsonl: "", usage: null, resolvedModel: null, runtimeVersion: null });
+  const rejection = (payload: unknown) => { try { complete(payload); } catch (error) { return error; } };
+  expect(rejection({})).toMatchObject({ code: "invalid_submission", message: "schemaVersion은 2여야 합니다" });
+  expect(rejection({ schemaVersion: 2, translation: "번역", note: "메모" })).toMatchObject({ message: "허용된 키만 사용하세요: schemaVersion, translation, footnotes, review, stages" });
+  expect(rejection({ schemaVersion: 2, translation: " " })).toMatchObject({ message: "translation에 완성된 번역 전문을 넣으세요" });
+  expect(repo.getEditor(id).translation).toBeNull();
+  expect(complete({ schemaVersion: 2, translation: "번역" }).version.versionId).toBeTruthy();
+});
 it("records positions without losing whitespace, decimals or supplementary characters", () => {
   const text = "첫 문장 3.14이다.\n\n「다음 문장이다.」 𠀀 끝!";
   const sentences = textSentences(text);
@@ -289,7 +300,7 @@ it("upgrades an actual v1 table without losing legacy history and creates a pre-
     expect(check.pragma("quick_check")).toEqual([{ quick_check: "ok" }]);
     expect(
       check.prepare("SELECT schema_version FROM meta_project_state").get(),
-    ).toEqual({ schema_version: 12 });
+    ).toEqual({ schema_version: 18 });
   } finally {
     check.close();
   }
@@ -971,4 +982,18 @@ it("rejects an unexplained AI unlink atomically, but permits a documented semant
   expect(repo.getEditor(id).translation!.textContent).toBe(text);
   const ended = repo.finishAlignment(versionId, { revision: after.revision, outcome: "needs_review", unresolved: [{ issueId: "target:T2", reason: reason.reason }] });
   expect(ended.state).toBe("needs_review");
+});
+
+it("undoes a confirmation only while the head is as the confirmation left it", () => {
+  const { repo, id } = setup();
+  translate(repo, id);
+  const before = repo.translationHead(id)!;
+  expect(before.confirmedVersionId).toBeNull();
+  repo.confirmTranslation({ documentNodeId: id, expectedLockVersion: repo.getEditor(id).translation!.lockVersion });
+  const after = repo.translationHead(id)!;
+  expect(after.confirmedVersionId).toBe(before.currentVersionId);
+  const undo = { documentNodeId: id, versionId: after.currentVersionId, previousConfirmedVersionId: before.confirmedVersionId, expectedLockVersion: after.lockVersion };
+  expect(repo.unconfirmTranslation(undo).translation?.state).toBe("draft");
+  expect(repo.translationHead(id)).toMatchObject({ confirmedVersionId: null, lockVersion: after.lockVersion + 1 });
+  expect(() => repo.unconfirmTranslation(undo)).toThrow(/이후에 바뀐/);
 });

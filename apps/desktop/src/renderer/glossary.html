@@ -30,33 +30,32 @@
     </header>
 
     <div class="content materials-content">
-      <header class="materials-heading">
-        <div class="materials-title-row">
-          <div class="materials-title-group">
-            <h1 data-i18n="용어집">용어집</h1>
-            <p class="materials-project" id="materialsProject"></p>
+      <div class="split glossary-split" id="split">
+        <div class="glossary-main">
+          <div class="glossary-tools" role="toolbar" aria-label="용어집 도구" data-i18n-aria-label="용어집 도구">
+            <label class="glossary-select-all"><input type="checkbox" class="select-checkbox" id="glossarySelectAll" aria-label="표시된 용어 전체 선택" data-i18n-aria-label="표시된 용어 전체 선택" title="표시된 용어 전체 선택·해제" data-i18n-title="표시된 용어 전체 선택·해제" aria-controls="glossaryList"></label>
+            <label class="glossary-search"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="glossaryQuery" type="search" autocomplete="off" placeholder="용어·독음·뜻풀이·문서 검색" data-i18n-placeholder="용어·독음·뜻풀이·문서 검색" aria-label="용어 검색" data-i18n-aria-label="용어 검색"></label>
+            <div class="glossary-tool-group glossary-selection" id="glossarySelection" hidden><span id="glossarySelectionCount" role="status" aria-live="polite"></span><button class="btn btn-ghost btn-sm glossary-delete" id="glossaryDelete" type="button"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M7 7v3.5M9 7v3.5"/></svg><span data-i18n="삭제">삭제</span></button></div>
+            <div class="glossary-tool-group glossary-kinds" id="glossaryKinds" role="group" aria-label="분류" data-i18n-aria-label="분류"></div>
+            <div class="glossary-tool-group glossary-sort-menu">
+              <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3v10M2.5 10.5 5 13l2.5-2.5M11 13V3M8.5 5.5 11 3l2.5 2.5"/></svg>
+              <select class="glossary-sort" id="glossarySort" aria-label="정렬" data-i18n-aria-label="정렬">
+                <option value="reading" data-i18n="독음순">독음순</option>
+                <option value="kind" data-i18n="분류순">분류순</option>
+                <option value="documents" data-i18n="문서 많은 순">문서 많은 순</option>
+              </select>
+            </div>
+            <div class="glossary-tool-group">
+              <button class="btn btn-ghost btn-sm glossary-type-trigger" type="button" popovertarget="glossaryType" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
+              <div class="glossary-type-settings" id="glossaryType" popover data-reading-type-fields="glossaryType"></div>
+            </div>
           </div>
-          <button class="btn btn-primary" id="btnAdd" type="button" data-od-id="btn-add-entry" data-i18n="용어 추가">용어 추가</button>
-        </div>
-      </header>
-      <div class="scope" id="scopeBar">
-        <input class="input hanmun" id="q" type="search" placeholder="원문·번역 용어 검색" aria-label="원문·번역 용어 검색" style="width:240px" data-i18n-aria-label="원문·번역 용어 검색" data-i18n-placeholder="원문·번역 용어 검색">
-        <select class="select" id="statusSel" aria-label="사용 상태" style="width:auto" data-i18n-aria-label="사용 상태"><option value="" data-i18n="모든 상태">모든 상태</option><option value="preferred" data-i18n="기본">기본</option><option value="allowed" data-i18n="허용">허용</option><option value="forbidden" data-i18n="지양">지양</option></select>
-        <span class="sp"></span>
-        <span class="muted" id="scopeNote" data-i18n="프로젝트 공통 번역 표현 · 원문에 일치하는 용어를 번역할 때 참고합니다">프로젝트 공통 번역 표현 · 원문에 일치하는 용어를 번역할 때 참고합니다</span>
-      </div>
-
-      <div class="split" id="split">
-        <div class="tbl-wrap">
-          <section data-od-id="glossary-table">
-            <div id="scopedGlossary"></div>
-            <table class="tbl"><thead><tr><th data-i18n="원문 용어">원문 용어</th><th data-i18n="번역 용어">번역 용어</th><th data-i18n="사용 기준">사용 기준</th><th data-i18n="메모">메모</th></tr></thead><tbody id="gBody"></tbody></table>
-          </section>
+          <div class="tbl-wrap glossary-list" id="glossaryList" data-od-id="glossary-table"></div>
         </div>
 
         <aside class="insp" id="insp" data-od-id="inspector" aria-label="검사기" data-i18n-aria-label="검사기">
-          <div class="materials-detail-top"><span id="detailMeta" data-i18n="자료를 선택하세요">자료를 선택하세요</span></div>
-          <div id="detail" class="materials-detail"><div class="materials-empty-detail"><span aria-hidden="true">文</span><h2><span data-i18n="배경과 판단을">배경과 판단을</span><br><span data-i18n="번역 곁에.">번역 곁에.</span></h2><p><span data-i18n="항목을 선택하면 내용을 보고 편집할 수 있습니다.">항목을 선택하면 내용을 보고 편집할 수 있습니다.</span></p></div></div>
+          <div class="materials-detail-top" hidden><span id="detailMeta" data-i18n="자료를 선택하세요">자료를 선택하세요</span></div>
+          <div id="detail" class="materials-detail"><div class="materials-empty-detail"><span aria-hidden="true">文</span><h2><span data-i18n="배경과 판단을">배경과 판단을</span><br><span data-i18n="번역 곁에.">번역 곁에.</span></h2><p><span data-i18n="용어를 고르면 뜻풀이와 문서별 쓰임을 볼 수 있습니다.">용어를 고르면 뜻풀이와 문서별 쓰임을 볼 수 있습니다.</span></p></div></div>
         </aside>
       </div>
     </div>
@@ -64,7 +63,7 @@
 
   <footer class="statusbar" data-od-id="statusbar">
     <span class="mono" id="sbPath"></span>
-    <span><span data-i18n="자료 ">자료 </span><b id="sbC">0</b><span data-i18n=" · 용어 "> · 용어 </span><b id="sbG">0</b><span data-i18n=" · 불확실성 열림 "> · 불확실성 열림 </span><b id="sbU">0</b></span>
+    <span><span data-i18n="자료 ">자료 </span><b id="sbC">0</b><span data-i18n=" · 용어 "> · 용어 </span><b id="sbG">0</b></span>
     <span class="sp"></span>
     <span id="sbSel"></span>
     <span id="sbAgent"><i class="dot"></i>AI</span>
@@ -74,13 +73,6 @@
 
 <div class="notif" id="notif" role="status" aria-live="polite"><div class="ai" aria-hidden="true">文</div><div><b id="nTitle" data-i18n="문해">문해</b><span id="nMsg"></span></div></div>
 
-<dialog id="dlgAdd" data-od-id="dialog-add-entry">
-  <form method="dialog" id="addForm">
-    <div class="dl-h" id="addTitle" data-i18n="용어 추가">용어 추가</div>
-    <div class="dl-b" id="addFields"></div>
-    <div class="dl-f"><button class="btn" type="button" id="addCancel" data-i18n="취소">취소</button><button class="btn btn-primary" type="submit" data-i18n="추가">추가</button></div>
-  </form>
-</dialog>
 <dialog id="dlgPalette" class="palette" data-od-id="command-palette">
   <input class="input" id="palIn" placeholder="명령 검색…" data-i18n-placeholder="명령 검색…" aria-label="명령 검색" data-i18n-aria-label="명령 검색">
   <div class="pl-list" id="palList"></div>

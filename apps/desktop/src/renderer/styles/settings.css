@@ -543,3 +543,7 @@
 .music-volume input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .music-volume output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
 .general-card + .general-card { margin-top: 12px; }
+
+.mcp-card .cli-pick {
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+}

@@ -30,6 +30,7 @@
       <div class="tb-r">
         <button class="translation-run-indicator" id="translationRunIndicator" type="button" hidden aria-controls="dlgPrepare" aria-haspopup="dialog" title="진행 화면 열기" data-i18n-title="진행 화면 열기"><span class="translation-run-spinner" aria-hidden="true"></span><span id="translationRunLabel" role="status"></span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="m6 4 4 4-4 4"/></svg></button>
         <button class="tb" id="btnDiff" type="button" title="변경 비교 (⌘D)" data-od-id="btn-diff" hidden data-i18n="변경 비교" data-i18n-title="변경 비교 (⌘D)">변경 비교</button>
+        <button class="tb" id="btnExport" type="button" title="내보내기 (⌘E)" data-od-id="btn-export" data-i18n="내보내기" data-i18n-title="내보내기 (⌘E)">내보내기</button>
         <button class="tb is-on" id="tbCtx" title="문맥·AI 패널 (⌥⌘I)" aria-label="문맥·AI 패널 토글" data-i18n-title="문맥·AI 패널 (⌥⌘I)" data-i18n-aria-label="문맥·AI 패널 토글"></button>
       </div>
     </header>
@@ -77,11 +78,11 @@
             </button>
             <span class="workflow-line" aria-hidden="true">→</span>
             <button class="workflow-step" id="stepPunctuation" type="button" role="tab" data-workspace="punctuation" aria-selected="false" aria-controls="punctuationWorkspace">
-              <span class="workflow-no" aria-hidden="true">02</span><span class="workflow-copy"><span class="workflow-title"><b data-i18n="표점">표점</b><span class="workflow-optional" data-i18n="선택">선택</span><span class="workflow-current" hidden data-i18n="현재">현재</span></span><span class="workflow-description" data-i18n="구두점 · 문단 정리">구두점 · 문단 정리</span></span>
+              <span class="workflow-no" aria-hidden="true">02</span><span class="workflow-copy"><span class="workflow-title"><b data-i18n="표점">표점</b><span class="workflow-optional" data-i18n="선택" data-i18n-role="optional">선택</span><span class="workflow-current" hidden data-i18n="현재">현재</span></span><span class="workflow-description" data-i18n="구두점 · 문단 정리">구두점 · 문단 정리</span></span>
             </button>
             <span class="workflow-line" aria-hidden="true">→</span>
             <button class="workflow-step" id="stepTerms" type="button" role="tab" data-workspace="terms" aria-selected="false" aria-controls="termsWorkspace">
-              <span class="workflow-no" aria-hidden="true">03</span><span class="workflow-copy"><span class="workflow-title"><b>용어</b><span class="workflow-optional">선택</span><span class="workflow-current" hidden>현재</span></span><span class="workflow-description">인물 · 전고 · 뜻풀이</span></span>
+              <span class="workflow-no" aria-hidden="true">03</span><span class="workflow-copy"><span class="workflow-title"><b data-i18n="용어" data-i18n-role="plural">용어</b><span class="workflow-optional" data-i18n="선택" data-i18n-role="optional">선택</span><span class="workflow-current" hidden data-i18n="현재">현재</span></span><span class="workflow-description" data-i18n="인물 · 전고 · 뜻풀이">인물 · 전고 · 뜻풀이</span></span>
             </button>
             <span class="workflow-line" aria-hidden="true">→</span>
             <button hidden class="workflow-step" id="stepSegmentation" type="button" role="tab" data-workspace="segmentation" aria-selected="false" aria-controls="segmentationWorkspace">
@@ -119,7 +120,7 @@
             <span id="legacyTranslationCounts" class="muted"><span data-i18n="블록 ">블록 </span><b id="blockCount" class="mono" style="color:var(--fg)">0</b><span data-i18n=" · 앵커 "> · 앵커 </span><b id="anchorCount" class="mono" style="color:var(--fg)">0</b></span>
           </div>
           <div class="editor-commandbar" role="group" aria-label="번역 편집 도구" data-i18n-aria-label="번역 편집 도구">
-            <div class="editor-select-all" id="sentenceSelectAllControl" hidden><input type="checkbox" class="sentence-select-checkbox" id="selectAllSentences" aria-label="표시된 문장 전체 선택" data-i18n-aria-label="표시된 문장 전체 선택" title="표시된 문장 전체 선택·해제" aria-controls="rows"></div>
+            <div class="editor-select-all" id="sentenceSelectAllControl" hidden><input type="checkbox" class="sentence-select-checkbox select-checkbox" id="selectAllSentences" aria-label="표시된 문장 전체 선택" data-i18n-aria-label="표시된 문장 전체 선택" title="표시된 문장 전체 선택·해제" data-i18n-title="표시된 문장 전체 선택·해제" aria-controls="rows"></div>
             <div class="editor-command-group editor-history" role="group" aria-label="편집 기록" data-i18n-aria-label="편집 기록">
               <button class="btn btn-ghost btn-sm" id="btnEditorUndo" type="button" aria-label="되돌리기" data-i18n-aria-label="되돌리기" title="되돌리기 (⌘Z)" data-i18n-title="되돌리기 (⌘Z)" disabled><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 3-3 3 3 3M2 6h7a3.5 3.5 0 0 1 0 7H7"/></svg></button>
               <button class="btn btn-ghost btn-sm" id="btnEditorRedo" type="button" aria-label="다시 실행" data-i18n-aria-label="다시 실행" title="다시 실행 (⇧⌘Z)" data-i18n-title="다시 실행 (⇧⌘Z)" disabled><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m11 3 3 3-3 3M14 6H7a3.5 3.5 0 0 0 0 7h2"/></svg></button>
@@ -134,7 +135,7 @@
             </div>
             <div class="editor-command-group comparison-tools" hidden>
               <button class="btn btn-ghost btn-sm editor-menu-trigger" id="btnComparisonFilter" type="button" popovertarget="comparisonFilterTools"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M4 8h8M6 12h4"/></svg><span data-i18n="필터 ">필터 </span><span aria-hidden="true">⌄</span></button>
-              <div class="comparison-navigation" role="group" aria-label="문장 이동" data-i18n-aria-label="문장 이동"><button class="btn btn-ghost btn-sm" id="btnPreviousSentence" type="button" aria-label="이전 번역 문장" data-i18n-aria-label="이전 번역 문장" title="이전 번역 문장"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 7 4-4 4 4M8 3v10"/></svg></button><button class="btn btn-ghost btn-sm" id="btnNextSentence" type="button" aria-label="다음 번역 문장" data-i18n-aria-label="다음 번역 문장" title="다음 번역 문장"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 9 4 4 4-4M8 3v10"/></svg></button></div>
+              <div class="comparison-navigation" role="group" aria-label="문장 이동" data-i18n-aria-label="문장 이동"><button class="btn btn-ghost btn-sm" id="btnPreviousSentence" type="button" aria-label="이전 번역 문장" data-i18n-aria-label="이전 번역 문장" title="이전 번역 문장" data-i18n-title="이전 번역 문장"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 7 4-4 4 4M8 3v10"/></svg></button><button class="btn btn-ghost btn-sm" id="btnNextSentence" type="button" aria-label="다음 번역 문장" data-i18n-aria-label="다음 번역 문장" title="다음 번역 문장" data-i18n-title="다음 번역 문장"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 9 4 4 4-4M8 3v10"/></svg></button></div>
             </div>
             <div class="editor-command-group sentence-selection-controls" id="sentenceSelectionControls" hidden>
               <div id="sentenceSelectionActions" class="sentence-selection-actions">
@@ -145,9 +146,9 @@
               <button class="btn btn-ghost btn-sm reading-type-trigger" id="btnTranslationView" type="button" popovertarget="translationViewSettings" aria-expanded="false" aria-controls="translationViewSettings" aria-label="글자 크기와 줄 간격" title="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격" data-i18n-title="글자 크기와 줄 간격"><span aria-hidden="true">가</span><span aria-hidden="true">가</span></button>
               <div class="editor-tool-popover reading-type-settings" id="translationViewSettings" popover aria-label="글자 크기와 줄 간격" data-i18n-aria-label="글자 크기와 줄 간격"><div data-reading-type-fields="translation"></div></div>
             </div>
-            <div class="book-edit-toolbar" id="bookEditToolbar" role="group" hidden aria-label="선택한 번역 묶음 도구"><span class="book-group-position"></span><span class="book-edit-state" role="status"></span><div class="book-edit-actions"><button class="book-edit-button" type="button" data-edit-sentence=""><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg><span data-edit-caption>편집</span></button><span class="book-bookmark-indicator"></span><details class="book-group-menu"><summary aria-label="묶음 작업" title="묶음 작업"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary><div class="book-group-menu-items"></div></details></div></div>
+            <div class="book-edit-toolbar" id="bookEditToolbar" role="group" hidden aria-label="선택한 번역 묶음 도구" data-i18n-aria-label="선택한 번역 묶음 도구"><span class="book-group-position"></span><span class="book-edit-state" role="status"></span><div class="book-edit-actions"><button class="book-edit-button" type="button" data-edit-sentence=""><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg><span data-edit-caption data-i18n="편집">편집</span></button><span class="book-bookmark-indicator"></span><details class="book-group-menu"><summary aria-label="묶음 작업" title="묶음 작업" data-i18n-aria-label="묶음 작업" data-i18n-title="묶음 작업"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary><div class="book-group-menu-items"></div></details></div></div>
             <div class="editor-command-actions" id="translationCommandActions">
-              <button class="btn btn-sm" type="button" id="btnSaveFullTranslation" title="번역 저장 (⌘S)" hidden data-i18n-title="번역 저장 (⌘S)">번역 저장</button>
+              <button class="btn btn-sm" type="button" id="btnSaveFullTranslation" title="번역 저장 (⌘S)" hidden data-i18n-title="번역 저장 (⌘S)" data-i18n="번역 저장">번역 저장</button>
             </div>
             <div class="editor-confirm-actions">
               <button class="btn" id="btnConfirm" type="button" data-od-id="btn-confirm" hidden><span data-i18n="번역안 확정">번역안 확정</span><kbd>⇧⌘↩</kbd></button>
@@ -190,7 +191,7 @@
               </section>
 
               <section class="workspace-panel" id="punctuationWorkspace" role="tabpanel" aria-labelledby="stepPunctuation" hidden>
-                <header class="punctuation-toolbar" aria-label="표점 편집 도구">
+                <header class="punctuation-toolbar" aria-label="표점 편집 도구" data-i18n-aria-label="표점 편집 도구">
                   <div class="punctuation-toolbar-tools" role="group" aria-label="표점 보기 설정" data-i18n-aria-label="표점 보기 설정">
                     <button class="btn btn-ghost btn-sm" id="btnPunctuationCompare" type="button" aria-pressed="true" aria-controls="punctuationSourcePane"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h12v12H2ZM8 2v12"/></svg><span data-i18n="원문 대조">원문 대조</span></button>
                     <div id="punctuationDraftFields" title="글 형식은 표점과 함께 저장됩니다." data-i18n-title="글 형식은 표점과 함께 저장됩니다."><select class="select" id="punctuationMode" aria-label="글 형식" data-i18n-aria-label="글 형식" aria-describedby="documentFormHelp"><option value="prose" data-i18n="산문">산문</option><option value="poetry" data-i18n="운문">운문</option></select><span id="documentFormHelp" hidden data-i18n="글 형식은 표점과 함께 저장됩니다.">글 형식은 표점과 함께 저장됩니다.</span></div>
@@ -265,7 +266,7 @@
                     <button class="btn" id="btnCreateTranslationDraft" type="button" data-i18n="사람 번역 초안 만들기">사람 번역 초안 만들기</button>
                   </span>
                   <button class="btn" id="btnResetTranslationDraft" type="button" hidden data-i18n="현재 원문으로 빈 번역안 만들기">현재 원문으로 빈 번역안 만들기</button>
-                  <button class="btn btn-primary" id="btnPrepare" type="button" title="AI 번역 (⌥⌘K)" data-od-id="btn-ai-translate"><span id="prepareButtonLabel" data-i18n="AI 번역… ">AI 번역… </span><kbd>⌥⌘K</kbd></button>
+                  <button class="btn btn-primary" id="btnPrepare" type="button" title="AI 번역 (⌥⌘K)" data-i18n-title="AI 번역 (⌥⌘K)" data-od-id="btn-ai-translate"><span id="prepareButtonLabel" data-i18n="AI 번역… ">AI 번역… </span><kbd>⌥⌘K</kbd></button>
                 </div>
                 <div class="editor-tool-popover" id="researchTools" popover aria-label="용어·용례 도구" data-i18n-aria-label="용어·용례 도구">
                   <span class="editor-menu-label" data-i18n="자료 찾기">자료 찾기</span>
@@ -274,7 +275,7 @@
                   <button class="btn" id="btnSearchFootnotes" type="button"><span data-i18n="각주 용례 찾기 ">각주 용례 찾기 </span><small data-i18n="한국고전종합DB">한국고전종합DB</small></button>
                   <button class="btn" type="button" id="btnConcordance" data-i18n="내 번역 용례">내 번역 용례</button>
                   <div class="editor-menu-divider"></div>
-                  <button class="btn" type="button" id="btnQuickTerm" data-i18n="용어 등록">용어 등록</button>
+                  <button class="btn" type="button" id="btnQuickTerm" data-i18n="용어 추가">용어 추가</button>
                 </div>
                 <div class="editor-tool-popover" id="reviewTools" popover aria-label="번역 검토 도구" data-i18n-aria-label="번역 검토 도구">
                   <span class="editor-menu-label" data-i18n="번역 검토">번역 검토</span>
@@ -309,11 +310,11 @@
                     </span>
                     <span class="parallel-translation-heading"><span data-i18n="번역">번역</span><small data-i18n="문장별 번역">문장별 번역</small></span>
                   </div>
-                  <div class="comparison-body"><div class="rows" id="rows"></div><div id="comparisonDivider" class="comparison-divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="원문과 번역문 너비 조절" aria-controls="rows" title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원"></div></div><p class="comparison-empty" id="comparisonEmpty" hidden data-i18n="대응을 확인할 문장이 없습니다.">대응을 확인할 문장이 없습니다.</p>
+                  <div class="comparison-body"><div class="rows" id="rows"></div><div id="comparisonDivider" class="comparison-divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="원문과 번역문 너비 조절" data-i18n-aria-label="원문과 번역문 너비 조절" aria-controls="rows" title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원" data-i18n-title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원"></div></div><p class="comparison-empty" id="comparisonEmpty" hidden data-i18n="대응을 확인할 문장이 없습니다.">대응을 확인할 문장이 없습니다.</p>
                 </div>
                 <div class="view folio-sheet" id="viewFull" data-od-id="view-full">
-                  <div class="folio-columns"><span>原文 <small id="folioSourceLabel" data-i18n="원문">원문</small><select id="bookSourceMode" aria-label="서책 대조 원문"><option value="source">원본</option><option value="punctuation">표점 원문</option></select></span><span>譯文 <small data-i18n="번역 전문">번역 전문</small></span></div>
-                  <div class="folio-spread"><div class="folio-source hanmun" id="folioSourceText" lang="zh-Hant"></div><div class="folio-translation"><textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" data-i18n-aria-label="번역 전문" spellcheck="false" hidden></textarea><div id="bookGroups" hidden></div><div class="full-text" id="fullText"></div></div><div id="bookDivider" class="comparison-divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="서책 원문과 번역문 너비 조절" aria-controls="folioSourceText bookGroups fullTranslationInput fullText" title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원"></div></div>
+                  <div class="folio-columns"><span>原文 <small id="folioSourceLabel" data-i18n="원문">원문</small><select id="bookSourceMode" aria-label="서책 대조 원문" data-i18n-aria-label="서책 대조 원문"><option value="source" data-i18n="원본">원본</option><option value="punctuation" data-i18n="표점 원문">표점 원문</option></select></span><span>譯文 <small data-i18n="번역 전문">번역 전문</small></span></div>
+                  <div class="folio-spread"><div class="folio-source hanmun" id="folioSourceText" lang="zh-Hant"></div><div class="folio-translation"><textarea id="fullTranslationInput" class="textarea" aria-label="번역 전문" data-i18n-aria-label="번역 전문" spellcheck="false" hidden></textarea><div id="bookGroups" hidden></div><div id="bookNotes" hidden></div><div class="full-text" id="fullText"></div></div><div id="bookDivider" class="comparison-divider" role="separator" tabindex="0" aria-orientation="vertical" aria-label="서책 원문과 번역문 너비 조절" data-i18n-aria-label="서책 원문과 번역문 너비 조절" aria-controls="folioSourceText bookGroups fullTranslationInput fullText" title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원" data-i18n-title="드래그하여 너비 조절 · 더블클릭하여 기본 비율 복원"></div></div>
                   <p class="folio-caption" data-i18n="문단과 줄바꿈을 그대로 보존합니다. 문장별 대조에서도 같은 번역문을 편집합니다.">문단과 줄바꿈을 그대로 보존합니다. 문장별 대조에서도 같은 번역문을 편집합니다.</p>
                 </div>
                 <div class="view" id="viewReading" data-od-id="view-reading"></div>
@@ -349,8 +350,7 @@
           <div class="rpanel" id="rp-context" role="tabpanel"><div class="pane-scroll">
             <section id="documentMaterials" aria-label="문서별 번역 참고 자료" aria-live="polite" data-i18n-aria-label="문서별 번역 참고 자료"></section>
             <div class="pane-body"><button class="btn btn-sm" id="btnDictionaryContext" type="button" data-i18n="한자·어휘 사전">한자·어휘 사전</button><button class="btn btn-sm" id="btnSearchFootnotesContext" type="button" data-i18n="각주 용례 찾기 · 한국고전종합DB">각주 용례 찾기 · 한국고전종합DB</button></div>
-            <details class="grp" open><summary><span data-i18n="일치한 용어">일치한 용어</span><span class="tail"><a href="glossary.html" data-i18n="용어집 ›">용어집 ›</a></span></summary><div class="grp-b list" id="ctxTerms"></div></details>
-            <details class="grp" open><summary data-i18n="열린 불확실성">열린 불확실성</summary><div class="grp-b list" id="ctxUnc"></div></details>
+            <details class="grp" open><summary><span data-i18n="이 문서 용어">이 문서 용어</span><span class="tail"><a href="glossary.html" data-i18n="용어집 ›">용어집 ›</a></span></summary><div class="grp-b list" id="ctxTerms"></div></details>
             <div class="pane-body"><button class="btn btn-sm" id="btnCtxAll" type="button" style="align-self:flex-start" data-i18n="AI에 보낼 자료 설정…">AI에 보낼 자료 설정…</button></div>
           </div></div>
           <div class="rpanel" id="rp-comments" role="tabpanel" aria-label="검토 코멘트" data-i18n-aria-label="검토 코멘트"><div class="pane-scroll"><div class="pane-body review-panel">
@@ -361,6 +361,7 @@
           </div></div></div>
           <div class="rpanel" id="rp-history" role="tabpanel"><div class="pane-scroll"><div class="pane-body">
             <p class="muted" style="font-size:12px" data-i18n="AI로 가져온 번역과 사용자 수정은 이전 내용을 덮어쓰지 않고 새 version으로 보존됩니다.">AI로 가져온 번역과 사용자 수정은 이전 내용을 덮어쓰지 않고 새 version으로 보존됩니다.</p>
+            <div id="mcpChanges" class="mcp-changes" hidden></div>
             <div id="histList"></div>
           </div></div></div>
         </aside>
@@ -391,6 +392,22 @@
     <p class="muted" data-i18n="질문이나 아직 확정하지 않은 해석은 그 상태를 함께 적어주세요.">질문이나 아직 확정하지 않은 해석은 그 상태를 함께 적어주세요.</p>
     <p id="reviewCommentError" class="review-error" role="alert"></p>
     <div class="review-dialog-actions"><button id="reviewCommentCancel" class="btn" type="button" data-i18n="취소">취소</button><button id="reviewCommentSave" class="btn btn-primary" type="submit" data-i18n="코멘트 저장">코멘트 저장</button></div>
+  </form>
+</dialog>
+<dialog id="dlgTranslationNote" class="dlg review-comment-dialog translation-note-dialog" aria-labelledby="translationNoteHeading">
+  <form id="translationNoteForm">
+    <h2 id="translationNoteHeading" data-i18n="각주 달기">각주 달기</h2>
+    <blockquote id="translationNoteQuote"></blockquote>
+    <div class="translation-note-fields">
+      <label><span data-i18n="종류">종류</span><select id="translationNoteKind" class="select"><option value="allusion" data-i18n="전고">전고</option><option value="identification" data-i18n="비정">비정</option><option value="textual" data-i18n="교감">교감</option><option value="interpretive" data-i18n="해석">해석</option></select></label>
+      <label><span data-i18n="확신도">확신도</span><select id="translationNoteConfidence" class="select"><option value="certain" data-i18n="확정">확정</option><option value="probable" data-i18n="유력">유력</option><option value="unknown" data-i18n="미상">미상</option></select></label>
+    </div>
+    <label for="translationNoteBody" data-i18n="내용">내용</label>
+    <textarea id="translationNoteBody" class="textarea" required maxlength="2000" rows="4"></textarea>
+    <label for="translationNoteAlternative" data-i18n="대안 독법 (선택, 여러 개는 / 로 구분)">대안 독법 (선택, 여러 개는 / 로 구분)</label>
+    <input id="translationNoteAlternative" class="input" maxlength="300">
+    <p id="translationNoteError" class="review-error" role="alert"></p>
+    <div class="review-dialog-actions"><button id="translationNoteCancel" class="btn" type="button" data-i18n="취소">취소</button><button id="translationNoteSave" class="btn btn-primary" type="submit" data-i18n="각주 저장">각주 저장</button></div>
   </form>
 </dialog>
 <dialog id="dlgFootnoteSearch" class="footnote-dialog" aria-labelledby="footnoteHeading">

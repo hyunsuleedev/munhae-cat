@@ -27,7 +27,7 @@ export function configureSentenceSelection() {
       if (!box && enabled) {
         box = document.createElement("input");
         box.type = "checkbox";
-        box.className = "sentence-select-checkbox";
+        box.className = "sentence-select-checkbox select-checkbox";
         row.querySelector(".sentence-selection-cell")?.append(box);
       }
       if (box) {

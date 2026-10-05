@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>05 첫 화면 최소 — 홈 시안</title>
+<link rel="stylesheet" href="../../styles/tokens.css">
+<link rel="stylesheet" href="../../styles/chrome.css">
+<link rel="stylesheet" href="./shared.css">
+<style>
+/* 05 Launcher: the home only answers "what do I open next?". */
+.ln { container: launcher / inline-size; background: var(--surface); }
+.ln-page { min-height: 100%; padding: max(44px, 14vh) 32px 64px; }
+.ln-column { max-width: 620px; margin: 0 auto; }
+.ln-project { margin: 0 0 6px; padding-left: 1px; color: var(--muted); font: 400 15px/1.5 var(--font-hanmun); letter-spacing: .02em; }
+
+.ln-search { display: flex; align-items: center; gap: 12px; height: 48px; border-bottom: 1px solid var(--border); transition: border-color 160ms ease; }
+.ln-search:focus-within { border-bottom-color: color-mix(in oklch, var(--fg) 60%, var(--border)); }
+.ln-search svg.ic { width: 17px; height: 17px; color: var(--muted); stroke-width: 1.3; }
+.ln-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: transparent; color: var(--fg); font: 400 18px/1.4 var(--font-ui); letter-spacing: -.01em; }
+.ln-search input::placeholder { color: color-mix(in oklch, var(--muted) 80%, transparent); }
+.ln .ln-search input:focus, .ln .ln-search input:focus-visible { outline: none; }
+.ln-search kbd { flex: none; }
+
+.ln-results { margin-top: 20px; }
+.ln-group + .ln-group { margin-top: 18px; }
+.ln-label { display: flex; gap: 6px; margin: 0 0 4px; padding-left: 12px; color: var(--muted); font-size: 10.5px; line-height: 1.6; letter-spacing: .04em; }
+.ln-label b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.ln-opt { display: grid; grid-template-columns: minmax(0, 1fr) 48px 70px 14px; align-items: center; gap: 12px; min-height: 42px; padding: 7px 12px; cursor: pointer; }
+.ln-opt:hover { background: var(--fg-softer); }
+.ln-opt.is-active { background: var(--row-tint); box-shadow: inset 2px 0 0 var(--accent-ink); }
+.ln-opt > .tag { justify-self: end; }
+.ln-enter { color: var(--muted); font-size: 12px; text-align: center; opacity: 0; }
+.ln-opt.is-active .ln-enter { opacity: 1; }
+.ln-when { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+
+.ln-doc-name { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.ln-doc-title { flex: none; color: var(--fg); font: 500 15px/1.5 var(--font-hanmun); }
+.ln-doc-opening { min-width: 0; overflow: hidden; color: var(--muted); font: 400 14px/1.5 var(--font-hanmun); text-overflow: ellipsis; white-space: nowrap; }
+.ln-doc-ko { flex: none; color: var(--muted); font-size: 11px; }
+
+.ln-unc-title { min-width: 0; overflow: hidden; color: var(--fg); font-size: 13px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.ln-unc-title small { margin-left: 6px; color: var(--muted); font-size: 10.5px; }
+.ln-unc.is-resolved .ln-unc-title { color: var(--muted); }
+.ln-unc-doc { color: var(--muted); font: 400 12.5px/1.5 var(--font-hanmun); text-align: right; white-space: nowrap; }
+
+.ln-cmd { grid-template-columns: minmax(0, 1fr) auto 14px; }
+.ln-cmd > span:first-child { font-size: 13px; }
+.ln-more { grid-template-columns: minmax(0, 1fr); min-height: 36px; color: var(--muted); font-size: 12px; }
+.ln-more:hover, .ln-more.is-active { color: var(--fg); }
+
+.ln-hit { background: none; color: var(--fg); font-weight: 600; text-decoration: underline 1px var(--accent); text-underline-offset: 3px; }
+.ln-none { margin: 22px 0 0; padding-left: 12px; color: var(--muted); font-size: 12px; }
+
+.ln-status { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 30px 0 0; padding-left: 12px; color: var(--muted); font-size: 11px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.ln-status button { padding: 2px 0; border: 0; background: none; color: var(--muted); font: inherit; text-decoration: underline 1px var(--border); text-underline-offset: 3px; }
+.ln-status button[aria-pressed="true"] { color: var(--accent); text-decoration-color: currentColor; }
+.ln-sep { color: color-mix(in oklch, var(--muted) 55%, transparent); }
+
+.ln-empty-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.ln-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (hover: hover) and (pointer: fine) {
+  .ln-status button:hover { color: var(--fg); text-decoration-color: currentColor; }
+}
+@container launcher (max-width: 620px) {
+  .ln-page { padding-inline: 20px; }
+  .ln-opt { grid-template-columns: minmax(0, 1fr) 48px 14px; gap: 10px; }
+  .ln-opt .ln-when { display: none; }
+  .ln-cmd { grid-template-columns: minmax(0, 1fr) auto 14px; }
+  .ln-more { grid-template-columns: minmax(0, 1fr); }
+}
+</style>
+</head>
+<body>
+<script type="module">
+import { mountShell, getDemo, esc, stageTag, fmtWhen, toast, icon } from './shared.js';
+
+const demo = getDemo();
+const root = mountShell({ design: '05 첫 화면 최소', status: '' });
+root.classList.add('ln');
+
+const byId = new Map(demo.docs.map(doc => [doc.id, doc]));
+const STAGE_BY_LABEL = { 원문: 'source', 표점: 'punctuation', 번역안: 'translation', 번역: 'translation', 재검토: 'review', 확정: 'confirmed' };
+const COMMANDS = [
+  { id: 'add', label: '원문 추가', key: '⌘N', note: '원문 추가 대화상자를 엽니다.' },
+  { id: 'export', label: '내보내기', key: '⌘E', note: '확정 번역 내보내기를 엽니다.' },
+  { id: 'backup', label: '백업', key: '', note: '프로젝트 백업을 저장합니다.' },
+];
+const NOTES = { ...Object.fromEntries(COMMANDS.map(command => [command.id, command.note])), import: '가져올 파일을 고르는 창을 엽니다.' };
+
+if (!demo.docs.length) {
+  root.innerHTML = `<div class="ln-page"><div class="ln-column">
+    <h1 class="ln-project">${esc(demo.project.title)}</h1>
+    <div class="ln-empty-actions"><button class="btn btn-primary" type="button" data-command="add">원문 추가</button><button class="btn" type="button" data-command="import">파일에서 가져오기</button></div>
+  </div></div>`;
+} else {
+  const { stats } = demo;
+  root.innerHTML = `<div class="ln-page"><div class="ln-column">
+    <h1 class="ln-project" id="lnProject">${esc(demo.project.title)}</h1>
+    <div class="ln-search">${icon('search')}<input id="lnQuery" type="text" role="combobox" aria-expanded="true" aria-controls="lnList" aria-autocomplete="list" aria-label="원문, 첫 구절, 의문 찾기" aria-describedby="lnHint" placeholder="원문, 첫 구절, 의문 찾기" autocomplete="off" spellcheck="false" enterkeyhint="go"><kbd id="lnHint" aria-label="단축키 Command K">⌘K</kbd></div>
+    <div class="ln-results" id="lnList" role="listbox" aria-label="찾기 결과"></div>
+    <p class="ln-status"><span>${stats.total}개 중 ${stats.confirmed}개 확정</span>${stats.review ? `<span class="ln-sep" aria-hidden="true">·</span><button type="button" data-token="상태:재검토" aria-pressed="false">재검토 ${stats.review}</button>` : ''}${stats.openUncertainties ? `<span class="ln-sep" aria-hidden="true">·</span><button type="button" data-token="의문" aria-pressed="false">열린 의문 ${stats.openUncertainties}</button>` : ''}</p>
+    <p class="ln-sr" id="lnLive" aria-live="polite"></p>
+  </div></div>`;
+  setupSearch();
+}
+
+root.addEventListener('click', event => {
+  const command = event.target.closest('[data-command]');
+  if (command) toast(NOTES[command.dataset.command] ?? '시안에서 열리지 않습니다.');
+});
+
+function setupSearch() {
+  const input = root.querySelector('#lnQuery');
+  const list = root.querySelector('#lnList');
+  const live = root.querySelector('#lnLive');
+  let active = 0;
+  let showAll = false;
+  let options = [];
+
+  function parse(query) {
+    let stage = null;
+    let uncertain = false;
+    const words = [];
+    for (const token of query.trim().split(/\s+/).filter(Boolean)) {
+      const match = /^상태:(.+)$/.exec(token);
+      if (match && STAGE_BY_LABEL[match[1]]) stage = STAGE_BY_LABEL[match[1]];
+      else if (token === '의문') uncertain = true;
+      else words.push(token);
+    }
+    return { stage, uncertain, text: words.join(' ').toLowerCase() };
+  }
+  const includes = (value, text) => !!text && String(value).toLowerCase().includes(text);
+  function hit(value, text) {
+    const index = text ? value.toLowerCase().indexOf(text) : -1;
+    if (index < 0) return esc(value);
+    return `${esc(value.slice(0, index))}<mark class="ln-hit">${esc(value.slice(index, index + text.length))}</mark>${esc(value.slice(index + text.length))}`;
+  }
+
+  const docOption = (doc, text) => `<div class="ln-opt ln-doc" role="option" data-open-doc="${esc(doc.id)}">
+    <span class="ln-doc-name"><span class="ln-doc-title">${hit(doc.title, text)}</span>${doc.opening !== doc.title ? `<span class="ln-doc-opening">${hit(doc.opening, text)}</span>` : ''}${includes(doc.ko, text) && !includes(doc.title, text) && !includes(doc.opening, text) ? `<span class="ln-doc-ko">${hit(doc.ko, text)}</span>` : ''}</span>
+    ${stageTag(doc)}<span class="ln-when">${esc(fmtWhen(doc.updatedAt))}</span><span class="ln-enter" aria-hidden="true">↵</span></div>`;
+  const uncertaintyOption = (item, text) => `<div class="ln-opt ln-unc${item.state === 'open' ? '' : ' is-resolved'}" role="option" data-open-doc="${esc(item.docId)}">
+    <span class="ln-unc-title">${hit(item.title, text)}${item.state === 'open' ? '' : '<small>해결</small>'}</span>
+    <span class="ln-unc-doc">${hit(byId.get(item.docId).title, text)}</span><span class="ln-when">${esc(fmtWhen(item.at))}</span><span class="ln-enter" aria-hidden="true">↵</span></div>`;
+  const commandOption = (command, text) => `<div class="ln-opt ln-cmd" role="option" data-command="${esc(command.id)}"><span>${hit(command.label, text)}</span>${command.key ? `<kbd>${esc(command.key)}</kbd>` : '<span></span>'}<span class="ln-enter" aria-hidden="true">↵</span></div>`;
+  const group = (id, label, count, body) => `<div class="ln-group" role="group" aria-labelledby="ln-g-${id}"><p class="ln-label" id="ln-g-${id}">${esc(label)}${count == null ? '' : ` <b>${count}</b>`}</p>${body}</div>`;
+
+  function docScore(doc, text) {
+    if (!text) return 0;
+    const title = doc.title.toLowerCase();
+    return title === text ? 0 : title.startsWith(text) ? 1 : title.includes(text) ? 2 : includes(doc.opening, text) ? 3 : 4;
+  }
+
+  function render() {
+    const query = input.value;
+    const { stage, uncertain, text } = parse(query);
+    let html = '';
+    let announce = '';
+    if (!query.trim()) {
+      const recent = [demo.resume, ...[...demo.docs].sort((a, b) => b.updatedAt - a.updatedAt).filter(doc => doc !== demo.resume)].filter(Boolean).slice(0, 6);
+      html = group('recent', '최근', null, recent.map(doc => docOption(doc, '')).join(''));
+    } else {
+      // With the 의문 token each uncertainty row already names and opens its document.
+      const docs = uncertain ? [] : demo.docs
+        .filter(doc => (!stage || doc.stage === stage)
+          && (!text || includes(doc.title, text) || includes(doc.opening, text) || includes(doc.ko, text)))
+        .map((doc, order) => ({ doc, order, score: docScore(doc, text) }))
+        .sort((a, b) => a.score - b.score || a.order - b.order)
+        .map(entry => entry.doc);
+      const shown = showAll ? docs : docs.slice(0, 8);
+      const uncertainties = (uncertain || text) ? demo.uncertainties
+        .filter(item => (!uncertain || item.state === 'open') && (!stage || byId.get(item.docId).stage === stage)
+          && (!text || includes(item.title, text) || includes(byId.get(item.docId).title, text)))
+        .sort((a, b) => (a.state === 'open' ? 0 : 1) - (b.state === 'open' ? 0 : 1) || b.at - a.at) : [];
+      const commands = text && !stage && !uncertain ? COMMANDS.filter(command => includes(command.label, text)) : [];
+      if (docs.length) html += group('docs', '원문', docs.length, shown.map(doc => docOption(doc, text)).join('') + (docs.length > shown.length ? `<div class="ln-opt ln-more" role="option" data-more>원문 ${docs.length}개 모두 보기 ↓</div>` : ''));
+      if (uncertainties.length) html += group('unc', '의문', uncertainties.length, uncertainties.map(item => uncertaintyOption(item, text)).join(''));
+      if (commands.length) html += group('cmd', '명령', null, commands.map(command => commandOption(command, text)).join(''));
+      if (!html) html = `<p class="ln-none">‘${esc(query.trim())}’에 맞는 결과가 없습니다.</p>`;
+      announce = docs.length || uncertainties.length || commands.length
+        ? [docs.length && `원문 ${docs.length}개`, uncertainties.length && `의문 ${uncertainties.length}개`, commands.length && `명령 ${commands.length}개`].filter(Boolean).join(', ')
+        : '결과 없음';
+    }
+    list.innerHTML = html;
+    options = [...list.querySelectorAll('[role="option"]')];
+    options.forEach((option, index) => { option.id = `ln-opt-${index}`; });
+    input.setAttribute('aria-expanded', String(options.length > 0));
+    active = Math.min(active, Math.max(options.length - 1, 0));
+    mark(false);
+    live.textContent = announce;
+    for (const button of root.querySelectorAll('[data-token]')) {
+      button.setAttribute('aria-pressed', String(query.trim().split(/\s+/).includes(button.dataset.token)));
+    }
+  }
+
+  function mark(scroll) {
+    options.forEach((option, index) => {
+      const on = index === active;
+      option.classList.toggle('is-active', on);
+      option.setAttribute('aria-selected', String(on));
+    });
+    const current = options[active];
+    if (current) {
+      input.setAttribute('aria-activedescendant', current.id);
+      if (scroll) current.scrollIntoView({ block: 'nearest' });
+    } else input.removeAttribute('aria-activedescendant');
+  }
+
+  function activate(option) {
+    if (!option) return;
+    if (option.hasAttribute('data-more')) {
+      const index = options.indexOf(option);
+      showAll = true;
+      render();
+      active = index;
+      mark(true);
+      input.focus();
+      return;
+    }
+    option.click();
+  }
+
+  input.addEventListener('input', () => { active = 0; showAll = false; render(); });
+  input.addEventListener('keydown', event => {
+    if (event.isComposing) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!options.length) return;
+      active = (active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+      mark(true);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      activate(options[active]);
+    } else if (event.key === 'Escape' && input.value) {
+      event.preventDefault();
+      input.value = '';
+      active = 0; showAll = false;
+      render();
+    }
+  });
+  list.addEventListener('click', event => {
+    const more = event.target.closest('[data-more]');
+    if (more) activate(more);
+  });
+  root.addEventListener('click', event => {
+    const button = event.target.closest('[data-token]');
+    if (!button) return;
+    const pressed = button.getAttribute('aria-pressed') === 'true';
+    input.value = pressed ? '' : `${button.dataset.token} `;
+    active = 0; showAll = false;
+    render();
+    input.focus();
+  });
+  document.addEventListener('keydown', event => {
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+
+  render();
+  input.focus({ preventScroll: true });
+}
+</script>
+</body>
+</html>

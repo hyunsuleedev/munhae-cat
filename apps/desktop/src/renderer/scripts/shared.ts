@@ -4,6 +4,7 @@ import { mountSidebarChrome, showAppHelp } from "./sidebar-chrome";
 import { initOnlineWorkspace, projectDocumentKey, projectLocationLabel } from "./online-workspace-ui";
 import "../styles/online-workspace.css";
 import { initProjectChanges, type ProjectRefresh } from "./project-change-ui";
+import { initMcpChanges } from "./mcp-change-ui";
 import "../styles/project-change.css";
 import { filterSidebarBranches, sidebarAncestors } from "./sidebar-model";
 import { t, ui, uiText } from "./i18n";
@@ -23,7 +24,7 @@ import type {
 import { createBrowserApi } from "./browser-api";
 import {
   configureProjectTools,
-  openConfirmedExport,
+  openExport,
   openProjectSearch,
 } from "./project-tools";
 import {
@@ -31,7 +32,7 @@ import {
   type ProjectTransitionHooks,
 } from "./project-transition";
 
-export type ScreenId = "home" | "editor" | "knowledge" | "glossary" | "comments" | "uncertainty" | "context" | "settings" | "community" | "account";
+export type ScreenId = "home" | "editor" | "knowledge" | "glossary" | "comments" | "context" | "settings" | "community" | "account";
 export type PageId = "welcome" | ScreenId;
 export type IconName =
   | "folder"
@@ -43,6 +44,8 @@ export type IconName =
   | "gear"
   | "chev"
   | "doc"
+  | "plus"
+  | "folderPlus"
   | "image"
   | "comment"
   | "community";
@@ -86,7 +89,6 @@ export const SCREEN_FILES: Record<ScreenId, string> = {
   knowledge: "knowledge.html",
   glossary: "glossary.html",
   comments: "comments.html",
-  uncertainty: "uncertainty.html",
   context: "context.html",
   settings: "settings.html",
   community: "community.html",
@@ -99,7 +101,6 @@ const PAGE_ICONS: Partial<Record<PageId, IconName>> = {
   knowledge: "library",
   glossary: "book",
   comments: "comment",
-  uncertainty: "doc",
 };
 
 export const ICONS: Record<IconName, string> = {
@@ -117,6 +118,10 @@ export const ICONS: Record<IconName, string> = {
   chev: '<path d="M6 4l4 4-4 4"/>',
   doc:
     '<path d="M4 14.67a1.33 1.33 0 0 1-1.33-1.33V2.67a1.33 1.33 0 0 1 1.33-1.33h5.33a1.6 1.6 0 0 1 1.14 .47l2.39 2.39A1.6 1.6 0 0 1 13.33 5.33v8a1.33 1.33 0 0 1-1.33 1.33z"/><path d="M9.33 1.33v3.33a.67 .67 0 0 0 .67 .67h3.33"/><path d="M6.67 6H5.33"/><path d="M10.67 8.67H5.33"/><path d="M10.67 11.33H5.33"/>',
+  plus: '<path d="M3.33 8h9.33"/><path d="M8 3.33v9.33"/>',
+  // Reuses the tree's folder outline, so it reads as the same folder with a plus.
+  folderPlus:
+    '<path d="M13.33 13.33a1.33 1.33 0 0 0 1.33-1.33V5.33a1.33 1.33 0 0 0-1.33-1.33h-5.27a1.33 1.33 0 0 1-1.13-.6L6.4 2.6A1.33 1.33 0 0 0 5.29 2H2.67a1.33 1.33 0 0 0-1.33 1.33v8.67a1.33 1.33 0 0 0 1.33 1.33Z"/><path d="M8 6.67v4"/><path d="M6 8.67h4"/>',
   image:
     '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="m2.5 11.5 3.5-3.5 3 3 2-2 2.5 2.5"/><circle cx="10.5" cy="6" r="1"/>',
   community:
@@ -171,7 +176,8 @@ const SB_WIDTH_KEY = "munhae.sb.width";
 let currentPage: PageId = "welcome";
 let activeProject: ProjectSummary | null = null;
 let projectChanges: ReturnType<typeof initProjectChanges> | undefined;
-export function registerProjectRefresh(refresh: ProjectRefresh): void { projectChanges?.register(refresh); }
+let mcpChanges: ReturnType<typeof initMcpChanges> | undefined;
+export function registerProjectRefresh(refresh: ProjectRefresh): void { projectChanges?.register(refresh); mcpChanges?.register(refresh); }
 let selfTitle = t("시작 화면");
 let enabled = new Set<string>(GLOBAL_ENABLED);
 let extraPalette: PaletteItem[] = [];
@@ -242,17 +248,31 @@ export function requireApi(): MunhaeApi {
   return fallbackApi;
 }
 
-export function notify(msg: string, title = t("문해")): void {
+export function notify(msg: string, title = t("문해"), action?: { label: string; run(): void }): void {
   const n = $("#notif");
   const titleEl = $("#nTitle");
   const m = $("#nMsg");
   if (!n || !titleEl || !m) return;
   titleEl.textContent = t(title);
   m.textContent = t(msg);
+  const holder = n as HTMLElement & { _h?: number; _action?: HTMLButtonElement };
+  // Most notices carry no action; the button is made on first use and hidden again after.
+  if (action && !holder._action) {
+    holder._action = document.createElement("button");
+    holder._action.type = "button";
+    holder._action.className = "btn btn-sm notif-action";
+    n.append(holder._action);
+  }
+  if (holder._action) {
+    holder._action.hidden = !action;
+    holder._action.textContent = action?.label ?? "";
+    holder._action.onclick = action ? () => { n.classList.remove("show"); action.run(); } : null;
+    if (action) n.classList.add("has-action"); else n.classList.remove("has-action");
+  }
   n.classList.add("show");
-  const prev = (n as HTMLElement & { _h?: number })._h;
-  if (prev) window.clearTimeout(prev);
-  (n as HTMLElement & { _h?: number })._h = window.setTimeout(() => n.classList.remove("show"), 3400);
+  if (holder._h) window.clearTimeout(holder._h);
+  // An offered action stays long enough to reach it.
+  holder._h = window.setTimeout(() => n.classList.remove("show"), action ? 8000 : 3400);
 }
 
 export function unwrap<T>(result: IpcResult<T>, title = t("문해")): T | null {
@@ -290,6 +310,27 @@ export function go(k: ScreenId, docId?: string): void {
     return;
   }
   location.href = SCREEN_FILES[k];
+}
+
+const OPEN_TERM_KEY = "munhae.open-term";
+
+/** Opens a document's term screen with one project term selected. */
+export function openDocumentTerm(documentId: string, termId: string): void {
+  store.set(OPEN_TERM_KEY, JSON.stringify({ documentId, termId }));
+  go("editor", documentId);
+}
+
+/** The term handed over by openDocumentTerm. It is read once. */
+export function takeDocumentTerm(): { documentId: string; termId: string } | null {
+  const raw = store.get(OPEN_TERM_KEY);
+  if (!raw) return null;
+  store.set(OPEN_TERM_KEY, "");
+  try {
+    const value = JSON.parse(raw) as { documentId?: unknown; termId?: unknown };
+    return typeof value.documentId === "string" && typeof value.termId === "string" ? { documentId: value.documentId, termId: value.termId } : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function requireProject(): Promise<ProjectSummary | null> {
@@ -716,7 +757,7 @@ const LIBRARY_SCREENS = new Set<ScreenId>(["knowledge", "glossary", "comments"])
 
 function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
   if (n.h === t("문서")) {
-    return ui`<div class="sb-h-row"><div class="sb-h">문서</div><button class="sb-app-trigger sb-add-document" type="button" data-sb-app="add" aria-label="문서 추가" title="문서 추가" aria-haspopup="menu" aria-expanded="false" aria-controls="sbAppMenu">+</button></div>`;
+    return ui`<div class="sb-h-row"><div class="sb-h">문서</div><div class="sb-create-actions" role="group" aria-label="항목 추가"><button class="sb-add" type="button" data-sb-command="newfolder" title="새 폴더" aria-label="새 폴더">${ic("folderPlus")}</button><button class="sb-add" type="button" data-sb-command="newdoc" title="새 문서" aria-label="새 문서">${ic("plus")}</button></div></div>`;
   }
   if (n.h) return `<div class="sb-h">${esc(n.h)}</div>`;
   const kids = !!n.kids?.length;
@@ -731,7 +772,7 @@ function sbNode(n: SbNode, d: number, pos = 1, size = 1): string {
           : false;
   const isDocument = !!(n.docId || n.contextFor);
   const exp = isDocument && sidebarNavigation.query ? true : n.id ? expanded.get(n.id) !== false : true;
-  const treeAttrs = isDocument ? ` role="treeitem" tabindex="-1" data-sb-key="${esc(n.id)}" aria-level="${d + 1}" aria-posinset="${pos}" aria-setsize="${size}" aria-selected="${cur}"` : "";
+  const treeAttrs = isDocument ? ` role="treeitem" tabindex="-1" data-sb-key="${esc(n.id)}" aria-level="${d + 1}" aria-posinset="${pos}" aria-setsize="${size}" aria-selected="${cur}"${n.docId && n.k !== "home" ? ' draggable="true"' : ""}` : "";
   const parts: string[] = [];
   const rowClass = n.contextFor ? " sb-context" : n.k && LIBRARY_SCREENS.has(n.k) ? " sb-library" : "";
   parts.push(`<div class="sb-row${rowClass}"${isDocument ? ' role="none"' : ""}>`);
@@ -868,7 +909,22 @@ export function renderSidebar(
   } else {
     footerNav?.remove();
   }
-  root.innerHTML = tree.map(n => n.docId || (footer && footerNodes.includes(n)) ? "" : sbNode(n, 0) + (n.h === t("문서") ? documentMarkup() : "")).join("");
+  // The library screens stay put above the footer while the document tree scrolls.
+  const libraryNodes = footer ? tree.filter(n => !n.docId && n.k && LIBRARY_SCREENS.has(n.k)) : [];
+  let libraryNav = footer?.parentElement?.querySelector<HTMLElement>(":scope > .sb-library-nav");
+  if (footer && libraryNodes.length) {
+    if (!libraryNav) {
+      libraryNav = document.createElement("div");
+      libraryNav.className = "sb-library-nav";
+      footer.before(libraryNav);
+    }
+    libraryNav.innerHTML = libraryNodes.map(n => sbNode(n, 0)).join("");
+    libraryNav.querySelectorAll<HTMLButtonElement>(".sb-item[data-go]").forEach(button => button.addEventListener("click", () => go(button.dataset.go as ScreenId)));
+  } else {
+    libraryNav?.remove();
+  }
+  const elsewhere = (n: SbNode) => !!n.docId || (!!footer && footerNodes.includes(n)) || libraryNodes.includes(n);
+  root.innerHTML = tree.map(n => elsewhere(n) ? "" : sbNode(n, 0) + (n.h === t("문서") ? documentMarkup() : "")).join("");
   if (!renderedDocuments) root.insertAdjacentHTML("beforeend", documentMarkup());
   sidebarNavigation.afterRender(reveal);
   refreshSidebarChrome?.();
@@ -912,29 +968,24 @@ export function bindSidebar(
       if (beforeNavigate && !beforeNavigate()) return;
       location.href = `knowledge.html?node=${encodeURIComponent(id)}&info=1`;
     },
-    mutate: async action => {
+    mutate: async (action, removed) => {
       const transition = await runProjectTransition("organize", projectTransition, action, result => result.ok);
       if (!transition.started) return false;
       if (!transition.result.ok) throw new Error(transition.result.error.message);
       // Refresh inherited metadata, context and preparation as well as the tree.
       // Leave hooks commit only after a successful write, preserving drafts on error.
-      location.reload();
+      const params = new URLSearchParams(location.search);
+      const shown = [params.get("doc"), params.get("node"), currentPage === "editor" ? currentDocId() : null];
+      if (removed?.some(id => shown.includes(id))) location.href = SCREEN_FILES.home;
+      else location.reload();
       return true;
     },
     error: message => notify(message, t("문서")),
+    reveal: id => revealSidebarNode(sidebarDocs, id),
   });
   root.dataset.bound = "1";
   root.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
-    const add = target.closest("[data-new-parent]");
-    if (add instanceof HTMLElement && root.contains(add)) {
-      e.preventDefault();
-      e.stopPropagation();
-      const raw = add.getAttribute("data-new-parent") ?? "";
-      const role = add.getAttribute("data-new-role") === "container" ? "container" : "source_unit";
-      sidebarOnNew?.(raw === "" ? null : raw, role);
-      return;
-    }
     const exp = target.closest("[data-exp]");
     if (exp instanceof SVGElement && root.contains(exp) && exp.dataset.exp) {
       e.preventDefault();
@@ -1380,7 +1431,7 @@ export async function cmd(id: string): Promise<void> {
       await openDocumentDialog(currentDocId(), true);
       return;
     case "export":
-      openConfirmedExport();
+      openExport();
       return;
     case "run":
       store.set("munhae.prepare", "1");
@@ -1644,7 +1695,6 @@ export function initShell(opts: ShellOptions): Shell {
       knowledge: t("문맥"),
       glossary: t("용어집"),
       comments: t("코멘트"),
-      uncertainty: t("불확실성"),
       context: t("문맥 편집"),
       settings: t("설정"),
       community: t("커뮤니티"),
@@ -1676,6 +1726,7 @@ export function initShell(opts: ShellOptions): Shell {
     projectChanges = initProjectChanges(api, activeProject);
     initOnlineWorkspace(api, activeProject);
   }
+  if (activeProject) mcpChanges = initMcpChanges(api, activeProject, notify);
   if (store.get(SB_KEY) === "0") toggleSidebar(true);
   initSidebarResize();
   void api.app

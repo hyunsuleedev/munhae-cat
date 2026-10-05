@@ -125,14 +125,17 @@ describe("PostgreSQL row working-copy protocol", () => {
     expect(() => repoOf(viewer).write("차단")).toThrow(/열람자/);
     expect(() => repoOf(viewer).aiComplete("차단")).toThrow(/열람자/);
   });
-  it("rechecks revocation even when a clean cache is flushed", async () => {
-    const f = fixture(); await f.open(); let revoked = false;
+  it("locks on server revocation without polling access and rechecks the role before saving", async () => {
+    const f = fixture(); await f.open(); let revoked = false, refreshes = 0;
     const workspace = await OnlineWorkspace.open({ ...project }, { ...f.dependencies("revocation"), refreshProject: async () => {
-      if (revoked) throw new AppError("not_found", "권한 제거됨"); return { ...project };
-    } }); workspaces.push(workspace); revoked = true;
-    await expect(workspace.pull()).rejects.toThrow("권한 제거됨");
-    await expect(workspace.flush()).rejects.toThrow("권한 제거됨");
+      refreshes++; if (revoked) throw new AppError("not_found", "권한 제거됨"); return { ...project };
+    } }); workspaces.push(workspace);
+    const opened = refreshes; await workspace.pull(); expect(refreshes).toBe(opened);
+    revoked = true;
+    vi.spyOn(f.remote, "changes").mockRejectedValueOnce(new AppError("online_workspace_forbidden", "이 온라인 프로젝트에 접근할 수 없습니다."));
+    await expect(workspace.pull()).rejects.toThrow("접근할 수 없습니다");
     expect(workspace.status()).toMatchObject({ state: "locked", writable: false });
+    await expect(workspace.flush()).rejects.toThrow("권한 제거됨");
   });
   it("replays the durable initialization UUID when the first successful commit response was lost", async () => {
     const f = fixture(); f.remote.loseCommitResponse = true;

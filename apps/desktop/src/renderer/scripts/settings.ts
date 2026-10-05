@@ -4,7 +4,7 @@ import { t, ui, uiText } from "./i18n";
 import { previewNotificationSound } from "./notification-sounds";
 import { BUNDLED_SKILLS } from "@munhae/db-sqlite/bundled-skills";
 import { mountAccount } from "./account-ui";
-import type { AgentProbe, AppConfig, DocumentListItem, HomeView, PluginsView, TranslationSkill } from "../../shared/munhae-api";
+import type { AgentProbe, AppConfig, DocumentListItem, HomeView, McpClientId, McpStatusView, PluginsView, TranslationSkill } from "../../shared/munhae-api";
 import {
   bindSidebar,
   defaultSidebarTree,
@@ -19,7 +19,7 @@ import {
 } from "./shared";
 
 type AgentId = AppConfig["agentId"];
-type SectionId = "account" | "models" | "plugins" | "general";
+type SectionId = "account" | "models" | "plugins" | "mcp" | "general";
 
 const shell = initShell({ page: "settings", selfTitle: t("설정") });
 const api = shell.api;
@@ -39,6 +39,8 @@ let pluginBusy = false;
 let catalog: TranslationSkill[] | null = null;
 let catalogError: string | null = null;
 const loginInstructions = new Map<AgentId, { command: string; detail: string }>();
+let mcp: McpStatusView | null = null;
+let mcpBusy: McpClientId | "refresh" | null = null;
 
 function tree() {
   return defaultSidebarTree(docs);
@@ -380,6 +382,54 @@ async function pluginAction<T>(action: () => Promise<{ ok: true; data: T } | { o
   }
 }
 
+function mcpCard(client: McpStatusView["clients"][number]): string {
+  const busy = mcpBusy === client.id;
+  const inUse = mcp?.sessions.some(session => session.label === client.label) ?? false;
+  const status = client.connected ? { label: inUse ? t("사용 중") : t("연결됨"), cls: "ok" }
+    : !client.installed ? { label: t("미설치"), cls: "warn" } : { label: t("연결 안 됨"), cls: "" };
+  const description = client.detail ? t(client.detail)
+    : client.connected ? t("대화에서 문해 도구를 쓸 수 있습니다.") : t("연결하면 이 AI 도구의 사용자 설정에 문해를 등록합니다.");
+  const disabled = busy || mcpBusy === "refresh" || (!client.connected && !client.installed);
+  const action = client.connected && !client.detail
+    ? `<button class="btn btn-sm" type="button" data-mcp-disconnect="${client.id}"${disabled ? " disabled" : ""}>${busy ? t("해제 중…") : t("연결 해제")}</button>`
+    : `<button class="btn btn-sm" type="button" data-mcp-connect="${client.id}"${disabled ? " disabled" : ""}>${busy ? t("연결 중…") : client.detail && client.installed ? t("다시 연결") : t("연결")}</button>`;
+  return `<article class="cli-card mcp-card${client.connected ? " is-selected" : ""}${!client.installed && !client.connected ? " is-unavailable" : ""}">
+    <div class="cli-pick">
+      <span class="cli-mark ${client.id}" aria-hidden="true">${agentMark(client.id)}</span>
+      <span class="cli-copy"><b>${esc(client.label)}</b><p>${esc(description)}</p></span>
+      <span class="cli-meta"><span class="cli-status"><i class="dot ${status.cls}"></i>${status.label}</span></span>
+      ${action}
+    </div>
+  </article>`;
+}
+
+function renderMcp(): void {
+  const server = mcp?.server;
+  must("#mcpServerDetail").textContent = server ? server.url : "";
+  must("#mcpServerState").textContent = !server ? t("확인 중")
+    : server.state === "running" ? (mcp!.sessions.length ? ui`실행 중 · 대화 ${mcp!.sessions.length}개` : t("실행 중"))
+      : server.state === "port_in_use" ? t("포트 사용 중") : t("꺼짐");
+  must("#mcpClients").innerHTML = mcp
+    ? mcp.clients.map(mcpCard).join("")
+    : uiText('<p class="empty" role="status">연결 상태를 확인하고 있습니다.</p>');
+}
+
+async function refreshMcp(action?: { kind: "connect" | "disconnect"; client: McpClientId }): Promise<void> {
+  if (mcpBusy) return;
+  mcpBusy = action?.client ?? "refresh";
+  renderMcp();
+  const label = mcp?.clients.find(client => client.id === action?.client)?.label ?? "";
+  const result = !action ? await api.mcp.status()
+    : action.kind === "connect" ? await api.mcp.connect(action.client) : await api.mcp.disconnect(action.client);
+  mcpBusy = null;
+  if (result.ok) mcp = result.data;
+  renderMcp();
+  if (!result.ok) notify(result.error.message, t("AI 도구 연결"));
+  else if (action) notify(action.kind === "connect"
+    ? ui`${label}에 연결했습니다. 새로 시작하는 대화부터 문해 도구를 쓸 수 있습니다.`
+    : ui`${label} 연결을 해제했습니다.`, t("AI 도구 연결"));
+}
+
 function setSection(section: SectionId): void {
   if (activeSection === "account" && section !== "account") accountPanel?.deactivate();
   activeSection = section;
@@ -390,21 +440,24 @@ function setSection(section: SectionId): void {
     if (current) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");
   });
-  const pages: Record<SectionId, string> = { account: "#settingsAccount", models: "#settingsModels", plugins: "#settingsPlugins", general: "#settingsGeneral" };
+  const pages: Record<SectionId, string> = { account: "#settingsAccount", models: "#settingsModels", plugins: "#settingsPlugins", mcp: "#settingsMcp", general: "#settingsGeneral" };
   for (const [id, selector] of Object.entries(pages)) {
     const page = must(selector);
     page.classList.toggle("is-open", section === id);
     page.hidden = section !== id;
   }
   if (section === "account") accountPanel?.activate();
+  if (section === "mcp") void refreshMcp();
   history.replaceState(null, "", section === "models" ? "settings.html" : `settings.html#${section}`);
-  must("#saveState").hidden = section === "account" || section === "plugins";
+  must("#saveState").hidden = section === "account" || section === "plugins" || section === "mcp";
   must("#settingsPath").textContent = section === "account" ? t("문해 계정")
-    : section === "plugins" ? t("설치는 이 기기 · 적용은 프로젝트에 저장") : t("앱 설정 · 프로젝트 밖에 저장");
+    : section === "plugins" ? t("설치는 이 기기 · 적용은 프로젝트에 저장")
+      : section === "mcp" ? t("각 AI 도구의 사용자 설정에 등록") : t("앱 설정 · 프로젝트 밖에 저장");
 }
 
 function sectionFromHash(): SectionId {
   if (location.hash === "#plugins" || location.hash === "#skills") return "plugins";
+  if (location.hash === "#mcp") return "mcp";
   return location.hash === "#account" ? "account" : location.hash === "#general" ? "general" : "models";
 }
 
@@ -457,6 +510,16 @@ document.addEventListener("click", (event) => {
   const sectionButton = target.closest<HTMLElement>("[data-settings-section]");
   if (sectionButton?.dataset.settingsSection) {
     setSection(sectionButton.dataset.settingsSection as SectionId);
+    return;
+  }
+  const mcpButton = target.closest<HTMLButtonElement>("[data-mcp-connect], [data-mcp-disconnect]");
+  if (mcpButton) {
+    const connectId = mcpButton.dataset.mcpConnect;
+    void refreshMcp({ kind: connectId ? "connect" : "disconnect", client: (connectId ?? mcpButton.dataset.mcpDisconnect) as McpClientId });
+    return;
+  }
+  if (target.closest("#btnMcpRefresh")) {
+    void refreshMcp();
     return;
   }
   const loginButton = target.closest<HTMLButtonElement>("[data-login-agent]");

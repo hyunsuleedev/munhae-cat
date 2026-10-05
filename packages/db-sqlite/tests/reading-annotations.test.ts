@@ -47,7 +47,7 @@ it("persists independent repeated characters, multi-character codepoint ranges a
   inspect(repo, db => {
     const row = db.prepare("SELECT source_content_hash, created_by_actor_id, updated_by_actor_id FROM reading_annotations WHERE id=?").get(second.id);
     expect(row).toMatchObject({ source_content_hash: sha256Hex(source), created_by_actor_id: expect.any(String), updated_by_actor_id: expect.any(String) });
-    expect(db.prepare("SELECT count(*) AS n FROM glossary_entries").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) AS n FROM terms").get()).toEqual({ n: 0 });
     assertSqliteIntegrity(db);
   });
   const before = repo.listReadingAnnotations(id);
@@ -186,7 +186,7 @@ it("upgrades v5 once with a consistent backup and leaves existing project data u
   const before = repo.getEditor(id), path = repo.packagePath;
   repo.close();
   const db = openSqlite(sqlitePath(path));
-  const tables = ["src_text_versions", "src_text_heads", "document_nodes", "document_translation_versions", "glossary_entries", "review_comments"];
+  const tables = ["src_text_versions", "src_text_heads", "document_nodes", "document_translation_versions", "terms", "review_comments"];
   const rows = () => Object.fromEntries(tables.map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()]));
   const oldRows = rows();
   restoreV6MaterialsFixture(db);
@@ -205,7 +205,7 @@ it("upgrades v5 once with a consistent backup and leaves existing project data u
     assertSqliteIntegrity(backup);
   } finally { backup.close(); }
   inspect(reopened, check => {
-    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 12 });
+    expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 18 });
     expect(Object.fromEntries(tables.map(table => [table, check.prepare(`SELECT * FROM ${table} ORDER BY 1`).all()]))).toEqual(oldRows);
     assertSqliteIntegrity(check);
   });

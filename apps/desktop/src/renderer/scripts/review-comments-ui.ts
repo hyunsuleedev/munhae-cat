@@ -25,6 +25,9 @@ type Deps = {
   reuseComment?(comment: ReviewCommentView): void;
   openDictionary?(context: DictionaryContext): void;
   changed?(): void;
+  /** Whether the selected translation phrase may get a footnote now. */
+  canAddNote?(): boolean;
+  addNote?(target: { codepointFrom: number; codepointTo: number; quote: string }): void;
 };
 type SelectionTarget = Omit<CreateReviewCommentInput, "bodyMd">;
 
@@ -55,15 +58,22 @@ export function configureReviewComments(deps: Deps) {
 
   const selectionAction = document.createElement("div");
   selectionAction.className = "editor-selection-action"; selectionAction.popover = "manual";
-  selectionAction.innerHTML = `<button class="btn btn-sm" type="button">${t("코멘트 달기")}</button>`;
+  selectionAction.innerHTML = `<button class="btn btn-sm" type="button" data-selection-comment>${t("코멘트 달기")}</button><button class="btn btn-sm" type="button" data-selection-note hidden>${t("각주 달기")}</button>`;
   document.body.append(selectionAction);
   selectionAction.addEventListener("pointerdown", event => event.preventDefault());
-  selectionAction.addEventListener("click", () => {
+  selectionAction.addEventListener("click", event => {
     const v = deps.view(), target = selected;
     const text = target?.targetKind === "source" ? v?.source.contentText : v?.translation?.textContent;
     if (!target || !v || target.documentNodeId !== v.document.id || target.translationVersionId !== v.translation?.versionId
       || target.targetVersionId !== (target.targetKind === "source" ? v.source.versionId : v.translation?.versionId)
       || Array.from(text ?? "").slice(target.codepointFrom, target.codepointTo).join("") !== target.quote) { cancelSelection(); return; }
+    if ((event.target as Element).closest("[data-selection-note]")) {
+      if (target.targetKind !== "translation" || !deps.canAddNote?.()) { cancelSelection(); return; }
+      cancelSelection();
+      clearNativeSelection();
+      deps.addNote?.({ codepointFrom: target.codepointFrom, codepointTo: target.codepointTo, quote: target.quote });
+      return;
+    }
     openComment();
   });
   function hideSelectionAction() { if (selectionAction.matches(":popover-open")) selectionAction.hidePopover(); }
@@ -73,10 +83,12 @@ export function configureReviewComments(deps: Deps) {
     const rect = target instanceof HTMLTextAreaElement ? target.getBoundingClientRect() : range?.rangeCount ? range.getRangeAt(0).getBoundingClientRect() : null;
     if (!rect) return;
     selectionTrigger = target instanceof HTMLElement ? target : target.parentElement;
-    const button = selectionAction.querySelector<HTMLButtonElement>("button")!;
+    const button = selectionAction.querySelector<HTMLButtonElement>("[data-selection-comment]")!;
     button.disabled = !selectionReady();
     button.title = button.disabled ? t("편집한 내용을 저장하고 AI 작업을 마친 뒤 코멘트를 남길 수 있습니다.") : t("코멘트 달기");
-    selectionAction.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - 128))}px`;
+    const note = selectionAction.querySelector<HTMLButtonElement>("[data-selection-note]")!;
+    note.hidden = selected.targetKind !== "translation" || !deps.canAddNote?.();
+    selectionAction.style.left = `${Math.max(8, Math.min(rect.left, innerWidth - (note.hidden ? 128 : 208)))}px`;
     selectionAction.style.top = `${Math.max(8, rect.top > 48 ? rect.top - 38 : rect.bottom + 6)}px`;
     if (!selectionAction.matches(":popover-open")) selectionAction.showPopover();
   }
@@ -262,7 +274,9 @@ export function configureReviewComments(deps: Deps) {
       && draftTarget.translationVersionId === v.translation.versionId) {
       ranges.push({ ...draftTarget, emphasized: true });
     }
-    marks.render(ranges, v?.translation?.textLayout?.sentences ?? []);
+    const notes = (v?.translation?.notes ?? []).flatMap(note => note.from === null || note.to === null ? []
+      : [{ number: note.ordinal, codepointFrom: note.from, codepointTo: note.to, quote: note.targetQuote }]);
+    marks.render(ranges, v?.translation?.textLayout?.sentences ?? [], notes);
     for (const card of el("#reviewCommentsList").querySelectorAll<HTMLElement>("[data-review-card]")) {
       const active = !dialog.open && card.dataset.reviewCard === activeCommentId;
       card.classList.toggle("is-active", active);
@@ -373,6 +387,9 @@ export function configureReviewComments(deps: Deps) {
         const start = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement;
         const source = start?.closest<HTMLElement>("[data-review-source-from]");
         const flow = start?.closest<HTMLElement>("#bookGroups");
+        const endElement = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer as Element : range.endContainer.parentElement;
+        const piece = start?.closest<HTMLElement>("#rows [data-review-translation-from]");
+        const pieceEnd = endElement?.closest<HTMLElement>("#rows [data-review-translation-from]");
         if (flow && flow.contains(range.endContainer) && !flow.querySelector(".is-editing")
           && flow.dataset.translationText === translation.textContent) {
           const before = document.createRange();
@@ -381,6 +398,21 @@ export function configureReviewComments(deps: Deps) {
           const quote = range.toString();
           const to = from + Array.from(quote).length;
           if (quote.trim() && Array.from(translation.textContent).slice(from, to).join("") === quote) selected = {
+            documentNodeId: v.document.id, translationVersionId: translation.versionId,
+            targetKind: "translation", targetVersionId: translation.versionId,
+            codepointFrom: from, codepointTo: to, quote,
+          };
+        } else if (piece && pieceEnd && piece.closest(".brow") === pieceEnd.closest(".brow")
+          && el("#rows").dataset.translationText === translation.textContent) {
+          // A row's plain text knows where it sits in the translation; the source cell between rows does not count.
+          const at = (body: HTMLElement, node: Node, offset: number) => {
+            const before = document.createRange();
+            before.selectNodeContents(body); before.setEnd(node, offset);
+            return Number(body.dataset.reviewTranslationFrom) + Array.from(before.toString()).length;
+          };
+          const from = at(piece, range.startContainer, range.startOffset), to = at(pieceEnd, range.endContainer, range.endOffset);
+          const quote = Array.from(translation.textContent).slice(from, to).join("");
+          if (to > from && quote.trim()) selected = {
             documentNodeId: v.document.id, translationVersionId: translation.versionId,
             targetKind: "translation", targetVersionId: translation.versionId,
             codepointFrom: from, codepointTo: to, quote,
@@ -477,13 +509,16 @@ export function configureReviewComments(deps: Deps) {
     let target: HTMLElement | undefined;
     if (comment.targetKind === "translation") {
       const sentence = deps.view()?.translation?.textLayout?.sentences.find(s => s.from <= comment.codepointFrom && s.to >= comment.codepointTo);
-      const textarea = [...document.querySelectorAll<HTMLTextAreaElement>(".sentence-edit")].find(e => e.dataset.sentenceEdit === sentence?.id);
-      if (textarea && sentence) {
-        if (textarea.value !== sentence.text.replace(/\r\n?/g, "\n")) {
+      // A row shows its reading text, or its field while that sentence is being edited.
+      const shown = [...document.querySelectorAll<HTMLElement>("#rows .sentence-text, #rows .sentence-edit")]
+        .find(e => !e.hidden && (e.dataset.sentenceText ?? e.dataset.sentenceEdit) === sentence?.id);
+      if (shown && sentence) {
+        const text = shown instanceof HTMLTextAreaElement ? shown.value : shown.textContent ?? "";
+        if (text.replace(/\r\n?/g, "\n") !== sentence.text.replace(/\r\n?/g, "\n")) {
           deps.notify(t("번역문이 수정되어 구절의 위치를 표시할 수 없습니다. 저장 후 다시 확인하세요."), t("검토 코멘트"));
           return;
         }
-        target = textarea;
+        target = shown;
       }
     } else {
       target = [...document.querySelectorAll<HTMLElement>("#rows [data-review-source-from]")].find(e => {

@@ -1,4 +1,5 @@
 import { IPC_CHANNELS, type IpcChannel } from "../shared/munhae-api";
+import { ONLINE_PROJECTS_ENABLED } from "../shared/online-projects";
 import { withAuthenticatedClient } from "./auth";
 import { AppError } from "./errors";
 import { OnlineProjectsService } from "./online-projects";
@@ -13,6 +14,9 @@ export const ONLINE_PROJECT_CHANNELS: IpcChannel[] = [
 const service = new OnlineProjectsService(withAuthenticatedClient);
 
 export function dispatchOnlineProject(channel: IpcChannel, input?: unknown): Promise<unknown> {
+  if (!ONLINE_PROJECTS_ENABLED && (channel === IPC_CHANNELS.onlineProjectsCreate || channel === IPC_CHANNELS.onlineProjectsInvite)) {
+    throw new AppError("online_projects_paused", "온라인 프로젝트는 준비 중입니다.");
+  }
   switch (channel) {
     case IPC_CHANNELS.onlineProjectsOpen: return openOnlineProject(input);
     case IPC_CHANNELS.onlineProjectsStatus: return Promise.resolve(getOnlineWorkspaceStatus());

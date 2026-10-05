@@ -59,7 +59,6 @@ export class OnlineWorkspace {
   readonly packagePath: string;
   readonly summary: ProjectSummary;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeat: ReturnType<typeof setInterval> | null = null;
   private stopWatch: (() => void) | null = null;
   private serial: Promise<void> = Promise.resolve();
   private closed = false;
@@ -156,9 +155,9 @@ export class OnlineWorkspace {
         revision => { if (revision === null || revision > workspace!.journal.revision) void workspace!.pull(revision === null ? "resync" : "commit").catch(() => undefined); },
         connected => { workspace!.connected = connected; });
       // Subscribe before final read; the acknowledgement callback catches subsequent reconnects too.
+      // No polling: a missed notice is caught by the revision CAS on the next save.
       await workspace.pull("resync");
-      workspace.heartbeat = setInterval(() => { void workspace!.pull("resync").catch(() => undefined); }, 30000);
-      workspace.heartbeat.unref(); return workspace;
+      return workspace;
     } catch (error) { if (workspace) await workspace.close(true); else repo?.close(); throw error; }
   }
   private static async initialize(project: OnlineProject, deps: Dependencies, directory: string, stored: any, discard: boolean): Promise<OnlineDataHead> {
@@ -273,7 +272,7 @@ export class OnlineWorkspace {
   }
   pull(reason: ProjectChangeEvent["reason"] = "resync"): Promise<void> {
     return this.enqueue(async () => {
-      await this.refreshAccess();
+      // Server RPCs reject non-members (42501 -> locked); role changes are rechecked before each save.
       // Let an in-flight or uncertain local mutation resolve its UUID first. Its own
       // Realtime notice must never be misclassified as a competing writer.
       if (this.journal.dirty || this.journal.pending) return;
@@ -310,7 +309,7 @@ export class OnlineWorkspace {
   async close(keepUnsynced = false): Promise<void> {
     if (this.closed) return;
     if (!keepUnsynced) await this.flush();
-    if (this.timer) clearTimeout(this.timer); if (this.heartbeat) clearInterval(this.heartbeat);
+    if (this.timer) clearTimeout(this.timer);
     this.stopWatch?.(); this.stopWatch = null;
     this.closed = true; await this.serial; this.repo.close();
   }

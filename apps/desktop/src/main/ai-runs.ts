@@ -23,7 +23,7 @@ import {
   type StartPunctuationSuggestionInput,
   type StartTranslationInput,
 } from "../shared/munhae-api";
-import { AppError } from "./errors";
+import { AppError, errorCode } from "./errors";
 import {
   cancelAgentRuntime,
   probeAgentRuntime,
@@ -136,7 +136,8 @@ async function withAiLaunch<T>(projectId: string, launch: (assertNotCanceled: ()
   }
 }
 
-type ExternalAiActivity = { id: string; projectId: string; cancel(): void | Promise<void>; completion: Promise<void> };
+/** `documentNodeId` names the document the task works on; without it the task covers the whole project. */
+type ExternalAiActivity = { id: string; projectId: string; documentNodeId?: string | null; cancel(): void | Promise<void>; completion: Promise<void> };
 const externalActivities = new Map<string, ExternalAiActivity>();
 
 /** Reserve before the first await so collection and inference share app lifecycle guards. */
@@ -624,6 +625,8 @@ async function executePrepared(
       ...(view.agentId === "codex" && serviceTierArg(prefs.serviceTier)
         ? { serviceTier: serviceTierArg(prefs.serviceTier) }
         : {}),
+      // The translation method comes from the project, not from the user's personal Codex skills or memory.
+      ...(view.agentId === "codex" ? { codexDisableUserContext: true } : {}),
     };
     const result = await runAgentRuntime(view.agentId, request, (event) => {
       appendEvent(entry, event);
@@ -874,14 +877,19 @@ async function executeFullText(
           if(entry.cancelRequested) throw new AppError("canceled", "실행을 취소했습니다");
           if(!grant || containsSensitiveProviderData(raw, providerEnv, [grant.token])) throw new AppError("submission_rejected", "저장할 수 없는 제출입니다");
           if (!accept) throw new AppError("submission_rejected", "이 실행은 연결 도구만 사용할 수 있습니다");
-          accept(raw);
+          try { accept(raw); }
+          catch (error) {
+            // Format checks run before anything is stored, so the AI may fix the JSON and resubmit.
+            if (errorCode(error) === "invalid_submission") throw new AppError("invalid_payload", error instanceof Error ? error.message : "제출 형식이 올바르지 않습니다");
+            throw error;
+          }
         },
       });
       entry.translationToolGrant=grant;
       if(entry.cancelRequested) throw new AppError("canceled", "실행을 취소했습니다");
       const command = phase === "translation" ? "submit-translation" : "submit-alignment";
       const request: AgentRunRequest = {
-        runId:prepared.messageId, prompt, outputContract:phase === "translation" ? "translation-text.v1" : prompt.includes("## Alignment mode\nsaved-segments.v4") ? "translation-alignment.v4" : prompt.includes("## Alignment mode\nboundary-groups.v3") ? "translation-alignment.v3" : "translation-alignment.v1",
+        runId:prepared.messageId, prompt, outputContract:phase === "translation" ? "translation-text.v2" : prompt.includes("## Alignment mode\nsaved-segments.v4") ? "translation-alignment.v4" : prompt.includes("## Alignment mode\nboundary-groups.v3") ? "translation-alignment.v3" : "translation-alignment.v1",
         appTool:{command:process.execPath,args:[wrapperPath,"tools",command],env:{
           ELECTRON_RUN_AS_NODE:"1",MUNHAE_NODE_BIN:process.execPath,MUNHAE_BIN:wrapperPath,
           MUNHAE_TOOL_URL:grant.endpoint,MUNHAE_TOOL_GRANT:grant.token,MUNHAE_TOOL_RUN_ID:prepared.messageId,
@@ -890,6 +898,7 @@ async function executeFullText(
         ...(modelArg(prefs.model)?{model:modelArg(prefs.model)}:{}),
         ...(reasoningArg(prefs.reasoning)?{reasoningEffort:reasoningArg(prefs.reasoning)}:{}),
         ...(view.agentId==="codex"&&serviceTierArg(prefs.serviceTier)?{serviceTier:serviceTierArg(prefs.serviceTier)}:{}),
+        ...(view.agentId==="codex"?{codexDisableUserContext:true}:{}),
       };
       // Each stage is a fresh CLI request, never a continuation of translation deliberation.
       const result=await runAgentRuntime(view.agentId,request,event=>{
@@ -1187,6 +1196,26 @@ export async function cancelTranslationRun(messageId: string): Promise<AiRunView
   publish(run);
   await cancelAgentRuntime(messageId);
   return cloneRun(runs.get(messageId) ?? run);
+}
+
+/** Documents an app AI task is working on, so outside (MCP) edits to them can be refused. Chat never writes a document. */
+export function activeAiDocuments(projectId: string): { all: boolean; documentIds: Set<string> } {
+  const documentIds = new Set<string>();
+  let all = false;
+  for (const entry of launches) if (entry.projectId === projectId) all = true;
+  for (const [messageId, entry] of active) {
+    if (entry.projectId !== projectId) continue;
+    const run = runs.get(messageId);
+    if (run?.taskKind === "chat") continue;
+    if (run?.documentNodeId) documentIds.add(run.documentNodeId);
+    else all = true;
+  }
+  for (const activity of externalActivities.values()) {
+    if (activity.projectId !== projectId) continue;
+    if (activity.documentNodeId) documentIds.add(activity.documentNodeId);
+    else all = true;
+  }
+  return { all, documentIds };
 }
 
 export function hasActiveAiRuns(projectId?: string): boolean {

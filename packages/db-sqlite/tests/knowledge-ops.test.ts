@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MunhaeError } from "@munhae/domain";
-import { createProject, seedDemoProject, type ProjectRepo } from "../src/index.ts";
+import { createProject, openProject, openSqlite, seedDemoProject, sqlitePath, type ProjectRepo } from "../src/index.ts";
+import { PROJECT_INIT_SQL } from "../src/embedded-sql.ts";
 
 const dirs: string[] = [];
 const repos: ProjectRepo[] = [];
@@ -188,92 +189,67 @@ describe("document metadata and context cards", () => {
   });
 });
 
-describe("uncertainty workflow", () => {
-  it("versions options and anchors, then blocks confirmation until the current issue is resolved", () => {
+describe("uncertainty removal", () => {
+  it("drops the uncertainty tables with their rows when a v17 project opens", () => {
+    const created = createProject({ title: "불확실성 제거", parentDir: tempDir() }).handle;
+    const path = created.packagePath;
+    created.close();
+    const db = openSqlite(sqlitePath(path));
+    try {
+      const tables = PROJECT_INIT_SQL.match(/CREATE TABLE uncertaint\w* \([\s\S]*?\) STRICT;/g)!;
+      expect(tables).toHaveLength(4);
+      const project = db.prepare("SELECT id FROM core_projects").get() as { id: string };
+      const actor = db.prepare("SELECT id FROM core_actors LIMIT 1").get() as { id: string };
+      db.exec(`${tables.join("\n")}
+        DELETE FROM meta_schema_migrations WHERE version >= 18; UPDATE meta_project_state SET schema_version = 17;`);
+      db.prepare("INSERT INTO uncertainties VALUES ('u1', ?, 'textual', 'minor', 0, 'open', '2026-09-01T00:00:00.000Z')").run(project.id);
+      db.prepare("INSERT INTO uncertainty_versions VALUES ('v1', ?, 'u1', NULL, 1, '판독', NULL, NULL, 'hash', ?, '2026-09-01T00:00:00.000Z')").run(project.id, actor.id);
+    } finally { db.close(); }
+
+    track(openProject(path));
+    const check = openSqlite(sqlitePath(path));
+    try {
+      expect(check.prepare("SELECT name FROM sqlite_schema WHERE name LIKE '%uncertaint%'").all()).toEqual([]);
+      expect(check.prepare("SELECT schema_version FROM meta_project_state").get()).toEqual({ schema_version: 18 });
+    } finally { check.close(); }
+  });
+});
+
+describe("home activity", () => {
+  it("reports each source's current translation version and latest text activity", () => {
     const repo = track(seedDemoProject(tempDir()));
-    const document = repo.getHome().documents.find((item) => item.originalTitle === "御製序")!;
+    const before = repo.getHome();
+    const sources = before.documents.filter((item) => item.nodeRole === "source_unit");
+    expect(before.activity.map((item) => item.documentId)).toEqual(sources.map((item) => item.id));
+    for (const source of sources) {
+      expect(before.activity.find((item) => item.documentId === source.id)!.translationVersion)
+        .toBe(repo.getEditor(source.id).translation?.versionNo ?? null);
+    }
+
+    const document = sources.find((item) => item.originalTitle === "御製序")!;
     const editor = repo.getEditor(document.id);
-    const translation = editor.translation!;
-    const initialUncertaintyCount = repo.getHome().documents.find(
-      (item) => item.id === document.id,
-    )!.uncertaintyCount;
-    const created = repo.createUncertainty({
-      category: "textual",
-      severity: "major",
-      blocking: true,
-      statementMd: "첫 글자의 판독을 확인해야 한다.",
-      rationaleMd: "이본 대조 전에는 확정할 수 없다.",
-      confidenceLabel: "low",
-      options: [
-        { label: "天", interpretationMd: "통행본" },
-        { label: "夫", interpretationMd: "이본" },
-      ],
-      anchors: [{
-        targetKind: "source_text_version",
-        targetVersionId: editor.source.versionId,
-        codepointFrom: 0,
-        codepointTo: 1,
-        quote: editor.source.contentText.slice(0, 1),
-      }],
-    });
-    expect(created).toMatchObject({ versionNo: 1, state: "open", blocking: true });
-    expect(created.options).toHaveLength(2);
-    expect(created.anchors[0]).toMatchObject({ codepointFrom: 0, codepointTo: 1 });
-    expect(
-      repo.previewContext({ documentNodeId: document.id }).auxiliary.find(
-        (item) => item.id === created.id,
-      ),
-    ).toMatchObject({ defaultIncluded: true, reason: "related_uncertainty" });
-
-    const revised = repo.createUncertaintyVersion({
-      uncertaintyId: created.id,
-      expectedVersionId: created.versionId,
-      category: "interpretive",
-      severity: "major",
-      blocking: true,
-      statementMd: "첫 구절의 해석을 확정해야 한다.",
-      rationaleMd: "문법 해석 두 가지가 남아 있다.",
-      confidenceLabel: "medium",
-      options: [{ label: "주술 구조" }, { label: "병렬 구조" }],
-      anchors: [{ targetKind: "document_node", targetVersionId: document.parentId!, quote: "상위 문서" }],
-    });
-    expect(revised).toMatchObject({ versionNo: 2, category: "interpretive" });
-    expect(repo.getKnowledge().uncertainties.filter((item) => item.id === created.id)).toEqual([revised]);
-    expect(repo.getHome().documents.find((item) => item.id === document.id)?.uncertaintyCount).toBe(
-      initialUncertaintyCount + 1,
-    );
-    expect(
-      repo.previewContext({ documentNodeId: document.id }).auxiliary.find(
-        (item) => item.id === revised.id,
-      ),
-    ).toMatchObject({ defaultIncluded: true, reason: "related_uncertainty" });
-    expectCode(
-      () => repo.createUncertaintyVersion({
-        uncertaintyId: created.id,
-        expectedVersionId: created.versionId,
-        category: "textual",
-        severity: "minor",
-        blocking: false,
-        statementMd: "stale",
-        options: [],
-        anchors: [{ targetKind: "document_node", targetVersionId: document.id }],
-      }),
-      "cas_conflict",
-    );
-    expectCode(
-      () => repo.confirmTranslation({
-        documentNodeId: document.id,
-        expectedLockVersion: translation.lockVersion,
-      }),
-      "open_blocking_uncertainty",
-    );
-
-    const resolved = repo.resolveUncertainty({ uncertaintyId: revised.id, expectedVersionId: revised.versionId });
-    expect(resolved.state).toBe("resolved");
-    const confirmed = repo.confirmTranslation({
+    const quote = Array.from(editor.translation!.textContent).slice(0, 2).join("");
+    const comment = repo.createReviewComment({
       documentNodeId: document.id,
-      expectedLockVersion: translation.lockVersion,
+      translationVersionId: editor.translation!.versionId,
+      targetKind: "translation",
+      targetVersionId: editor.translation!.versionId,
+      codepointFrom: 0,
+      codepointTo: 2,
+      quote,
+      bodyMd: "홈 여백에 보일 코멘트",
     });
-    expect(confirmed.translation).toMatchObject({ versionId: translation.versionId, state: "confirmed" });
+    const source = repo.getEditor(document.id).source;
+    repo.saveSourceDraft({ documentNodeId: document.id, contentText: `${source.contentText}。`, originKind: "manual", expectedLockVersion: source.lockVersion });
+
+    const after = repo.getHome();
+    const previous = before.activity.find((item) => item.documentId === document.id)!;
+    const entry = after.activity.find((item) => item.documentId === document.id)!;
+    expect(entry.lastActivityAt).not.toBeNull();
+    expect(entry.lastActivityAt! >= (previous.lastActivityAt ?? "")).toBe(true);
+    expect(entry.lastActivityAt! >= comment.updatedAt).toBe(true);
+    expect(entry.commentCount).toBe(previous.commentCount + 1);
+    expect(entry.recentComments[0]).toEqual({ id: comment.id, quote, bodyMd: "홈 여백에 보일 코멘트", updatedAt: comment.updatedAt });
+    expect(entry.recentComments.length).toBeLessThanOrEqual(2);
   });
 });

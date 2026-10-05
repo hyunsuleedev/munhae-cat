@@ -8,8 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./text-sentences": "./src/text-sentences.ts",
-    "./hanmun-segmentation": "./src/hanmun-segmentation.ts",
-    "./term-source": "./src/term-source.ts"
+    "./hanmun-segmentation": "./src/hanmun-segmentation.ts"
   },
   "scripts": {
     "test": "vitest run",

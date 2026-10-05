@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { DocumentListItem } from "../src/shared/munhae-api";
 import {
   buildHomeGroups,
+  buildHomeSections,
   homeDocumentPath,
   homeStage,
+  homeWhen,
   resolveHomeCreationParent,
   resolveHomeResume,
   resolveRecentDocument,
@@ -14,7 +16,7 @@ function source(id: string, overrides: Partial<DocumentListItem> = {}): Document
     id, parentId: null, depth: 0, nodeRole: "source_unit", isMaster: false,
     title: id, originalTitle: null, ordinal: 0,
     sourceState: "none", punctuationState: "none", translationState: "none",
-    uncertaintyCount: 0, contextCount: 0,
+    contextCount: 0,
     ...overrides,
   };
 }
@@ -221,5 +223,37 @@ describe("safe home document resumption", () => {
     expect(resolveRecentDocument({ title: "" }, documents)).toBeNull();
     expect(resolveHomeResume(documents, undefined, [{ title: "missing" }, { title: "序" }])).toEqual({ document: first, kind: "first" });
     expect(resolveHomeResume([], null, [{ title: "missing" }])).toEqual({ document: null, kind: "first" });
+  });
+});
+
+describe("home contents", () => {
+  it("lists chapters and directly attached sources in project tree order", () => {
+    const documents = [
+      folder("master", { isMaster: true }),
+      source("preface", { parentId: "master" }),
+      folder("chapter1", { parentId: "master" }),
+      source("c1-a", { parentId: "chapter1" }),
+      source("interlude", { parentId: "master" }),
+      source("interlude-2", { parentId: "master" }),
+      folder("chapter2", { parentId: "master" }),
+    ];
+    expect(buildHomeSections(documents).map(section => section.kind === "group"
+      ? ["group", section.group.id, section.group.documents.map(document => document.id)]
+      : ["loose", section.documents.map(document => document.id)])).toEqual([
+      ["loose", ["preface"]],
+      ["group", "chapter1", ["c1-a"]],
+      ["loose", ["interlude", "interlude-2"]],
+      ["group", "chapter2", []],
+    ]);
+  });
+
+  it("formats activity time relative to today", () => {
+    const now = new Date(2026, 8, 28, 15, 40);
+    expect(homeWhen(new Date(2026, 8, 28, 9, 5).toISOString(), now)).toBe("09:05");
+    expect(homeWhen(new Date(2026, 8, 27, 21, 40).toISOString(), now)).toBe("어제 21:40");
+    expect(homeWhen(new Date(2026, 8, 25, 12, 0).toISOString(), now)).toBe("3일 전");
+    expect(homeWhen(new Date(2026, 8, 11, 12, 0).toISOString(), now)).toBe("9월 11일");
+    expect(homeWhen(new Date(2025, 11, 30, 12, 0).toISOString(), now)).toBe("2025. 12. 30.");
+    expect(homeWhen("not a date", now)).toBe("");
   });
 });

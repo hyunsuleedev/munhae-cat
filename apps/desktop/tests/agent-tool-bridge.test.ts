@@ -413,6 +413,19 @@ describe("run-scoped translation tool bridge", () => {
     expect(grant.inspect()).toMatchObject({ committed: false, error: "submission_rejected" });
   });
 
+  it("returns the app's format reason and accepts the repaired submission through the real wrapper", async () => {
+    const onSubmit = vi.fn()
+      .mockImplementationOnce(() => { throw Object.assign(new Error("translation에 완성된 번역 전문을 넣으세요"), { code: "invalid_payload" }); });
+    const grant = await createTranslationToolGrant({ projectId: "project-a", runId: "run-a", onSubmit, retryMalformedSubmission: true });
+    const rejected = await runBuiltWrapperProcess({ grant, body: "{}" });
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stderr).toContain("invalid_payload (translation에 완성된 번역 전문을 넣으세요)");
+    const body = JSON.stringify({ schemaVersion: 2, translation: "번역" });
+    expect((await runBuiltWrapperProcess({ grant, body })).exitCode).toBe(0);
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    expect(grant.inspect()).toMatchObject({ committed: true, callCount: 2, error: null, rawBody: body });
+  });
+
   it("rejects a revoked grant without recording a call", async () => {
     const grant = await createTranslationToolGrant({ projectId: "project-a", runId: "run-a", onSubmit() {} });
     grant.revoke();

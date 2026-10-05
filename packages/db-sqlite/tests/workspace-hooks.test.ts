@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { createProject, openSqlite, sqlitePath, type ProjectRepo, type SaveTermInput } from "../src/index.ts";
+import { createProject, openSqlite, sqlitePath, type ProjectRepo, type TermCandidateInput } from "../src/index.ts";
 
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()!(); });
@@ -14,10 +14,14 @@ function fixture() {
   const doc = repo.createDocument({ title: "원문", parentId: null, nodeRole: "source_unit", sourceText: "王建宮詞", originKind: "paste" });
   return { parent, repo, documentId: doc.id };
 }
-function term(repo: ProjectRepo, documentId: string): SaveTermInput {
-  const source = repo.getEditor(documentId).source;
-  return { documentId, sourceVersion: `${source.versionId}:${source.lockVersion}`, sourceForm: "王建", kind: "person", reading: "왕건", translation: null,
-    definition: "궁사의 작자", contextNote: null, selectionReason: "인물 구분", uncertainty: null, evidence: [], quotes: ["王建"], status: "draft" };
+/** Terms need a confirmed punctuation basis. */
+function term(repo: ProjectRepo, documentId: string): { versionId: string; candidate: TermCandidateInput } {
+  let editor = repo.getEditor(documentId);
+  editor = repo.confirmSource({ documentNodeId: documentId, expectedLockVersion: editor.source.lockVersion });
+  editor = repo.createPunctuationDraftFromConfirmedSource({ documentNodeId: documentId, structureMode: "prose", expectedSourceLockVersion: editor.source.lockVersion });
+  repo.confirmPunctuation({ documentNodeId: documentId, expectedLockVersion: editor.punctuation!.lockVersion });
+  return { versionId: repo.getDocumentTerms(documentId).basis!.punctuationVersionId, candidate: { sourceForm: "王建", kind: "person", reading: "왕건", translation: null,
+    definition: "궁사의 작자", contextNote: null, confidence: "certain", alternatives: [], evidence: [], suggestedTermId: null, occurrences: [{ from: 0, to: 2 }] } };
 }
 
 it("uses an online display identity and guards captured repo reads and writes before any access", () => {
@@ -44,15 +48,15 @@ it("uses an online display identity and guards captured repo reads and writes be
   expect(beforeOperation).not.toHaveBeenCalled();
 });
 
-it("notifies once after a nested promotion transaction and ignores mutations with no DB changes", () => {
+it("notifies once after a nested confirmation transaction and ignores mutations with no DB changes", () => {
   const { repo, documentId } = fixture();
-  const value = term(repo, documentId);
-  const local = repo.saveTerm(value);
-  const onChange = vi.fn(() => { expect(repo.getTerms(documentId)).toHaveLength(2); });
+  const { versionId, candidate } = term(repo, documentId);
+  const [stored] = repo.storeTermCandidates(documentId, versionId, [candidate], { runId: "ai-test", agentId: "codex", model: "test" });
+  const onChange = vi.fn(() => { expect(repo.getDocumentTerms(documentId)).toMatchObject({ terms: [{ term: { sourceForm: "王建" } }], candidates: [] }); });
   repo.configureWorkspace({ onChange });
   repo.setTranslationLanguage("ko");
   expect(onChange).not.toHaveBeenCalled();
-  repo.promoteTerm({ ...value, id: local.id, expectedLockVersion: local.lockVersion });
+  repo.confirmTerm({ documentId, punctuationVersionId: versionId, candidateId: stored!.id, term: candidate, ...candidate });
   expect(onChange).toHaveBeenCalledOnce();
 });
 
@@ -75,13 +79,13 @@ it("does not dirty the workspace for reference verification or derived search wr
 
 it("observes AI candidate persistence and replaces hook configuration without duplicate notifications", () => {
   const { repo, documentId } = fixture();
-  const input = term(repo, documentId);
+  const { versionId, candidate } = term(repo, documentId);
   const first = vi.fn(), second = vi.fn(), guard = vi.fn();
   repo.configureWorkspace({ onChange: first });
   repo.configureWorkspace({ beforeOperation: guard, onChange: second });
-  repo.storeTermCandidates(documentId, input.sourceVersion!, [{ ...input, quotes: input.quotes! }], { runId: "ai-test", agentId: "codex", model: "test" });
+  repo.storeTermCandidates(documentId, versionId, [candidate], { runId: "ai-test", agentId: "codex", model: "test" });
   expect(guard).toHaveBeenCalledWith("storeTermCandidates", true);
   expect(first).not.toHaveBeenCalled();
   expect(second).toHaveBeenCalledOnce();
-  expect(repo.getTerms(documentId)).toHaveLength(1);
+  expect(repo.getDocumentTerms(documentId).candidates).toHaveLength(1);
 });

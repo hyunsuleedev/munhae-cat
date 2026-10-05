@@ -1,3 +1,7 @@
+/** Paused until local-first work settles (docs/online-projects.md). Hides creation and
+ * invitations; existing online code stays in place and does not follow new local schema. */
+export const ONLINE_PROJECTS_ENABLED = false;
+
 /** PostgreSQL-backed projects; local paths are disposable editor caches. */
 export type OnlineProject = {
   id: string;

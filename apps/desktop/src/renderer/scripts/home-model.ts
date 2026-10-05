@@ -1,12 +1,13 @@
-import { t } from "./i18n";
+import { t, ui } from "./i18n";
 import type { DocumentListItem } from "../../shared/munhae-api";
 
+/** Each stage also has a one-glyph proof mark for the contents lines. */
 export const HOME_STAGES = [
-  { key: "source", label: t("원문") },
-  { key: "punctuation", label: t("표점") },
-  { key: "translation", label: t("번역안") },
-  { key: "review", label: t("재검토") },
-  { key: "confirmed", label: t("확정") },
+  { key: "source", label: t("원문"), mark: "原" },
+  { key: "punctuation", label: t("표점"), mark: "點" },
+  { key: "translation", label: t("번역안"), mark: "譯" },
+  { key: "review", label: t("재검토"), mark: "覆" },
+  { key: "confirmed", label: t("확정"), mark: "定" },
 ] as const;
 
 export type HomeStage = (typeof HOME_STAGES)[number]["key"];
@@ -179,4 +180,42 @@ export function resolveHomeCreationParent(
   if (selected?.nodeRole === "container") return selected.id;
   if (selected && isSource(selected)) return containerId(selected.parentId) ?? masterId;
   return masterId;
+}
+
+export type HomeSection =
+  | { kind: "group"; group: HomeGroup }
+  | { kind: "loose"; documents: DocumentListItem[] };
+
+/** Chapter groups and directly attached sources, in the order the project tree lists them. */
+export function buildHomeSections(documents: readonly DocumentListItem[]): HomeSection[] {
+  const position = new Map<string, number>();
+  documents.forEach((document, index) => { if (!position.has(document.id)) position.set(document.id, index); });
+  const items: Array<{ at: number; group?: HomeGroup; document?: DocumentListItem }> = [];
+  for (const group of buildHomeGroups(documents)) {
+    if (group.containerId) items.push({ at: position.get(group.containerId) ?? 0, group });
+    else for (const document of group.documents) items.push({ at: position.get(document.id) ?? 0, document });
+  }
+  items.sort((a, b) => a.at - b.at);
+  const sections: HomeSection[] = [];
+  for (const item of items) {
+    if (item.group) { sections.push({ kind: "group", group: item.group }); continue; }
+    const last = sections.at(-1);
+    if (last?.kind === "loose") last.documents.push(item.document!);
+    else sections.push({ kind: "loose", documents: [item.document!] });
+  }
+  return sections;
+}
+
+/** Short activity time: "14:32" today, "어제 21:40", "3일 전" within a week, then the date. */
+export function homeWhen(iso: string, now = new Date()): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const days = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(date).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days <= 0) return time;
+  if (days === 1) return ui`어제 ${time}`;
+  if (days < 7) return ui`${days}일 전`;
+  if (date.getFullYear() !== now.getFullYear()) return `${date.getFullYear()}. ${date.getMonth() + 1}. ${date.getDate()}.`;
+  return ui`${date.getMonth() + 1}월 ${date.getDate()}일`;
 }

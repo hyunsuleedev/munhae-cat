@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { canonicalJsonHash, MunhaeError } from "@munhae/domain";
+import { MunhaeError } from "@munhae/domain";
 import {
   compareDocumentVersions,
   createConfirmedExport,
@@ -171,30 +171,33 @@ describe("rebuildable exact and FTS search", () => {
     });
     expect(confirmedOnly.results).toEqual([]);
 
-    const knowledge = repo.getKnowledge();
-    const term = knowledge.glossary.find((entry) => entry.sourceTerm === "文字")!;
+    // Terms are confirmed through a document link; the search filter only reads the term row.
+    const insertTerm = db.prepare(`INSERT INTO terms(id, project_id, source_form, kind, reading, translation, definition, evidence_json, created_at, updated_at)
+      VALUES (?, ?, ?, 'concept', ?, ?, NULL, '[]', '2026-09-28T00:00:00.000Z', '2026-09-28T00:00:00.000Z')`);
+    insertTerm.run("term-munja", repo.projectId, "文字", "문자", "문자(文字)");
+    insertTerm.run("term-jiphyeonjeon", repo.projectId, "集賢殿", "집현전", "집현전(集賢殿)");
+    const term = { id: "term-munja", sourceForm: "文字", translation: "문자(文字)" };
     const entityFiltered = searchProject(db, repo.projectId, {
       query: "國之語",
       scope: "source",
       state: "current",
-      entityFilter: { entityType: "glossary", entityId: term.id },
+      entityFilter: { entityType: "term", entityId: term.id },
     });
     expect(entityFiltered.entityFilter).toMatchObject({
-      entityType: "glossary",
+      entityType: "term",
       entityId: term.id,
-      label: `${term.sourceTerm} → ${term.targetTerm}`,
-      terms: expect.arrayContaining([term.sourceTerm, term.targetTerm]),
+      label: `${term.sourceForm} → ${term.translation}`,
+      terms: expect.arrayContaining([term.sourceForm, term.translation]),
     });
     expect(entityFiltered.results).toEqual([
       expect.objectContaining({ resultKind: "source", documentNodeId }),
     ]);
 
-    const unrelatedTerm = knowledge.glossary.find((entry) => entry.sourceTerm === "集賢殿")!;
     const excludedByEntity = searchProject(db, repo.projectId, {
       query: "國之語",
       scope: "source",
       state: "current",
-      entityFilter: { entityType: "glossary", entityId: unrelatedTerm.id },
+      entityFilter: { entityType: "term", entityId: "term-jiphyeonjeon" },
     });
     expect(excludedByEntity.results).toEqual([]);
     expect(() => searchProject(db, repo.projectId, {
@@ -212,48 +215,5 @@ describe("rebuildable exact and FTS search", () => {
       documentNodeId,
       matchKind: "prefix",
     }));
-  });
-});
-
-describe("knowledge entity hashes and optimistic locks", () => {
-  it("hashes every persisted glossary content field and rejects stale updates", () => {
-    const { repo } = setup();
-    const initial = repo.getKnowledge();
-    const glossary = initial.glossary[0]!;
-
-    expect(glossary.contentHash).toBe(canonicalJsonHash({
-      sourceTerm: glossary.sourceTerm,
-      targetTerm: glossary.targetTerm,
-      targetLocale: glossary.targetLocale,
-      termKind: glossary.termKind,
-      reading: glossary.reading,
-      noteMd: glossary.noteMd,
-      usageStatus: glossary.usageStatus,
-    }));
-    const glossaryUpdated = repo.upsertGlossary({
-      id: glossary.id,
-      expectedLockVersion: glossary.lockVersion,
-      sourceTerm: glossary.sourceTerm,
-      targetTerm: glossary.targetTerm,
-      targetLocale: glossary.targetLocale,
-      termKind: glossary.termKind,
-      reading: glossary.reading,
-      noteMd: `${glossary.noteMd ?? ""} 변경`,
-      usageStatus: glossary.usageStatus,
-    });
-    expect(glossaryUpdated).toMatchObject({ lockVersion: glossary.lockVersion + 1 });
-    expect(glossaryUpdated.contentHash).not.toBe(glossary.contentHash);
-    expect(() => repo.upsertGlossary({
-      id: glossary.id,
-      expectedLockVersion: glossary.lockVersion,
-      sourceTerm: glossary.sourceTerm,
-      targetTerm: glossary.targetTerm,
-      targetLocale: glossary.targetLocale,
-      termKind: glossary.termKind,
-      reading: glossary.reading,
-      noteMd: glossary.noteMd,
-      usageStatus: glossary.usageStatus,
-    })).toThrowError(MunhaeError);
-
   });
 });

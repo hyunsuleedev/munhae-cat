@@ -5,7 +5,7 @@ import { documentPath, documentPathText, orderedDocumentNodes, materialNodeState
 function node(id: string, parentId: string | null, ordinal = 0, title = id): DocumentListItem {
   return { id, parentId, ordinal, title, originalTitle: null, depth: 0, isMaster: parentId === null,
     nodeRole: "container", sourceState: "empty", punctuationState: "empty", translationState: "empty",
-    uncertaintyCount: 0, contextCount: 0 } as DocumentListItem;
+    contextCount: 0 } as DocumentListItem;
 }
 
 describe("translation material node hierarchy", () => {

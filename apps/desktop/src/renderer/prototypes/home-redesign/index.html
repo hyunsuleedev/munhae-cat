@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>홈 시안 비교 — 문해</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../styles/tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); background: var(--bg); color: var(--fg); font: 13px/1.5 var(--font-ui); }
+  a { color: inherit; }
+  button { font: inherit; color: inherit; }
+  :is(button, a, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .top { display: flex; align-items: baseline; gap: 14px; padding: 16px 24px 12px; }
+  .top strong { font: 500 20px/1 var(--font-hanmun); letter-spacing: -.02em; }
+  .top span { color: var(--muted); font-size: 12px; }
+  .top nav { display: flex; gap: 16px; margin-left: auto; font-size: 12px; }
+  .top nav a { color: var(--muted); text-decoration: none; }
+  .top nav a:hover { color: var(--fg); }
+
+  .tabs { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin: 0 24px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .tabs button { display: grid; gap: 3px; align-content: start; padding: 11px 14px 12px; border: 0; border-left: 1px solid var(--border); background: transparent; text-align: left; cursor: pointer; }
+  .tabs button:first-child { border-left: 0; padding-left: 0; }
+  .tabs b { font-size: 12.5px; font-weight: 600; }
+  .tabs b i { margin-right: 6px; color: var(--muted); font: 10.5px var(--font-mono); font-style: normal; }
+  .tabs small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+  .tabs button[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--accent-ink); }
+  .tabs button[aria-selected="true"] b { color: var(--accent-ink); }
+  .tabs button:hover small { color: var(--fg); }
+
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 22px; padding: 10px 24px; color: var(--muted); font-size: 11.5px; }
+  .seg { display: inline-flex; align-items: center; gap: 2px; }
+  .seg > span { margin-right: 6px; }
+  .seg button { padding: 3px 9px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+  .seg button[aria-pressed="true"] { border-color: var(--ctl-border); background: var(--surface); color: var(--fg); }
+  .controls select { padding: 3px 6px; border: 1px solid var(--ctl-border); border-radius: 4px; background: var(--surface); color: var(--fg); font: inherit; }
+  .controls .sp { flex: 1; }
+  .controls a { color: var(--accent); text-decoration: none; }
+  #dims { font: 10.5px var(--font-mono); }
+
+  .stage { position: relative; min-height: 0; margin: 0 24px 24px; overflow: hidden; border: 1px solid var(--border); background: var(--desk-a); }
+  .frame { position: absolute; top: 0; left: 50%; transform-origin: top center; background: var(--surface); }
+  iframe { display: block; width: 100%; height: 100%; border: 0; }
+  @media (max-width: 1100px) { .tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); } .tabs button:nth-child(5) { border-left: 0; padding-left: 0; } }
+</style>
+</head>
+<body>
+  <header class="top"><strong>文解</strong><span>프로젝트 홈 새 시안 · 예시 데이터 《論語》</span><nav><a href="/home.html" target="_blank" rel="noopener">현재 홈 ↗</a><a href="../home-directions/index.html" target="_blank" rel="noopener">이전 시안 (9월 9일) ↗</a></nav></header>
+  <div class="tabs" role="tablist" aria-label="시안 선택" id="tabs"></div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="예시 프로젝트 크기" id="scenarios"><span>원문 수</span></div>
+    <label>창 너비 <select id="width"><option value="fit">맞춤</option><option value="1600">1600</option><option value="1440">1440</option><option value="1280">1280</option><option value="1024">1024</option><option value="860">860</option></select></label>
+    <span id="dims"></span><span class="sp"></span><a id="standalone" href="#" target="_blank" rel="noopener">따로 열기 ↗</a>
+  </div>
+  <main class="stage" id="stage"><div class="frame" id="frame"><iframe id="preview" title="홈 시안 미리보기"></iframe></div></main>
+<script type="module">
+const DESIGNS = [
+  { id: '01', file: '01-ledger.html', name: '작업 대장', desc: '모든 원문을 한 장의 대장으로. 편별 묶음, 검색·상태 필터, 키보드 이동.' },
+  { id: '02', file: '02-contents.html', name: '목록', desc: '번역하는 책의 目錄처럼. 장마다 한 줄, 끝에 교정 표시.' },
+  { id: '02a', file: '02a-contents-detail.html', name: '목록 + 줄 끝 정보', desc: '쪽수 자리에 버전·최근 작업. 편별 확정 수, 고정 도구줄(찾기·단계·정렬).' },
+  { id: '02b', file: '02b-contents-switch.html', name: '목록 ↔ 대장', desc: '평소엔 목록, 전환하면 같은 줄이 표점·번역·의문·최근 열로.' },
+  { id: '03', file: '03-grid.html', name: '진행 격자', desc: '장 하나가 칸 하나. 전체 상태를 한눈에, 고른 장은 옆에서 자세히.' },
+  { id: '04', file: '04-journal.html', name: '작업 일지', desc: '날짜별 작업 기록. 무엇을 고쳤고 어디서 멈췄는지.' },
+  { id: '05', file: '05-launcher.html', name: '첫 화면 최소', desc: '검색창과 최근 원문뿐. 다음에 열 문서만 빠르게.' },
+];
+const SCENARIOS = [['empty', '없음'], ['small', '3개'], ['medium', '40개'], ['large', '93개']];
+const params = new URLSearchParams(location.search);
+const state = {
+  view: DESIGNS.some(d => d.id === params.get('view')) ? params.get('view') : '01',
+  scenario: SCENARIOS.some(([key]) => key === params.get('scenario')) ? params.get('scenario') : 'medium',
+  width: 'fit',
+};
+const $ = id => document.getElementById(id);
+
+$('tabs').innerHTML = DESIGNS.map(d => `<button type="button" role="tab" data-view="${d.id}"><b><i>${d.id}</i>${d.name}</b><small>${d.desc}</small></button>`).join('');
+$('scenarios').insertAdjacentHTML('beforeend', SCENARIOS.map(([key, label]) => `<button type="button" data-scenario="${key}">${label}</button>`).join(''));
+
+function url() { return `./${DESIGNS.find(d => d.id === state.view).file}?scenario=${state.scenario}`; }
+function layout() {
+  const stage = $('stage').getBoundingClientRect();
+  const frame = $('frame');
+  const width = state.width === 'fit' ? stage.width : Number(state.width);
+  const height = state.width === 'fit' ? stage.height : Math.round(width * 0.625);
+  const scale = Math.min(1, stage.width / width, stage.height / height);
+  Object.assign(frame.style, { width: `${width}px`, height: `${height}px`, transform: `translateX(-50%) scale(${scale})` });
+  $('dims').textContent = `${Math.round(width)} × ${Math.round(height)}${scale < 1 ? ` · ${Math.round(scale * 100)}%` : ''}`;
+}
+function render(reload = true) {
+  for (const tab of document.querySelectorAll('[data-view]')) {
+    const on = tab.dataset.view === state.view;
+    tab.setAttribute('aria-selected', String(on)); tab.tabIndex = on ? 0 : -1;
+  }
+  for (const button of document.querySelectorAll('[data-scenario]')) button.setAttribute('aria-pressed', String(button.dataset.scenario === state.scenario));
+  $('standalone').href = url();
+  if (reload) $('preview').src = url();
+  history.replaceState(null, '', `?view=${state.view}&scenario=${state.scenario}`);
+  layout();
+}
+document.addEventListener('click', event => {
+  const view = event.target.closest('[data-view]');
+  const scenario = event.target.closest('[data-scenario]');
+  if (view) { state.view = view.dataset.view; render(); }
+  if (scenario) { state.scenario = scenario.dataset.scenario; render(); }
+});
+$('tabs').addEventListener('keydown', event => {
+  const index = DESIGNS.findIndex(d => d.id === state.view);
+  const next = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: DESIGNS.length - 1 }[event.key];
+  if (next === undefined) return;
+  event.preventDefault();
+  state.view = DESIGNS[(next + DESIGNS.length) % DESIGNS.length].id;
+  render(); document.querySelector(`[data-view="${state.view}"]`).focus();
+});
+$('width').addEventListener('change', event => { state.width = event.target.value; layout(); });
+new ResizeObserver(layout).observe($('stage'));
+render();
+</script>
+</body>
+</html>

@@ -2,6 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  REMOVE_UNCERTAINTIES_SQL,
+  TERM_CONFIDENCE_SQL,
+  TERM_KINDS_SQL,
+  TRANSLATION_NOTES_SQL,
+  DOCUMENT_TERMS_SQL,
+  TERM_OCCURRENCE_SENTENCES_SQL,
   TRANSLATION_GROUPS_SQL,
   REMOVE_CHANGE_SUMMARY_SQL,
   READING_TRANSLATION_QUOTE_SQL,
@@ -18,6 +24,12 @@ import {
 } from "./embedded-sql.ts";
 
 const EMBEDDED: Record<string, string> = {
+  "sqlite/018_remove_uncertainties.sql": REMOVE_UNCERTAINTIES_SQL,
+  "sqlite/017_term_confidence.sql": TERM_CONFIDENCE_SQL,
+  "sqlite/016_term_kinds.sql": TERM_KINDS_SQL,
+  "sqlite/015_translation_notes.sql": TRANSLATION_NOTES_SQL,
+  "sqlite/014_term_occurrence_sentences.sql": TERM_OCCURRENCE_SENTENCES_SQL,
+  "sqlite/013_document_terms.sql": DOCUMENT_TERMS_SQL,
   "sqlite/012_translation_groups.sql": TRANSLATION_GROUPS_SQL,
   "sqlite/010_remove_change_summary.sql": REMOVE_CHANGE_SUMMARY_SQL,
   "sqlite/011_reading_translation_quote.sql": READING_TRANSLATION_QUOTE_SQL,

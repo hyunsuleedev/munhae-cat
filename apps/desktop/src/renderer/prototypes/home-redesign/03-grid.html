@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 진행 격자 — 홈 시안</title>
+<link rel="stylesheet" href="../../styles/tokens.css">
+<link rel="stylesheet" href="../../styles/chrome.css">
+<link rel="stylesheet" href="./shared.css">
+<style>
+/* 03 진행 격자: one cell per chapter, the selected chapter read in an inspector. */
+.gh-root { container: gridhome / inline-size; }
+.gh {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 0 44px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 30px 40px 48px;
+  color: var(--fg);
+}
+.gh.is-empty { grid-template-columns: minmax(0, 1fr); max-width: 880px; }
+.gh-main { min-width: 0; }
+.gh-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; margin: 0 0 20px; }
+.gh-head h1 { margin: 0; font: 500 24px/1.35 var(--font-hanmun); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.gh-head span { flex-shrink: 0; color: var(--muted); font-size: 11px; }
+
+.gh-rows { border-top: 1px solid var(--border); }
+.gh-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.gh-label { min-width: 0; padding-top: 3px; }
+.gh-label strong { display: block; font: 500 14px/1.4 var(--font-hanmun); letter-spacing: -.01em; }
+.gh-label small { display: block; margin-top: 1px; color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.gh-cells { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.gh-none { padding-top: 5px; color: var(--muted); font-size: 11px; }
+
+.gh-cell {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  color: rgb(41 43 39 / .72);
+  font: 500 9.5px/26px var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  transition: opacity 140ms ease;
+}
+.gh-cell.st-confirmed { color: rgb(255 255 255 / .9); }
+.gh-cell.is-preface { font: 500 12px/26px var(--font-hanmun); }
+/* "You were here": a thin ring set off from the cell. */
+.gh-cell.is-resume { box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 3px var(--accent-ink); }
+/* Open uncertainty: a small mark in the corner. */
+.gh-cell.has-q::after {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--surface);
+  content: "";
+}
+.gh-cell[aria-pressed="true"] { z-index: 1; outline: 1.5px solid var(--fg); outline-offset: 4px; }
+.proto-content .gh-cell:focus-visible { z-index: 1; outline: 2px solid var(--accent); outline-offset: 4px; }
+.gh-cell.is-dim { opacity: .2; }
+
+.gh-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 14px; }
+.gh-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.gh-chip i { display: block; width: 9px; height: 9px; border-radius: 2px; }
+.gh-chip i.gh-qdot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.gh-chip b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+.gh-chip:disabled { opacity: .45; }
+.gh-chip[aria-pressed="true"] { border-color: var(--border); background: var(--fg-soft); color: var(--fg); }
+.gh-key { display: inline-flex; align-items: center; gap: 7px; padding: 2px 6px; color: var(--muted); font-size: 11px; }
+.gh-key i { display: block; width: 7px; height: 7px; border-radius: 1px; box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 3px var(--accent-ink); }
+.gh-keys { margin-left: auto; padding-left: 12px; color: var(--muted); font-size: 10px; white-space: nowrap; }
+
+.gh-recent { margin-top: 30px; }
+.gh-recent h2 { margin: 0 0 6px; color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.gh-recent ol { margin: 0; padding: 0; border-top: 1px solid var(--border); list-style: none; }
+.gh-recent button {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 9px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg);
+  font-size: 12px;
+  text-align: left;
+}
+.gh-recent .hanmun { font-size: 13px; }
+.gh-recent .gh-opening { overflow: hidden; font-family: var(--font-hanmun); text-overflow: ellipsis; white-space: nowrap; }
+.gh-recent .gh-opening span { margin-left: 10px; color: var(--muted); font: 11.5px var(--font-ui); }
+.gh-recent time { color: var(--muted); font: 10.5px var(--font-mono); white-space: nowrap; }
+.gh-empty { padding: 26px 0; border-top: 1px solid var(--border); }
+.gh-empty p { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+
+/* Inspector: the selected chapter, separated by a hairline rather than a panel. */
+.gh-insp {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  min-width: 0;
+  max-height: calc(100vh - 64px - 48px);
+  overflow: auto;
+  padding: 2px 2px 8px 28px;
+  border-left: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+.gi-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--muted); font-size: 11px; }
+.gi-meta .hanmun { color: var(--fg); font-size: 12.5px; }
+.gi-resume { flex-shrink: 0; color: var(--accent-ink); font-size: 10.5px; font-weight: 600; }
+.gi-title { margin: 6px 0 0; font: 500 22px/1.45 var(--font-hanmun); letter-spacing: -.02em; overflow-wrap: anywhere; }
+.gi-track { position: relative; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 16px 0 0; padding: 0; list-style: none; }
+.gi-track::before { position: absolute; top: 11px; right: 10%; left: 10%; height: 1px; background: var(--border); content: ""; }
+.gi-step { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; color: var(--muted); }
+.gi-step b { display: block; padding: 0 5px; background: var(--surface); font: 400 13px/22px var(--font-hanmun); opacity: .4; }
+.gi-step span { max-width: 100%; overflow: hidden; font-size: 10px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; opacity: .55; }
+.gi-step.is-reached b { color: var(--fg); opacity: 1; }
+.gi-step.is-reached span { opacity: 1; }
+.gi-step.is-current b { font-weight: 600; box-shadow: inset 0 -2px 0 var(--c, var(--muted)); }
+.gi-step.is-current span { color: var(--fg); font-weight: 500; }
+.gi-step.st-punctuation { --c: var(--st-punctuation); }
+.gi-step.st-translation { --c: var(--st-translation); }
+.gi-step.st-review { --c: var(--st-review); }
+.gi-step.st-confirmed { --c: var(--st-confirmed); }
+.gi-open { margin-top: 18px; }
+.gi-sec { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.gi-sec h3 { margin: 0 0 8px; color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .02em; }
+.gi-source { margin: 0; font: 15px/1.95 var(--font-hanmun); word-break: keep-all; overflow-wrap: anywhere; }
+.gi-trans { margin: 0; font-size: 12.5px; line-height: 1.85; word-break: keep-all; overflow-wrap: anywhere; }
+.gi-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.gi-q strong { display: block; font-size: 12px; font-weight: 500; line-height: 1.6; word-break: keep-all; }
+.gi-q span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.7; word-break: keep-all; }
+.gi-events { gap: 6px; }
+.gi-events li { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; font-size: 11.5px; line-height: 1.6; }
+.gi-events time { color: var(--muted); font: 10.5px/1.75 var(--font-mono); white-space: nowrap; }
+
+@media (hover: hover) and (pointer: fine) {
+  .gh-cell:hover { filter: brightness(.93); }
+  .gh-chip:hover:not(:disabled) { color: var(--fg); }
+  .gh-recent button:hover .gh-opening { color: var(--accent); }
+}
+@container gridhome (max-width: 1080px) {
+  .gh { grid-template-columns: minmax(0, 1fr) 280px; gap: 0 30px; padding: 26px 28px 40px; }
+  .gh-insp { padding-left: 22px; }
+}
+@container gridhome (max-width: 800px) {
+  /* Stack as grid → inspector → recent, so a selection shows right under the cells. */
+  .gh { grid-template-columns: minmax(0, 1fr); }
+  .gh-main { display: contents; }
+  .gh-insp { order: 1; position: static; max-height: none; overflow: visible; margin-top: 26px; padding: 20px 0 0; border-top: 1px solid var(--border); border-left: 0; }
+  .gi-track { max-width: 440px; }
+  .gh-recent { order: 2; }
+  .gh-keys { display: none; }
+}
+@container gridhome (max-width: 560px) {
+  .gh { padding: 22px 20px 34px; }
+  .gh-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .gh-label { display: flex; align-items: baseline; gap: 8px; padding-top: 0; }
+}
+</style>
+</head>
+<body>
+<script type="module">
+import { mountShell, getDemo, esc, STAGES, stageLabel, fmtWhen } from './shared.js';
+
+const demo = getDemo();
+const root = mountShell({ design: '03 진행 격자' });
+root.classList.add('gh-root');
+const { docs, groups, stats, resume, events, uncertainties, project } = demo;
+
+const rows = [];
+const rootDocs = docs.filter(doc => !doc.groupId);
+if (rootDocs.length) rows.push({ id: 'root', label: '序', sub: '', docs: rootDocs });
+for (const group of groups) rows.push({ id: group.id, label: group.title, sub: group.docs.length ? `${group.docs.length}장` : '', docs: group.docs });
+
+const describe = doc => [
+  doc.opening === doc.title ? doc.title : `${doc.title} · ${doc.opening}`,
+  stageLabel(doc.stage),
+  doc.uncertainties ? `불확실성 ${doc.uncertainties}` : '',
+  doc.id === resume?.id ? '마지막 작업' : '',
+].filter(Boolean).join(' · ');
+
+const cell = doc => `<button type="button" class="gh-cell st-fill st-${doc.stage}${doc.uncertainties ? ' has-q' : ''}${doc.id === resume?.id ? ' is-resume' : ''}${doc.no ? '' : ' is-preface'}" data-cell="${esc(doc.id)}" data-stage="${doc.stage}" tabindex="-1" aria-pressed="false" title="${esc(describe(doc))}" aria-label="${esc(describe(doc))}">${doc.no || '序'}</button>`;
+
+const row = item => `<div class="gh-row"><div class="gh-label"><strong>${esc(item.label)}</strong>${item.sub ? `<small>${esc(item.sub)}</small>` : ''}</div>${item.docs.length ? `<div class="gh-cells" role="group" aria-label="${esc(item.label)}">${item.docs.map(cell).join('')}</div>` : '<div class="gh-none">원문 없음</div>'}</div>`;
+
+const legend = () => `<div class="gh-legend" role="group" aria-label="단계로 걸러 보기">
+  ${STAGES.map(stage => `<button type="button" class="gh-chip" data-filter="${stage.key}" aria-pressed="false"${stats[stage.key] ? '' : ' disabled'}><i class="st-fill st-${stage.key}"></i>${esc(stage.label)}<b>${stats[stage.key]}</b></button>`).join('')}
+  ${stats.openUncertainties ? `<button type="button" class="gh-chip" data-filter="q" aria-pressed="false"><i class="gh-qdot"></i>불확실성<b>${stats.openUncertainties}</b></button>` : ''}
+  ${resume ? '<span class="gh-key"><i aria-hidden="true"></i>마지막 작업</span>' : ''}
+  <span class="gh-keys" aria-hidden="true">←→↑↓ 이동 · ↵ 열기</span>
+</div>`;
+
+const versionOf = doc => {
+  const latest = events.find(event => event.docId === doc.id && /v\d+/.test(event.text));
+  return latest ? Number(latest.text.match(/v(\d+)/)[1]) : doc.version;
+};
+const recent = () => {
+  const seen = new Set();
+  const items = events.filter(event => !seen.has(event.docId) && seen.add(event.docId)).slice(0, 5);
+  return items.length ? `<section class="gh-recent" aria-labelledby="ghRecentTitle"><h2 id="ghRecentTitle">최근 작업한 원문</h2><ol>${items.map(event => {
+    const doc = docs.find(item => item.id === event.docId);
+    return `<li><button type="button" data-pick="${esc(doc.id)}"><span class="hanmun">${esc(doc.title)}</span><span class="gh-opening">${doc.opening === doc.title ? '' : esc(doc.opening)}<span>${esc(event.kind === 'uncertainty' ? '불확실성 기록' : event.text)}</span></span><time>${esc(fmtWhen(event.at))}</time></button></li>`;
+  }).join('')}</ol></section>` : '';
+};
+
+const currentLabel = doc => ({
+  source: '원문',
+  punctuation: doc.punctuation === 'draft' ? '표점 초안' : '표점 확정',
+  translation: `번역안 v${versionOf(doc)}`,
+  review: '재검토',
+  confirmed: `확정 v${versionOf(doc)}`,
+}[doc.stage]);
+
+function inspector(doc) {
+  const at = STAGES.findIndex(stage => stage.key === doc.stage);
+  const track = STAGES.map((stage, index) => {
+    const reached = stage.key === 'review' ? doc.stage === 'review' : index <= at;
+    const current = stage.key === doc.stage;
+    return `<li class="gi-step${reached ? ' is-reached' : ''}${current ? ` is-current st-${stage.key}` : ''}"${current ? ' aria-current="step"' : ''}><b aria-hidden="true">${stage.mark}</b><span>${esc(current ? currentLabel(doc) : stage.label)}</span></li>`;
+  }).join('');
+  const text = doc.punctuated || doc.source;
+  const open = uncertainties.filter(item => item.docId === doc.id && item.state === 'open');
+  const history = events.filter(event => event.docId === doc.id).slice(0, 3);
+  return `
+    <div class="gi-meta"><span>${doc.opening === doc.title ? '' : `<span class="hanmun">${esc(doc.title)}</span> · `}${esc(doc.ko)}</span>${doc.id === resume?.id ? '<span class="gi-resume">마지막 작업</span>' : ''}</div>
+    <h2 class="gi-title">${esc(doc.opening)}</h2>
+    <ol class="gi-track" aria-label="작업 단계">${track}</ol>
+    <button type="button" class="btn btn-primary gi-open" data-open-doc="${esc(doc.id)}">편집기에서 열기 <kbd>↵</kbd></button>
+    ${text ? `<section class="gi-sec"><h3>${doc.punctuated ? '원문' : '원문 · 표점 전'}</h3><p class="gi-source">${esc(text)}</p></section>` : ''}
+    ${doc.translationText ? `<section class="gi-sec"><h3>번역</h3><p class="gi-trans">${esc(doc.translationText)}</p></section>` : ''}
+    ${open.length ? `<section class="gi-sec"><h3>불확실성</h3><ul class="gi-list gi-q">${open.map(item => `<li><strong>${esc(item.title)}</strong><span>${esc(item.note)}</span></li>`).join('')}</ul></section>` : ''}
+    ${history.length ? `<section class="gi-sec"><h3>기록</h3><ol class="gi-list gi-events">${history.map(event => `<li><time>${esc(fmtWhen(event.at))}</time><span>${esc(event.kind === 'uncertainty' ? '불확실성 기록' : event.text)}</span></li>`).join('')}</ol></section>` : ''}`;
+}
+
+const head = `<header class="gh-head"><h1>${esc(project.title)}</h1>${stats.total ? `<span>원문 ${stats.total}개</span>` : ''}</header>`;
+
+if (!docs.length) {
+  root.innerHTML = `<div class="gh is-empty"><div class="gh-main">${head}<div class="gh-empty"><p>아직 원문이 없습니다.</p><button type="button" class="btn btn-primary" data-proto-note="원문 추가">원문 추가</button></div></div></div>`;
+} else {
+  root.innerHTML = `<div class="gh"><div class="gh-main">${head}<div class="gh-rows" id="ghRows">${rows.map(row).join('')}</div>${legend()}${recent()}</div><aside class="gh-insp" id="ghInsp" aria-label="선택한 원문"></aside></div>`;
+  const cells = [...root.querySelectorAll('.gh-cell')];
+  const insp = root.querySelector('#ghInsp');
+  const grid = root.querySelector('#ghRows');
+
+  const select = (id, focus = false) => {
+    for (const item of cells) {
+      const on = item.dataset.cell === id;
+      item.setAttribute('aria-pressed', String(on));
+      item.tabIndex = on ? 0 : -1;
+      if (on && focus) item.focus();
+    }
+    insp.innerHTML = inspector(docs.find(doc => doc.id === id));
+    insp.scrollTop = 0;
+  };
+  const openSelected = () => insp.querySelector('[data-open-doc]')?.click();
+
+  const center = rect => rect.left + rect.width / 2;
+  function vertical(from, dir) {
+    const rect = from.getBoundingClientRect();
+    const candidates = cells.filter(item => item !== from).map(item => ({ item, rect: item.getBoundingClientRect() }))
+      .filter(entry => dir > 0 ? entry.rect.top > rect.bottom - 1 : entry.rect.bottom < rect.top + 1);
+    if (!candidates.length) return null;
+    const lineTop = dir > 0 ? Math.min(...candidates.map(entry => entry.rect.top)) : Math.max(...candidates.map(entry => entry.rect.top));
+    const line = candidates.filter(entry => Math.abs(entry.rect.top - lineTop) < 4);
+    return line.reduce((best, entry) => Math.abs(center(entry.rect) - center(rect)) < Math.abs(center(best.rect) - center(rect)) ? entry : best).item;
+  }
+
+  grid.addEventListener('click', event => {
+    const target = event.target.closest('.gh-cell');
+    if (target) select(target.dataset.cell);
+  });
+  grid.addEventListener('dblclick', event => { if (event.target.closest('.gh-cell')) openSelected(); });
+  grid.addEventListener('keydown', event => {
+    const current = event.target.closest('.gh-cell');
+    if (!current) return;
+    const siblings = [...current.parentElement.children];
+    const index = siblings.indexOf(current);
+    let next = null;
+    switch (event.key) {
+      case 'ArrowLeft': next = siblings[index - 1]; break;
+      case 'ArrowRight': next = siblings[index + 1]; break;
+      case 'ArrowUp': next = vertical(current, -1); break;
+      case 'ArrowDown': next = vertical(current, 1); break;
+      case 'Home': next = siblings[0]; break;
+      case 'End': next = siblings.at(-1); break;
+      case 'Enter': event.preventDefault(); openSelected(); return;
+      default: return;
+    }
+    event.preventDefault();
+    if (next) select(next.dataset.cell, true);
+  });
+
+  root.querySelector('.gh-recent')?.addEventListener('click', event => {
+    const pick = event.target.closest('[data-pick]');
+    if (pick) select(pick.dataset.pick, true);
+  });
+  root.querySelector('.gh-legend').addEventListener('click', event => {
+    const chip = event.target.closest('.gh-chip');
+    if (!chip) return;
+    const on = chip.getAttribute('aria-pressed') !== 'true';
+    for (const item of root.querySelectorAll('.gh-chip')) item.setAttribute('aria-pressed', String(item === chip && on));
+    const filter = on ? chip.dataset.filter : null;
+    for (const item of cells) {
+      const match = filter === 'q' ? item.classList.contains('has-q') : item.dataset.stage === filter;
+      item.classList.toggle('is-dim', Boolean(filter) && !match);
+    }
+  });
+
+  select(resume?.id ?? docs[0].id);
+}
+</script>
+</body>
+</html>

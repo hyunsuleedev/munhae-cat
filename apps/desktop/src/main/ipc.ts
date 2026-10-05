@@ -1,13 +1,13 @@
 import { READING_ANALYSIS_CHANNELS, dispatchReadingAnalysis } from "./reading-analysis-handlers";
 import { onlineSaveRequestKey, withOnlineProjectSave } from "./session";
-import { latestTermExtraction, startTermExtraction, getTermExtraction, cancelTermExtraction } from "./term-review";
+import { latestTermExtraction, startTermExtraction, getTermExtraction, cancelTermExtraction, termReferenceList } from "./term-review";
 import { startMaterialRefinement, getMaterialRefinement, cancelMaterialRefinement } from "./material-refinement";
 import { translateUi } from "../shared/ui-translations";
 import { installApplicationMenu } from "./menu";
 import { checkAppUpdates } from "./app-updates";
 import { MATERIAL_CHANNELS, dispatchMaterial } from "./translation-materials";
-import { parseTermGlossarySelection, parseTermMaterialExclusions, parseConcordanceInput, parseReviewExportInput } from "./ipc-validate";
-import { exportReviewTranslations } from "./session";
+import { parseTermReferenceSelection, parseTermMaterialExclusions, parseConcordanceInput, parseReviewExportInput, parseTranslationExportInput } from "./ipc-validate";
+import { exportReviewTranslations, exportTranslationDocument } from "./session";
 import { app, clipboard, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { IPC_CHANNELS, type IpcChannel, type IpcResult } from "../shared/munhae-api";
 import { probeAgentsCached } from "./agents";
@@ -33,15 +33,14 @@ import {
   parseCreateProjectInput,
   parseCreateTranslationDraftInput,
   parseCreateReviewCommentInput,
-  parseCreateUncertaintyInput,
-  parseCreateUncertaintyVersionInput,
+  parseCreateTranslationNoteInput,
+  parseDeleteTranslationNoteInput,
+  parseUpdateTranslationNoteInput,
   parseDocumentNodeId,
-  parseGlossaryInput,
   parseGetProjectChatInput,
   parseMergeBlocksInput,
   parseMessageId,
   parseOptionalPath,
-  parseResolveUncertaintyInput,
   parseResetTranslationDraftInput,
   parseReviseTranslationInput,
   parseSavePunctuationDraftInput,
@@ -59,6 +58,7 @@ import {
   parseUpdateReviewCommentInput,
   parseUpdateDocumentMetadataInput,
   parseMoveDocumentInput,
+  parseDeleteDocumentInput,
   parseVersionDiffInput,
 } from "./ipc-validate";
 import { attachReferenceInteractive, openReference, readReference } from "./reference-assets";
@@ -98,6 +98,7 @@ import { ONLINE_PROJECT_CHANNELS, dispatchOnlineProject } from "./online-project
 import { BILLING_CHANNELS, dispatchBilling } from "./billing-handlers";
 import { COMMUNITY_CHANNELS, dispatchCommunity } from "./community";
 import { PLUGIN_CHANNELS, dispatchPlugin } from "./plugins";
+import { MCP_CHANNELS, dispatchMcp } from "./mcp-connect";
 import { leaveOnlineWorkspace } from "./session";
 
 const runtimeSessionStore = {
@@ -179,15 +180,26 @@ export function registerIpcHandlers(): void {
   for (const channel of PLUGIN_CHANNELS) {
     handleResult(channel, (_event, input) => dispatchPlugin(channel, input));
   }
+  for (const channel of MCP_CHANNELS) {
+    handleResult(channel, (_event, input) => dispatchMcp(channel, input));
+  }
   handleResult(IPC_CHANNELS.dictionarySearch, (_event, input) => dictionarySearch(input));
   handleResult(IPC_CHANNELS.dictionaryGetStatus, () => dictionaryGetStatus());
   handleResult(IPC_CHANNELS.dictionarySetKey, (_event, input) => dictionarySetKey(input));
   handleResult(IPC_CHANNELS.researchSearchFootnotes, (_event, input) => searchItkcFootnotes(input));
-  handleResult(IPC_CHANNELS.termsList, (_event, id) => requireRepo().getTerms(id == null ? undefined : parseMessageId(id)));
-  handleResult(IPC_CHANNELS.termsDelete, (_event, input) => requireRepo().deleteTerm(input as { id: string; expectedLockVersion: number }));
-  handleResult(IPC_CHANNELS.termsSave, (_event, input) => requireRepo().saveTerm(input as import("@munhae/db-sqlite").SaveTermInput));
-  handleResult(IPC_CHANNELS.termsPromote, (_event, input) => requireRepo().promoteTerm(input as import("@munhae/db-sqlite").SaveTermInput));
-  handleResult(IPC_CHANNELS.termsStart, (_event, id, exclusions, glossarySelection) => startTermExtraction(requireRepo(), getAppConfig(), parseMessageId(id), parseTermMaterialExclusions(exclusions), parseTermGlossarySelection(glossarySelection)));
+  // Term inputs are validated in full by the database layer (content, notes, exact positions, basis).
+  handleResult(IPC_CHANNELS.termsDocument, (_event, id) => requireRepo().getDocumentTerms(parseMessageId(id)));
+  handleResult(IPC_CHANNELS.termsProject, () => requireRepo().getProjectTerms());
+  handleResult(IPC_CHANNELS.termsSentences, (_event, id, documentId) =>
+    requireRepo().getTermSentences(parseMessageId(id), documentId == null ? undefined : parseMessageId(documentId)));
+  handleResult(IPC_CHANNELS.termsReferences, (_event, id) => termReferenceList(requireRepo(), parseMessageId(id)));
+  handleResult(IPC_CHANNELS.termsConfirm, (_event, input) => requireRepo().confirmTerm(input as import("@munhae/db-sqlite").ConfirmTermInput));
+  handleResult(IPC_CHANNELS.termsDismiss, (_event, input) => requireRepo().dismissTermCandidate(input as { id: string }));
+  handleResult(IPC_CHANNELS.termsUpdate, (_event, input) => requireRepo().updateTerm(input as import("@munhae/db-sqlite").UpdateTermInput));
+  handleResult(IPC_CHANNELS.termsUpdateUse, (_event, input) => requireRepo().updateDocumentTerm(input as import("@munhae/db-sqlite").UpdateDocumentTermInput));
+  handleResult(IPC_CHANNELS.termsDelete, (_event, input) => requireRepo().deleteDocumentTerm(input as { id: string; expectedLockVersion: number }));
+  handleResult(IPC_CHANNELS.termsDeleteProjectTerms, (_event, input) => requireRepo().deleteTerms(input as { terms: Array<{ id: string; expectedLockVersion: number }> }));
+  handleResult(IPC_CHANNELS.termsStart, (_event, id, exclusions, referenceSelection) => startTermExtraction(requireRepo(), getAppConfig(), parseMessageId(id), parseTermMaterialExclusions(exclusions), parseTermReferenceSelection(referenceSelection)));
   handleResult(IPC_CHANNELS.termsGetRun, (_event, id) => getTermExtraction(requireRepo(), parseMessageId(id)));
   handleResult(IPC_CHANNELS.termsLatestRun, (_event, id) => latestTermExtraction(requireRepo(), parseMessageId(id)));
   handleResult(IPC_CHANNELS.termsCancel, (_event, id) => cancelTermExtraction(requireRepo(), parseMessageId(id)));
@@ -267,6 +279,7 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.projectBackup, () => backupProject());
   handleResult(IPC_CHANNELS.projectConcordance, (_event, input) => requireRepo().concordance(parseConcordanceInput(input)));
   handleResult(IPC_CHANNELS.projectExportReview, (_event, input) => exportReviewTranslations(parseReviewExportInput(input)));
+  handleResult(IPC_CHANNELS.projectExportTranslation, (_event, input) => exportTranslationDocument(parseTranslationExportInput(input)));
   handleResult(IPC_CHANNELS.projectExportConfirmed, (_event, input) => {
     return exportConfirmedTranslations(parseConfirmedExportInput(input));
   });
@@ -287,6 +300,8 @@ export function registerIpcHandlers(): void {
     return requireRepo().getDocumentMetadata(parseDocumentNodeId(documentNodeId));
   });
   handleResult(IPC_CHANNELS.documentMove, (_event, input) => requireRepo().moveDocument(parseMoveDocumentInput(input)));
+  handleResult(IPC_CHANNELS.documentGetDeletion, (_event, documentNodeId) => requireRepo().getDocumentDeletion(parseDocumentNodeId(documentNodeId)));
+  handleResult(IPC_CHANNELS.documentDelete, (_event, input) => requireRepo().deleteDocument(parseDeleteDocumentInput(input)));
   handleResult(IPC_CHANNELS.documentUpdateMetadata, (_event, input) => {
     return requireRepo().updateDocumentMetadata(parseUpdateDocumentMetadataInput(input));
   });
@@ -351,6 +366,15 @@ export function registerIpcHandlers(): void {
   handleResult(IPC_CHANNELS.editorArchiveReviewComment, (_event, input) => {
     return requireRepo().archiveReviewComment(parseArchiveReviewCommentInput(input));
   });
+  handleResult(IPC_CHANNELS.editorCreateTranslationNote, (_event, input) => {
+    return requireRepo().createTranslationNote(parseCreateTranslationNoteInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorDeleteTranslationNote, (_event, input) => {
+    return requireRepo().deleteTranslationNote(parseDeleteTranslationNoteInput(input));
+  });
+  handleResult(IPC_CHANNELS.editorUpdateTranslationNote, (_event, input) => {
+    return requireRepo().updateTranslationNote(parseUpdateTranslationNoteInput(input));
+  });
   handleResult(IPC_CHANNELS.editorAttachReference, (_event, documentNodeId) => {
     return attachReferenceInteractive(parseDocumentNodeId(documentNodeId));
   });
@@ -362,9 +386,6 @@ export function registerIpcHandlers(): void {
   });
 
   handleResult(IPC_CHANNELS.knowledgeGet, () => requireRepo().getKnowledge());
-  handleResult(IPC_CHANNELS.knowledgeUpsertGlossary, (_event, entry) => {
-    return requireRepo().upsertGlossary(parseGlossaryInput(entry));
-  });
   handleResult(IPC_CHANNELS.knowledgeCreateContext, (_event, input) => {
     return requireRepo().createContextItem(parseCreateContextItemInput(input));
   });
@@ -379,15 +400,6 @@ export function registerIpcHandlers(): void {
   });
   handleResult(IPC_CHANNELS.knowledgeDeleteContext, (_event, input) => {
     return requireRepo().deleteContextItem(parseContextItemCasInput(input));
-  });
-  handleResult(IPC_CHANNELS.knowledgeCreateUncertainty, (_event, input) => {
-    return requireRepo().createUncertainty(parseCreateUncertaintyInput(input));
-  });
-  handleResult(IPC_CHANNELS.knowledgeVersionUncertainty, (_event, input) => {
-    return requireRepo().createUncertaintyVersion(parseCreateUncertaintyVersionInput(input));
-  });
-  handleResult(IPC_CHANNELS.knowledgeResolveUncertainty, (_event, input) => {
-    return requireRepo().resolveUncertainty(parseResolveUncertaintyInput(input));
   });
 
   handleResult(IPC_CHANNELS.contextPreview, (_event, input) => {

@@ -12,24 +12,26 @@ import { mountPopoverSelect } from "./popover-select";
 import { thinkingMarkup, chatActivityMarkup } from "./thinking-ui";
 import { createTranslationProgress, translationProgressState, translationRunLabel } from "./translation-progress-ui";
 import { prepModelMarkup, changePrepModelSetting, prepAlignmentSummary, prepRequiredContent, isTechnicalPreparationItem } from "./translation-setup-ui";
-import { t, ui, uiText } from "./i18n";
+import { t, tAs, ui, uiText } from "./i18n";
 import { configureConcordance } from "./concordance-ui";
-import { configureQuickTerm } from "./quick-term-ui";
-import { USAGE_LABELS } from "./knowledge-model";
 import { configureDictionary } from "./dictionary-ui";
 import { configureReadingStudy } from "./reading-study-ui";
 import { configureReviewExport } from "./review-export-ui";
+import { openExport } from "./project-tools";
 import { configureTranslationChecks } from "./translation-checks-ui";
 import { configureDocumentFind } from "./document-find-ui";
 import type { CheckInput, TranslationCheck } from "./translation-checks";
 import { editGroupedText, groupedTextSentences, matchUnchangedTextSentences, replaceTextSentence, textSentences, trimTextSentences, type TextSentence } from "@munhae/domain/text-sentences";
 import { configureSentenceLinkUi } from "./sentence-link-ui";
 import { termMarkup } from "./term-markup";
+import { TERM_KIND_LABELS } from "./term-review-model";
 import { configureEditorAids, type TranslationDraft, type EditorRecovery } from "./editor-aids-ui";
 import { findReviewPlace, type ReadingPosition } from "./editor-session";
 import { configureReviewComments } from "./review-comments-ui";
 import { textareaRange } from "./review-selection";
+import { configureNoteEditing, configureNoteRefs, notesInSentences, notesListMarkup } from "./translation-notes-ui";
 import { configureDocumentMaterials } from "./document-materials-ui";
+import { mountMcpChangeList } from "./mcp-change-ui";
 import { createPunctuationProjection, projectSourceRange, type PunctuationProjection } from "./punctuation-projection";
 import type {
   AgentProbe,
@@ -38,13 +40,14 @@ import type {
   ChatScopeKind,
   ContextPreview,
   DocumentListItem,
+  DocumentTerm,
+  DocumentTermsView,
   EditorView,
-  GlossaryEntryView,
   HomeView,
-  KnowledgeView,
   PunctuationSuggestionView,
   StructureSpanInput,
   StructureSpanKind,
+  TermKind,
 } from "../../shared/munhae-api";
 import {
   $,
@@ -68,6 +71,7 @@ import {
   projectLocationLabel,
   savedLocallyLabel,
   store,
+  takeDocumentTerm,
   unwrap,
 } from "./shared";
 import {
@@ -90,7 +94,8 @@ type Block = {
   kind: string;
 };
 
-type TermInfo = { target: string; kind: string; status: GlossaryEntryView["usageStatus"]; note: string };
+/** Confirmed terms of the open document. One written form can hold homonyms. */
+type TermInfo = Array<{ translation: string | null; kind: TermKind; definition: string | null; note: string | null }>;
 
 const api = initShell({
   page: "editor",
@@ -163,7 +168,9 @@ let punctuationDirty = false;
 let punctuationEditingConfirmed = false;
 let structureDrafts: StructureSpanInput[] | undefined = [];
 let terms: Record<string, TermInfo> = {};
-let knowledge: KnowledgeView | null = null;
+let documentTerms: DocumentTerm[] = [];
+let documentTermsKey = "";
+let documentTermsSerial = 0;
 let splitIdx: number | null = null;
 let linkIdx: number | null = null;
 let cmIdx: number | null = null;
@@ -218,8 +225,22 @@ let referenceLoadSerial = 0;
 
 const termReview = configureTermReview({ api, host: must("#termsWorkspace"), view: () => view,
   canStart: () => !sourceDirty && !punctuationDirty && !editorMutationBusy(),
-  changed: () => { prepRevision = undefined; },
+  changed: () => { prepRevision = undefined; void refreshDocumentTerms(); },
 });
+
+/** Only this document's confirmed terms are marked, checked and sent to translation. */
+async function refreshDocumentTerms(): Promise<DocumentTermsView | null> {
+  const id = view?.document.id; if (!id) return null;
+  const token = ++documentTermsSerial;
+  const result = await api.terms.document(id);
+  if (token !== documentTermsSerial || view?.document.id !== id || !result.ok) return null;
+  documentTerms = result.data.terms;
+  const map: Record<string, TermInfo> = {};
+  for (const link of documentTerms) (map[link.term.sourceForm] ??= []).push({ translation: link.term.translation, kind: link.term.kind, definition: link.term.definition, note: link.contextNote });
+  terms = map;
+  renderTerms(); renderSource();
+  return result.data;
+}
 
 const reviewComments = configureReviewComments({
   api,
@@ -229,6 +250,8 @@ const reviewComments = configureReviewComments({
   hasUnsavedTextChanges: () => dirty || sourceDirty || punctuationDirty || translationSaving || workspaceSaving
     || aiStarting || aiRun?.state === "running" || auxiliaryStarting !== null || auxiliaryRun?.state === "running",
   canEditTranslation: (sentenceId) => editing() && !editorMutationBusy() && isSentenceEditing(sentenceId),
+  canAddNote: canEditNotes,
+  addNote: target => noteEditing.open(target),
   escape: esc,
   notify,
   showComments: (next = "parallel") => {
@@ -291,16 +314,8 @@ const concordance = configureConcordance({ api, escape: esc, notify, currentDocu
     }
   },
 });
-const quickTerm = configureQuickTerm({ api, escape: esc, notify, getKnowledge: () => knowledge,
-  onSaved: (entry) => {
-    if (knowledge) knowledge.glossary.push(entry);
-    const previous = terms[entry.sourceTerm];
-    if (!previous || entry.usageStatus === "preferred") terms[entry.sourceTerm] = { target: entry.targetTerm, kind: entry.termKind, status: entry.usageStatus, note: entry.noteMd ?? "" };
-    renderTerms(); renderSource();
-  },
-});
 const dictionary = configureDictionary({ api, escape: esc, notify,
-  register: (entry, citation) => quickTerm.open(entry.headword, { targetTerm: entry.reading ?? "", noteMd: citation }),
+  register: (entry, citation) => void termReview.add(entry.headword, { reading: entry.reading ?? null, evidence: [{ citation, url: null }] }),
 });
 const readingStudy = configureReadingStudy({ api, host: must("#viewReading"), inspectorHost: must("#rp-reading"), openInspector: () => setTab("reading"), escape: esc, notify,
   canEdit: () => !!view && !sourceDirty && !punctuationDirty && !dirty && !translationSaving && !workspaceSaving && !workspaceSwitching && activeMutations.size === 0 && !sentenceLinkUi.isBusy(),
@@ -313,6 +328,10 @@ const reviewExport = configureReviewExport({ api, currentDocumentId: () => view?
     return true;
   },
 });
+
+function openTranslationExport(): void {
+  openExport({ guard: () => !hasUnsavedChanges() && !editorMutationBusy() });
+}
 
 function captureTranslation(): TranslationDraft {
   return structuredClone({ text: translationDraftText, sentences: sentenceDrafts, links: sentenceLinks, blocks, structureDirty: groupStructureDirty });
@@ -382,7 +401,7 @@ const editorAids = configureEditorAids({
 function checkSnapshot(): CheckInput | null {
   if (!view) return null;
   return { identity: `${view.document.id}:${view.translation?.versionId ?? ""}`, source: view.source.contentText, translation: view.translation?.textLayout ? translationDraftText : joinBlocks(blocks),
-    sentences: sentenceDrafts, links: sentenceLinks, glossary: knowledge?.glossary ?? [], comments: reviewComments.current(),
+    sentences: sentenceDrafts, links: sentenceLinks, terms: documentTerms.map(link => ({ sourceForm: link.term.sourceForm, translation: link.term.translation })), comments: reviewComments.current(),
     currentDependencies: view.translation?.isCurrentDependencies ?? true, dirty, hasLayout: !!view.translation?.textLayout };
 }
 function selectedPhrase(): string {
@@ -542,11 +561,19 @@ function prepReasonLabel(reason: string): string {
   }
   const labels: Record<string, string> = {
     exact_match: t("원문 일치"),
-    related_uncertainty: t("현재 문서 앵커"),
-    project_uncertainty: t("다른 문서의 불확실성"),
     project_glossary: t("공통 용어집"),
+    document_term: t("이 문서 용어"),
+    ancestor_document_context: t("상위 문서에서 이어받음"),
+    selected_document_context: t("이 문서에 직접 연결"),
+    confirmed_translation: t("확정 번역"),
   };
   return labels[reason] ?? reason;
+}
+
+/** The database labels an earlier confirmed translation in Korean; only that prefix is authored text. */
+function prepItemLabel(item: { reason: string; label: string }): string {
+  const prefix = "확정 번역 · ";
+  return item.reason === "confirmed_translation" && item.label.startsWith(prefix) ? ui`확정 번역 · ${item.label.slice(prefix.length)}` : item.label;
 }
 
 function selectedPrepAgent(): AgentProbe["agentId"] {
@@ -997,7 +1024,7 @@ function appendAuxiliaryPreparationItem(
   const main = document.createElement("div");
   main.className = "prep-item-main";
   const title = document.createElement("b");
-  title.textContent = item.label;
+  title.textContent = prepItemLabel(item);
   const metadata = document.createElement("div");
   metadata.className = "prep-item-sub";
   metadata.textContent = `${prepReasonLabel(item.reason)} · ${item.included ? t("포함") : t("제외됨")}`;
@@ -1066,7 +1093,7 @@ function updatePreparationMaterials(): void {
       const element = card!.querySelector<HTMLElement>(selector);
       if (element && element.textContent !== text) element.textContent = text;
     };
-    setText(".prep-item-main b", item.label);
+    setText(".prep-item-main b", prepItemLabel(item));
     setText(".prep-item-sub", `${prepReasonLabel(item.reason)} · ${item.included ? t("포함") : t("제외됨")}`);
     setText(".prep-item-count", item.chars ? ui`${fmt(item.chars)}자` : "—");
     setText(".prep-content-body", item.content);
@@ -2035,6 +2062,11 @@ function editing(): boolean {
     && view.translation.state !== "confirmed";
 }
 
+/** Notes are placed on saved text of a local draft, so pending edits must be saved first. */
+function canEditNotes(): boolean {
+  return editing() && view?.project.storageMode === "local" && !dirty && !translationSaving && !editorMutationBusy();
+}
+
 function editorMutationBusy(): boolean {
   return workspaceSaving || translationSaving || activeMutations.size > 0 || sentenceLinkUi.isBusy() || readingStudy.isBusy() || documentMaterials.isBusy();
 }
@@ -2061,6 +2093,17 @@ function renderEditingLocks(): void {
   must<HTMLSelectElement>("#punctuationMode").disabled = busy || punctuationLocked;
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly = busy || !editing() || reviewComments.isSelecting();
   $$<HTMLTextAreaElement>("#rows .sentence-edit, #bookGroups textarea").forEach((el) => { el.readOnly = busy || !editing() || reviewComments.isSelecting() || !isSentenceEditing(el.dataset.sentenceEdit); });
+  let edited = false;
+  for (const member of $$("#rows [data-review-sentence]")) {
+    const field = member.querySelector<HTMLTextAreaElement>(".sentence-edit"), text = member.querySelector<HTMLElement>(".sentence-text");
+    const open = editing() && isSentenceEditing(member.dataset.reviewSentence);
+    if (!field || !text || field.hidden === !open) continue;
+    field.hidden = !open; text.hidden = open;
+    if (open) resizeSentenceEditor(field);
+    else edited ||= text.textContent !== field.value;
+  }
+  // Leaving an edited sentence redraws the rows so their text, ranges and marks agree again.
+  if (edited) renderRows();
   $$<HTMLButtonElement>("#rows [data-edit-sentence], #bookEditToolbar [data-edit-sentence]").forEach((button) => {
     button.disabled = busy || !editing() || reviewComments.isSelecting();
     const label = isSentenceEditing(button.dataset.editSentence) ? t("편집 마침") : t("편집");
@@ -2225,6 +2268,9 @@ function renderRows(): void {
       group.sentences.push(sentence);
     }
     const canLink = !!view?.translation?.isCurrentDependencies && !dirty && !translationSaving && textLayout.state !== "running";
+    // Notes are placed on the saved text, so rows find them through the saved sentence ranges.
+    const savedSentences = new Map(textLayout.sentences.map(sentence => [sentence.id, sentence]));
+    must("#rows").dataset.translationText = translationDraftText;
     must("#rows").innerHTML = groups.map((group, index) => {
       const first = group.sentences[0]!;
       const link = sentenceLinks.find(item => item.sentenceId === first.id);
@@ -2232,11 +2278,13 @@ function renderRows(): void {
       const relation = link?.spans.length ? ui`연결 묶음 · 번역 ${group.sentences.length}구간` : t("미연결");
       const targets = group.sentences.map(sentence => {
         const link = sentenceLinks.find(item => item.sentenceId === sentence.id);
-        return `<div class="sentence-group-member" data-review-sentence="${esc(sentence.id)}"><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(sentence.id)} 번역문" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || editorMutationBusy() || reviewComments.isSelecting() || !isSentenceEditing(sentence.id) ? " readonly" : ""}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state"${link?.spans.length && !link.needsReview && link.reviewedBy !== "human" ? " hidden" : ""}>${!link?.spans.length || link.needsReview ? t("대응 확인 필요") : link.reviewedBy === "human" ? t("대응 확인됨") : ""}</span><span data-review-row-count></span></div></div>`;
+        const open = editing() && isSentenceEditing(sentence.id);
+        // Reading shows plain text, where footnote numbers can take room; the field appears only while editing.
+        return `<div class="sentence-group-member" data-review-sentence="${esc(sentence.id)}"><div class="sentence-text" data-sentence-text="${esc(sentence.id)}" data-review-translation-from="${sentence.from}" data-review-translation-to="${sentence.to}" tabindex="0" aria-label="${esc(ui`${sentence.id} 번역문`)}" aria-describedby="translationEditHelp"${open ? " hidden" : ""}>${esc(sentence.text)}</div><textarea class="sentence-edit" data-sentence-edit="${esc(sentence.id)}" aria-label="${esc(ui`${sentence.id} 번역문`)}" aria-describedby="translationEditHelp" spellcheck="false" rows="1"${!editing() || editorMutationBusy() || reviewComments.isSelecting() || !isSentenceEditing(sentence.id) ? " readonly" : ""}${open ? "" : " hidden"}>${esc(sentence.text)}</textarea><div class="sentence-actions"><span data-sentence-review="${esc(sentence.id)}" class="sentence-state"${link?.spans.length && !link.needsReview && link.reviewedBy !== "human" ? " hidden" : ""}>${!link?.spans.length || link.needsReview ? t("대응 확인 필요") : link.reviewedBy === "human" ? t("대응 확인됨") : ""}</span><span data-review-row-count></span></div></div>`;
       }).join("");
       const bookmarkMenu = group.sentences.map((sentence, i) => editorAids.bookmarkMarkup(sentence.id, group.sentences.length > 1 ? i + 1 : undefined)).join("");
       const bookmarkIndicators = group.sentences.filter(sentence => editorAids.isBookmarked(sentence.id)).map(sentence => editorAids.bookmarkMarkup(sentence.id, group.sentences.length > 1 ? group.sentences.indexOf(sentence) + 1 : undefined)).join("");
-      return `<article class="brow sentence-group" data-sentence-group="${esc(group.key)}" aria-label="${esc(group.sentences.map(sentence => sentence.id).join(", "))}"><div class="sentence-selection-cell"></div><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt">${targets}<div class="sentence-actions sentence-group-actions">${bookmarkIndicators}<details class="book-group-menu sentence-group-menu"><summary aria-label="${esc(t("묶음 작업"))}" title="${esc(t("묶음 작업"))}">⋯</summary><div class="book-group-menu-items"><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(first.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? t("대응 확인·수정") : t("원문 연결")}</button>${groupActions(first.id)}${bookmarkMenu}</div></details><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence="${esc(first.id)}" aria-pressed="${isSentenceEditing(first.id)}"${!editing() || editorMutationBusy() || reviewComments.isSelecting() ? " disabled" : ""}>${isSentenceEditing(first.id) ? t("편집 마침") : t("편집")}</button></div></div></article>`;
+      return `<article class="brow sentence-group" data-sentence-group="${esc(group.key)}" aria-label="${esc(group.sentences.map(sentence => sentence.id).join(", "))}"><div class="sentence-selection-cell"></div><div class="bcell bcell-src"><div class="bmeta"><span class="sentence-number">${String(index + 1).padStart(2, "0")}</span><span class="sentence-relation">${relation}</span></div><div class="sentence-source">${source}</div></div><div class="bcell bcell-tgt">${targets}${notesListMarkup(notesInSentences(view?.translation?.notes ?? [], group.sentences.flatMap(sentence => savedSentences.get(sentence.id) ?? [])), canEditNotes())}<div class="sentence-actions sentence-group-actions">${bookmarkIndicators}<details class="book-group-menu sentence-group-menu"><summary aria-label="${esc(t("묶음 작업"))}" title="${esc(t("묶음 작업"))}">⋯</summary><div class="book-group-menu-items"><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence-link="${esc(first.id)}"${canLink ? "" : " disabled"}>${link?.spans.length ? t("대응 확인·수정") : t("원문 연결")}</button>${groupActions(first.id)}${bookmarkMenu}</div></details><button class="btn btn-ghost btn-sm" type="button" data-edit-sentence="${esc(first.id)}" aria-pressed="${isSentenceEditing(first.id)}"${!editing() || editorMutationBusy() || reviewComments.isSelecting() ? " disabled" : ""}>${isSentenceEditing(first.id) ? t("편집 마침") : t("편집")}</button></div></div></article>`;
     }).join("");
     renderComparisonState();
     must("#blockCount").textContent=String(groups.length);
@@ -2335,7 +2383,7 @@ function moveSentence(direction: -1 | 1): void {
   renderComparisonState();
   const row = $$("#rows [data-review-sentence]").find((item) => item.dataset.reviewSentence === selectedSentenceId);
   row?.scrollIntoView({ block: "nearest" });
-  row?.querySelector<HTMLTextAreaElement>(".sentence-edit")?.focus({ preventScroll: true });
+  row?.querySelector<HTMLElement>(".sentence-edit:not([hidden]), .sentence-text:not([hidden])")?.focus({ preventScroll: true });
 }
 
 function resizeSentenceEditor(editor: HTMLTextAreaElement): void {
@@ -2352,7 +2400,7 @@ function resizeSentenceEditors(): void {
 
 function groupActions(id: string): string {
   if (!sentenceLinks.find(link => link.sentenceId === id)?.groupId) return "";
-  return `<button type="button" class="btn btn-ghost btn-sm" data-split-group="${esc(id)}">묶음 나누기</button><button type="button" class="btn btn-ghost btn-sm" data-merge-group="${esc(id)}"${sentenceDrafts.at(-1)?.id === id ? " disabled" : ""}>다음 묶음과 합치기</button>`;
+  return `<button type="button" class="btn btn-ghost btn-sm" data-split-group="${esc(id)}">${t("묶음 나누기")}</button><button type="button" class="btn btn-ghost btn-sm" data-merge-group="${esc(id)}"${sentenceDrafts.at(-1)?.id === id ? " disabled" : ""}>${t("다음 묶음과 합치기")}</button>`;
 }
 
 function renderBookGroups(): void {
@@ -2388,12 +2436,12 @@ function renderBookGroups(): void {
   const current = sentenceDrafts.find(sentence => sentence.id === selectedSentenceId) ?? sentenceDrafts[0];
   if (current) {
     toolbar.querySelector(".book-group-position")!.textContent = `${String(sentenceDrafts.indexOf(current) + 1).padStart(2, "0")} / ${sentenceDrafts.length}`;
-    toolbar.querySelector(".book-edit-state")!.textContent = isSentenceEditing(current.id) ? "편집 중" : sentenceNeedsReview(current.id) ? "대응 확인 필요" : "";
+    toolbar.querySelector(".book-edit-state")!.textContent = isSentenceEditing(current.id) ? t("편집 중") : sentenceNeedsReview(current.id) ? t("대응 확인 필요") : "";
     const edit = toolbar.querySelector<HTMLButtonElement>("[data-edit-sentence]")!;
     edit.dataset.editSentence = current.id;
     edit.disabled = !editing() || editorMutationBusy() || reviewComments.isSelecting();
     edit.setAttribute("aria-pressed", String(isSentenceEditing(current.id)));
-    edit.querySelector("[data-edit-caption]")!.textContent = isSentenceEditing(current.id) ? "편집 마침" : "편집";
+    edit.querySelector("[data-edit-caption]")!.textContent = t(isSentenceEditing(current.id) ? "편집 마침" : "편집");
     toolbar.querySelector(".book-bookmark-indicator")!.innerHTML = editorAids.isBookmarked(current.id) ? editorAids.bookmarkMarkup(current.id) : "";
     const menu = toolbar.querySelector<HTMLDetailsElement>("details")!;
     if (menu.dataset.sentence !== current.id) {
@@ -2452,6 +2500,9 @@ function renderFull(): void {
   renderComparisonState();
   editorAids.checkpoint();
   renderBookGroups();
+  const bookNotes = must("#bookNotes");
+  bookNotes.innerHTML = view?.translation?.textLayout ? notesListMarkup(view.translation.notes ?? [], canEditNotes()) : "";
+  bookNotes.hidden = !bookNotes.innerHTML;
   reviewComments.refresh();
   must<HTMLTextAreaElement>("#fullTranslationInput").readOnly=!editing() || translationSaving;
   renderEditingLocks();
@@ -2526,7 +2577,10 @@ function renderStrip(): void {
     : t("번역안 확정 (⇧⌘↩)");
 }
 
+const mcpChangeList = mountMcpChangeList(api, must("#mcpChanges"), () => view?.document.id ?? null, notify);
+
 function renderHistory(): void {
+  mcpChangeList.refresh();
   const kind = historyKind();
   renderVersionHistory(kind, kind === "translation" ? "translation" : null);
 }
@@ -2644,18 +2698,7 @@ function renderChat(): void {
 }
 
 function renderTerms(): void {
-  const source = view?.source.contentText ?? "";
-  const entries = (knowledge?.glossary ?? []).filter(entry => source.includes(entry.sourceTerm));
-  must("#ctxTerms").innerHTML = entries.length ? entries.map(entry => `<div class="li" style="display:grid;gap:5px"><span><b class="hanmun">${esc(entry.sourceTerm)}</b> → ${esc(entry.targetTerm)}</span><span class="tag ${entry.usageStatus === "preferred" ? "tag-ok" : "tag-plain"}">${USAGE_LABELS[entry.usageStatus]}</span>${entry.noteMd ? `<p class="muted" style="white-space:pre-wrap;margin:0">${esc(entry.noteMd)}</p>` : ""}</div>`).join("") : uiText('<p class="muted" style="font-size:12px">원문에 일치하는 등록 용어가 없습니다. 확인한 표현은 ‘용어 등록’에서 남길 수 있습니다.</p>');
-  const unc = knowledge?.uncertainties.filter((u) => u.state === "open") ?? [];
-  must("#ctxUnc").innerHTML = unc.length
-    ? unc
-        .map(
-          (u) =>
-            `<div class="li"><span><b>${esc(u.id.slice(0, 8))}</b> ${esc(u.statementMd)}</span><span class="tag tag-warn">${esc(u.category)}</span></div>`,
-        )
-        .join("")
-    : uiText('<p class="muted" style="font-size:12px">열린 불확실성이 없습니다.</p>');
+  must("#ctxTerms").innerHTML = documentTerms.length ? documentTerms.map(link => `<div class="li" style="display:grid;gap:5px"><span><b class="hanmun">${esc(link.term.sourceForm)}</b>${link.term.translation ? ` → ${esc(link.term.translation)}` : ""}</span>${link.term.definition ? `<p class="muted" style="white-space:pre-wrap;margin:0">${esc(link.term.definition)}</p>` : ""}${link.contextNote ? `<p class="muted" style="white-space:pre-wrap;margin:0">${esc(link.contextNote)}</p>` : ""}</div>`).join("") : uiText('<p class="muted" style="font-size:12px">이 문서에서 확정한 용어가 없습니다. 용어 화면에서 확정한 용어만 번역에 쓰입니다.</p>');
 }
 
 function versionTagClass(state: EditorView["source"]["state"]): string {
@@ -2835,7 +2878,7 @@ function renderWorkflowProgress(): void {
         : previewedPunctuationSuggestion() ? t("AI 제안을 원문과 대조하고 적용하세요. 표점 없이 번역할 수도 있습니다.")
         : punctuation?.state === "confirmed" ? t("표점이 확정되었습니다. 번역 단계에서 문장별로 대조하세요.")
         : t("필요한 구두점과 문단을 정리하세요. 표점은 생략하고 번역할 수 있습니다.")
-      : workspace === "terms" ? "필요한 용어만 검토하세요. 검토한 풀이를 번역에 반영하며, 이 단계는 건너뛸 수 있습니다."
+      : workspace === "terms" ? t("필요한 용어만 검토하세요. 검토한 풀이를 번역에 반영하며, 이 단계는 건너뛸 수 있습니다.")
       : !ready ? t("원문 단계에서 번역할 내용을 먼저 입력하고 저장하세요.")
         : translation && !currentTranslation ? t("원문 또는 표점 기준이 변경되었습니다. 현재 기준으로 새 번역안을 만드세요.")
         : !currentTranslation ? t("직접 번역을 입력하거나 AI 번역을 시작하세요. 표점은 선택 사항입니다.")
@@ -2906,7 +2949,7 @@ function renderWorkflow(): void {
     must<HTMLButtonElement>("#btnRevise").hidden = true;
   }
   const docTitle = view.document.originalTitle || view.document.title;
-  must("#titleSub").textContent = `— ${{ source: t("원문안"), punctuation: t("표점 원문"), segmentation: t("분절"), terms: "용어", translation: t("번역안") }[workspace]}`;
+  must("#titleSub").textContent = `— ${{ source: t("원문안"), punctuation: t("표점 원문"), segmentation: t("분절"), terms: tAs("plural", "용어"), translation: t("번역안") }[workspace]}`;
   must("#sbValid").textContent = workspace === "source"
     ? ui`원문 ${VERSION_STATE_LABELS[view.source.state]}`
     : workspace === "punctuation"
@@ -2980,6 +3023,16 @@ function renderSaveState(): void {
   must("#editorSaveState").textContent = editorMutationBusy() ? t("저장 중…")
     : hasUnsavedChanges() ? t("저장하지 않은 변경") : savedLocallyLabel();
   renderWorkflowProgress();
+  reportEditing();
+}
+
+let reportedEditing: string | null = null;
+/** Tells the app which document has unsaved edits, so AI tools (MCP) cannot write over them. */
+function reportEditing(): void {
+  const editing = hasUnsavedChanges() ? view?.document.id ?? null : null;
+  if (editing === reportedEditing) return;
+  reportedEditing = editing;
+  void api.mcp.reportEditing(editing).catch(() => undefined);
 }
 
 function renderFolioDocument(): void {
@@ -3234,6 +3287,9 @@ function applyView(v: EditorView, options: { saved?: boolean; preserveHistory?: 
     clearReferencePreview();
   }
   view = v;
+  const termsKey = `${v.document.id}:${v.punctuation?.versionId ?? ""}:${v.punctuation?.state ?? ""}`;
+  if (documentChanged) { terms = {}; documentTerms = []; }
+  if (termsKey !== documentTermsKey) { documentTermsKey = termsKey; void refreshDocumentTerms(); }
   sourceCodepoints = Array.from(v.source.contentText);
   punctuationProjection = v.punctuation && ["draft", "confirmed"].includes(v.punctuation.state)
     && (!v.translation?.textLayout || v.translation.isCurrentDependencies)
@@ -3807,6 +3863,10 @@ async function confirmPunctuation(): Promise<void> {
     applyView(result.data);
     must("#sbSaved").textContent = nowHM();
     if (translationReady()) setWorkspace("translation", true);
+    const confirmedTerms = await refreshDocumentTerms();
+    if (confirmedTerms?.previousCount && !confirmedTerms.terms.length) {
+      notify(ui`이전 표점본에서 확정한 용어 ${String(confirmedTerms.previousCount)}개는 이제 번역에 쓰이지 않습니다. 용어 화면에서 다시 생성해 확정하세요.`, t("용어"));
+    }
   } catch (error) {
     showWorkflowError("punctuation", error instanceof Error ? error.message : t("표점 원문을 확정하지 못했습니다."));
   } finally {
@@ -4012,7 +4072,7 @@ function pageCmd(id: string): boolean {
       if (workspace !== "translation") return false;
       documentFind.open(selectedPhrase()); return true;
     case "export":
-      reviewExport.open(); return true;
+      openTranslationExport(); return true;
   }
   return false;
 }
@@ -4298,12 +4358,13 @@ function renderComparisonFilterButton(): void {
 }
 must("#btnDocumentFind").addEventListener("click", () => documentFind.open(selectedPhrase()));
 must("#btnConcordance").addEventListener("click", () => concordance.open(selectedPhrase()));
-must("#btnQuickTerm").addEventListener("click", () => quickTerm.open(selectedPhrase()));
+must("#btnQuickTerm").addEventListener("click", () => void termReview.add(selectedPhrase()));
 must("#btnDictionary").addEventListener("click", () => dictionary.open({ query: selectedPhrase() }));
 must("#btnReadingStudy").addEventListener("click", () => { must("#researchTools").hidePopover(); setView("reading"); });
 must("#btnDictionaryContext").addEventListener("click", () => dictionary.open({ query: selectedPhrase() }));
 must("#btnTranslationChecks").addEventListener("click", () => translationChecks.open());
 must("#btnReviewExport").addEventListener("click", () => reviewExport.open());
+must("#btnExport").addEventListener("click", openTranslationExport);
 must("#btnPreviousSentence").addEventListener("click", () => moveSentence(-1));
 must("#btnNextSentence").addEventListener("click", () => moveSentence(1));
 function replaceGroupUnits(units: TextSentence[], links: typeof sentenceLinks): void {
@@ -4318,6 +4379,15 @@ function replaceGroupUnits(units: TextSentence[], links: typeof sentenceLinks): 
   renderRows(); renderFull(); renderStrip();
 }
 
+/** Caret in a row's plain text, as a UTF-16 offset into that sentence. */
+function sentenceTextCaret(id: string): number | null {
+  const body = $$("#rows [data-sentence-text]").find(item => item.dataset.sentenceText === id), selection = window.getSelection();
+  if (!body || !selection?.focusNode || !body.contains(selection.focusNode)) return null;
+  const before = document.createRange();
+  before.selectNodeContents(body); before.setEnd(selection.focusNode, selection.focusOffset);
+  return before.toString().length;
+}
+
 function openGroupOperation(id: string, split: boolean): void {
   if (!editing() || editorMutationBusy() || reviewComments.isSelecting()) return;
   const index = sentenceDrafts.findIndex(sentence => sentence.id === id);
@@ -4325,9 +4395,9 @@ function openGroupOperation(id: string, split: boolean): void {
   const link = sentenceLinks.find(link => link.sentenceId === id);
   if (!sentence || !link?.groupId) return;
   const field = Array.from(document.querySelectorAll<HTMLTextAreaElement>("#rows textarea, #bookGroups textarea")).find(field => field.dataset.sentenceEdit === id && field.getClientRects().length);
-  const splitAt = field ? textareaRange(sentence.text, 0, field.selectionStart)?.quote.length ?? 0 : bookGroupCaret(must("#bookGroups"), id) ?? 0;
+  const splitAt = field ? textareaRange(sentence.text, 0, field.selectionStart)?.quote.length ?? 0 : sentenceTextCaret(id) ?? bookGroupCaret(must("#bookGroups"), id) ?? 0;
   if (split && (!sentence.text.slice(0, splitAt).trim() || !sentence.text.slice(splitAt).trim())) {
-    notify("번역문 안에서 나눌 위치에 커서를 놓은 다음 묶음 나누기를 누르세요."); return;
+    notify(t("번역문 안에서 나눌 위치에 커서를 놓은 다음 묶음 나누기를 누르세요.")); return;
   }
   const cuts: number[] = [];
   if (split && punctuationProjection && view?.punctuation?.state === "confirmed") {
@@ -4336,12 +4406,12 @@ function openGroupOperation(id: string, split: boolean): void {
       if (char === "。" && point !== undefined && link.spans.some(span => span.from < point) && link.spans.some(span => span.to > point)) cuts.push(point);
     });
   }
-  if (split && !cuts.length) { notify("이 묶음 안에는 나눌 수 있는 표점 경계가 없습니다. 줄바꿈은 같은 묶음 안에서 사용할 수 있습니다."); return; }
+  if (split && !cuts.length) { notify(t("이 묶음 안에는 나눌 수 있는 표점 경계가 없습니다. 줄바꿈은 같은 묶음 안에서 사용할 수 있습니다.")); return; }
   const next = sentenceDrafts[index + 1];
   if (!split && !next) return;
   const dialog = document.createElement("dialog"); dialog.className = "group-operation-dialog";
-  const previewText = split ? sentence.text.slice(0, splitAt) + "\n── 나눌 위치 ──\n" + sentence.text.slice(splitAt) : Array.from(translationDraftText).slice(sentence.from, next!.to).join("");
-  dialog.innerHTML = `<h2>${split ? "연결 묶음 나누기" : "연결 묶음 합치기"}</h2><p>${split ? "번역은 커서 위치에서 나눕니다. 대응 원문을 나눌 표점 경계를 선택하세요." : "다음 번역 묶음과 원문 범위를 하나로 합칩니다. 번역 내용은 그대로 유지됩니다."}</p><pre>${esc(previewText)}</pre>${split ? `<select aria-label="원문 분할 경계">${[...new Set(cuts)].map(cut => `<option value="${cut}">${esc(sourceCodepoints.slice(Math.max(link.spans[0]!.from, cut - 12), cut).join(""))} 。 | ${esc(sourceCodepoints.slice(cut, cut + 12).join(""))}</option>`).join("")}</select>` : ""}<div class="sentence-actions"><button type="button" data-cancel>취소</button><button type="button" data-apply>${split ? "나누기" : "합치기"}</button></div>`;
+  const previewText = split ? sentence.text.slice(0, splitAt) + `\n── ${t("나눌 위치")} ──\n` + sentence.text.slice(splitAt) : Array.from(translationDraftText).slice(sentence.from, next!.to).join("");
+  dialog.innerHTML = `<h2>${t(split ? "연결 묶음 나누기" : "연결 묶음 합치기")}</h2><p>${t(split ? "번역은 커서 위치에서 나눕니다. 대응 원문을 나눌 표점 경계를 선택하세요." : "다음 번역 묶음과 원문 범위를 하나로 합칩니다. 번역 내용은 그대로 유지됩니다.")}</p><pre>${esc(previewText)}</pre>${split ? `<select aria-label="${esc(t("원문 분할 경계"))}">${[...new Set(cuts)].map(cut => `<option value="${cut}">${esc(sourceCodepoints.slice(Math.max(link.spans[0]!.from, cut - 12), cut).join(""))} 。 | ${esc(sourceCodepoints.slice(cut, cut + 12).join(""))}</option>`).join("")}</select>` : ""}<div class="sentence-actions"><button type="button" data-cancel>${t("취소")}</button><button type="button" data-apply>${t(split ? "나누기" : "합치기")}</button></div>`;
   document.body.append(dialog);
   dialog.addEventListener("close", () => dialog.remove());
   dialog.querySelector("[data-cancel]")!.addEventListener("click", () => dialog.close());
@@ -4373,6 +4443,15 @@ function openGroupOperation(id: string, split: boolean): void {
   });
   dialog.showModal();
 }
+configureNoteRefs({ book: must("#bookGroups"), bookNotes: must("#bookNotes"), rows: must("#rows"), notes: () => view?.translation?.notes ?? [] });
+const noteEditing = configureNoteEditing({
+  api, view: () => view, canEdit: canEditNotes, notify,
+  applied: notes => {
+    if (!view?.translation) return;
+    view.translation.notes = notes;
+    renderRows(); renderFull();
+  },
+});
 for (const root of [must("#rows"), must("#bookEditToolbar"), must("#bookGroups")]) root.addEventListener("click", event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-split-group], [data-merge-group]");
   if (button && !button.disabled) {
@@ -4920,8 +4999,8 @@ document.addEventListener("mouseover", (e) => {
     return;
   }
   const d = terms[t.dataset.term ?? ""];
-  if (!d) return;
-  tc.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:5px"><b class="hanmun" style="font-size:15px">${esc(t.dataset.term ?? "")}</b><span class="tag ${d.status === "preferred" ? "tag-ok" : "tag-plain"}">${USAGE_LABELS[d.status]}</span></div><div><b>${esc(d.target)}</b> <span class="muted">· ${esc(d.kind)}</span></div><p class="muted" style="margin-top:5px">${esc(d.note)}</p>`;
+  if (!d?.length) return;
+  tc.innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:5px"><b class="hanmun" style="font-size:15px">${esc(t.dataset.term ?? "")}</b><span class="tag tag-plain">${esc(uiText(TERM_KIND_LABELS[d[0]!.kind]))}</span></div>${d.map(entry => `<div>${entry.translation ? `<b>${esc(entry.translation)}</b> ` : ""}${entry.definition ? `<span class="muted">${esc(entry.definition)}</span>` : ""}</div>${entry.note ? `<p class="muted" style="margin-top:5px">${esc(entry.note)}</p>` : ""}`).join("")}`;
   const r = t.getBoundingClientRect();
   const x = Math.min(r.left, innerWidth - 296);
   const y = r.bottom + 8 > innerHeight - 160 ? r.top - 160 : r.bottom + 8;
@@ -5006,32 +5085,17 @@ async function boot(): Promise<void> {
   let id = readPersistedDoc();
   if (!id || !docs.some(doc => doc.id === id)) id = findDefaultDoc(docs);
   renderSidebar(tree(), { currentDocId: id });
-  try {
-    const kn = await api.knowledge.get();
-    if (kn.ok) {
-      knowledge = kn.data;
-      const map: Record<string, TermInfo> = {};
-      for (const g of kn.data.glossary) {
-        const prev = map[g.sourceTerm];
-        if (!prev || g.usageStatus === "preferred") {
-          map[g.sourceTerm] = {
-            target: g.targetTerm,
-            kind: g.termKind,
-            status: g.usageStatus,
-            note: g.noteMd ?? "",
-          };
-        }
-      }
-      terms = map;
-    }
-  } catch {
-    /* optional */
-  }
   if (!id) {
     showEditorError(t("열 문서가 없습니다. 프로젝트 홈에서 원문 문서를 만드세요."), t("편집할 문서가 없습니다"));
     return;
   }
   await loadEditor(id);
+  const handoff = takeDocumentTerm();
+  if (handoff?.documentId === id && view) {
+    editorAids.dropPendingPosition();
+    termReview.focusTerm(handoff.termId);
+    setWorkspace("terms");
+  }
   void refreshAgentProbes();
   if (store.get("munhae.prepare") === "1") {
     store.set("munhae.prepare", "0");
@@ -5055,6 +5119,7 @@ const stopAiRunEvents = api.ai.onEvent((run) => {
   else receiveAuxiliaryRun(run);
 });
 window.addEventListener("pagehide", () => {
+  if (reportedEditing) void api.mcp.reportEditing(null).catch(() => undefined);
   clearAiPoll();
   clearAuxiliaryPoll();
   stopAiRunEvents();
@@ -5076,20 +5141,14 @@ registerProjectRefresh({
     const affectsDocument = change.reason === "resync" || !change.documentIds.length || change.documentIds.includes(id)
       || change.scopes.some(scope => ["terms", "materials", "comments", "project"].includes(scope));
     if (!affectsDocument) return () => { docs = home.data.documents; renderSidebar(tree(), { currentDocId: id }); };
-    const [editor, nextKnowledge, suggestion] = await Promise.all([api.editor.get(id), api.knowledge.get(), api.ai.getPunctuationSuggestion(id)]);
+    const [editor, suggestion] = await Promise.all([api.editor.get(id), api.ai.getPunctuationSuggestion(id)]);
     if (!editor.ok) throw new Error(editor.error.message);
-    if (!nextKnowledge.ok) throw new Error(nextKnowledge.error.message);
     if (!suggestion.ok) throw new Error(suggestion.error.message);
     const applyTerms = await termReview.prepareRefresh(editor.data);
     return () => {
       const position = editorPosition();
       const previewingSuggestion = punctuationPreviewing;
-      docs = home.data.documents; knowledge = nextKnowledge.data;
-      const nextTerms: Record<string, TermInfo> = {};
-      for (const item of knowledge.glossary) if (!nextTerms[item.sourceTerm] || item.usageStatus === "preferred") {
-        nextTerms[item.sourceTerm] = { target: item.targetTerm, kind: item.termKind, status: item.usageStatus, note: item.noteMd ?? "" };
-      }
-      terms = nextTerms;
+      docs = home.data.documents;
       applyView(editor.data);
       punctuationSuggestion = suggestion.data;
       if (previewingSuggestion && suggestion.data && !suggestion.data.applied) showPunctuationSuggestion(true);
@@ -5108,7 +5167,7 @@ function applyFullTranslationText(text: string, edits?: Array<{ from: number; to
       const result = editGroupedText(translationDraftText, sentenceDrafts, text);
       if (!result) {
         field.value = translationDraftText;
-        notify("여러 묶음의 본문을 한 번에 바꾸려면 먼저 묶음을 합치세요.");
+        notify(t("여러 묶음의 본문을 한 번에 바꾸려면 먼저 묶음을 합치세요."));
         return;
       }
       translationDraftText = result.text; sentenceDrafts = result.sentences;
@@ -5121,7 +5180,7 @@ function applyFullTranslationText(text: string, edits?: Array<{ from: number; to
       renderRows(); renderFull(); renderStrip();
       return;
     }
-    if (!edits) { notify("번역 묶음 안에서 편집하세요."); return; }
+    if (!edits) { notify(t("번역 묶음 안에서 편집하세요.")); return; }
     const points = Array.from(translationDraftText);
     const changes = edits.map(edit => {
       const sentence = sentenceDrafts.find(sentence => {
@@ -5131,7 +5190,7 @@ function applyFullTranslationText(text: string, edits?: Array<{ from: number; to
       });
       return { edit, sentence, from: sentence ? points.slice(0, sentence.from).join("").length : 0 };
     });
-    if (changes.some(change => !change.sentence)) { notify("묶음 경계를 넘는 바꾸기는 먼저 묶음을 합친 뒤 실행하세요."); return; }
+    if (changes.some(change => !change.sentence)) { notify(t("묶음 경계를 넘는 바꾸기는 먼저 묶음을 합친 뒤 실행하세요.")); return; }
     for (const { edit, sentence, from } of changes.reverse()) {
       const current = sentenceDrafts.find(item => item.id === sentence!.id)!;
       updateSentenceDraft(current.id, current.text.slice(0, edit.from - from) + edit.text + current.text.slice(edit.to - from));
@@ -5168,7 +5227,7 @@ must("#btnSaveFullTranslation").addEventListener("click",()=>void saveDraft());
 must("#btnRetryAlignment").addEventListener("click",()=>void (async()=>{
   if(!view?.translation?.textLayout || hasUnsavedChanges() || aiRun?.state==="running") return;
   await prepSettingsSaveChain;
-  if (prepSettingsSaveError) { notify("문장 연결 설정을 저장한 뒤 다시 실행하세요."); return; }
+  if (prepSettingsSaveError) { notify(t("문장 연결 설정을 저장한 뒤 다시 실행하세요.")); return; }
   const result=await api.ai.startTranslation({documentNodeId:view.document.id,agentId:selectedPrepAgent(),alignmentVersionId:view.translation.versionId});
   const run=unwrap(result,t("원문 연결"));
   if(run){aiRun=run;renderFull();scheduleAiPoll(run.messageId);}

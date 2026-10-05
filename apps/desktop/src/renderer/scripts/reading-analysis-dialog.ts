@@ -2,7 +2,7 @@ import type { AgentProbe, AiRunView, AppConfig, MunhaeApi } from "../../shared/m
 import type { ReadingAnalysisState } from "./reading-analysis-session";
 import { prepModelMarkup, changePrepModelSetting } from "./translation-setup-ui";
 import { createTranslationProgress } from "./translation-progress-ui";
-import { uiText, t } from "./i18n";
+import { uiText, t, tAs, ui } from "./i18n";
 
 type Deps = {
   api: MunhaeApi;
@@ -31,6 +31,8 @@ export function createReadingAnalysisDialog(deps: Deps) {
   deps.trigger.ownerDocument.body.append(dialog);
   deps.trigger.setAttribute("aria-haspopup", "dialog"); deps.trigger.setAttribute("aria-controls", dialog.id);
   const el = <T extends HTMLElement = HTMLElement>(id: string) => dialog.querySelector<T>(`#${id}`)!;
+  // A passage analysis returns many suggestions; the punctuation dialog shares "제안 검토" for its single one.
+  el("readingReview").textContent = tAs("plural", "제안 검토");
   const motion = createTranslationProgress(dialog, { prefix: "reading", label: "구절 AI 분석 진행", state: readingProgressState });
   let state: ReadingAnalysisState | null = null, config: AppConfig | null = null, probes: AgentProbe[] = [];
   let loading = false, launching = false, error = "", generation = 0;
@@ -60,12 +62,12 @@ export function createReadingAnalysisDialog(deps: Deps) {
     const progress = readingProgressState(adapted, launching || !!state?.starting, !!state?.canceling);
     motion.update(adapted, launching || !!state?.starting, !!state?.canceling);
     el("readingRunPhase").textContent = t(progress.title);
-    el("readingRunDetail").textContent = run?.detail || t(progress.description);
+    el("readingRunDetail").textContent = run?.detail ? t(run.detail) : t(progress.description);
     el("readingRunState").textContent = t(running ? "실행 중" : completed ? "완료" : run?.state === "canceled" ? "취소됨" : "확인 필요");
     el("readingRunMeter").setAttribute("aria-busy", String(running));
     el("readingRunMeter").setAttribute("aria-valuetext", t(progress.title));
     el("readingRunMeter").dataset.state = adapted?.state ?? "running";
-    el("readingError").textContent = error || (progressMode ? state?.error || (run?.state === "canceled" ? "" : run?.error?.message) || "" : "");
+    el("readingError").textContent = t(error || (progressMode ? state?.error || (run?.state === "canceled" ? "" : run?.error?.message) || "" : ""));
     el("readingError").hidden = !el("readingError").textContent;
   }
   async function loadSettings() {
@@ -105,7 +107,7 @@ export function createReadingAnalysisDialog(deps: Deps) {
   return {
     open(title: string, quote: string) {
       el("readingPrepTitle").textContent = title; el("readingSource").textContent = quote;
-      el("readingSourceInfo").textContent = `${Array.from(quote).length}자`;
+      el("readingSourceInfo").textContent = ui`${Array.from(quote).length}자`;
       dialog.dataset.mode = active() ? "progress" : "setup";
       if (!dialog.open) dialog.showModal();
       if (!active()) void loadSettings(); else render();

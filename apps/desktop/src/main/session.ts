@@ -2,7 +2,7 @@ import { onlineProjectAccount } from "../shared/online-projects";
 import { translateUi } from "../shared/ui-translations";
 import { createHash } from "node:crypto";
 import { IPC_CHANNELS, type IpcChannel } from "../shared/munhae-api";
-import type { ReviewExportInput, ReviewExportSaveResult } from "../shared/munhae-api";
+import type { ReviewExportInput, ReviewExportSaveResult, TranslationExportInput, TranslationExportSaveResult } from "../shared/munhae-api";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -43,6 +43,7 @@ import { log } from "./log";
 import { isInsidePackageRoot } from "./paths";
 import { getMainWindow } from "./window";
 import { extractMunhaePkg } from "./zip";
+import { printHtmlToPdf } from "./print-pdf";
 import { hasActiveAiRuns, cancelAllAiRuns } from "./ai-runs";
 import { assertAuthenticatedUser, withAuthenticatedClient, subscribeAccountState, watchAuthenticatedProject } from "./auth";
 import { OnlineProjectsService, onlineProjectId } from "./online-projects";
@@ -79,18 +80,18 @@ type OnlineSaveRetries = { receipts: Map<string, OnlineSaveReceipt>; flights: Ma
 const onlineSaveRetries = new WeakMap<OnlineWorkspace, OnlineSaveRetries>();
 const MAX_ONLINE_SAVE_RECEIPTS = 8;
 const RETRYABLE_SAVE_CHANNELS = new Set<IpcChannel>([
-  IPC_CHANNELS.documentCreate, IPC_CHANNELS.documentMove, IPC_CHANNELS.documentUpdateMetadata,
+  IPC_CHANNELS.documentCreate, IPC_CHANNELS.documentMove, IPC_CHANNELS.documentDelete, IPC_CHANNELS.documentUpdateMetadata,
   IPC_CHANNELS.editorSaveSourceDraft, IPC_CHANNELS.editorConfirmSource, IPC_CHANNELS.editorCreatePunctuationDraft,
   IPC_CHANNELS.editorSavePunctuationDraft, IPC_CHANNELS.editorConfirmPunctuation, IPC_CHANNELS.editorCreateTranslationDraft,
   IPC_CHANNELS.editorResetTranslationDraft, IPC_CHANNELS.editorSaveDraft, IPC_CHANNELS.editorConfirm, IPC_CHANNELS.editorRevise,
   IPC_CHANNELS.editorMergeBlocks, IPC_CHANNELS.editorSplitBlock, IPC_CHANNELS.editorSaveSentenceLink,
   IPC_CHANNELS.editorCreateReviewComment, IPC_CHANNELS.editorUpdateReviewComment, IPC_CHANNELS.editorArchiveReviewComment,
   IPC_CHANNELS.editorSaveReadingAnnotation, IPC_CHANNELS.editorArchiveReadingAnnotation, IPC_CHANNELS.editorAttachReference,
-  IPC_CHANNELS.knowledgeSetMaterialPreference, IPC_CHANNELS.knowledgeReuseCommentAsMaterial, IPC_CHANNELS.knowledgeUpsertGlossary,
+  IPC_CHANNELS.knowledgeSetMaterialPreference, IPC_CHANNELS.knowledgeReuseCommentAsMaterial,
   IPC_CHANNELS.knowledgeCreateContext, IPC_CHANNELS.knowledgeUpdateContext, IPC_CHANNELS.knowledgeSetContextEnabled,
-  IPC_CHANNELS.knowledgeSetContextPriority, IPC_CHANNELS.knowledgeDeleteContext, IPC_CHANNELS.knowledgeCreateUncertainty,
-  IPC_CHANNELS.knowledgeVersionUncertainty, IPC_CHANNELS.knowledgeResolveUncertainty, IPC_CHANNELS.pluginsApply,
-  IPC_CHANNELS.termsSave, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsPromote, IPC_CHANNELS.termsStart, IPC_CHANNELS.termsCancel,
+  IPC_CHANNELS.knowledgeSetContextPriority, IPC_CHANNELS.knowledgeDeleteContext, IPC_CHANNELS.pluginsApply,
+  IPC_CHANNELS.termsConfirm, IPC_CHANNELS.termsDismiss, IPC_CHANNELS.termsUpdate, IPC_CHANNELS.termsUpdateUse, IPC_CHANNELS.termsDelete, IPC_CHANNELS.termsDeleteProjectTerms,
+  IPC_CHANNELS.termsStart, IPC_CHANNELS.termsCancel,
   IPC_CHANNELS.aiStartTranslation, IPC_CHANNELS.aiStartChat, IPC_CHANNELS.aiStartPunctuation, IPC_CHANNELS.aiApplyPunctuationSuggestion,
   IPC_CHANNELS.aiCancelRun, IPC_CHANNELS.researchStartMaterialRefinement, IPC_CHANNELS.researchCancelMaterialRefinement,
   IPC_CHANNELS.researchStartFootnoteAnalysis, IPC_CHANNELS.researchCancelFootnoteAnalysis,
@@ -817,5 +818,23 @@ export async function exportReviewTranslations(input: ReviewExportInput): Promis
   const suffix = `.${payload.extension}`;
   const filePath = result.filePath.toLowerCase().endsWith(suffix) ? result.filePath : `${result.filePath}${suffix}`;
   writeFileSync(filePath, payload.content, { encoding: "utf8" });
+  return { filePath, format: payload.format, documentCount: payload.documentCount };
+}
+
+const TRANSLATION_EXPORT_FILTERS = { docx: "Word 문서", pdf: "PDF", txt: "텍스트", markdown: "Markdown" } as const;
+
+export async function exportTranslationDocument(input: TranslationExportInput): Promise<TranslationExportSaveResult | null> {
+  const repo = requireRepo();
+  const assertExportAccess = captureExportAccess(repo);
+  const payload = repo.createTranslationExport(input);
+  const result = await saveDialog({ title: "번역본 내보내기", defaultPath: join(onlineWorkspace ? app.getPath("documents") : dirname(repo.packagePath), `${payload.suggestedBaseName}.${payload.extension}`), filters: [{ name: TRANSLATION_EXPORT_FILTERS[payload.format], extensions: [payload.extension] }] });
+  if (result.canceled || !result.filePath) return null;
+  assertExportAccess();
+  const suffix = `.${payload.extension}`;
+  const filePath = result.filePath.toLowerCase().endsWith(suffix) ? result.filePath : `${result.filePath}${suffix}`;
+  // The PDF is printed only after a location is chosen, so cancelling costs nothing.
+  const content = payload.format === "docx" ? payload.bytes : payload.format === "pdf" ? await printHtmlToPdf(payload.printHtml) : payload.text;
+  writeFileSync(filePath, content);
+  log.info("translation exported", { projectId: repo.projectId, format: payload.format, count: payload.documentCount });
   return { filePath, format: payload.format, documentCount: payload.documentCount };
 }

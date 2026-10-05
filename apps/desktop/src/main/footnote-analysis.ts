@@ -7,14 +7,14 @@ import { publicRunError, registerExternalAiActivity, requestFromPreferences, per
 import { cancelAgentRuntime, probeAgentRuntime, runAgentRuntime } from "./agent-runtime-client";
 import { parseItkcFootnoteSearchInput, searchItkcFootnotes } from "./itkc-footnotes";
 
-type Repo = Pick<ProjectRepo, "projectId" | "getEditor">;
+type Repo = Pick<ProjectRepo, "projectId" | "getEditor" | "getTranslationLanguage">;
 type Dependencies = {
   search(input: ItkcFootnoteSearchInput): Promise<ItkcFootnoteSearchResult>;
   probe(agentId: AppConfig["agentId"]): Promise<AgentProbe>;
   run(agentId: AppConfig["agentId"], request: AgentRunRequest, sink: (event: AgentRunEvent) => void): Promise<AgentRunResult>;
   cancel(runId: string): Promise<void>;
   persist(projectId: string): Promise<void>;
-  register(activity: { id: string; projectId: string; cancel(): void | Promise<void>; completion: Promise<void> }): void;
+  register(activity: { id: string; projectId: string; documentNodeId?: string; cancel(): void | Promise<void>; completion: Promise<void> }): void;
   collectionTimeoutMs: number;
   analysisTimeoutMs: number;
 };
@@ -93,9 +93,9 @@ function selectedContext(view: EditorView, input: FootnoteAnalysisInput): Contex
   if (selection) limitations.push("선택 구절 주변과 저장된 문장 연결을 사용했습니다. 문서 전체를 분석한 결과는 아닙니다.");
   return { source: excerpt(sourceContext, 6_000), translation: excerpt(translationContext, 6_000), metadata: view.document, limitations };
 }
-const instructions = [
+const instructions = (language: "ko" | "en") => [
   "You are a research assistant for a professional Korean Classical Chinese translator. Analyze ONLY the supplied ITKC footnote candidates against the exact selected phrase and document context.",
-  "Respond in careful Korean. Recommend at most 6 relevant notes. Return an empty recommendations array when there is insufficient evidence or no relevant candidate; do not force a match.",
+  `${language === "en" ? "Respond in careful English: write summary, reason, translationAdvice and caution in natural English, even when the footnotes and translation are in Korean; evidenceQuote stays an exact copy." : "Respond in careful Korean."} Recommend at most 6 relevant notes. Return an empty recommendations array when there is insufficient evidence or no relevant candidate; do not force a match.`,
   "Distinguish direct lexical/contextual evidence from inference and translation advice. The same word or office title does not establish the same person, date, institution, literary allusion, or meaning. Check homonyms, dynasty/period and genre differences. Explain uncertainty and incompatible context in caution.",
   "A footnote's annotatedText is the phrase annotated in its source translation, not necessarily the original Chinese. The displayTitle can be abbreviated. Do not equate either automatically with this document's expression.",
   "Every recommendation must use a supplied candidate id and a nonempty evidenceQuote copied EXACTLY from that candidate's analyzed body or annotatedText. Ground the reason in that quote and separately explain the tentative translation implication. Do not invent sources, identifiers, quotations, URLs, persons or events.",
@@ -103,13 +103,13 @@ const instructions = [
   "Return one JSON object only, without Markdown fences, prose or extra keys: {\"summary\":\"...\",\"recommendations\":[{\"id\":\"supplied id\",\"relevance\":\"direct or contextual\",\"reason\":\"...\",\"translationAdvice\":\"...\",\"caution\":\"... or empty\",\"evidenceQuote\":\"exact copied substring\"}]}. Do not return a note payload or URL. Never claim all search results were reviewed.",
 ].join("\n");
 
-function preparePrompt(input: FootnoteAnalysisInput, context: Context, notes: ItkcFootnote[], total: number) {
+function preparePrompt(input: FootnoteAnalysisInput, context: Context, notes: ItkcFootnote[], total: number, language: "ko" | "en" = "ko") {
   const base = {
     query: input.query, searchMode: input.mode, selection: input.selection ?? null,
     document: Object.fromEntries(Object.entries(context.metadata).filter(([key]) => key !== "id").map(([key, value]) => [key, typeof value === "string" ? excerpt(value, 1_000) : value])),
     sourceContext: context.source, translationContext: context.translation, totalSearchResults: total,
   };
-  const baseText = `${instructions}\n\n${JSON.stringify(base)}\n\nCANDIDATES:\n`;
+  const baseText = `${instructions(language)}\n\n${JSON.stringify(base)}\n\nCANDIDATES:\n`;
   let remaining = MAX_PROMPT_CHARS - points(baseText).length - 100;
   const analyzed: Candidate[] = [];
   const serialized: string[] = [];
@@ -194,7 +194,7 @@ export class FootnoteAnalysisService {
   }
   start(repo: Repo, config: AppConfig, value: unknown): FootnoteAnalysisRun {
     const input = inputFrom(value);
-    const editor = editorFor(repo, input);
+    const editor = editorFor(repo, input), language = repo.getTranslationLanguage();
     if (!["codex", "claude", "antigravity"].includes(config.agentId)) return fail("invalid_input", "설정에서 AI를 선택하세요.");
     const context = selectedContext(editor, input);
     const id = randomUUID();
@@ -206,11 +206,11 @@ export class FootnoteAnalysisService {
       view: { id, documentNodeId: input.documentNodeId, sourceVersionId: input.expectedSourceVersionId,
         translationVersionId: input.expectedTranslationVersionId, agentId: config.agentId, query: input.query, mode: input.mode,
         state: "collecting", detail: "AI 연결과 각주 검색을 준비합니다.", collectedCount: 0, total: null, result: null, error: null } };
-    this.deps.register({ id, projectId: repo.projectId, cancel: () => this.stop(entry), completion });
+    this.deps.register({ id, projectId: repo.projectId, documentNodeId: input.documentNodeId, cancel: () => this.stop(entry), completion });
     this.entries.set(id, entry);
     this.trim();
     const initial = structuredClone(entry.view);
-    void this.execute(entry, structuredClone(config), context);
+    void this.execute(entry, structuredClone(config), context, language);
     return initial;
   }
   get(repo: Repo, id: string): FootnoteAnalysisRun {
@@ -250,7 +250,7 @@ export class FootnoteAnalysisService {
     const editor = editorFor(repo, entry.input);
     if (hash(editor.source.contentText) !== entry.sourceHash || hash(editor.translation?.textContent ?? "") !== entry.translationHash) throw new AppError("stale_request", "");
   }
-  private async execute(entry: Entry, config: AppConfig, context: Context): Promise<void> {
+  private async execute(entry: Entry, config: AppConfig, context: Context, language: "ko" | "en"): Promise<void> {
     const signal = entry.controller.signal;
     try {
       const probe = await interruptible(this.deps.probe(config.agentId), signal, 30_000);
@@ -282,7 +282,7 @@ export class FootnoteAnalysisService {
           excerptedCount: 0, sourceContext: context.source, translationContext: context.translation, limitations: context.limitations };
         return;
       }
-      const prepared = preparePrompt(entry.input, context, [...notes.values()], total);
+      const prepared = preparePrompt(entry.input, context, [...notes.values()], total, language);
       if (!prepared.analyzed.length) throw new AppError("context_too_large", "");
       const request: AgentRunRequest = { ...requestFromPreferences(entry.view.id, prepared.prompt, config, config.agentId),
         outputContract: CONTRACT, timeoutMs: this.deps.analysisTimeoutMs, inactivityTimeoutMs: 60_000,

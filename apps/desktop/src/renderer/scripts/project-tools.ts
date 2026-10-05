@@ -5,6 +5,7 @@ import type {
   MunhaeApi,
   SearchEntityType,
   SearchResult,
+  TranslationExportFormat,
 } from "../../shared/munhae-api";
 
 export type ProjectToolsDeps = {
@@ -17,6 +18,8 @@ export type ProjectToolsDeps = {
 
 let deps: ProjectToolsDeps | null = null;
 let searchKnowledge: KnowledgeView | null = null;
+/** Set by the page that opened the export dialog; false blocks the export. */
+let beforeExport: (() => boolean) | null = null;
 
 function must<T extends HTMLElement = HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -25,10 +28,10 @@ function must<T extends HTMLElement = HTMLElement>(selector: string): T {
 }
 
 function searchEntityOptions(type: SearchEntityType): Array<{ id: string; label: string }> {
-  if (!searchKnowledge || type !== "glossary") return [];
-  return searchKnowledge.glossary.map((entry) => ({
-    id: entry.id,
-    label: `${entry.sourceTerm} → ${entry.targetTerm}`,
+  if (!searchKnowledge || type !== "term") return [];
+  return searchKnowledge.terms.map((term) => ({
+    id: term.id,
+    label: term.translation ? `${term.sourceForm} → ${term.translation}` : term.sourceForm,
   }));
 }
 
@@ -84,7 +87,7 @@ function installDialogs(): void {
             <div class="field"><label for="projectSearchState">버전</label><select class="select" id="projectSearchState"><option value="current">현재 작업안</option><option value="confirmed">확정본</option><option value="all">모든 이력</option></select></div>
           </div>
           <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap">
-            <div class="field"><label for="projectSearchEntityType">지식 필터</label><select class="select" id="projectSearchEntityType"><option value="">필터 없음</option><option value="glossary">용어</option></select></div>
+            <div class="field"><label for="projectSearchEntityType">지식 필터</label><select class="select" id="projectSearchEntityType"><option value="">필터 없음</option><option value="term">용어</option></select></div>
             <div class="field" style="flex:1;min-width:240px"><label for="projectSearchEntity">항목</label><select class="select" id="projectSearchEntity" disabled><option value="">필터 없음</option></select></div>
           </div>
           <label class="check" id="projectSearchCurrentWrap"><input type="checkbox" id="projectSearchCurrent"> 현재 문서에서만</label>
@@ -93,20 +96,34 @@ function installDialogs(): void {
         </div>
         <div class="dl-f"><button class="btn" id="projectSearchClose" type="button">닫기</button><button class="btn btn-primary" id="projectSearchRun" type="submit">검색</button></div>
       </form>
-    </dialog>
-    <dialog id="dlgConfirmedExport" style="width:min(520px,calc(100vw - 48px))">
-      <form id="confirmedExportForm">
-        <div class="dl-h">확정 번역 내보내기</div>
-        <div class="dl-b" style="display:grid;gap:12px">
-          <p>선택한 범위의 확정 번역을 내보냅니다. 작성 중인 작업안은 포함하지 않습니다.</p>
-          <div class="field"><label for="confirmedExportFormat">형식</label><select class="select" id="confirmedExportFormat"><option value="markdown">Markdown (.md)</option><option value="json">JSON (.json)</option><option value="csv">CSV (.csv)</option></select></div>
-          <div class="field"><label for="confirmedExportScope">범위</label><select class="select" id="confirmedExportScope"><option value="project">프로젝트 전체</option><option value="document">현재 문서</option></select></div>
-          <details class="muted" style="font-size:12px"><summary>함께 보관되는 기록</summary><p>번역에 사용된 원문·표점·번역 원칙과 문장 연결 기록을 포함합니다. 각 자료의 버전 식별자와 해시도 보존합니다.</p></details>
-          <p id="confirmedExportError" class="prep-run-error" role="alert" hidden></p>
-        </div>
-        <div class="dl-f"><button class="btn" id="confirmedExportClose" type="button">취소</button><button class="btn btn-primary" id="confirmedExportRun" type="submit">저장 위치 선택…</button></div>
-      </form>
     </dialog>`),
+  );
+  // Option group labels are attributes that uiText leaves alone.
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    ui`<dialog id="dlgExport" style="width:min(520px,calc(100vw - 48px))">
+      <form id="exportForm">
+        <div class="dl-h">내보내기</div>
+        <div class="dl-b" style="display:grid;gap:12px">
+          <div class="field"><label for="exportFormat">형식</label><select class="select" id="exportFormat">
+            <optgroup label="${t("번역본")}"><option value="docx">Word 문서 (.docx)</option><option value="pdf">PDF (.pdf)</option><option value="txt">텍스트 (.txt)</option><option value="markdown">Markdown (.md)</option></optgroup>
+            <optgroup label="${t("확정 기록 보관")}"><option value="record:markdown">검증용 Markdown (.md)</option><option value="record:json">JSON (.json)</option><option value="record:csv">CSV (.csv)</option></optgroup>
+          </select></div>
+          <div class="row" id="exportDocumentOptions" style="gap:8px;align-items:end;flex-wrap:wrap">
+            <div class="field" style="flex:1;min-width:180px"><label for="exportLayout">구성</label><select class="select" id="exportLayout"><option value="translation">번역문만</option><option value="bilingual">원문·번역 대역</option></select></div>
+            <div class="field" style="flex:1;min-width:180px"><label for="exportState">번역 버전</label><select class="select" id="exportState"><option value="current">현재 저장본 — 작업안 포함</option><option value="confirmed">확정본만</option></select></div>
+          </div>
+          <div class="field"><label for="exportScope">범위</label><select class="select" id="exportScope"><option value="project">프로젝트 전체</option><option value="document">현재 문서</option></select></div>
+          <p class="muted" id="exportBilingualHelp" style="font-size:12px" hidden>번역 문단마다 연결된 원문을 나란히 놓습니다.</p>
+          <div id="exportRecordHelp" style="display:grid;gap:8px" hidden>
+            <p>선택한 범위의 확정 번역을 내보냅니다. 작성 중인 작업안은 포함하지 않습니다.</p>
+            <details class="muted" style="font-size:12px"><summary>함께 보관되는 기록</summary><p>번역에 사용된 원문·표점·번역 원칙과 문장 연결 기록을 포함합니다. 각 자료의 버전 식별자와 해시도 보존합니다.</p></details>
+          </div>
+          <p id="exportError" class="prep-run-error" role="alert" hidden></p>
+        </div>
+        <div class="dl-f"><button class="btn" id="exportClose" type="button">취소</button><button class="btn btn-primary" id="exportRun" type="submit">저장 위치 선택…</button></div>
+      </form>
+    </dialog>`,
   );
 
   must("#projectSearchClose").addEventListener("click", () => must<HTMLDialogElement>("#dlgProjectSearch").close());
@@ -121,11 +138,19 @@ function installDialogs(): void {
     must<HTMLDialogElement>("#dlgProjectSearch").close();
     deps.openDocument(button.dataset.searchDocument);
   });
-  must("#confirmedExportClose").addEventListener("click", () => must<HTMLDialogElement>("#dlgConfirmedExport").close());
-  must<HTMLFormElement>("#confirmedExportForm").addEventListener("submit", (event) => {
+  must("#exportClose").addEventListener("click", () => must<HTMLDialogElement>("#dlgExport").close());
+  must<HTMLFormElement>("#exportForm").addEventListener("submit", (event) => {
     event.preventDefault();
     void runExport();
   });
+  for (const id of ["#exportFormat", "#exportLayout"]) must(id).addEventListener("change", syncExportOptions);
+}
+
+function syncExportOptions(): void {
+  const record = must<HTMLSelectElement>("#exportFormat").value.startsWith("record:");
+  must("#exportDocumentOptions").hidden = record;
+  must("#exportRecordHelp").hidden = !record;
+  must("#exportBilingualHelp").hidden = record || must<HTMLSelectElement>("#exportLayout").value !== "bilingual";
 }
 
 function resultLabel(result: SearchResult): string {
@@ -184,28 +209,37 @@ async function runSearch(): Promise<void> {
 
 async function runExport(): Promise<void> {
   if (!deps) return;
-  const button = must<HTMLButtonElement>("#confirmedExportRun");
-  const errorBox = must("#confirmedExportError");
+  const button = must<HTMLButtonElement>("#exportRun");
+  const errorBox = must("#exportError");
   errorBox.hidden = true;
+  const format = must<HTMLSelectElement>("#exportFormat").value;
+  const documentNodeId = must<HTMLSelectElement>("#exportScope").value === "document" ? deps.currentDocumentId() : null;
+  if (beforeExport && !beforeExport()) {
+    errorBox.textContent = t("편집 중인 내용을 저장한 뒤 다시 내보내세요.");
+    errorBox.hidden = false;
+    return;
+  }
   button.disabled = true;
   button.textContent = t("준비 중…");
   try {
-    const scope = must<HTMLSelectElement>("#confirmedExportScope").value;
-    const result = await deps.api.project.exportConfirmed({
-      format: must<HTMLSelectElement>("#confirmedExportFormat").value as ConfirmedExportFormat,
-      documentNodeId: scope === "document" ? deps.currentDocumentId() : null,
-    });
-    if (!result.ok) {
-      errorBox.textContent = result.error.message;
-      errorBox.hidden = false;
+    if (format.startsWith("record:")) {
+      const result = await deps.api.project.exportConfirmed({ format: format.slice("record:".length) as ConfirmedExportFormat, documentNodeId });
+      if (!result.ok) throw new Error(result.error.message);
+      if (!result.data) return;
+      must<HTMLDialogElement>("#dlgExport").close();
+      deps.notify(ui`${result.data.confirmedTranslationCount}개 확정 번역을 저장했습니다.\n${result.data.filePath}`, t("내보내기"));
       return;
     }
+    const result = await deps.api.project.exportTranslation({
+      format: format as TranslationExportFormat,
+      layout: must<HTMLSelectElement>("#exportLayout").value === "bilingual" ? "bilingual" : "translation",
+      state: must<HTMLSelectElement>("#exportState").value === "confirmed" ? "confirmed" : "current",
+      documentNodeId,
+    });
+    if (!result.ok) throw new Error(result.error.message);
     if (!result.data) return;
-    must<HTMLDialogElement>("#dlgConfirmedExport").close();
-    deps.notify(
-      ui`${result.data.confirmedTranslationCount}개 확정 번역을 저장했습니다.\n${result.data.filePath}`,
-      t("내보내기"),
-    );
+    must<HTMLDialogElement>("#dlgExport").close();
+    deps.notify(ui`${result.data.documentCount}개 문서의 번역본을 저장했습니다.\n${result.data.filePath}`, t("내보내기"));
   } catch (error) {
     errorBox.textContent = error instanceof Error ? error.message : t("내보내지 못했습니다.");
     errorBox.hidden = false;
@@ -237,13 +271,19 @@ export function openProjectSearch(): void {
   must<HTMLInputElement>("#projectSearchQuery").focus();
 }
 
-export function openConfirmedExport(): void {
+/** From a document, the export starts scoped to it; `guard` returns false while edits are unsaved. */
+export function openExport(options: { guard?: () => boolean } = {}): void {
   installDialogs();
+  const dialog = must<HTMLDialogElement>("#dlgExport");
+  if (dialog.open) return;
+  beforeExport = options.guard ?? null;
   const current = deps?.currentDocumentId() ?? null;
-  const scope = must<HTMLSelectElement>("#confirmedExportScope");
+  const scope = must<HTMLSelectElement>("#exportScope");
   const documentOption = [...scope.options].find((option) => option.value === "document");
   if (documentOption) documentOption.disabled = !current;
-  if (!current && scope.value === "document") scope.value = "project";
-  must("#confirmedExportError").hidden = true;
-  must<HTMLDialogElement>("#dlgConfirmedExport").showModal();
+  if (current && options.guard) scope.value = "document";
+  else if (!current) scope.value = "project";
+  must("#exportError").hidden = true;
+  syncExportOptions();
+  dialog.showModal();
 }

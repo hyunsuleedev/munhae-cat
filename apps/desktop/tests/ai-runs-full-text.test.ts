@@ -133,6 +133,7 @@ it.each(["codex", "antigravity"] as const)("%s saves whole translation before a 
   runtime.runAgentRuntime.mockImplementation(
     async (_a: string, request: AgentRunRequest) => {
       expect(_a).toBe(agentId);
+      expect(request.codexDisableUserContext).toBe(agentId === "codex" ? true : undefined);
       if (!first) {
         first = request;
         expect(request.appTool?.env.MUNHAE_TOOL_COMMAND).toBe(
@@ -191,6 +192,28 @@ it("continues to alignment after the provider repairs invalid translation JSON",
   await done();
   expect(repo.completeFullTextRun).toHaveBeenCalledTimes(1);
   expect(repo.finishFullTextRun).toHaveBeenCalledTimes(1);
+  expect(repo.failTranslationRun).not.toHaveBeenCalled();
+  expect(getTranslationRun("run").state).toBe("completed");
+});
+
+it("lets the provider repair JSON the app rejects for format, with the app's reason", async () => {
+  const repo = fixture();
+  repo.completeFullTextRun.mockImplementationOnce(() => { throw new MunhaeError("invalid_submission", "translation에 완성된 번역 전문을 넣으세요"); });
+  runtime.runAgentRuntime.mockImplementation(async (_a: string, request: AgentRunRequest) => {
+    if (request.appTool?.env.MUNHAE_TOOL_COMMAND === "submit-translation") {
+      const rejected = await submit(request, "{}");
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toEqual({ ok: false, error: "invalid_payload", reason: "translation에 완성된 번역 전문을 넣으세요" });
+      expect((await submit(request, text)).status).toBe(200);
+    } else {
+      await submit(request, alignment);
+      await finish(request);
+    }
+    return result();
+  });
+  await startTranslationRun(repo as unknown as ProjectRepo, config, { documentNodeId: "doc", agentId: "antigravity" }, sessions);
+  await done();
+  expect(repo.completeFullTextRun).toHaveBeenCalledTimes(2);
   expect(repo.failTranslationRun).not.toHaveBeenCalled();
   expect(getTranslationRun("run").state).toBe("completed");
 });

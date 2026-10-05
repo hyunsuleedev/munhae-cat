@@ -93,6 +93,8 @@ export function mountSidebarChrome(deps: Deps): () => void {
     ...(deps.project() ? [command("모든 프로젝트…", "projects")] : []),
   ];
   sidebar.addEventListener("click", event => {
+    const direct = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-sb-command]");
+    if (direct?.dataset.sbCommand) { event.preventDefault(); close(); invoke(direct.dataset.sbCommand)(); return; }
     const trigger = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-sb-app]");
     if (!trigger || trigger.disabled) return;
     event.preventDefault(); event.stopPropagation();
@@ -118,9 +120,6 @@ export function mountSidebarChrome(deps: Deps): () => void {
       case "manage":
         if (deps.project()) show(trigger, [command("백업 만들기…", "backup"), command("내보내기…", "export", `${mod}E`), null, command("프로젝트 닫기", "close", `${mod}W`)]);
         break;
-      case "add":
-        if (deps.project()) show(trigger, [command("새 문서", "newdoc", `${mod}N`), command("새 폴더", "newfolder"), null, command("원문 가져오기…", "import")]);
-        break;
       case "help":
         show(trigger, [command("사용 안내·단축키", "help"), command("명령 검색…", "palette", `${mod}K`), null, command("업데이트 확인…", "updates"), command("문해 정보", "about")]);
         break;
@@ -145,7 +144,7 @@ export function mountSidebarChrome(deps: Deps): () => void {
     projectName.textContent = project?.title ?? t("프로젝트 열기…");
     projectButton.title = project ? `${project.title} · ${t("프로젝트 전환")}` : t("프로젝트 열기…");
     more.hidden = !project;
-    sidebar.querySelectorAll<HTMLButtonElement>('[data-sb-app="add"]').forEach(control => { control.hidden = !project; });
+    sidebar.querySelectorAll<HTMLElement>(".sb-create-actions").forEach(control => { control.hidden = !project; });
   };
 }
 

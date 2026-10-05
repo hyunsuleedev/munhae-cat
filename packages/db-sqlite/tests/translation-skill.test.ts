@@ -45,7 +45,7 @@ it("replaces only the translation method and keeps the app submission rules", ()
   clean.push(() => repo.close());
   expect(repo.getTranslationSkill()).toBeNull();
   const base = repo.previewContext({ documentNodeId: id });
-  expect(base.required.find((item) => item.kind === "translation_skill")).toMatchObject({ label: "기본 번역 스킬", version: "1.1.0" });
+  expect(base.required.find((item) => item.kind === "translation_skill")).toMatchObject({ label: "기본 번역 스킬", version: "1.3.0" });
 
   const applied = repo.setTranslationSkill(GUIDE)!;
   const preview = repo.previewContext({ documentNodeId: id });
@@ -53,7 +53,7 @@ it("replaces only the translation method and keeps the app submission rules", ()
   expect(method).toMatchObject({ label: "번역 플러그인 · sillok-style", version: "0.2.0", hash: applied.hash, content: GUIDE });
   expect(preview.requestText).toContain("관직명은 원문 표기를 유지");
   expect(preview.requestText).not.toContain(BUNDLED_SKILLS["translate-document"]);
-  expect(preview.requestText).toContain("Do not produce source anchors");
+  expect(preview.requestText).toContain("Submission rules (fixed by the app");
   expect(preview.required.some((item) => item.kind === "output_contract")).toBe(true);
   expect(JSON.parse(preview.manifestJson).skills.map((s: { name: string }) => s.name)).toEqual(["sillok-style", "align-translation"]);
   expect(preview.manifestHash).not.toBe(base.manifestHash);

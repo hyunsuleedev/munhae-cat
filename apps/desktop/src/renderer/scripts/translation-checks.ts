@@ -1,5 +1,5 @@
 import { t, ui } from "./i18n";
-import type { GlossaryEntryView, ReviewCommentView } from "../../shared/munhae-api";
+import type { ReviewCommentView } from "../../shared/munhae-api";
 
 export type CheckSentence = { id: string; from: number; to: number; text: string };
 export type CheckLink = { sentenceId: string; spans: { from: number; to: number; quote: string }[]; needsReview: boolean };
@@ -11,7 +11,8 @@ export type TranslationCheck = {
 export type CheckInput = {
   identity?: string;
   source: string; translation: string; sentences: CheckSentence[]; links: CheckLink[];
-  glossary: GlossaryEntryView[]; comments: ReviewCommentView[];
+  /** Terms confirmed in this document only. */
+  terms: Array<{ sourceForm: string; translation: string | null }>; comments: ReviewCommentView[];
   currentDependencies: boolean; dirty: boolean; hasLayout: boolean;
 };
 
@@ -25,10 +26,11 @@ export function checkTranslation(input: CheckInput): TranslationCheck[] {
   }
   const covered = new Uint8Array(points.length);
   if (input.hasLayout && input.currentDependencies) {
-    const variants = new Map<string, GlossaryEntryView[]>();
-    for (const entry of input.glossary) {
-      if (!entry.sourceTerm || !entry.targetTerm) continue;
-      variants.set(entry.sourceTerm, [...(variants.get(entry.sourceTerm) ?? []), entry]);
+    // Homonyms share a written form; any of their translations satisfies the check.
+    const variants = new Map<string, string[]>();
+    for (const term of input.terms) {
+      if (!term.sourceForm || !term.translation) continue;
+      variants.set(term.sourceForm, [...(variants.get(term.sourceForm) ?? []), term.translation]);
     }
     for (const sentence of input.sentences) {
       const link = input.links.find(item => item.sentenceId === sentence.id);
@@ -37,13 +39,10 @@ export function checkTranslation(input: CheckInput): TranslationCheck[] {
         && points.slice(span.from, span.to).join("") === span.quote);
       for (const span of spans) covered.fill(1, span.from, span.to);
       if (!spans.length || link?.needsReview) issues.push({ kind: "alignment", title: `${sentence.id} · ${spans.length ? t("대응 확인 필요") : t("원문 미연결")}`, detail: sentence.text, sentenceId: sentence.id });
-      for (const [term, entries] of variants) {
+      for (const [term, translations] of variants) {
         if (!spans.some(span => span.quote.includes(term))) continue;
-        const allowed = entries.filter(entry => entry.usageStatus !== "forbidden");
-        const forbidden = entries.filter(entry => entry.usageStatus === "forbidden" && sentence.text.includes(entry.targetTerm));
-        for (const entry of forbidden) issues.push({ kind: "term", title: ui`${sentence.id} · 지양하는 번역어 ‘${entry.targetTerm}’`, detail: ui`연결 원문에 ‘${term}’이 있습니다. 용어집 메모와 이 문맥을 비교하세요.${entry.noteMd ? ` ${entry.noteMd}` : ""}`, sentenceId: sentence.id });
-        if (allowed.some(entry => entry.usageStatus === "preferred") && !allowed.some(entry => sentence.text.includes(entry.targetTerm))) {
-          issues.push({ kind: "term", title: ui`${sentence.id} · ‘${term}’의 번역어 확인`, detail: ui`용어집: ${allowed.map(entry => entry.targetTerm).join(" / ")}. 의역·생략·동형이의어일 수 있으므로 문맥을 확인하세요.`, sentenceId: sentence.id });
+        if (!translations.some(translation => sentence.text.includes(translation))) {
+          issues.push({ kind: "term", title: ui`${sentence.id} · ‘${term}’의 번역어 확인`, detail: ui`확정 용어: ${translations.join(" / ")}. 의역·생략일 수 있으므로 문맥을 확인하세요.`, sentenceId: sentence.id });
         }
       }
     }

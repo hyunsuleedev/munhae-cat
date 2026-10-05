@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 목록 — 홈 시안</title>
+<link rel="stylesheet" href="../../styles/tokens.css">
+<link rel="stylesheet" href="../../styles/chrome.css">
+<link rel="stylesheet" href="./shared.css">
+<style>
+/* 02 목록: the home reads like the book's table of contents. Typography and whitespace only. */
+.toc-home {
+  /* Proof-mark colors mirror the stage tag text colors in shared.css. */
+  --mk-source: color-mix(in oklch, var(--muted) 72%, var(--surface));
+  --mk-punctuation: #736849;
+  --mk-translation: #766145;
+  --mk-review: #86543d;
+  --mk-confirmed: #486245;
+  --leader: color-mix(in oklch, var(--muted) 42%, transparent);
+  container: toc / inline-size;
+  background: var(--surface);
+}
+.toc-page {
+  display: grid;
+  grid-template-columns: minmax(0, 720px);
+  justify-content: center;
+  padding: 72px 48px 96px;
+  color: var(--fg);
+}
+@container toc (min-width: 1010px) {
+  .toc-page { grid-template-columns: minmax(0, 720px) minmax(170px, 230px); column-gap: 44px; }
+  .toc-page > :not(.toc-contents) { grid-column: 1; }
+  .toc-contents { grid-column: 1 / -1; }
+  .toc-entry { display: grid; grid-template-columns: minmax(0, 720px) minmax(170px, 230px); column-gap: 44px; align-items: start; }
+  .toc-entry > .toc-line { grid-column: 1; }
+  .toc-entry > .toc-notes { grid-column: 2; }
+}
+
+/* Title block */
+.toc-title { margin: 0; font: 500 40px/1.25 var(--font-hanmun); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.toc-subtitle { margin: 8px 0 0; color: var(--muted); font-size: 13px; letter-spacing: .02em; }
+.toc-meta { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 20px 0 0; padding: 0; list-style: none; font-size: 11px; line-height: 1.6; }
+.toc-meta dt { display: inline; margin-right: 6px; color: var(--muted); }
+.toc-meta dd { display: inline; margin: 0; color: var(--fg); font-family: var(--font-hanmun); font-size: 12px; }
+.toc-meta > div { white-space: nowrap; }
+.toc-description { max-width: 600px; margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.85; word-break: keep-all; overflow-wrap: anywhere; }
+
+/* Resume: one line, read like a note under the title. */
+.toc-resume {
+  display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px;
+  max-width: 100%; margin: 30px 0 0; padding: 4px 0; border: 0; background: transparent;
+  color: var(--fg); font: inherit; font-size: 12px; line-height: 1.7; text-align: left;
+  justify-self: start;
+}
+.toc-resume .toc-resume-label { color: var(--muted); font-size: 11px; }
+.toc-resume .toc-resume-doc { font: 500 15px/1.6 var(--font-hanmun); }
+.toc-resume .toc-resume-doc span { margin-left: 6px; font-weight: 400; }
+.toc-resume .toc-resume-meta { color: var(--muted); }
+.toc-resume .toc-arrow { color: var(--accent); }
+.toc-sep { color: color-mix(in oklch, var(--muted) 55%, transparent); }
+
+/* Contents */
+.toc-contents { margin-top: 64px; }
+.toc-contents-label { margin: 0 0 6px; color: var(--muted); font: 13px/1.6 var(--font-hanmun); letter-spacing: .5em; }
+.toc-group { margin: 34px 0 0; }
+.toc-group:first-of-type { margin-top: 22px; }
+.toc-group-heading { display: flex; align-items: baseline; gap: 10px; margin: 0 0 6px; font: 500 18px/1.5 var(--font-hanmun); letter-spacing: .04em; }
+.toc-group-heading small { color: var(--muted); font: 11px/1.5 var(--font-ui); letter-spacing: 0; }
+.toc-list { margin: 0; padding: 0; list-style: none; }
+.toc-entry { transition: opacity 140ms ease; }
+.toc-entry.is-dim { opacity: .28; }
+.toc-line {
+  display: flex; align-items: baseline;
+  width: calc(100% + 20px); margin: 0 -10px; padding: 3px 10px;
+  border: 0; border-radius: 0; background: transparent;
+  color: var(--fg); font: inherit; text-align: left;
+}
+.toc-no { flex: 0 0 2.6em; margin-right: 14px; color: var(--muted); font: 10.5px/1 var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.toc-opening { flex: 0 1 auto; min-width: 0; overflow: hidden; font: 16px/1.75 var(--font-hanmun); letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+.toc-leader { flex: 1 1 auto; min-width: 28px; margin: 0 10px; border-bottom: 1.5px dotted var(--leader); transform: translateY(-5px); }
+.toc-mark { flex: 0 0 1.6em; font: 500 13px/1 var(--font-hanmun); text-align: center; }
+.toc-mark.st-source { color: var(--mk-source); }
+.toc-mark.st-punctuation { color: var(--mk-punctuation); }
+.toc-mark.st-translation { color: var(--mk-translation); }
+.toc-mark.st-review { color: var(--mk-review); }
+.toc-mark.st-confirmed { color: var(--mk-confirmed); }
+.toc-entry.is-resume .toc-line { background: var(--row-tint); box-shadow: inset 2px 0 0 var(--accent-ink); }
+.toc-empty-group { margin: 0; padding: 5px 0 5px calc(2.6em + 14px); color: var(--muted); font-size: 11px; }
+
+/* Marginal notes (난외): open uncertainties beside their line. */
+.toc-note { margin: 0; padding: 0 0 6px calc(2.6em + 14px); color: var(--muted); font-size: 11px; line-height: 1.55; word-break: keep-all; overflow-wrap: anywhere; }
+.toc-note + .toc-note { padding-top: 0; }
+.toc-note b { margin-right: 5px; color: var(--mk-review); font: 500 12px/1 var(--font-hanmun); }
+.toc-notes { display: flex; flex-direction: column; gap: 4px; }
+@container toc (min-width: 1010px) {
+  .toc-notes { gap: 6px; padding-top: 8px; }
+  .toc-notes .toc-note { padding: 0; }
+}
+
+/* Colophon: stage marks as legend and filter. */
+.toc-colophon { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; margin: 72px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.toc-colophon li { display: inline-flex; align-items: baseline; gap: 6px; }
+.toc-colophon li + li::before { content: "·"; margin-right: 0; color: color-mix(in oklch, var(--muted) 55%, transparent); }
+.toc-colophon button {
+  display: inline-flex; align-items: baseline; gap: 5px; padding: 3px 4px; margin: 0 -4px;
+  border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: inherit;
+}
+.toc-colophon button .toc-mark { flex: none; width: auto; }
+.toc-colophon button b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+.toc-colophon button[aria-pressed="true"] { color: var(--fg); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 4px; }
+.toc-colophon button:disabled { opacity: .45; }
+
+/* Empty project */
+.toc-empty { margin: 22px 0 14px; color: var(--muted); font-size: 12px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .toc-line:hover .toc-opening, .toc-resume:hover .toc-resume-doc { color: var(--accent); }
+  .toc-line:hover .toc-leader { border-bottom-color: color-mix(in oklch, var(--muted) 75%, transparent); }
+  .toc-colophon button:hover:not(:disabled) { color: var(--fg); }
+}
+@container toc (max-width: 700px) {
+  .toc-page { padding: 48px 26px 72px; }
+  .toc-title { font-size: 33px; }
+  .toc-contents { margin-top: 48px; }
+  .toc-opening { font-size: 15px; }
+  .toc-no { flex-basis: 2.2em; margin-right: 10px; }
+  .toc-note, .toc-empty-group { padding-left: calc(2.2em + 10px); }
+}
+</style>
+</head>
+<body>
+<script type="module">
+import { mountShell, getDemo, esc, STAGES, stageLabel, fmtWhen, toast } from './shared.js';
+
+const demo = getDemo();
+const root = mountShell({ design: '02 목록', status: '' });
+root.classList.add('toc-home');
+
+const MARK = Object.fromEntries(STAGES.map(stage => [stage.key, stage.mark]));
+const notesByDoc = new Map();
+for (const item of demo.uncertainties.filter(u => u.state === 'open')) {
+  if (!notesByDoc.has(item.docId)) notesByDoc.set(item.docId, []);
+  notesByDoc.get(item.docId).push(item);
+}
+
+function titleBlock() {
+  const { project } = demo;
+  const meta = [['저본', project.base], ['범위', project.scope]].filter(([, value]) => value);
+  return `
+    <h1 class="toc-title">${esc(project.title)}</h1>
+    ${project.subtitle ? `<p class="toc-subtitle">${esc(project.subtitle)}</p>` : ''}
+    ${meta.length ? `<dl class="toc-meta">${meta.map(([label, value]) => `<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>` : ''}
+    ${project.description ? `<p class="toc-description">${esc(project.description)}</p>` : ''}`;
+}
+
+function resumeLine() {
+  const doc = demo.resume;
+  if (!doc) return '';
+  const last = demo.events.find(event => event.docId === doc.id);
+  const meta = last ? `${esc(last.text)} <span class="toc-sep">·</span> ${esc(fmtWhen(last.at))}` : esc(stageLabel(doc.stage));
+  return `<button class="toc-resume" type="button" data-open-doc="${esc(doc.id)}" aria-label="지난 작업 ${esc(doc.title)} ${esc(doc.opening)} 열기">
+    <span class="toc-resume-label">지난 작업</span><span class="toc-sep">—</span>
+    <span class="toc-resume-doc">${esc(doc.title)}<span>${esc(doc.opening)}</span></span>
+    <span class="toc-resume-meta"><span class="toc-sep">·</span> ${meta}</span><span class="toc-arrow" aria-hidden="true">→</span></button>`;
+}
+
+function entry(doc) {
+  const notes = notesByDoc.get(doc.id) ?? [];
+  const noteId = notes.length ? `note-${doc.id}` : '';
+  const resume = demo.resume?.id === doc.id;
+  return `<li class="toc-entry${resume ? ' is-resume' : ''}" data-stage="${doc.stage}">
+    <button class="toc-line" type="button" data-open-doc="${esc(doc.id)}" title="${esc(doc.title)} · ${esc(stageLabel(doc.stage))} · ${esc(fmtWhen(doc.updatedAt))}"
+      aria-label="${esc(doc.title)} ${esc(doc.opening)} — ${esc(stageLabel(doc.stage))}${resume ? ', 지난 작업' : ''}"${noteId ? ` aria-describedby="${noteId}"` : ''}>
+      <span class="toc-no" aria-hidden="true">${doc.no || ''}</span>
+      <span class="toc-opening" aria-hidden="true">${esc(doc.opening)}</span>
+      <span class="toc-leader" aria-hidden="true"></span>
+      <span class="toc-mark st-${doc.stage}" aria-hidden="true">${MARK[doc.stage]}</span>
+    </button>
+    ${notes.length ? `<div class="toc-notes" id="${noteId}">${notes.map(note => `<p class="toc-note"><b aria-hidden="true">問</b>${esc(note.title)}</p>`).join('')}</div>` : ''}
+  </li>`;
+}
+
+function contents() {
+  if (!demo.docs.length) {
+    return `<section class="toc-contents" aria-labelledby="tocLabel"><h2 class="toc-contents-label" id="tocLabel">目錄</h2>
+      <p class="toc-empty">목록이 비어 있습니다.</p><button class="btn" type="button" data-add-source>원문 추가</button></section>`;
+  }
+  const loose = demo.docs.filter(doc => !doc.groupId);
+  const groups = demo.groups.map(group => `<section class="toc-group" aria-labelledby="g-${group.id}">
+      <h3 class="toc-group-heading" id="g-${group.id}">${esc(group.title)}<small>${esc(group.ko)}</small></h3>
+      ${group.docs.length ? `<ol class="toc-list">${group.docs.map(entry).join('')}</ol>` : '<p class="toc-empty-group">원문 없음</p>'}
+    </section>`).join('');
+  return `<section class="toc-contents" aria-labelledby="tocLabel"><h2 class="toc-contents-label" id="tocLabel">目錄</h2>
+    ${loose.length ? `<ol class="toc-list">${loose.map(entry).join('')}</ol>` : ''}${groups}</section>`;
+}
+
+function colophon() {
+  if (!demo.docs.length) return '';
+  const items = [...STAGES].reverse().map(stage => {
+    const count = demo.stats[stage.key];
+    return `<li><button type="button" data-stage-filter="${stage.key}" aria-pressed="false" ${count ? '' : 'disabled'} aria-label="${stage.label} ${count}개만 보기">
+      <span class="toc-mark st-${stage.key}" aria-hidden="true">${stage.mark}</span>${stage.label}<b>${count}</b></button></li>`;
+  }).join('');
+  return `<ul class="toc-colophon" aria-label="단계별 원문 수">${items}</ul>`;
+}
+
+root.innerHTML = `<main class="toc-page">${titleBlock()}${resumeLine()}${contents()}${colophon()}</main>`;
+
+let filter = null;
+function applyFilter() {
+  for (const el of root.querySelectorAll('.toc-entry')) el.classList.toggle('is-dim', !!filter && el.dataset.stage !== filter);
+  for (const button of root.querySelectorAll('[data-stage-filter]')) button.setAttribute('aria-pressed', String(button.dataset.stageFilter === filter));
+}
+root.addEventListener('click', event => {
+  const stageButton = event.target.closest('[data-stage-filter]');
+  if (stageButton) {
+    filter = filter === stageButton.dataset.stageFilter ? null : stageButton.dataset.stageFilter;
+    applyFilter();
+    // The colophon sits at the end of the book; bring the first matching line into view.
+    if (filter) root.querySelector(`.toc-entry[data-stage="${filter}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  if (event.target.closest('[data-add-source]')) toast('원문 추가 대화상자가 열립니다.');
+});
+root.addEventListener('keydown', event => {
+  const line = event.target.closest('.toc-line');
+  if (!line || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+  const lines = [...root.querySelectorAll('.toc-line')];
+  const index = lines.indexOf(line);
+  const next = { ArrowDown: index + 1, ArrowUp: index - 1, Home: 0, End: lines.length - 1 }[event.key];
+  if (lines[next]) { event.preventDefault(); lines[next].focus(); }
+});
+</script>
+</body>
+</html>

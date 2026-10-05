@@ -37,7 +37,7 @@ it("roundtrips the demo document/source/punctuation/translation graph into a sep
   expect(inspect(cache, db => db.pragma("foreign_key_check"))).toEqual([]);
 });
 
-it("keeps one live repo while importing remote AI results, terms and immutable comment targets without push echo", () => {
+it("keeps one live repo while importing remote AI results and immutable comment targets without push echo; terms stay local", () => {
   const source = keep(createProject({ parentDir: directory(), title: "온라인" }).handle);
   const doc = source.createDocument({ parentId: null, title: "본문", nodeRole: "source_unit", sourceText: "學而時習之", originKind: "paste" });
   const initial = source.exportOnlineRows();
@@ -47,14 +47,20 @@ it("keeps one live repo while importing remote AI results, terms and immutable c
   const editor = source.getEditor(doc.id);
   const comment = source.createReviewComment({ documentNodeId: doc.id, translationVersionId: editor.translation!.versionId,
     targetKind: "source", targetVersionId: editor.source.versionId, codepointFrom: 0, codepointTo: 1, quote: "學", bodyMd: "배움" });
-  source.saveTerm({ documentId: doc.id, sourceVersion: `${editor.source.versionId}:${editor.source.lockVersion}`, sourceForm: "學", kind: "concept", reading: "학", translation: null, definition: "배움", contextNote: null, selectionReason: null, uncertainty: null, evidence: [], quotes: ["學"], status: "draft" });
+  const confirmed = editor.source.state === "confirmed" ? editor : source.confirmSource({ documentNodeId: doc.id, expectedLockVersion: editor.source.lockVersion });
+  if (!confirmed.punctuation) source.createPunctuationDraftFromConfirmedSource({ documentNodeId: doc.id, structureMode: "prose", expectedSourceLockVersion: confirmed.source.lockVersion });
+  source.confirmPunctuation({ documentNodeId: doc.id, expectedLockVersion: source.getEditor(doc.id).punctuation!.lockVersion });
+  const basis = source.getDocumentTerms(doc.id).basis!;
+  source.confirmTerm({ documentId: doc.id, punctuationVersionId: basis.punctuationVersionId, term: { sourceForm: "學", kind: "concept", reading: "학", translation: null, definition: "배움", evidence: [] },
+    contextNote: null, confidence: "certain", alternatives: [], occurrences: [{ from: 0, to: 1 }] });
   const changed = source.exportOnlineRows();
   const onChange = vi.fn(); cache.configureWorkspace({ onChange });
   const captured = cache;
   cache.applyOnlineRows(applyOnlineRowChanges(initial, diffOnlineRows(initial, changed)));
   expect(captured.getEditor(doc.id).translation?.textContent).toBe("배우고 때때로 익힌다.");
   expect(captured.listReviewComments(doc.id)).toEqual([comment]);
-  expect(captured.getTerms(doc.id)).toHaveLength(1);
+  expect(source.getDocumentTerms(doc.id).terms).toHaveLength(1);
+  expect(captured.getDocumentTerms(doc.id).terms).toEqual([]);
   expect(onChange).not.toHaveBeenCalled();
   cache.applyOnlineRows(changed);
   expect(diffOnlineRows(changed, cache.exportOnlineRows())).toEqual([]);

@@ -1,0 +1,193 @@
+/* Footnote numbers are drawn, not typed: the marker holds no text, so the
+   translation's offsets stay exact. In reading text the number takes its own room
+   like [3]; behind an editing field it cannot, so there it floats over the text. */
+.translation-note-ref {
+  position: relative;
+}
+
+.translation-note-ref::after {
+  content: attr(data-note);
+  position: absolute;
+  left: 1px;
+  top: -0.55em;
+  font: 600 9px/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+[data-review-translation-from] .translation-note-ref::after {
+  content: "[" attr(data-note) "]";
+  position: static;
+  margin: 0 1px;
+  padding: 0 1px;
+  border-radius: 3px;
+  font: 500 0.6em/0 var(--font-ui);
+  vertical-align: super;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.translation-notes {
+  margin: 14px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+  font: 12px/1.7 var(--font-ui);
+  color: var(--fg);
+  letter-spacing: 0;
+}
+
+.translation-note {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: baseline;
+}
+
+.translation-note + .translation-note {
+  margin-top: 4px;
+}
+
+.translation-note-num {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+}
+
+.translation-note p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.translation-note-meta {
+  margin-right: 6px;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.translation-note-alt {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* In the sentence comparison a row's notes sit under its translation, above the row tools. */
+.bcell-tgt .translation-notes {
+  margin-top: 10px;
+  padding-top: 8px;
+}
+
+/* The whitespace mirror keeps the same room for each number without drawing it again. */
+.editor-whitespace-mirror .translation-note-ref::after {
+  content: "[" attr(data-note) "]";
+  position: static;
+  margin: 0 1px;
+  padding: 0 1px;
+  font: 500 0.6em/0 var(--font-ui);
+  vertical-align: super;
+  visibility: hidden;
+}
+
+[data-review-translation-from] .translation-note-ref:hover::after,
+.translation-note-ref.is-target::after {
+  background: var(--accent-soft);
+}
+
+#bookNotes .translation-note-num {
+  cursor: pointer;
+}
+
+.translation-notes .translation-note {
+  margin-inline: -4px;
+  padding-inline: 4px;
+  border-radius: 3px;
+  transition: background-color 0.6s ease;
+}
+
+.translation-notes .translation-note.is-target {
+  background: var(--accent-soft);
+  transition: none;
+}
+
+.translation-note-popover {
+  position: fixed;
+  z-index: 60;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 28px #292b271a, 0 2px 5px #292b270a;
+  font: 12px/1.65 var(--font-ui);
+  color: var(--fg);
+  pointer-events: none;
+}
+
+.translation-note-popover[hidden] {
+  display: none;
+}
+
+.translation-note-dialog .translation-note-fields {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.translation-note-dialog .translation-note-fields label {
+  flex: 1;
+  margin: 0;
+}
+
+.translation-note-dialog .translation-note-fields .select,
+.translation-note-dialog .input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.translation-note-dialog .input {
+  margin-top: 0;
+}
+
+.translation-note-dialog textarea {
+  margin-bottom: 14px;
+}
+
+/* Editing stays out of the reading until the note is pointed at. */
+.translation-note-actions {
+  align-self: start;
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+  opacity: 0;
+}
+
+.translation-note:hover .translation-note-actions,
+.translation-note-actions:focus-within {
+  opacity: 1;
+}
+
+.translation-note-actions button {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  font: 10px/1.7 var(--font-ui);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.translation-note-actions button:hover {
+  color: var(--accent-ink);
+  background: var(--fg-softer);
+}
+
+.translation-note-actions [data-note-remove]:hover {
+  color: var(--danger);
+}
+
+.translation-notes .translation-note:has(.translation-note-actions) {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+}

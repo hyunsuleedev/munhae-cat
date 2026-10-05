@@ -4,6 +4,8 @@
 
 > 2026-09-10 구절 연구: SQLite 스키마 6에서 `reading_annotations`에 위치별 독음·문맥 풀이·풀이 순서·사전 출처를 저장한다. 원문·번역·프로젝트 공통 용어집과 구분한다. 자세한 계약은 12.7절을 따른다.
 
+> 2026-09-28 용어: SQLite 스키마 13은 `glossary_entries`·`term_entries`·`term_revisions`를 백업 없이 삭제하고 문서 우선 용어 모델로 교체한다. 용어는 확정된 표점본의 정확한 위치에 문서별로 확정하며, 같은 표기라도 다른 문서에 자동 적용하지 않는다. 자세한 계약은 13.1절과 [용어 검토](docs/term-review.md)를 따른다.
+
 > 2026-09-10 번역 자료: 현재 SQLite 스키마 7은 기존 문맥 카드에 하위 적용 여부·조건·채택 당시 코멘트 출처를 추가하고, 문서별 직접 참조·제외를 `material_preferences`에 저장한다. v6 프로젝트를 열 때 기존 DB를 백업한 뒤 업그레이드한다. 자세한 계약은 16.2절을 따른다.
 
 상태: 구현 전 기준안
@@ -528,19 +530,24 @@ empty_block | empty_translation | stale_snapshot | cas_conflict
 
 ## 13. KNOWLEDGE
 
-### 13.1 Glossary
+### 13.1 용어
 
-- `glossary_entries(id, project_id, source_term, target_locale, target_term, term_kind, reading, note_md, usage_status, content_hash, lock_version, created_by_actor_id, updated_by_actor_id, created_at, updated_at, archived_at)`
+- `terms(id, project_id, source_form, kind, reading, translation, definition, evidence_json, lock_version, created_at, updated_at)`
+- `document_terms(id, project_id, document_node_id, term_id, punctuation_version_id, context_note, selection_reason, uncertainty, origin, generation_json, lock_version, created_at, updated_at)`
+- `term_occurrences(id, project_id, document_term_id, punctuation_version_id, codepoint_from, codepoint_to)`
+- `term_candidates(id, project_id, document_node_id, punctuation_version_id, run_id, agent_id, model, suggested_term_id, source_form, kind, reading, translation, definition, evidence_json, context_note, selection_reason, uncertainty, positions_json, dismissed, created_at)`
 
-한 row는 하나의 `원문 용어 → 번역 용어` 대응이다. 같은 `source_term`에 후보가 여러 개면 row를 여러 개 만들고 `usage_status`로 `preferred | allowed | forbidden`을 구분한다. 프로젝트가 용어집 범위이므로 별도 glossary container를 두지 않는다.
+`terms`의 한 row는 표기 하나의 뜻 하나다. 동명이인·다의어는 row를 나누고, 별칭은 같은 row로 묶지 않는다. 여러 문서에 걸친 인물 정보는 `context_items`에 둔다. 뜻풀이·번역어를 고치면 그 용어를 확정한 모든 문서에 반영된다.
 
-용어 entry는 별도 version/head aggregate가 아닌 CAS 가능한 현재 설정값이다. 수정 시 `lock_version`과 `updated_at`을 갱신한다. AI 실행 당시 사용한 entry의 ID와 `content_hash`는 assistant `chat_messages.request_manifest_json`에, 실제 렌더링 문자열은 request artifact에 고정한다.
+`document_terms`는 "이 문서의 이 확정 표점본에서 이 표현은 이 용어"라는 확정 기록이다. 기준 본문은 현재 원문 version의 확정 표점본뿐이며, 표점 작업안이나 원문은 기준이 아니다. 위치는 `term_occurrences`에 표점본 code point 범위로 저장하고, 같은 표점본의 같은 범위는 한 용어에만 속한다. 저장할 때 범위의 글자가 `source_form`과 같은지 검증한다.
 
-표기 변형·다의어 의미·출현 위치를 별도 table로 분리하지 않는다. 현재 `src_text_versions.content_text`에서 `source_term`을 exact match하고, 검색 범위를 포함하는 현재 anchor set의 source 좌표를 이용해 표점문 highlight와 LLM context를 만든다. 위치는 실행 시 계산하며 기준 데이터로 저장하지 않는다.
+번역·채팅 요청에는 현재 확정 표점본의 `document_terms`만 들어간다. 다른 문서에서 확정한 같은 표기의 용어는 자동 적용하지 않고, AI 용어 생성의 참고 후보로만 전달한다. 표점을 다시 확정하면 이전 표점본의 연결은 번역에서 빠지고 다음 생성의 참고 자료로만 남는다. 새 표점본의 후보를 모두 확정하거나 버리면 이전 연결을 삭제하고, 어느 문서도 쓰지 않는 용어를 정리한다.
+
+`term_candidates`는 AI가 만든 미확정 후보다. 번역에 쓰이지 않으며, 확정하면 삭제되고 버리면 `dismissed`로 남아 다음 생성에서 같은 제안을 피하는 데 쓰인다. 다시 생성하면 성공한 경우에만 남은 미확정 후보를 교체한다. 용어 수정 이력은 두지 않으며, AI 요청에 쓴 용어 내용은 request manifest와 request artifact에 남는다.
 
 ### 13.2 인물·지명 설명은 문맥으로 통합
 
-스키마 v5부터 인물·지명 전용 table과 CRUD API를 두지 않는다. 이름·별칭·시기·위치·근거를 자유로운 `context_items` 본문에 기록한다. 관직·문헌 등의 배경 설명도 같은 방식으로 관리하며, 원문 표현과 번역 표현의 사용 규칙은 `glossary_entries`에 둔다.
+스키마 v5부터 인물·지명 전용 table과 CRUD API를 두지 않는다. 이름·별칭·시기·위치·근거를 자유로운 `context_items` 본문에 기록한다. 관직·문헌 등의 배경 설명도 같은 방식으로 관리하며, 원문 표현의 문서별 풀이와 번역어는 `terms`·`document_terms`에 둔다.
 
 v4 이전 프로젝트는 새 migration에서 `persons`·`places`와 전용 데이터를 삭제한다. 사용자 결정에 따라 문맥 카드, 이관 artifact 또는 전용 백업을 생성하지 않는다. 문서에 이미 지정한 저자명만 `author_text`로 옮기며, 부모에서 상속하던 값은 자손에 복사하지 않는다. 기존 일반 문맥·용어·원문·번역·코멘트와 과거 AI 요청은 유지한다. 자세한 범위는 [지식 모델 단순화](docs/knowledge-simplification.md)를 따른다.
 
@@ -590,7 +597,7 @@ Phase 1은 범용 recipe·step·execution table을 두지 않는다. provider가
 | 문서 metadata·구조 | `document_nodes` |
 | 현재 원문 | `src_text_versions`, `punctuation_versions` |
 | 번역 경계 | `translation_anchor_sets`, `translation_anchors` |
-| 용어 | `glossary_entries` |
+| 용어 | `terms`, `document_terms`, `term_occurrences` |
 | 인물·지명 등 배경 설명 | `context_items` |
 | 불확실성 | `uncertainty_versions` |
 | 확정 번역 | `document_translation_versions`, `translation_blocks` |
@@ -646,7 +653,7 @@ Phase 1은 다음 순서를 코드에 고정하며 문서별 자료 선택은 �
 1. 정확한 punctuation version의 전체 표점 원문
 2. 해당 translation anchor manifest
 3. confirmed translation policy
-4. 전체 원문에서 표현이 exact match된 glossary entry
+4. 이 문서의 현재 확정 표점본에서 확정한 용어
 5. 관련 uncertainty와 문서별 적용 규칙으로 선택된 context item. context item은 현재 node부터 가까운 조상을 거쳐 프로젝트 마스터 순, 이후 명시적으로 가져온 다른 자료 순으로 붙인다.
 6. 기존 confirmed translation에서 직접 조회한 참고 번역
 7. 번역 task라면 `translation-envelope.v2` 단일 완성 번역 schema, 일반 chat이라면 없음
@@ -669,7 +676,7 @@ Phase 1은 다음 순서를 코드에 고정하며 문서별 자료 선택은 �
     {"ordinal": 1, "kind": "translation_policy", "id": "...", "versionId": "...", "hash": "...", "reason": "required"},
     {"ordinal": 2, "kind": "punctuated_source", "id": "...", "versionId": "...", "hash": "...", "reason": "required"},
     {"ordinal": 3, "kind": "anchor_manifest", "id": "...", "hash": "...", "reason": "required"},
-    {"ordinal": 4, "kind": "glossary", "id": "...", "hash": "...", "reason": "exact_match"},
+    {"ordinal": 4, "kind": "term", "id": "...", "hash": "...", "reason": "document_term"},
     {"ordinal": 5, "kind": "context_item", "id": "...", "hash": "...", "reason": "enabled"}
   ]
 }
@@ -681,7 +688,7 @@ manifest는 canonical JSON으로 만든 뒤 `request_manifest_hash`를 계산한
 
 1. task, document translation, source text version, punctuation version 결정
 2. 정확한 translation anchor set과 전체 `punctuated_text` 로드
-3. `glossary_entries.source_term`의 일치 여부로 용어 후보를 선택
+3. 현재 확정 표점본의 `document_terms`를 용어 자료로 선택
 4. 관련 uncertainty와 `enabled` context item 로드
 5. 기존 confirmed translation에서 필요한 참고 번역 직접 조회
 6. 문서 상세의 AI 번역 대화상자에서 사용자가 보조 항목 포함·제외
@@ -903,9 +910,9 @@ SQLite와 PostgreSQL의 migration 파일은 분리한다. 교환 형식은 canon
 - unique `translation_block_anchors(translation_block_id, translation_anchor_id)`
 - `chat_messages(thread_id, created_at)`
 - unique `chat_agent_sessions(thread_id, agent_id)`
-- unique `glossary_entries(project_id, source_term, target_locale, target_term) WHERE archived_at IS NULL`
-- unique `glossary_entries(project_id, source_term, target_locale) WHERE usage_status = 'preferred' AND archived_at IS NULL`
-- `glossary_entries(project_id, source_term, usage_status) WHERE archived_at IS NULL`
+- unique `document_terms(punctuation_version_id, term_id)`
+- unique `term_occurrences(punctuation_version_id, codepoint_from, codepoint_to)`
+- `term_candidates(document_node_id, dismissed)`
 - `context_items(project_id, enabled, priority) WHERE archived_at IS NULL`
 - unique `provenance_artifacts(project_id, artifact_kind, canonical_sha256)`
 - active row partial index: `WHERE archived_at IS NULL`
@@ -949,7 +956,7 @@ JSON은 실제 query path가 확인된 경우에만 expression/GIN index를 추�
 33. provider context 초과에 대한 자동 split plan이나 부분 재시도는 만들지 않는다. 사용자가 만든 각 source unit은 같은 project의 정확한 source/version·punctuation set/version·anchor set 의존성 사슬을 가져야 한다.
 34. AI 생성 translation version은 같은 project의 `role = assistant`, `task_kind = translation` message를 `generated_by_message_id`로 참조한다. 해당 ID는 null이 아닐 때 유일하며, 같은 immutable response artifact의 동일 번역일 때만 기존 version을 반환한다.
 35. 수동 분할 전후의 source unit은 별도 version 사슬로 보존하며 앱이 임의로 원문 범위나 structure/anchor 좌표를 재기준화하지 않는다.
-36. glossary는 `glossary_entries` 단일 table을 기준으로 한다. 같은 원문 용어·target locale에는 활성 `preferred` row가 최대 하나다. 용어 출현 좌표는 저장하지 않고 현재 source text version에서 동적으로 exact match하며, AI 실행에 사용한 entry ID/hash와 렌더링 결과는 request manifest와 request artifact로 보존한다.
+36. 용어는 문서별 확정 연결(`document_terms`)로만 번역에 쓰인다. 연결은 확정 표점본 version 하나에 속하고, 위치는 그 표점본의 code point 범위로 저장하며 같은 범위는 한 용어에만 속한다. 표기 일치만으로 다른 문서에 적용하지 않으며, AI 실행에 사용한 용어 내용은 request manifest와 request artifact로 보존한다.
 37. document translation version은 `parent_version_id` 하나만 가질 수 있다. parent는 같은 `document_translation_id`에 속해야 하고 순환할 수 없으며, multi-parent 계보가 필요한 자동 merge는 초기 범위에 포함하지 않는다.
 38. document node의 parent는 같은 project에 속해야 하며 parent 관계는 순환할 수 없다. 저자는 관계 FK가 아닌 자유 텍스트 `author_text`로 저장한다.
 39. `src_texts`, `src_node_assets`, translation anchor set과 document translation의 `document_node_id`는 모두 같은 project의 실제 node를 가리켜야 한다.

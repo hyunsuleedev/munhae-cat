@@ -19,20 +19,24 @@ export type ReviewExportPayload = {
   documentCount: number;
   content: string;
 };
-type Node = {
+export type ExportNode = {
   id: string; parent_node_id: string | null; title: string; original_title: string | null;
-  ordinal: number; node_role: string; author_name: string | null; period_text: string | null;
+  ordinal: number; node_role: string; is_master: number; author_name: string | null; period_text: string | null;
   date_text: string | null; source_reference: string | null;
 };
 type Translation = {
-  document_id: string; version_id: string; version_no: number; state: string; created_at: string;
+  document_id: string; version_id: string; version_no: number; state: string; created_at: string; target_locale: string;
   translation: string; source_version_id: string; source_version_no: number; source: string;
   current_source_version_id: string | null; punctuation: string | null;
 };
-type Span = { from: number; to: number; quote: string };
+export type Span = { from: number; to: number; quote: string };
+/** A stored translation range (code points) and the validated source spans it owns. */
+export type LinkedSegment = { from: number; to: number; text: string; spans: Span[]; status: string };
 type Pair = { source: string; translation: string; status: string; spans: Span[] };
 type Comment = { target_kind: string; quote: string; body_md: string };
-type Document = Translation & { title: string; path: string; metadata: Array<[string, string]>; pairs: Pair[]; uncovered: string[]; comments: Comment[] };
+export type ExportDocument = Translation & { node: ExportNode; ancestors: ExportNode[]; title: string; path: string; metadata: Array<[string, string]>; pairs: Pair[]; uncovered: string[]; comments: Comment[] };
+type Document = ExportDocument;
+type Node = ExportNode;
 const invalid = (): never => { throw new MunhaeError("invalid_export", "검토본 내보내기 조건이 올바르지 않습니다"); };
 const esc = (value: string): string => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 const md = (value: string): string => esc(value).replace(/[\\`*_{}\[\]()#+.!|~-]/g, "\\$&").replace(/\r\n?|\n/g, "<br>");
@@ -53,6 +57,13 @@ function unlinked(translation: string): Pair[] {
   return [{ source: "", translation, status: "미연결 · 원문 전문과 대조하세요", spans: [] }];
 }
 function pairsFor(db: SqliteDb, item: Translation): Pair[] {
+  const segments = linkedSegments(db, item);
+  return segments
+    ? segments.map(segment => ({ source: segment.spans.map(span => span.quote).join("\n…\n"), translation: segment.text, status: segment.status, spans: segment.spans }))
+    : unlinked(item.translation);
+}
+/** Null when no correspondence is stored or the stored coordinates no longer match the texts. */
+export function linkedSegments(db: SqliteDb, item: Pick<Translation, "version_id" | "translation" | "source">): LinkedSegment[] | null {
   const layout = orm(db)
     .select({
       sentences_json: tables.translation_text_layouts.sentences_json,
@@ -67,24 +78,24 @@ function pairsFor(db: SqliteDb, item: Translation): Pair[] {
       const projected = content ? projectContent(content, { state: "ready", error: null }) : null;
       const sentences = projected?.sentences ?? JSON.parse(layout.sentences_json) as unknown;
       const links = projected?.links ?? JSON.parse(layout.links_json) as unknown;
-      if (!Array.isArray(sentences) || !Array.isArray(links) || !sentences.length) return unlinked(item.translation);
+      if (!Array.isArray(sentences) || !Array.isArray(links) || !sentences.length) return null;
       let end = 0;
       const ids = new Set<string>();
-      const pairs: Pair[] = [];
+      const segments: LinkedSegment[] = [];
       for (const sentence of sentences) {
         if (!sentence || typeof sentence.id !== "string" || ids.has(sentence.id)
           || !validSpan({ from: sentence.from, to: sentence.to, quote: sentence.text }, item.translation)
-          || sentence.from < end || sliceCodepoints(item.translation, end, sentence.from).trim()) return unlinked(item.translation);
+          || sentence.from < end || sliceCodepoints(item.translation, end, sentence.from).trim()) return null;
         ids.add(sentence.id); end = sentence.to;
         const matches = links.filter(link => link?.sentenceId === sentence.id);
         const link = matches.length === 1 ? matches[0] : null;
         const spans: Span[] = link && Array.isArray(link.spans) && link.spans.length && link.spans.every((span: unknown) => validSpan(span, item.source)) ? link.spans : [];
-        pairs.push({ source: spans.map(span => span.quote).join("\n…\n"), translation: sentence.text, spans,
+        segments.push({ from: sentence.from, to: sentence.to, text: sentence.text, spans,
           status: !spans.length ? "미연결" : link.needsReview ? "대응 확인 필요" : link.reviewedBy === "human" ? "사람이 대응 확인" : "자동 연결 · 검토 필요" });
       }
-      if (sliceCodepoints(item.translation, end, Array.from(item.translation).length).trim()) return unlinked(item.translation);
-      return pairs;
-    } catch { return unlinked(item.translation); }
+      if (sliceCodepoints(item.translation, end, Array.from(item.translation).length).trim()) return null;
+      return segments;
+    } catch { return null; }
   }
   // Older projects retain block/anchor correspondence instead of sentence links.
   const blocks = orm(db)
@@ -103,7 +114,7 @@ function pairsFor(db: SqliteDb, item: Translation): Pair[] {
     )
     .orderBy(tables.translation_blocks.ordinal)
     .all();
-  if (!blocks.length) return unlinked(item.translation);
+  if (!blocks.length) return null;
   return blocks.map(block => {
     const spans = orm(db)
       .select({
@@ -123,8 +134,8 @@ function pairsFor(db: SqliteDb, item: Translation): Pair[] {
       .orderBy(tables.translation_block_anchors.ordinal)
       .all();
     const valid = spans.length > 0 && spans.every(span => validSpan(span, item.source));
-    return { source: valid ? spans.map(span => span.quote).join("\n…\n") : "",
-      translation: sliceCodepoints(item.translation, block.target_codepoint_from, block.target_codepoint_to),
+    return { from: block.target_codepoint_from, to: block.target_codepoint_to,
+      text: sliceCodepoints(item.translation, block.target_codepoint_from, block.target_codepoint_to),
       status: valid ? "저장된 블록 연결 · 검토 필요" : "미연결", spans: valid ? spans : [] };
   });
 }
@@ -140,7 +151,7 @@ function uncoveredSource(source: string, pairs: Pair[]): string[] {
   if (end < chars.length) parts.push(chars.slice(end).join(""));
   return parts.filter(part => /[^\p{P}\p{Z}\s]/u.test(part));
 }
-function loadDocuments(db: SqliteDb, projectId: string, input: ReviewExportInput): Document[] {
+export function loadExportDocuments(db: SqliteDb, projectId: string, input: Pick<ReviewExportInput, "state" | "documentNodeId" | "includeComments">): Document[] {
   const nodes = orm(db)
     .select({
       id: tables.document_nodes.id,
@@ -149,6 +160,7 @@ function loadDocuments(db: SqliteDb, projectId: string, input: ReviewExportInput
       original_title: tables.document_nodes.original_title,
       ordinal: tables.document_nodes.ordinal,
       node_role: tables.document_nodes.node_role,
+      is_master: tables.document_nodes.is_master,
       author_name: tables.document_nodes.author_text,
       period_text: tables.document_nodes.period_text,
       date_text: tables.document_nodes.date_text,
@@ -174,6 +186,7 @@ function loadDocuments(db: SqliteDb, projectId: string, input: ReviewExportInput
       version_no: tables.document_translation_versions.version_no,
       state: tables.document_translation_versions.state,
       created_at: tables.document_translation_versions.created_at,
+      target_locale: tables.document_translations.target_locale,
       translation: tables.document_translation_versions.text_content,
       source_version_id: tables.src_text_versions.id,
       source_version_no: tables.src_text_versions.version_no,
@@ -272,7 +285,7 @@ function loadDocuments(db: SqliteDb, projectId: string, input: ReviewExportInput
       )
       .orderBy(tables.review_comments.created_at, tables.review_comments.id)
       .all();
-    return { ...item, title: node.original_title || node.title, path: ancestors.map(value => value.original_title || value.title).join(" › "), metadata, pairs, uncovered: uncoveredSource(item.source, pairs), comments };
+    return { ...item, node, ancestors, title: node.original_title || node.title, path: ancestors.map(value => value.original_title || value.title).join(" › "), metadata, pairs, uncovered: uncoveredSource(item.source, pairs), comments };
   });
   // Preserve the project's tree order, including sources under different folders.
   const ordered: string[] = [];
@@ -337,7 +350,7 @@ export function buildReviewExport(db: SqliteDb, projectId: string, input: Review
       .where(eq(tables.core_projects.id, projectId))
       .get();
     if (!project) throw new MunhaeError("invalid_project", "프로젝트를 찾을 수 없습니다");
-    const documents = loadDocuments(db, projectId, input);
+    const documents = loadExportDocuments(db, projectId, input);
     if (!documents.length) throw new MunhaeError("nothing_to_export", input.state === "confirmed" ? "선택한 범위에 확정된 번역이 없습니다" : "선택한 범위에 저장된 번역이 없습니다");
     const includeComments = input.includeComments !== false;
     const generatedAt = nowIso();

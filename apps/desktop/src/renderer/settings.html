@@ -43,6 +43,10 @@
           <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h6l2 2V14H4zM10 2.5V5h2M6 8h4M6 10.5h4"></path></svg>
           <span data-i18n="플러그인">플러그인</span>
         </button>
+        <button class="settings-nav-item" type="button" data-settings-section="mcp">
+          <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 9.5 9.5 6.5M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 10.8M11 8.5l1.2-1.2a2.3 2.3 0 0 0-3.3-3.3L7.7 5.2"></path></svg>
+          <span data-i18n="AI 도구 연결">AI 도구 연결</span>
+        </button>
         <button class="settings-nav-item" type="button" data-settings-section="general">
           <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.2"></circle><path d="M8 2.2v1.2M8 12.6v1.2M2.2 8h1.2M12.6 8h1.2M3.9 3.9l.9.9M11.2 11.2l.9.9M12.1 3.9l-.9.9M4.8 11.2l-.9.9"></path></svg>
           <span data-i18n="일반">일반</span>
@@ -109,6 +113,32 @@
           <h2 class="plugin-group-title" data-i18n="원문 연결">원문 연결</h2>
           <p class="plugin-group-note" data-i18n="번역을 저장한 뒤 번역 문장과 원문 범위를 잇는 단계입니다. 앱에 포함된 지침으로 고정됩니다.">번역을 저장한 뒤 번역 문장과 원문 범위를 잇는 단계입니다. 앱에 포함된 지침으로 고정됩니다.</p>
           <div class="skill-list" id="alignmentSkill"></div>
+        </section>
+
+        <section class="settings-page" id="settingsMcp" aria-labelledby="settingsMcpTitle" hidden>
+          <header class="settings-page-head">
+            <div>
+              <p class="settings-eyebrow">MCP</p>
+              <h1 id="settingsMcpTitle" data-i18n="AI 도구 연결">AI 도구 연결</h1>
+              <p data-i18n="Claude Code·Codex·Antigravity 대화에서 지금 열려 있는 문해 프로젝트를 읽고 다룰 수 있게 합니다.">Claude Code·Codex·Antigravity 대화에서 지금 열려 있는 문해 프로젝트를 읽고 다룰 수 있게 합니다.</p>
+            </div>
+          </header>
+
+          <section class="runtime-panel" aria-labelledby="mcpServerHeading">
+            <div class="runtime-panel-copy">
+              <span class="runtime-icon" aria-hidden="true">&gt;_</span>
+              <div><b id="mcpServerHeading" data-i18n="문해 MCP 서버">문해 MCP 서버</b><p class="mono" id="mcpServerDetail"></p></div>
+            </div>
+            <span class="tag tag-plain" id="mcpServerState" data-i18n="확인 중">확인 중</span>
+            <button class="btn btn-sm" id="btnMcpRefresh" type="button" data-i18n="다시 확인">다시 확인</button>
+          </section>
+
+          <div class="settings-note">
+            <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5 13 4v3.8c0 2.8-1.8 4.8-5 5.8-3.2-1-5-3-5-5.8V4z"></path><path d="m6 8 1.3 1.3L10.5 6"></path></svg>
+            <span data-i18n="연결하면 각 AI 도구의 설정에 문해 명령이 등록됩니다. 문해가 켜져 있을 때만 동작하고, 꺼져 있으면 AI가 문해를 열어 달라고 안내합니다.">연결하면 각 AI 도구의 설정에 문해 명령이 등록됩니다. 문해가 켜져 있을 때만 동작하고, 꺼져 있으면 AI가 문해를 열어 달라고 안내합니다.</span>
+          </div>
+
+          <div class="cli-list" id="mcpClients" aria-live="polite"></div>
         </section>
 
         <section class="settings-page" id="settingsGeneral" aria-labelledby="settingsGeneralTitle" hidden>
